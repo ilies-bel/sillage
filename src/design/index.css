@@ -1,0 +1,376 @@
+/*
+ * The one stylesheet the app imports. Order matters: tokens define the
+ * variables, fonts declare the faces, Tailwind's layers come last so a utility
+ * can always override a base rule.
+ */
+@import "./tokens.css";
+@import "./fonts.css";
+
+/*
+ * ProseMirror's own base rules. Not optional — they carry `white-space:
+ * pre-wrap`, the caret behaviour around empty textblocks, and the gap/drop
+ * cursor styling the plugins in `Notepad.tsx` depend on. Without them the
+ * editor mounts and then misbehaves in ways that look like our bugs.
+ */
+@import "prosemirror-view/style/prosemirror.css";
+@import "prosemirror-gapcursor/style/gapcursor.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--text-body);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /*
+     * The window is the app (HR-10) — no page-level scroll, no modal chrome.
+     * Panes scroll inside themselves so the transcript can follow along without
+     * moving the notepad the rep is typing into.
+     */
+    overflow: hidden;
+  }
+
+  /*
+   * No `letter-spacing` here — it moved onto the `display` step of the type
+   * scale in `tailwind.config.js`, so the tracking travels with the size that
+   * earns it rather than with the tag.
+   *
+   * The comment below has always said "only ever at large sizes", and this rule
+   * contradicted it: every `h1`, `h2` and `h3` got -1.5px whatever its size. A
+   * measured pass found the session header's meeting title at 14px carrying
+   * -0.107em, and `.pane-label` — a 10px uppercase eyebrow — rendering in
+   * Fraunces at display tracking. Both are exactly the smudge the comment warns
+   * about, produced by the rule the comment is attached to.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: var(--display-weight);
+    color: var(--text-strong);
+  }
+
+  /*
+   * Only ever at large sizes — Fraunces' -1.5px tracking is a display setting
+   * and turns small headings into a smudge.
+   */
+  h3 {
+    letter-spacing: -0.4px;
+  }
+
+  /*
+   * Keyboard-first (HR-10), so focus must always be visible.
+   *
+   * `--brand-500`, not `--accent`. VISION.md §6 gives orange exactly one
+   * meaning — this meeting is armed or recording — and a ring that follows the
+   * tab key around the screen spends the whole call claiming it. `--brand-500`
+   * is the step of the ramp the palette nominates for borders, focus rings and
+   * other non-text UI, at 3.05:1 on white — over the 3:1 WCAG asks of a focus
+   * indicator, which the orange at 2.44:1 was under.
+   */
+  /*
+   * `--brand-700`, not `--brand-500`. The 500 clears 3:1 on white and on the
+   * card — and the ring does not only land on those. Measured on the surfaces
+   * it actually rides over: 2.41:1 on a selected `--brand-50` chip, 2.89:1 on
+   * the back link, 2.94:1 on `--bg-card-soft`, 2.98:1 on a hovered row. Two
+   * independent measurement passes, on different screens, found the same thing.
+   * A focus indicator that fails 1.4.11 on the controls a keyboard user visits
+   * most is the one place the ramp's "non-text UI" step is not good enough.
+   */
+  :focus-visible {
+    outline: 2px solid var(--brand-700);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /*
+   * Was a 22% mix of `--accent`. Orange has exactly one meaning in this palette
+   * — this meeting is armed or recording — and a wash that follows the caret
+   * around the notepad spends the whole call claiming it.
+   *
+   * `--brand-300` is the step tokens.css designates a wash and a fill and
+   * nothing else, which is exactly what this is. Measured over `--bg-inner` the
+   * wash is `#d8f2fe`: `--ink-rep` reads through it at 14.22:1 and `--ink-agent`
+   * at 4.38:1 — both better than the orange it replaces (13.53:1 and 4.17:1),
+   * and `--ink-agent` is the ceiling any visible selection can reach, since
+   * `--text-muted` starts at 5.09:1 on white and every tint spends that.
+   *
+   * Still a mix rather than a flat token, so a selection over a `mark` stays
+   * visible instead of landing on the highlight's own colour.
+   */
+  ::selection {
+    background: color-mix(in srgb, var(--brand-300) 22%, transparent);
+  }
+
+  /*
+   * A native scrollbar on a paper-coloured canvas reads as a seam. This is the
+   * only decoration in the base layer.
+   */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-card);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /*
+   * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
+   * muted label. Used by every pane header, which is why it is a component
+   * rather than eight copies of the same six utilities.
+   *
+   * "Accent rule" is a shape, not a colour. The rule shipped in `--accent`, and
+   * `--accent` is orange, and VISION.md §6 gives orange exactly one meaning —
+   * *this meeting is armed or recording*. The app drew that rule in front of
+   * every section header on every screen: CONNECTEURS, REQUIS, FACULTATIFS,
+   * PASSÉES, TRANSCRIPT, SIGNAUX. A rep learns a colour by where it appears,
+   * and a colour that appears everywhere teaches nothing — which costs the one
+   * place it has to be read instantly.
+   *
+   * `--brand-500` is the step the palette nominates for borders and non-text
+   * UI, and this is a 14×2px rectangle that carries no text. Same reasoning as
+   * the focus ring above, and the same colour, so the two agree.
+   */
+  .pane-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .pane-label::before {
+    content: "";
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--brand-500);
+  }
+
+  /*
+   * The notepad. It opens nearly empty (DEC-6) — a title, the resolved client,
+   * and a cursor — so the typography has to carry the whole surface.
+   */
+  .notepad .ProseMirror {
+    outline: none;
+    min-height: 100%;
+    max-width: 46rem;
+    color: var(--ink-rep);
+  }
+
+  .notepad .ProseMirror p {
+    margin: 0 0 0.55em;
+  }
+
+  .notepad .ProseMirror h1,
+  .notepad .ProseMirror h2,
+  .notepad .ProseMirror h3 {
+    margin: 1.1em 0 0.4em;
+    line-height: 1.25;
+  }
+
+  .notepad .ProseMirror h1 {
+    font-size: 24px;
+    letter-spacing: -0.8px;
+  }
+
+  .notepad .ProseMirror h2 {
+    font-size: 19px;
+    letter-spacing: -0.4px;
+  }
+
+  .notepad .ProseMirror h3 {
+    font-size: 16px;
+  }
+
+  .notepad .ProseMirror ul,
+  .notepad .ProseMirror ol {
+    margin: 0 0 0.55em;
+    padding-left: 1.35em;
+  }
+
+  .notepad .ProseMirror ul {
+    list-style: disc;
+  }
+
+  .notepad .ProseMirror ol {
+    list-style: decimal;
+  }
+
+  .notepad .ProseMirror blockquote {
+    margin: 0.6em 0;
+    padding-left: 0.9em;
+    border-left: 2px solid var(--border-card);
+    color: var(--text-body);
+  }
+
+  .notepad .ProseMirror pre {
+    background: var(--bg-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.7em 0.85em;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    overflow-x: auto;
+  }
+
+  .notepad .ProseMirror code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  .notepad .ProseMirror hr {
+    border: none;
+    border-top: 1px solid var(--border-card);
+    margin: 1.2em 0;
+  }
+
+  .notepad .ProseMirror table {
+    border-collapse: collapse;
+    margin: 0.7em 0;
+    width: 100%;
+  }
+
+  .notepad .ProseMirror th,
+  .notepad .ProseMirror td {
+    border: 1px solid var(--border-card);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .notepad .ProseMirror th {
+    background: var(--bg-subtle);
+    font-weight: 600;
+  }
+
+  /*
+   * Was `--info`, a blue the new palette does not have. `--brand-700` is what
+   * VISION.md §6 names for links, and it is 6.28:1 rather than the old 3.4:1.
+   */
+  .notepad .ProseMirror a {
+    color: var(--brand-700);
+    text-decoration: underline;
+  }
+
+  /*
+   * Was a 30% mix of `--accent-warm`. Orange now has one meaning — armed or
+   * recording — so a highlight cannot borrow it. `--brand-100` is flat rather
+   * than mixed: at 1.26:1 both `--ink-rep` and `--ink-agent` stay legible
+   * through it, and overlapping highlights no longer stack toward opaque.
+   */
+  .notepad .ProseMirror mark {
+    background: var(--brand-100);
+    color: inherit;
+  }
+
+  /*
+   * Provenance (DEC-5). Text the agent wrote at meeting end is muted; the rep's
+   * is strong. Colour alone, no badges — and the class is applied to a whole
+   * subtree, so a rep editing inside an enhanced paragraph does not end up with
+   * two-tone words.
+   */
+  .notepad .ProseMirror [data-author="agent"] {
+    color: var(--ink-agent);
+  }
+
+  /*
+   * Paper grain (VISION.md §6). Quiet surfaces only: the splash, an empty
+   * transcript pane, an empty signal rail, an empty-state panel — a blank
+   * region is what a broken one looks like, and texture is what says the
+   * emptiness is intentional.
+   *
+   * Where it must not go: under dense body text, where it costs real legibility
+   * at the 11–12px muted sizes the palette is only just clearing AA at; on
+   * chips, dots and progress bars, where it is invisible and pure cost; and on
+   * anything that repaints during a call. The transcript scrolls, and a noise
+   * layer re-rasterising on scroll is GPU work on the capture path (DEC-26).
+   */
+  .grain {
+    background-image: var(--grain);
+    background-repeat: repeat;
+  }
+
+  /*
+   * The client facet of the search filter (`search/SearchBar.tsx`) — the one
+   * region of that one line allowed to run out of room.
+   *
+   * Two rules, and the base layer is why neither is a utility.
+   *
+   * **No scrollbar** — and this is a Windows decision (HR-2), not a mac one. The
+   * global bar above is 10px under a 22px chip, and on Windows a classic
+   * scrollbar takes layout space: the axis would stand 6px taller than the three
+   * beside it and its chips would sit misaligned by half that, on the platform
+   * this ships to and on no machine it is written on. Nothing is lost by hiding
+   * it: Chromium turns a vertical wheel into horizontal scrolling on an element
+   * that only scrolls horizontally, so a mouse works; a trackpad flicks it; and
+   * tabbing to a chip past the edge scrolls it into view.
+   *
+   * **The fade is a `mask-image`**, not a gradient in the page colour, because
+   * this component draws on `--bg-card` in the calendar and on `--bg-canvas` in
+   * *Historique*, and a hard-coded fade colour would be wrong on one of them.
+   * `data-fade` is measured in the component, so an axis that fits is not
+   * dimmed at an edge it does not have.
+   */
+  .filter-scroller {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .filter-scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filter-scroller[data-fade="end"] {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  }
+
+  .filter-scroller[data-fade="start"] {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 28px);
+    mask-image: linear-gradient(to right, transparent, black 28px);
+  }
+
+  .filter-scroller[data-fade="both"] {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 28px,
+      black calc(100% - 28px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 28px,
+      black calc(100% - 28px),
+      transparent
+    );
+  }
+}

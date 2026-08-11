@@ -1,0 +1,39 @@
+name: Check
+
+# The gate for the rebuild (ARCHITECTURE.md §4, §5.J):
+#   · typecheck the rebuilt tree
+#   · the import-boundary rule — core pure, modules isolated, renderer sees contracts only
+#   · the CRM containment grep — no VerySwing vocabulary outside modules/crm/vsa/
+#   · the test suite
+#
+# `--ignore-scripts` on purpose. `postinstall` rebuilds the native audio module
+# against Electron's ABI; none of that is needed to typecheck
+# or to run the suite, because the rebuilt tree runs `.ts` directly under Node and
+# stores through `node:sqlite` rather than a native module. Keeping the gate free
+# of the native toolchain is what makes it fast enough to run on every push.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck, boundaries, CRM containment
+        run: npm run check
+
+      - name: Test
+        run: npm test

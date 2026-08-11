@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The window title. `BrowserWindow` is constructed with `title: 'Sillage'`
+      and then loses to this one the moment the document loads, so whatever this
+      tag says is what the title bar shows. It has to stay in step with the
+      `BrowserWindow` title and with the splash underneath it, which once did not
+      agree: the bar read the old product name while the splash read *Sillage*.
+    -->
+    <title>Sillage</title>
+
+    <!--
+      The renderer has no network. Not "should not" — cannot.
+
+      Everything it needs arrives over IPC from the main process, which is the
+      only side that holds tokens. So `default-src 'self'` with no escape for
+      fonts, scripts, styles or connections, and no `img-src https:`.
+
+      What this replaces is worth naming, because it was all live in the old
+      product's page: Inter loaded from fonts.googleapis.com, googletagmanager
+      allowed as a script source, and `connect-src` reaching Google Analytics
+      and a Vercel deployment. In a meeting notetaker each of those is a
+      request that leaks *when a rep is in a call*, made from inside a client's
+      network. Both faces are vendored under `src/font/` instead.
+
+      `style-src 'unsafe-inline'` is the one concession: ProseMirror sets inline
+      styles on decorations and node views, and there is no nonce path for what
+      the editor does at runtime.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+
+    <!--
+      The canvas colour, inline, so the window paints paper rather than white
+      before the stylesheet lands. It is `--bg-canvas`; the token file is still
+      the source of truth, and this is the single duplicate, kept because a
+      first-paint flash cannot wait for a stylesheet.
+
+      It was still `#fbf1dc` — the cream the repaint retired — so every launch
+      flashed the old palette before the splash drew the new one. Three copies
+      of this value exist and only two were moved: `tokens.css` and
+      `app/main.ts`'s `backgroundColor`. `scripts/check-tokens.mjs` scans `src/`
+      and never sees this file, which is why nothing caught it.
+    -->
+    <style>
+      html,
+      body,
+      #root {
+        background: #f7f9fb;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
