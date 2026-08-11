@@ -1,0 +1,6 @@
+{
+  "//": "Scopes the main-process source tree to ESM. The root package.json has no `type` (Electron loads dist-electron/**/*.js as CommonJS, and scripts/ are CJS), so without this marker both tsc under `module: NodeNext` and Node's own loader treat every .ts file here as CommonJS and reject the import syntax. This file is not published: electron-builder ships `dist-electron`, not `electron`.",
+  "name": "@sillage/main",
+  "private": true,
+  "type": "module"
+}

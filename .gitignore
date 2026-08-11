@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/*
+
+# Build output
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+native-module/target/
+native-module/*.node
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs and crash artefacts
+*.log
+npm-debug.log*
+*.ips
+
+# Agent tooling (local, not part of the deliverable)
+.claude/settings.local.json
+.code-review-graph/
+.playwright-mcp/
+# Orchestrator state: an embedded Postgres and its worktrees.
+.mars/
+
+# Local scratch. Anything a session writes for itself lives here and is never
+# committed: reports, audits, one-off scripts, downloaded fixtures.
+/scratch/
+
+# Runtime output
+logs/
+
+# Bundled Whisper weights: fetched at build time by
+# scripts/fetch-whisper-model.mjs, pinned by scripts/whisper-model.lock.json.
+# 466 MB in the repo is paid by every clone forever, and Git LFS only moves
+# that bill to a quota.
+resources/whisper-models/

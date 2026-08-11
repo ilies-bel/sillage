@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    // Relative imports carry their `.ts` extension. That one convention is what
+    // lets the same source run three ways with no build step in between:
+    // `node --test` (native type stripping), esbuild (scripts/build-electron.js)
+    // and `tsc --noEmit` for the typecheck. tsc never emits here, so importing a
+    // `.ts` path costs nothing.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+
+  // The rebuilt tree only. `audio/`, `services/`, `update/`, `utils/` and
+  // `lib/` survived demolition as-is (ARCHITECTURE.md §3) and were written
+  // against the old, looser config — they do not compile under
+  // `noUncheckedIndexedAccess` / `exactOptionalPropertyTypes` and they do not
+  // use the `.ts` import extension. Each folder joins this list at the step
+  // that ports it: `audio/` → `modules/capture/` + `modules/transcribe/` in
+  // step 2, `services/meeting/` → `modules/extract/` in step 6.
+  "include": ["core/**/*.ts", "modules/**/*.ts", "app/**/*.ts", "preload.ts"]
+}

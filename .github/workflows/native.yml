@@ -1,0 +1,77 @@
+name: Native audio module
+
+# The one thing `check.yml` deliberately cannot do (HR-2).
+#
+# That workflow runs on ubuntu with `--ignore-scripts`, because keeping the gate
+# free of the native toolchain is what makes it fast. The cost of that choice is
+# that **nothing compiles `native-module/`** — and the capture path is the one
+# part of this product with a genuinely different implementation per platform:
+# ScreenCaptureKit on macOS, WASAPI loopback on Windows.
+#
+# Windows is the primary platform and macOS is where the code is written, which
+# is the whole risk CLAUDE.md names: a mac-first mistake looks reasonable on the
+# machine where it is typed and is discovered on the machine that matters. Worse,
+# the two halves cannot check each other locally. `cargo check
+# --target x86_64-pc-windows-msvc` from macOS fails before it reaches any of our
+# code: `webrtc-vad` compiles libfvad from C and needs the MSVC CRT headers,
+# which do not exist on a Mac. Cross-checking is not available, so a runner per
+# platform is not thoroughness — it is the only way either half is compiled at all.
+#
+# Deliberately separate from `check.yml` rather than a job inside it: this one
+# needs a Rust toolchain and several minutes of native build, and a slow gate on
+# every push is a gate people learn to ignore.
+
+on:
+  push:
+    paths:
+      - 'native-module/**'
+      - 'scripts/build-native.js'
+      - 'scripts/rebuild-native-*'
+      - '.github/workflows/native.yml'
+  pull_request:
+    paths:
+      - 'native-module/**'
+      - '.github/workflows/native.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Never cancel the other platform on one failure. The whole point is to
+      # learn about both, and the interesting result is usually "one of them".
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native-module
+
+      # `cidre` shells out to `xcodebuild`, which fails against a Command Line
+      # Tools install with a message that reads like a missing dependency. The
+      # runners ship full Xcode; this makes the selection explicit rather than
+      # inherited, so a runner image change surfaces here and not as a mystery.
+      - name: Select Xcode
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      # The cdylib is what the app loads. Building it compiles the whole
+      # per-platform capture path — `speaker/macos.rs` or `speaker/windows.rs` —
+      # which is the thing this workflow exists to prove.
+      - name: Build
+        working-directory: native-module
+        run: cargo build --release --lib
+
+      - name: Warnings are worth reading on the platform you do not develop on
+        working-directory: native-module
+        run: cargo clippy --release --lib -- -W clippy::all
+        continue-on-error: true

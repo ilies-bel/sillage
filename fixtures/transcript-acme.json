@@ -1,0 +1,284 @@
+{
+  "name": "acme-industries-renfort-java",
+  "note": "Synthetic. No real client conversation is stored in this repository.",
+  "context": {
+    "eventId": null,
+    "subject": "Acme Industries — besoin de renfort Java",
+    "agenda": "Point sur le besoin de renfort de l'équipe plateforme.",
+    "organizer": {
+      "name": "Julien Marchand",
+      "email": "julien.marchand@esn-exemple.fr",
+      "type": "required",
+      "response": "organizer"
+    },
+    "attendees": [
+      {
+        "name": "Camille Le Roy",
+        "email": "camille.leroy@acme-industries.fr",
+        "type": "required",
+        "response": "accepted"
+      }
+    ],
+    "onlineMeetingJoinUrl": null,
+    "categories": [],
+    "sensitivity": "normal",
+    "scheduledStart": 1764000000000,
+    "scheduledEnd": 1764003600000,
+    "seriesMasterId": null,
+    "timeZone": "Europe/Paris"
+  },
+  "repEmail": "julien.marchand@esn-exemple.fr",
+  "notes": "besoin renfort plateforme\n2 dev java senior\nregie\n520\ndemarrage sept\n6 mois\nrelancer avec 2 CV vendredi",
+  "segments": [
+    {
+      "id": "s001",
+      "channel": "rep",
+      "text": "Bonjour Camille, merci de m'accorder ce créneau. On s'était dit qu'on ferait un point sur vos besoins de renfort.",
+      "startMs": 0,
+      "endMs": 7006,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000007006
+    },
+    {
+      "id": "s002",
+      "channel": "far",
+      "text": "Bonjour. Oui, avec plaisir. Alors pour vous situer, on est en pleine migration de notre socle applicatif.",
+      "startMs": 7406,
+      "endMs": 13916,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000013916
+    },
+    {
+      "id": "s003",
+      "channel": "far",
+      "text": "On passe de Spring Boot 2 à Spring Boot 3, et l'équipe plateforme est sous l'eau.",
+      "startMs": 14316,
+      "endMs": 19338,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000019338
+    },
+    {
+      "id": "s004",
+      "channel": "rep",
+      "text": "D'accord. Vous êtes combien sur l'équipe aujourd'hui ?",
+      "startMs": 19738,
+      "endMs": 23086,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000023086
+    },
+    {
+      "id": "s005",
+      "channel": "far",
+      "text": "Six développeurs, dont deux qui partent en fin d'année. Donc il nous faut du renfort, clairement.",
+      "startMs": 23486,
+      "endMs": 29500,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000029500
+    },
+    {
+      "id": "s006",
+      "channel": "rep",
+      "text": "Sur quels profils exactement ?",
+      "startMs": 29900,
+      "endMs": 32400,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000032400
+    },
+    {
+      "id": "s007",
+      "channel": "far",
+      "text": "On a besoin de deux développeurs Java seniors. Vraiment seniors, hein, pas des profils intermédiaires.",
+      "startMs": 32800,
+      "endMs": 39124,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000039124
+    },
+    {
+      "id": "s008",
+      "channel": "far",
+      "text": "Il faut qu'ils soient autonomes sur Spring, sur Kafka aussi parce qu'on a beaucoup d'événementiel.",
+      "startMs": 39524,
+      "endMs": 45600,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000045600
+    },
+    {
+      "id": "s009",
+      "channel": "rep",
+      "text": "Java, Spring, Kafka, deux profils seniors. Et sur le mode de collaboration, vous partez sur quoi ?",
+      "startMs": 46000,
+      "endMs": 52076,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000052076
+    },
+    {
+      "id": "s010",
+      "channel": "far",
+      "text": "Plutôt de la régie. On a déjà essayé le forfait sur un autre projet et franchement ça s'est mal passé.",
+      "startMs": 52476,
+      "endMs": 58800,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000058800
+    },
+    {
+      "id": "s011",
+      "channel": "far",
+      "text": "On préfère garder la main sur le pilotage.",
+      "startMs": 59200,
+      "endMs": 61804,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000061804
+    },
+    {
+      "id": "s012",
+      "channel": "rep",
+      "text": "Très bien, la régie c'est ce qu'on fait le plus. Sur les tarifs, vous avez une enveloppe en tête ?",
+      "startMs": 62204,
+      "endMs": 68280,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000068280
+    },
+    {
+      "id": "s013",
+      "channel": "far",
+      "text": "On est plutôt sur un TJM de 520 euros. C'est ce qu'on pratique avec nos autres partenaires.",
+      "startMs": 68680,
+      "endMs": 74322,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000074322
+    },
+    {
+      "id": "s014",
+      "channel": "rep",
+      "text": "520, d'accord. Sur des profils vraiment seniors avec Kafka on est souvent un peu au-dessus, mais c'est jouable.",
+      "startMs": 74722,
+      "endMs": 81604,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000081604
+    },
+    {
+      "id": "s015",
+      "channel": "far",
+      "text": "Il faudrait rester dans cette fourchette, oui. Au-delà ça ne passera pas en interne.",
+      "startMs": 82004,
+      "endMs": 87212,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000087212
+    },
+    {
+      "id": "s016",
+      "channel": "rep",
+      "text": "Entendu. Et sur le démarrage, vous visez quand ?",
+      "startMs": 87612,
+      "endMs": 90588,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000090588
+    },
+    {
+      "id": "s017",
+      "channel": "far",
+      "text": "Idéalement septembre. On a le budget qui se débloque à la rentrée.",
+      "startMs": 90988,
+      "endMs": 95080,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000095080
+    },
+    {
+      "id": "s018",
+      "channel": "rep",
+      "text": "Septembre, c'est faisable. Sur quelle durée ?",
+      "startMs": 95480,
+      "endMs": 98270,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000098270
+    },
+    {
+      "id": "s019",
+      "channel": "far",
+      "text": "Six mois renouvelables. Si ça se passe bien on prolonge, on l'a déjà fait.",
+      "startMs": 98670,
+      "endMs": 103258,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000103258
+    },
+    {
+      "id": "s020",
+      "channel": "far",
+      "text": "Par contre je vous préviens, le délai nous inquiète un peu. On a eu de mauvaises expériences avec des ESN qui promettent des profils sous quinze jours et qui mettent deux mois.",
+      "startMs": 103658,
+      "endMs": 114570,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000114570
+    },
+    {
+      "id": "s021",
+      "channel": "rep",
+      "text": "Je comprends. De notre côté on ne présente que des profils déjà disponibles ou en fin de mission. Je peux vous envoyer deux CV cette semaine.",
+      "startMs": 114970,
+      "endMs": 123712,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000123712
+    },
+    {
+      "id": "s022",
+      "channel": "far",
+      "text": "Ça me va. Envoyez-moi ça, je fais suivre à Thomas qui est le manager de l'équipe.",
+      "startMs": 124112,
+      "endMs": 129134,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000129134
+    },
+    {
+      "id": "s023",
+      "channel": "rep",
+      "text": "Parfait. Je vous envoie deux CV vendredi au plus tard, et on cale un entretien technique la semaine suivante.",
+      "startMs": 129534,
+      "endMs": 136292,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000136292
+    },
+    {
+      "id": "s024",
+      "channel": "far",
+      "text": "Très bien. Merci beaucoup.",
+      "startMs": 136692,
+      "endMs": 139192,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000139192
+    },
+    {
+      "id": "s025",
+      "channel": "rep",
+      "text": "Merci à vous, bonne journée.",
+      "startMs": 139592,
+      "endMs": 142092,
+      "isFinal": true,
+      "provider": "fixture",
+      "receivedAt": 1764000142092
+    }
+  ]
+}

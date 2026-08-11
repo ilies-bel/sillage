@@ -1,0 +1,173 @@
+/*
+ * The design system. VISION.md §6 is the specification; this file is its only
+ * transcription, and `tokens.test.ts` fails the build if the two drift.
+ *
+ * Every hex in the product lives here. A colour written anywhere else is a
+ * colour nobody can change later — `scripts/check-tokens.mjs` enforces that.
+ *
+ * The palette is built on the client's own brand values, read off objectware.fr:
+ * blue `#4dc2fb`, pale blue `#c9eafb`, orange `#ff8500`. Cool paper rather than
+ * the earlier cream, because the brand is a cool blue and cyan on warm cream
+ * fights itself.
+ *
+ * `#4dc2fb` is 2.01:1 on white. It cannot carry text, icons, borders or a state
+ * dot — it is a fill and a wash, nothing else. That single fact is why there is
+ * a six-step ramp here and not one brand colour: everything that has to be read
+ * comes from a darkened step of the same 200° hue.
+ *
+ * **Every value that ever holds text carries its measured contrast ratio in a
+ * comment beside it.** A colour that has not been measured has not been
+ * approved (VISION.md §6), and `tokens.test.ts` recomputes every ratio written
+ * below — a stale comment fails the suite.
+ *
+ * There is no dark theme and there is not going to be one — the palette *is* the
+ * product's temperature, and a second one would be a second design to keep
+ * honest.
+ */
+
+:root {
+  /*
+   * Brand ramp — hue 200, darkened in steps, measured against white. Every
+   * ratio below is stated with the surface it was measured against, because a
+   * ratio with an implied reference is a ratio nobody can re-check.
+   */
+  --brand-50: #ebf8ff; /*  1.08:1 on #ffffff — page wash, selected row */
+  --brand-100: #c9eafb; /*  1.26:1 on #ffffff — their tint: section fills, chips */
+  --brand-300: #4dc2fb; /*  2.01:1 on #ffffff — their blue: large fills ONLY, never text */
+  --brand-500: #059ce5; /*  3.05:1 on #ffffff — borders, focus rings, non-text UI, dots */
+  --brand-700: #036696; /*  6.28:1 on #ffffff — links, selected labels, brand text */
+  --brand-900: #02334b; /* 13.31:1 on #ffffff — headings on a brand tint */
+
+  /* canvas & surfaces — cool paper, not white */
+  --bg-canvas: #f7f9fb;
+  --bg-card: #fdfefe;
+  --bg-card-soft: #f9fbfd;
+  --bg-inner: #ffffff;
+  --bg-subtle: #eef3f7;
+  --border-subtle: #e2e9ef;
+  --border-card: #d3dee6;
+
+  /*
+   * Text. Two ratios each: against #ffffff (`--bg-inner`, the notepad) and
+   * against #eef3f7 (`--bg-subtle`, the darkest surface any of them lands on).
+   * The second is the one that decides whether a token is usable, and it is the
+   * reason `--text-muted` is not the #7d8c98 the first draft of the palette
+   * carried: at 3.09:1 on `--bg-subtle` it failed AA at every size it is used.
+   */
+  --text-strong: #14202a; /* 16.54:1 on #ffffff · 14.80:1 on #eef3f7 */
+  --text-body: #4a5a67; /*  7.12:1 on #ffffff ·  6.37:1 on #eef3f7 */
+  --text-muted: #62707b; /*  5.09:1 on #ffffff ·  4.56:1 on #eef3f7 */
+
+  /*
+   * Semantic. Two accents, two jobs, and they must not be confused: orange means
+   * "this meeting is armed or recording" and nothing else — never a selected
+   * tab, a primary button or a link. Brand blue marks selection and navigation.
+   */
+  --accent: #ff8500; /*  2.44:1 on #ffffff — FILL AND DOT ONLY, never text */
+  --success: #2f855a; /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
+  --warn: #b45309; /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
+  --danger: #c53030; /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
+
+  /*
+   * Provenance by colour (DEC-5), Granola's convention: what the rep typed is
+   * `--text-strong`, what the agent wrote at meeting end is `--text-muted`. No
+   * badges and no icons — colour alone. These two aliases exist so the editor
+   * never has to know which literal token means "mine".
+   */
+  --ink-rep: var(--text-strong);
+  --ink-agent: var(--text-muted);
+
+  /*
+   * The input meter's dropped-audio bar — a reading the transcriber's speech
+   * floor throws away (`src/screens/session/LevelMeter.tsx`). Grey rather than
+   * a ramp step because it is not a second measurement: it is the same
+   * measurement, marked as unusable.
+   *
+   * A **token** rather than the `bg-muted/30` this used to be, and that is the
+   * bug it was written to fix. Tailwind cannot recompute alpha on a bare
+   * `var()` — tailwind.config.js says so at the top — so `bg-muted/30` compiled
+   * to `rgba(0, 0, 0, 0)` and every below-floor bar was drawn *transparent*.
+   * The one state the meter exists to show, a microphone too quiet to be
+   * transcribed, rendered as an empty strip indistinguishable from silence.
+   *
+   * Derived, not a hex: a new literal would have to be argued for in
+   * VISION.md §6 before `tokens.test.ts` would accept it, and there is nothing
+   * to argue — this is `--text-muted`, weakened.
+   */
+  --meter-dropped: color-mix(in srgb, var(--text-muted) 32%, transparent);
+
+  /*
+   * Spacing — five steps, and each one is named after the thing it spaces
+   * rather than after a number. Derived from what the screens already repeat
+   * (row padding, the gap between a label and the list under it, the screen
+   * gutter), not from a generic 4/8/16 ladder that would match nothing. An
+   * unused token is a token that will drift, so there are five and not twelve.
+   */
+  --space-tight: 6px;
+  --space-inline: 12px;
+  --space-row: 16px;
+  --space-block: 20px;
+  --space-gutter: 32px;
+
+  /*
+   * Type scale — Inter, the five sizes actually on screen. `--type-ui` is the
+   * workhorse; `--type-label` is the uppercase letterspaced section header;
+   * `--type-display` is where Fraunces and `--display-tracking` start applying.
+   * Times, durations and money are `font-variant-numeric: tabular-nums` at any
+   * of these sizes — a column of figures that reflows as it updates is a column
+   * nobody can scan.
+   */
+  --type-label: 10px;
+  --type-meta: 11px;
+  --type-ui: 12px;
+  --type-copy: 14px;
+  --type-display: 28px;
+
+  /* geometry — radius 10–14px, borders 1px, shadows barely there */
+  --radius-sm: 10px;
+  --radius: 12px;
+  --radius-lg: 14px;
+  --border-width: 1px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
+
+  /* type faces */
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --display-weight: 500;
+  --display-tracking: -1.5px;
+
+  /*
+   * Motion: ≤150ms, ease-out, opacity and 2–4px translate only. Nothing
+   * bounces. The signal rail in particular never animates at all (DEC-14) —
+   * a chip that moves during a call is a chip that steals a glance.
+   */
+  --motion-fast: 90ms;
+  --motion: 150ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /*
+   * Paper grain, for quiet surfaces only — the splash, an empty transcript pane,
+   * an empty signal rail, an empty-state panel. Applied with `.grain` in
+   * `index.css`; see that rule for where it must not go.
+   *
+   * A 64px tiled PNG rather than `feTurbulence`: the filter rasterises over the
+   * whole painted area every time that area changes, and a tile is decoded once
+   * and repeated by the compositor for free. Four alpha levels of black
+   * (0, 3, 6, 9 / 255) — on paper that is at most −9/255 of luminance, which is
+   * texture at arm's length and invisible at reading distance.
+   */
+  --grain: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAgMAAADXB5lNAAAADFBMVEUAAAAAAAAAAAAAAAA16TeWAAAABHRSTlMAAwYJnlPH4QAABEtJREFUeNoBQAS/+wBLEWnQcv/l7kh/FjSo4cPxACwNwEVYL1a7E9a1IQeymJEAYcszzWOAlvXq8NpDw+hKDgAX2hSMhEXGmGqtwrfrPLVbAFhW2uTgGPskT3SzLTKjw0kABxh8PO5IOvc0YFj8mRas2gAclD7FMHzMlqQLvn/8ItdUAHB5Q+xCXbzGAvVsbLqd8TgAuBv3v/o6ZJUlNlVVZrZgeABXgH81ihiX2iJ1OAF9vgydAHTSG7uZDeRvz+0DBajaTwYA7JI9aJ+BMlRgLGzYsALxwACQeBWfGLCAcp7Zj2eG7tLcAFCaA9X9b+GPzosW28QsJUUA3Rlz3SN/0fby8cp8WU77rwA8X1EUNJ3ypfTOCbr5uIDpAFgH8MfZjM9fW5kfJToscWkAvKuXkuooykEnyqNIVw311wBP/zTy2mwIBwlmaD3J4GC8AEecvveMQ521rkIwHBosoxoAM9HJtcrQk67Q5O51CDO+6wCyP7s8GFJAT3A9rDYoMQsMAMiZSJ/hijDQhe46RRA6L7QAfEIHsgSn+Fx/4VoeEff5mQBr26SHmXFQ9ZNOT7k6kV7bAC+6HihL7iI9lKBqCBkGsFEAx24OJzIsvK1xZLtedYowtwAZnS/PKZvD0NJPhCxRC/cdAP7kxrfgDjjhLwoIj9Z1nUYAJj5JmC/EBuFI1d2sOhzU8AC5j3kJeBVHfYchXOW2BpOlAEXIOpbixw2i31d6gGR+gnEAndeOTGVEhYKQd3qqmPCDqQA9CG95+0qZk70RgiorzOOyAK4tzjY+p68xnbuSEubZqBIAQAWmqR53AHNyBzRYritVAQDFyfoe0FJiAMXUPJBy/LC4APoI/xJ5w1txKrZe9FDqdDEAgNjp+tw1VyAepLOBzy0nfgDsh5u7fyLhKOnlFo2wOKLUAECpFtP52LSfp09TwmzLKWcARGP+AgM7RYTzMUIgdH5QJgANhhOlyduwkB+iR3a0c0+BABwynh6iHrq18oEaFyDK1CkA6FLKfSbK4Jmieh1LynGNJgDJdNAjU326rHzuHEsNxLQgAHf6SruHIV64nf22UNRFehsAoQK17MdgVyHsFDVXX77F5wBRkhnmWfK8sk27MTYPehQ7AACdz06HE0xOFw1MA7QE1bsAYmA7rYILMObVK+BY/yvoYACaPGo3q2jzPwCPZ+idW2IXAF/PebKeC4n4DgEvAiIEljsA3q4GU/NMOaOHxSmdUZHCggAagHZL5+hAms5SDuaae7j9ANSSD3HXVoGSgypM8LtZP2oAdqvxpni4m7cvt5/h4i9YiQBLwmx3xxaJFuMQT1MlN9mDALeHSQO2Nt6Mu8LrSW4J9BMAMDcrgDsLAQRuFdgoMCutjAAuu/GVKUhwoBK1eqXsRhCZAPTKMD6w8Lz32IK5JjWBfNUAT9uVtPnxTvKKL+82/wyWLAC3Ua+0XqIkg1ARm7VfFuNtQLf0u8SiVy8AAAAASUVORK5CYII=");
+}
+
+/*
+ * Respect the OS setting rather than asserting our motion is tasteful enough to
+ * be exempt. The durations collapse; nothing else changes, because nothing else
+ * depends on the animation having run.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion: 0ms;
+  }
+}
