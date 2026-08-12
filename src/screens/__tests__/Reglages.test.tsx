@@ -28,6 +28,7 @@ import {
   REQUIRED_CONNECTORS,
 } from '../../../electron/core/contracts/status.ts'
 import type { SettingsSnapshot } from '../../../electron/core/contracts/settings.ts'
+import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Reglages } from '../Reglages.tsx'
 
@@ -187,8 +188,23 @@ const mount = (over: Partial<SettingsSnapshot> = {}) => {
       path: `/tmp/diagnostics-${mode}.ndjson`,
       events: 3,
     }))
+    // Every mount answers this: the rail is drawn whatever section is open, and
+    // a channel with no responder rejects rather than resolving empty.
+    .when('update:status', () => updateStatus())
   return render(<Reglages onBack={() => {}} />)
 }
+
+const updateStatus = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
+  phase: 'idle',
+  currentVersion: '0.1.1',
+  availableVersion: null,
+  percent: null,
+  reason: null,
+  checkedAt: null,
+  installable: false,
+  blockedReason: null,
+  ...over,
+})
 
 /**
  * The click a rep makes in the left rail — scoped to the rail, because the rail
@@ -221,7 +237,13 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     const rail = await screen.findByRole('navigation', { name: 'Sections des réglages' })
 
     const labels = [...rail.querySelectorAll('button')].map((b) => b.textContent)
-    expect(labels).toEqual(['Transcription', 'Modèle de langage', 'Connecteurs', 'Diagnostics'])
+    expect(labels).toEqual([
+      'Transcription',
+      'Modèle de langage',
+      'Connecteurs',
+      'Mise à jour',
+      'Diagnostics',
+    ])
 
     // One current section, announced rather than merely tinted.
     const current = rail.querySelectorAll('[aria-current="page"]')
@@ -904,5 +926,127 @@ describe('DEC-34: the settings that are not secrets', () => {
     expect((within(form).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement).disabled).toBe(
       false,
     )
+  })
+})
+
+/**
+ * The update panel exists to restart the app under the rep, which makes it the
+ * most destructive control in the product. These test the refusals.
+ *
+ * `mount()` seeds a default `update:status`, so every test here overrides it
+ * *after* mounting and before opening the section — the panel is not in the DOM
+ * until the rail is clicked, so that is when its one read fires.
+ */
+describe('mise à jour', () => {
+  const openWith = async (over: Partial<UpdateStatus>) => {
+    bridge.when('update:status', () => updateStatus(over))
+    await open('Mise à jour')
+  }
+
+  test('the running version is named in every phase, including the one that cannot update', async () => {
+    mount()
+    await openWith({
+      phase: 'disabled',
+      reason: 'mise à jour automatique indisponible dans cette build',
+    })
+    expect(pane().getByText(/0\.1\.1/)).toBeTruthy()
+    expect(pane().getByText(/indisponible dans cette build/)).toBeTruthy()
+    // The lie this guards against: reporting "up to date" on a build that has
+    // no way of discovering otherwise.
+    expect(pane().queryByText(/est à jour/)).toBeNull()
+  })
+
+  test('an available version is not downloaded silently, and says what it will cost', async () => {
+    mount()
+    await openWith({ phase: 'available', availableVersion: '0.2.0' })
+    expect(pane().getByText(/0\.2\.0 disponible/)).toBeTruthy()
+    expect(pane().getByRole('button', { name: 'Télécharger' })).toBeTruthy()
+    expect(pane().getByText(/ne démarre pas pendant une réunion/)).toBeTruthy()
+  })
+
+  test('a staged update installs on one click when nothing is running', async () => {
+    let installs = 0
+    mount()
+    bridge.when('update:install', () => {
+      installs += 1
+      return { started: true, reason: null }
+    })
+    await openWith({ phase: 'ready', availableVersion: '0.2.0', installable: true })
+    const button = pane().getByRole('button', { name: 'Installer et redémarrer' })
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => button.click())
+    expect(installs).toBe(1)
+  })
+
+  /*
+   * The central one. A disabled control that does not say why is the dead
+   * affordance DEC-26 forbids, and here the reason decides what the rep does
+   * next: wait for a call to end, or go and validate a compte-rendu.
+   */
+  test('a meeting in progress disables the install and says so in the meeting’s own words', async () => {
+    mount()
+    await openWith({
+      phase: 'ready',
+      availableVersion: '0.2.0',
+      installable: false,
+      blockedReason: 'une réunion est en cours d’enregistrement',
+    })
+    const button = pane().getByRole('button', { name: 'Installer et redémarrer' })
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(pane().getByText('une réunion est en cours d’enregistrement')).toBeTruthy()
+    // Stated in the DOM and wired to the control, not parked in a `title`.
+    expect(button.getAttribute('aria-describedby')).toBeTruthy()
+  })
+
+  test('a refusal from the main process is surfaced, not swallowed', async () => {
+    mount()
+    // The race the renderer cannot see: a meeting started between paint and click.
+    bridge.when('update:install', () => ({
+      started: false,
+      reason: 'un envoi vers VerySwing est en cours',
+    }))
+    await openWith({ phase: 'ready', availableVersion: '0.2.0', installable: true })
+    await act(async () => {
+      pane().getByRole('button', { name: 'Installer et redémarrer' }).click()
+    })
+    const alert = await pane().findByRole('alert')
+    expect(alert.textContent).toBe('un envoi vers VerySwing est en cours')
+  })
+
+  test('the panel follows the session without being reopened', async () => {
+    mount()
+    await openWith({ phase: 'ready', availableVersion: '0.2.0', installable: true })
+    expect(
+      (pane().getByRole('button', { name: 'Installer et redémarrer' }) as HTMLButtonElement).disabled,
+    ).toBe(false)
+
+    // main.ts re-derives this on every session transition.
+    await act(async () => {
+      bridge.emit(
+        'update:changed',
+        updateStatus({
+          phase: 'ready',
+          availableVersion: '0.2.0',
+          installable: false,
+          blockedReason: 'une réunion est en cours d’enregistrement',
+        }),
+      )
+    })
+    await waitFor(() => {
+      expect(
+        (pane().getByRole('button', { name: 'Installer et redémarrer' }) as HTMLButtonElement).disabled,
+      ).toBe(true)
+    })
+  })
+
+  test('an unreachable update server is a stated error with a retry, never a crash', async () => {
+    mount()
+    bridge.when('update:check', () => updateStatus({ phase: 'idle', checkedAt: Date.now() }))
+    await openWith({ phase: 'error', reason: 'serveur de mise à jour injoignable' })
+    expect(pane().getByText('serveur de mise à jour injoignable')).toBeTruthy()
+    await act(async () => {
+      pane().getByRole('button', { name: 'Réessayer' }).click()
+    })
+    await waitFor(() => expect(pane().getByText(/est à jour/)).toBeTruthy())
   })
 })

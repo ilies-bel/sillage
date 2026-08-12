@@ -347,6 +347,19 @@ export class Orchestrator {
     return this.session(meetingId)?.state ?? 'idle'
   }
 
+  /**
+   * Every session the app is holding in memory, for `core/domain/updateGate.ts`.
+   *
+   * In-memory only, and that is the correct scope rather than a shortcut: a
+   * session is here because it was created or rehydrated this run, so anything
+   * with work genuinely in flight — recording, extracting, awaiting the rep's
+   * confirmation, draining the outbox — is necessarily in this map. A meeting
+   * finished last week sits in the log and blocks nothing.
+   */
+  liveStates(): readonly MeetingState[] {
+    return [...this.#sessions.values()].map((session) => session.state)
+  }
+
   /** Debounced from the editor at ~500ms (DEC-12). */
   saveDocument(meetingId: MeetingId, revision: number, doc: unknown): number {
     const session = this.session(meetingId)

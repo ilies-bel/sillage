@@ -84,14 +84,17 @@ import {
 } from '../ui/index.ts'
 import type { SectionNavItem, StateDotProps } from '../ui/index.ts'
 
-type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'diagnostics'
+type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'maj' | 'diagnostics'
 
 /** VISION.md §6 names them in this order: the two provider tables, then the
- *  connectors, then diagnostics. */
+ *  connectors, then diagnostics. Updates sit last but one — next to
+ *  diagnostics, which is where a tester looking for "what version am I on"
+ *  already goes. */
 const SECTIONS: readonly SectionNavItem<SectionId>[] = [
   { id: 'transcription', label: 'Transcription' },
   { id: 'llm', label: 'Modèle de langage' },
   { id: 'connecteurs', label: 'Connecteurs' },
+  { id: 'maj', label: 'Mise à jour' },
   { id: 'diagnostics', label: 'Diagnostics' },
 ]
 
@@ -296,6 +299,8 @@ export function Reglages({ onBack }: ReglagesProps) {
                 })
               }}
             />
+          ) : section === 'maj' ? (
+            <UpdatePanel />
           ) : (
             <DiagnosticsPanel retentionDays={snapshot.retention.diagnosticsDays} />
           )}
@@ -1179,6 +1184,173 @@ function Finding({ finding }: { finding: CapabilityFinding }) {
  * confirmation dialog — HR-10 says no modal chrome, and a dialog people learn
  * to dismiss is worse than a label people read.
  */
+/**
+ * « Mise à jour » (DEC-26, DEC-32).
+ *
+ * Three properties this panel has on purpose:
+ *
+ *  · **It always names the running version**, in every phase including the one
+ *    where updating is impossible. That line is the first thing a support
+ *    conversation asks for and it is not on screen anywhere else.
+ *  · **It never says « à jour » when it does not know.** A build with no update
+ *    metadata reports `disabled` and says so. Reporting "up to date" for a
+ *    build that cannot discover otherwise would be a lie told to precisely the
+ *    testers most likely to be running something stale.
+ *  · **The install button disables itself with the meeting's own words.** Not
+ *    "indisponible" — « une réunion est en cours d'enregistrement ». The rep
+ *    then knows whether to wait thirty seconds or thirty minutes.
+ */
+function UpdatePanel() {
+  const status = useInvoke('update:status', {})
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  // The main process pushes this on every updater change *and* on every session
+  // transition, so the button's availability tracks the meeting without a poll.
+  useBroadcast('update:changed', (payload) => status.set(payload))
+
+  const act = useCallback(
+    async (run: () => Promise<void>) => {
+      setBusy(true)
+      setFailure(null)
+      try {
+        await run()
+      } catch (error) {
+        setFailure(error instanceof Error ? error.message : 'opération impossible')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  if (status.state.status !== 'ready') {
+    return (
+      <section>
+        <SectionHeader>Mise à jour</SectionHeader>
+        <Lede>
+          {status.state.status === 'failed' ? status.state.reason : 'Lecture de l’état…'}
+        </Lede>
+      </section>
+    )
+  }
+
+  const update = status.state.value
+  const check = () =>
+    void act(async () => {
+      status.set(await invoke('update:check', {}))
+    })
+
+  return (
+    <section>
+      <SectionHeader>Mise à jour</SectionHeader>
+
+      <Lede>
+        Version installée&nbsp;: <span className="text-body font-medium">{update.currentVersion}</span>
+        {update.checkedAt ? ` — dernière vérification il y a ${formatAgo(update.checkedAt, Date.now())}` : null}
+      </Lede>
+
+      {update.phase === 'disabled' ? (
+        // Stated, not hidden. A tester on a build that cannot update itself
+        // needs to know that checking again will never change anything.
+        <p className="text-muted text-ui">
+          {update.reason ?? 'Cette version ne se met pas à jour automatiquement.'} Les nouvelles
+          versions se téléchargent depuis la page des versions du projet.
+        </p>
+      ) : null}
+
+      {update.phase === 'idle' ? (
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-body text-ui">Sillage est à jour.</p>
+          <Button onClick={check} {...unavailable(busy, 'Vérification en cours…')}>
+            Vérifier maintenant
+          </Button>
+        </div>
+      ) : null}
+
+      {update.phase === 'checking' ? <p className="text-muted text-ui">Recherche d’une mise à jour…</p> : null}
+
+      {update.phase === 'available' ? (
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-body text-ui">Version {update.availableVersion} disponible.</p>
+          <Button
+            variant="primary"
+            onClick={() =>
+              void act(async () => {
+                status.set(await invoke('update:download', {}))
+              })
+            }
+            {...unavailable(busy, 'Téléchargement en cours…')}
+          >
+            Télécharger
+          </Button>
+          {/*
+            Said before the click, not after. The download is most of half a
+            gigabyte and the app refuses to start one during a call — a rep who
+            presses this and sees nothing happen deserves to know why.
+          */}
+          <p className="text-muted max-w-prose text-meta">
+            Environ 550 Mo. Le téléchargement ne démarre pas pendant une réunion, pour ne pas
+            gêner l’appel en cours.
+          </p>
+        </div>
+      ) : null}
+
+      {update.phase === 'downloading' ? (
+        <p className="text-body text-ui" role="status">
+          Téléchargement… {update.percent ?? 0}&nbsp;%
+        </p>
+      ) : null}
+
+      {update.phase === 'ready' ? (
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-body text-ui">
+            Version {update.availableVersion} prête à installer.
+          </p>
+          <Button
+            variant="primary"
+            onClick={() =>
+              void act(async () => {
+                const outcome = await invoke('update:install', {})
+                // The app quits inside a successful install, so this only ever
+                // renders on a refusal — and then the reason is the point.
+                if (!outcome.started) setFailure(outcome.reason ?? 'installation impossible')
+              })
+            }
+            {...unavailable(
+              busy || !update.installable,
+              busy
+                ? 'Installation en cours…'
+                : (update.blockedReason ?? 'installation impossible pour le moment'),
+            )}
+          >
+            Installer et redémarrer
+          </Button>
+          <p className="text-muted max-w-prose text-meta">
+            Sillage se ferme, s’installe et se rouvre. Vos réunions, vos notes et vos clés sont
+            conservées.
+          </p>
+        </div>
+      ) : null}
+
+      {update.phase === 'error' ? (
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-body text-ui">{update.reason}</p>
+          <Button onClick={check} {...unavailable(busy, 'Vérification en cours…')}>
+            Réessayer
+          </Button>
+        </div>
+      ) : null}
+
+      {failure ? (
+        <p role="alert" className="text-danger mt-3 text-ui">
+          {failure}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
   const recent = useInvoke('diagnostics:recent', { limit: 30 })
   const [exported, setExported] = useState<string | null>(null)

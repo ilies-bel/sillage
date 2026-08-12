@@ -136,6 +136,7 @@ jobs:
           path: |
             release/*.exe
             release/*.exe.blockmap
+            release/latest.yml
           compression-level: 0
           if-no-files-found: error
 
@@ -164,8 +165,31 @@ jobs:
           Le modèle de transcription locale est inclus dans l'installateur : aucun
           téléchargement au premier lancement. Une clé LLM est à saisir dans Réglages pour
           obtenir un compte-rendu ; la capture, le transcript et les notes fonctionnent sans.
+
+          **Mise à jour automatique** — la version installée se met à jour toute seule.
+          *Réglages ▸ Mise à jour* indique la version en cours et propose la suivante quand
+          elle existe. Rien ne se télécharge ni ne s'installe pendant une réunion : ni
+          pendant l'enregistrement, ni tant qu'un compte-rendu attend votre validation ou
+          qu'un envoi vers VerySwing est en cours. Réinstaller par-dessus fonctionne aussi et
+          conserve réunions, notes et clés.
+
+          La version **portable ne se met pas à jour** — les métadonnées de mise à jour ne
+          décrivent que l'installateur. Retéléchargez-la depuis cette page.
           EOF
-          gh release create "${GITHUB_REF_NAME}" release/*.exe \
+          # `latest.yml` and the blockmaps are what make this an *update* rather
+          # than a download. electron-updater polls `latest.yml` on this release
+          # and refuses to act without it; the blockmap is what lets it fetch
+          # only the changed blocks instead of 559 MB — which matters here more
+          # than it usually would, because most of that figure is a Whisper
+          # checkpoint pinned by a lock file that rarely moves.
+          #
+          # Only the NSIS installer participates: electron-builder writes update
+          # metadata for `nsis` targets and for nothing else, and `main.ts`
+          # disables updating in the portable build for that exact reason.
+          gh release create "${GITHUB_REF_NAME}" \
+            release/*.exe \
+            release/*.exe.blockmap \
+            release/latest.yml \
             --title "Sillage ${GITHUB_REF_NAME}" \
             --prerelease \
             --notes-file release-notes.md

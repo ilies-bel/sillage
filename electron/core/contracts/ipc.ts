@@ -35,6 +35,7 @@ import { ModelProgressSchema, ModelSectionSchema } from './models.ts'
 import { BootStateSchema } from './boot.ts'
 import { EnhancementStatusSchema } from './extraction.ts'
 import { RecipeIdSchema } from './recipes.ts'
+import { UpdateStatusSchema } from './update.ts'
 
 /**
  * Today's calendar and what the app is currently offering to record.
@@ -509,6 +510,48 @@ export const invokeChannels = {
    * download, which is the state this screen was designed around.
    */
   'boot:state': { request: z.object({}), response: BootStateSchema },
+
+  /**
+   * What Réglages draws under « Mise à jour ».
+   *
+   * `installable` is recomputed on every read rather than cached, because it
+   * depends on the session and the session moves without the updater moving.
+   * Réglages reloads this on `session:changed` for the same reason.
+   */
+  'update:status': { request: z.object({}), response: UpdateStatusSchema },
+
+  /**
+   * Check now, because the rep asked.
+   *
+   * The background loop in `main.ts` already checks on its own schedule; this
+   * exists for the tester who has just been told a build is out and does not
+   * want to wait for the next tick. Resolves to the state *after* the check —
+   * including `error`, which is a legitimate answer and not a rejected call.
+   */
+  'update:check': { request: z.object({}), response: UpdateStatusSchema },
+
+  /**
+   * Download the staged version, on request.
+   *
+   * Refused while a meeting holds unfinished work, and the refusal carries the
+   * reason: half a gigabyte crossing the wire during a call is a way to damage
+   * a meeting without touching the capture path (DEC-26).
+   */
+  'update:download': { request: z.object({}), response: UpdateStatusSchema },
+
+  /**
+   * Quit and install. **The only channel here that can end the process.**
+   *
+   * Re-checks the update gate on the main side before acting, and returns
+   * `{ started: false, reason }` when it refuses. The renderer's `installable`
+   * is a few milliseconds stale by definition — a meeting can begin between the
+   * paint and the click — so the renderer's copy decides what the button looks
+   * like and this decides what happens.
+   */
+  'update:install': {
+    request: z.object({}),
+    response: z.object({ started: z.boolean(), reason: z.string().nullable() }),
+  },
 } as const
 
 export type InvokeChannel = keyof typeof invokeChannels
@@ -586,6 +629,15 @@ export const broadcastChannels = {
    * was dropped while the bytes kept arriving. A download belongs to the app.
    */
   'models:progress': ModelProgressSchema,
+  /**
+   * The updater's state, whenever it moves.
+   *
+   * Carries `installable` like the invoke does, so a screen that is already
+   * open does not have to ask again to know whether its button may act. The
+   * gate is evaluated at broadcast time, which is why `main.ts` also re-emits
+   * this on `session:changed`: the state did not move, but the answer did.
+   */
+  'update:changed': UpdateStatusSchema,
 } as const
 
 export type BroadcastChannel = keyof typeof broadcastChannels
