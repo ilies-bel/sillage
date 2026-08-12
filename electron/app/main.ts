@@ -1166,6 +1166,9 @@ const boot = async (): Promise<void> => {
           detail: {
             model: model ?? DEFAULT_MODEL_ID,
             error: error instanceof Error ? error.message : String(error),
+            // The memory gate attaches what it measured here. Without it a
+            // refusal is just a sentence, and the sentence was wrong once.
+            ...(error instanceof Error && error.cause ? { cause: error.cause } : {}),
           },
         })
       },
