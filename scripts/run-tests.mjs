@@ -77,9 +77,32 @@ if (deferred.length > 0) {
   console.log('  they load their subject from dist-electron/, which no longer holds it\n')
 }
 
+/**
+ * A hanging test must fail, not run forever.
+ *
+ * Node's `--test-timeout` defaults to Infinity, so a test that awaits something
+ * that never settles takes the whole suite with it — and `npm test` is the gate
+ * (`check.yml`), which means the gate does not go red, it goes *nowhere*. That
+ * is strictly worse than a failure: a red run names a test, a hung one burns
+ * the job's six-hour ceiling and reports nothing. It happened on
+ * `localWhisper.test.ts`'s two-channel test, which never lets its fake worker
+ * become ready, and cost two ~6h runs before anyone read the queue.
+ *
+ * 30 s per *test*, not per file — comfortably above the slowest real one here
+ * (a few deliberately wait ~10 s on drain and load-failure paths) and far below
+ * anything that reads as "stuck". Raise it for a genuinely slow test by passing
+ * `{ timeout }` to that `test()`, which keeps the budget next to the reason.
+ */
+const TEST_TIMEOUT_MS = 30_000
+
 const result = spawnSync(
   process.execPath,
-  ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--test', ...files],
+  [
+    '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
+    `--test-timeout=${TEST_TIMEOUT_MS}`,
+    '--test',
+    ...files,
+  ],
   { cwd: ROOT, stdio: 'inherit' },
 )
 
