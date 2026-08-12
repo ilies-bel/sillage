@@ -17,6 +17,7 @@
     "electron:dev": "npm run build && npm run build:electron && cross-env NODE_ENV=development electron .",
     "record": "npm run build:electron && cross-env SILLAGE_DEV_RECORD=1 electron .",
     "electron:build": "npm run build:electron && cross-env NODE_ENV=production electron .",
+    "preapp:dev": "node scripts/prune-logs.mjs",
     "app:dev": "concurrently --kill-others --kill-signal SIGKILL \"npm run dev -- --port 5180 --strictPort\" \"wait-on http://localhost:5180 && npm run electron:dev\"",
     "app:build": "node scripts/package-app.mjs",
     "app:build:signed": "node scripts/package-app.mjs --signed",
