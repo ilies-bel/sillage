@@ -61,6 +61,25 @@ const step = (command, args, env) => {
  */
 const nativeEnv = process.platform === 'darwin' ? { SILLAGE_BUILD_ALL_MAC_ARCHES: '1' } : {}
 
+/*
+ * The Whisper weights, first — before anything long and before anything
+ * network-free.
+ *
+ * `resources/whisper-models/` is gitignored (466 MB is a bill every clone pays
+ * forever) but `build.extraResources` copies out of it, so on a fresh checkout
+ * the installer would be built with no local checkpoint inside it. That is not
+ * a missing extra: local transcription is the *default* engine (DEC-30), and
+ * the deployment this ships to may have huggingface.co blocked outright, so a
+ * client machine cannot repair the omission later. A build that silently
+ * produces that installer is worse than one that stops here.
+ *
+ * It belongs in this runner rather than in a README step for the same reason
+ * everything else in this file does: the release is built on a machine nobody
+ * is watching. The fetch is idempotent and hash-verified against
+ * `scripts/whisper-model.lock.json`, so a second run costs a checksum pass.
+ */
+step('npm', ['run', 'whisper:fetch'])
+
 step('npm', ['run', 'build'])
 step('npm', ['run', 'typecheck:electron'])
 step('npm', ['run', 'build:electron'])
