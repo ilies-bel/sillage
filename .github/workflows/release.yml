@@ -1,0 +1,142 @@
+name: Windows installer
+
+# The thing a rep can actually download (HR-2).
+#
+# WHY THIS RUNS ON A WINDOWS RUNNER AND NOT ON THE MAINTAINER'S MAC
+#
+# It is not a preference, and not thoroughness. The installer cannot be produced
+# from macOS at all, for three independent reasons — fixing any one of them
+# leaves the other two:
+#
+#   1. `native-module` is Rust behind napi-rs, and `scripts/build-native.js`
+#      builds only the host target off darwin. Cross-compiling to
+#      `x86_64-pc-windows-msvc` from a Mac fails inside `webrtc-vad`, which
+#      builds libfvad from C and wants the MSVC CRT headers — the same wall
+#      IMPLEMENTATION.md step 0 hit with `cargo check`.
+#   2. `sharp` resolves its binary through optional deps, so a macOS
+#      `npm install` fetches `@img/sharp-darwin-arm64` and nothing else. The
+#      win32 slice only lands on an install that runs on Windows.
+#   3. `keytar` ships one compiled binary per install; the win32 prebuild is
+#      likewise only fetched there.
+#
+# `native.yml` compiles `speaker/windows.rs` on every touch of the crate, which
+# proves it builds. It does not produce a `.node`, and it does not produce an
+# installer. This does both.
+#
+# WHAT THIS DELIBERATELY DOES NOT DO
+#
+# It does not sign. `electron-builder.signed.cjs` is a macOS Developer ID +
+# notarisation config with no `win` section, and no certificate exists yet. The
+# NSIS output is therefore unsigned and every tester meets SmartScreen's
+# "unknown publisher" wall once. That is a decision to take with a certificate
+# in hand, not a gap to paper over here — so the release body says so out loud
+# rather than letting each tester discover it alone.
+#
+# It also does not re-run the suite: `check.yml` runs on every push, including
+# the tag push that triggers this.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # only used by the tagged-release step below
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    # Rust from cold, ~500 MB of weights, and an electron-builder pack. The
+    # default 360 is generous; this bounds a hang without truncating a slow run.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native-module
+
+      # The weights are gitignored and pinned by a lock file, so the cache key
+      # is that lock file: a deliberate re-pin (`--write-lock`) misses the cache
+      # and refetches, and nothing else does. Worth caching rather than
+      # refetching — it is the largest single download in the build, and the Hub
+      # is the one dependency here with no SLA.
+      - name: Cache Whisper weights
+        uses: actions/cache@v4
+        with:
+          path: resources/whisper-models
+          key: whisper-${{ hashFiles('scripts/whisper-model.lock.json') }}
+
+      # Not `--ignore-scripts`, unlike check.yml. The whole point of this
+      # workflow is the postinstall chain: it is what rebuilds keytar against
+      # Electron's ABI and pulls the win32 binaries that reason 2 and 3 above
+      # describe.
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # `npm run dist` → scripts/package-app.mjs: whisper:fetch (cache hit =
+      # checksum pass), renderer build, electron typecheck, esbuild, the Rust
+      # cdylib, then electron-builder.
+      #
+      # No GH_TOKEN in this step's environment, on purpose: electron-builder
+      # auto-publishes to GitHub when it finds one, and publishing is the
+      # tagged step below, gated on a human having pushed a tag.
+      - name: Build installer
+        run: npm run dist
+
+      - name: What was produced
+        run: Get-ChildItem release -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+        shell: pwsh
+
+      # Always available to anyone with repo access, signed in, for 90 days.
+      # `compression-level: 0` because an NSIS installer is already compressed —
+      # zipping it again spends minutes to save nothing.
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: sillage-windows-x64
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+          compression-level: 0
+          if-no-files-found: error
+
+      # A tag, and only a tag, produces a public direct-download URL — this
+      # repository is public, so this step is the moment the installer becomes
+      # downloadable by anyone. Marked a prerelease while it is unsigned.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          # A quoted `--notes` would carry this file's YAML indentation into the
+          # markdown, and ten leading spaces is a code block. The heredoc is
+          # dedented by the block scalar, so what is written is what renders.
+          cat > release-notes.md <<'EOF'
+          Build de test Windows (x64), **non signée**.
+
+          Windows affichera « Windows a protégé votre ordinateur » au premier lancement :
+          *Informations complémentaires* → *Exécuter quand même*. C'est attendu tant qu'il n'y a
+          pas de certificat de signature.
+
+          - `Sillage-Setup-*.exe` — installateur, pas de droits administrateur requis
+          - `Sillage-*-portable.exe` — à lancer sans installer
+
+          Le modèle de transcription locale est inclus dans l'installateur : aucun
+          téléchargement au premier lancement. Une clé LLM est à saisir dans Réglages pour
+          obtenir un compte-rendu ; la capture, le transcript et les notes fonctionnent sans.
+          EOF
+          gh release create "${GITHUB_REF_NAME}" release/*.exe \
+            --title "Sillage ${GITHUB_REF_NAME}" \
+            --prerelease \
+            --notes-file release-notes.md
