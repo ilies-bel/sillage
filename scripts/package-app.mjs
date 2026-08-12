@@ -88,7 +88,25 @@ step('npm', ['run', 'build:native'], nativeEnv)
 
 let code = 1
 try {
-  code = run('npx', ['electron-builder', ...(signed ? ['--config', 'electron-builder.signed.cjs'] : [])])
+  /*
+   * `--publish never`, and it is load-bearing on exactly one path.
+   *
+   * electron-builder defaults to `onTagOrDraft`: on a tag build in CI it
+   * decides it should publish, looks for `GH_TOKEN`, and — not finding one —
+   * fails the build. Not skips. It had already written both installers when it
+   * did this, so the artefacts existed and the run was still red.
+   *
+   * Withholding the token is what *causes* that, so it cannot also be the
+   * defence. Publishing belongs to `release.yml`'s `gh release create`, which
+   * happens after the artefacts have been uploaded and only on a tag; this
+   * script's job ends at "the file exists".
+   */
+  code = run('npx', [
+    'electron-builder',
+    '--publish',
+    'never',
+    ...(signed ? ['--config', 'electron-builder.signed.cjs'] : []),
+  ])
 } finally {
   // The restore, in the `finally` the subshell was standing in for.
   console.log('\n> restoring host-arch native addons')

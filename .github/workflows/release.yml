@@ -77,8 +77,9 @@ jobs:
       # and refetches, and nothing else does. Worth caching rather than
       # refetching — it is the largest single download in the build, and the Hub
       # is the one dependency here with no SLA.
-      - name: Cache Whisper weights
-        uses: actions/cache@v4
+      - name: Restore Whisper weights
+        id: whisper
+        uses: actions/cache/restore@v4
         with:
           path: resources/whisper-models
           key: whisper-${{ hashFiles('scripts/whisper-model.lock.json') }}
@@ -103,6 +104,23 @@ jobs:
         # on a runner billed at 2× linux, and a wedged MSVC link or a stalled
         # Hub download should cost an hour, not the job ceiling.
         timeout-minutes: 60
+
+      # Saved separately from the restore, and `if: always()`, because the
+      # combined `actions/cache` only writes its cache in a post step that a
+      # failed job skips. The first two attempts at this release each redownloaded
+      # 488 MB from the Hub to fail in a later step for reasons that had nothing
+      # to do with the weights. Downloading them once per *pin* is the point;
+      # downloading them once per red build is just a bill.
+      #
+      # Safe to save a partial tree: `fetch-whisper-model.mjs` writes through a
+      # `.part` and renames only on a complete, length-checked body, then
+      # verifies every file against the lock on the next run.
+      - name: Save Whisper weights
+        if: always() && steps.whisper.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: resources/whisper-models
+          key: whisper-${{ hashFiles('scripts/whisper-model.lock.json') }}
 
       - name: What was produced
         run: Get-ChildItem release -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
