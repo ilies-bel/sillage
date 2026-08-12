@@ -34,8 +34,9 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
 import { installAppBridge } from './bridge-stub.mjs'
+import { fileURLToPath } from 'node:url'
 
-const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(path.join(REPO, 'package.json'))
 const { chromium } = require('playwright')
 

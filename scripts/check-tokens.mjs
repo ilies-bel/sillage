@@ -40,8 +40,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** `#abc`, `#abcd`, `#aabbcc`, `#aabbccdd` — and nothing that merely starts with them. */
 const HEX = /#[0-9a-fA-F]{3,8}\b/g
