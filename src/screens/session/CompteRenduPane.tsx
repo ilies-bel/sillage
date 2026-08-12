@@ -62,8 +62,16 @@ export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
         The way out, stated once. The rep reading this pane is one step from the
         gate, and the gate is where the editable copy lives — saying so here is
         cheaper than letting them discover that this text cannot be corrected.
+
+        `border-t` and not just a margin. This line is pinned under a scroller,
+        and with only `mt-2` between them the document's last visible line was
+        clipped hard against it: at the app's minimum window the compte-rendu
+        ended mid-sentence one line above « Lecture seule », and the two read as
+        one run of text — the caption looked like the document's closing line
+        rather than a note about it. A rule is what says the scroll ended and
+        something else began.
       */}
-      <p className="text-muted mt-2 shrink-0 text-meta">
+      <p className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
         Lecture seule — corrigez-le à l’étape « Relire et valider ».
       </p>
     </div>
