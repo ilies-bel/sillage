@@ -17,9 +17,23 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One live run per ref. Pushing three times in a minute used to leave three full
+# suites running; now the first two are cancelled the moment they are stale,
+# which is the single biggest saving available here — the gate is cheap, but it
+# is also the workflow that runs on literally every push.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The backstop, not the mechanism: `run-tests.mjs` passes `--test-timeout`
+    # so a stuck test fails and *names itself*. This only catches a hang that
+    # timeout cannot see — an npm install wedged on the network, a runner that
+    # stops responding. Two runs reached GitHub's six-hour default before this
+    # existed, having reported nothing at all.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -35,5 +49,8 @@ jobs:
       - name: Typecheck, boundaries, CRM containment
         run: npm run check
 
+      # Bounded tighter than the job, and separately, so the log says *which*
+      # phase stalled rather than only that the job was killed.
       - name: Test
         run: npm test
+        timeout-minutes: 12

@@ -367,9 +367,20 @@ test('two channels of one meeting share a single loaded model', async () => {
   // override consults it — so the two channels are built the way `index.ts`
   // builds them, through one shared engine handed the same fake.
   const engine = acquireEngine({ model: 'Xenova/whisper-small', modelsDir: '/m', stateDir: '/s', workerPath: '/w.js', spawn })
-  await engine.retain()
-  await engine.retain()
+
+  // Both holders have to be in flight before the fake worker can be told to
+  // become ready. `retain()` resolves on the worker's own `ready` (that is the
+  // whole point of the promise — loaded, not merely spawned), so awaiting the
+  // first one here waits forever for an event that nothing has yet been given
+  // the chance to emit: the worker is spawned *inside* the load this await is
+  // blocking on. That is what hung the suite, and with no `--test-timeout` it
+  // hung it silently for six hours at a time.
+  const first = engine.retain()
+  const second = engine.retain()
   await tick()
+  spawned[0]?.becomeReady()
+  await first
+  await second
 
   assert.equal(spawned.length, 1, `expected one worker for two channels, got ${spawned.length}`)
   assert.equal(engine.refs, 2)

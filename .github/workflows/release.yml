@@ -44,6 +44,13 @@ on:
 permissions:
   contents: write # only used by the tagged-release step below
 
+# Keyed on the ref, so a re-dispatch supersedes its own stale run while two
+# different tags never cancel each other — a half-published release is a worse
+# outcome than a duplicated one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -92,6 +99,10 @@ jobs:
       # tagged step below, gated on a human having pushed a tag.
       - name: Build installer
         run: npm run dist
+        # Bounded separately from the job: this is the only long step, it runs
+        # on a runner billed at 2× linux, and a wedged MSVC link or a stalled
+        # Hub download should cost an hour, not the job ceiling.
+        timeout-minutes: 60
 
       - name: What was produced
         run: Get-ChildItem release -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}

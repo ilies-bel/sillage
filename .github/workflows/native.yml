@@ -34,10 +34,21 @@ on:
       - '.github/workflows/native.yml'
   workflow_dispatch:
 
+# Same reasoning as check.yml, and it bites harder here: this one runs on
+# windows and macos runners, which bill at 2× and 10× the linux rate. A stale
+# run of it is the most expensive idle thing in the repository.
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Cold, this is a full Rust build of cidre or the windows crates; warm, the
+    # cache makes it minutes. 45 leaves room for a cache miss on both and still
+    # stops a wedged linker well short of the six-hour default.
+    timeout-minutes: 45
     strategy:
       # Never cancel the other platform on one failure. The whole point is to
       # learn about both, and the interesting result is usually "one of them".
