@@ -16,10 +16,18 @@ the `SILLAGE_*` development overrides. It never joins the call —
 it listens to the machine's own audio, transcribes, writes French notes, and after **one**
 human confirmation pushes to VerySwing CRM and drafts a follow-up in Outlook.
 
+**This repo is the only live checkout**, published at `github.com/ilies-bel/sillage`. Its
+history deliberately starts at one root commit: the predecessor
+(`Natively-AI-assistant/natively-cluely-ai-assistant`, branch `rebuild/sillage`) was
+archived to `~/project/archive/natively-cluely-ai-assistant` on 2026-08-12 and is not to be
+worked in. That archive is the only place the old history and the `.mars/` task database
+still exist. Do not copy code out of it without diffing first — everything there still says
+`notetaker`.
+
 **Current phase: rebuilding.** The repo previously held a real-time answer assistant. That
-product is being deleted (`scripts/demolish.sh`) and this one built in its place. If you
-find code that has nothing to do with meeting notes, it is a leftover — check the kill list
-in ARCHITECTURE.md §2 before assuming it matters.
+product has been deleted (`scripts/demolish.sh`) and this one is being built in its place.
+If you find code that has nothing to do with meeting notes, it is a leftover — check the
+kill list in ARCHITECTURE.md §2 before assuming it matters.
 
 **First deliverable is a live demo against the public VSA sandbox** (DEC-28). Not a client
 deployment. There is no client tenant.
