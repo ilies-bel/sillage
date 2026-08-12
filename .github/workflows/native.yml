@@ -23,6 +23,10 @@ name: Native audio module
 
 on:
   push:
+    # Branches only — see check.yml. A tag re-ran this against a SHA already
+    # built, and this is the workflow that costs the most to repeat: windows and
+    # macos runners bill at 2x and 10x linux.
+    branches: ['**']
     paths:
       - 'native-module/**'
       - 'scripts/build-native.js'
