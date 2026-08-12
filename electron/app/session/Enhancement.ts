@@ -103,6 +103,8 @@ export interface EnhancementDeps {
    * second earlier.
    */
   onStatus?: (meetingId: MeetingId) => void
+  /** Injectable so a test can assert on the elapsed clock without waiting. */
+  clock?: () => number
   diagnostics?: DiagRecorder
 }
 
@@ -165,10 +167,21 @@ export class Enhancement {
    * because a stale reason beside a running spinner is a lie with a timestamp.
    */
   #lastFailure = new Map<MeetingId, string>()
+  /**
+   * When the current path started, so the notice can draw a clock rather than a
+   * sentence that never changes (see `EnhancementStatusSchema`).
+   *
+   * Stamped by `begin` and by `run`, whichever reaches the meeting first, and
+   * kept across the handover between them — the rep is waiting on one wait, not
+   * on a flush and then a model.
+   */
+  #startedAt = new Map<MeetingId, number>()
+  #clock: () => number
 
   constructor(deps: EnhancementDeps) {
     this.#deps = deps
     this.#diagnostics = deps.diagnostics ?? NULL_RECORDER
+    this.#clock = deps.clock ?? Date.now
   }
 
   /** True while this meeting's extraction is in flight. */
@@ -190,6 +203,7 @@ export class Enhancement {
   begin(meetingId: MeetingId): void {
     if (this.#running.has(meetingId) || this.#starting.has(meetingId)) return
     this.#starting.add(meetingId)
+    this.#startedAt.set(meetingId, this.#clock())
     this.#announce(meetingId)
   }
 
@@ -230,6 +244,7 @@ export class Enhancement {
     if (!this.#deps.dispatch(meetingId, 'extractionFailed', reason).ok) return false
 
     this.#starting.delete(meetingId)
+    this.#startedAt.delete(meetingId)
     this.#lastFailure.set(meetingId, reason)
     this.#record('warn', 'enhancement.interrupted', reason, meetingId)
     this.#announce(meetingId)
@@ -259,7 +274,7 @@ export class Enhancement {
     modelReady: boolean,
   ): EnhancementStatus {
     if (this.#running.has(meetingId) || this.#starting.has(meetingId) || state === 'extracting') {
-      return { status: 'running' }
+      return { status: 'running', since: this.#startedAt.get(meetingId) ?? null }
     }
     // Every other state is either before the question (`idle`, `armed`,
     // `recording`), past it (`awaiting_confirmation`, `pushing`, `done`) or out
@@ -299,6 +314,10 @@ export class Enhancement {
       // remembered as waiting, the screen is told, and the moment a provider is
       // configured in Réglages it drains — the promise the notice makes.
       this.#deferred.add(meetingId)
+      // Nothing is being written, so there is nothing to time. A meeting
+      // waiting on a model waits for as long as it takes a rep to configure
+      // one, and a clock on that is a stopwatch on the rep.
+      this.#startedAt.delete(meetingId)
       this.#record('warn', 'enhancement.deferred', 'aucun modèle configuré', meetingId)
       this.#announce(meetingId)
       return
@@ -321,6 +340,11 @@ export class Enhancement {
     const attempt = (this.#attempts.get(meetingId) ?? 0) + 1
     this.#attempts.set(meetingId, attempt)
     this.#running.add(meetingId)
+    // Kept if `begin` already stamped it: the rep pressed *Terminer* once and
+    // has been waiting since then, not since the flush happened to finish. Set
+    // here for the paths that skip `begin` — the retry, and the drain that
+    // follows a model appearing in Réglages.
+    if (!this.#startedAt.has(meetingId)) this.#startedAt.set(meetingId, this.#clock())
     // It is being analysed now, so it is neither waiting nor carrying the last
     // attempt's reason. Cleared before the announcement, so the screen never
     // draws a spinner next to a stale explanation of why nothing is happening.
@@ -367,6 +391,7 @@ export class Enhancement {
       this.#record('error', 'enhancement.failed', reason, meetingId, { attempt })
     } finally {
       this.#running.delete(meetingId)
+      this.#startedAt.delete(meetingId)
       // After `#running` is cleared, so the status this sends is the one that
       // is true once the run is over rather than the one that was true inside
       // it. Both the success and the failure path arrive here; success reports

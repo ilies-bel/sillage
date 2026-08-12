@@ -92,10 +92,31 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
 
   const onSaveFailed = useCallback(() => setSaveFailed(true), [])
 
+  /**
+   * The one button in the header is in flight.
+   *
+   * *Terminer* is the click a rep makes at the least patient moment of the call
+   * — the client has hung up and they want to know it registered. The command
+   * itself returns quickly, but until it does the button sits there fully live,
+   * so a rep who saw nothing happen pressed it again; the state machine refuses
+   * the second press silently, which looks exactly like the first one having
+   * been ignored too. The control now says what it is doing and stops taking
+   * presses while it does.
+   */
+  const [inFlight, setInFlight] = useState<'start' | 'end' | null>(null)
+
   const command = useCallback(
     async (verb: 'start' | 'end') => {
-      const outcome = await invoke('session:command', { meetingId, command: verb, reason: null })
-      setState(outcome.state)
+      setInFlight(verb)
+      try {
+        const outcome = await invoke('session:command', { meetingId, command: verb, reason: null })
+        setState(outcome.state)
+      } finally {
+        // Cleared whatever happened. A command that threw leaves the machine
+        // where it was, and a button that stayed disabled would strand the rep
+        // on the state they were trying to leave.
+        setInFlight(null)
+      }
     },
     [meetingId],
   )
@@ -242,7 +263,19 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           boolean. `session:command` refuses anything the state machine does not
           allow, so this cannot get out of step with it.
         */}
-        {current === 'recording' ? (
+        {/*
+          A word while the command is in flight, not a disabled button — the
+          same choice `RecipePicker` makes, and for the same two reasons.
+          `Button`'s disabled form stacks its mandatory reason underneath
+          (DEC-26), which in a one-line header is a 14px jump every time a rep
+          presses *Terminer*; and a greyed button still looks pressable, which
+          is precisely the invitation this is here to withdraw.
+        */}
+        {inFlight !== null ? (
+          <span className="text-muted shrink-0 text-ui" role="status">
+            {inFlight === 'end' ? 'Fin de réunion…' : 'Démarrage…'}
+          </span>
+        ) : current === 'recording' ? (
           <Button onClick={() => void command('end')}>Terminer</Button>
         ) : current === 'idle' || current === 'armed' ? (
           <Button variant="primary" onClick={() => void command('start')}>
@@ -271,12 +304,19 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           The word names what disappears, which during the call is *Signaux* and
           afterwards is both panes.
         */}
+        {/*
+          `text-label`, not `text-[10px]`. The arbitrary size was the same 10px
+          the token resolves to, so nothing moved — but it was the one piece of
+          type on this screen that the scale did not own, and `check:tokens`
+          cannot see a size it was never asked about. The tracking and the caps
+          match `StateDot`'s label, which is the other 10px thing in this header.
+        */}
         <button
           type="button"
           onClick={() => setShowRail((v) => !v)}
           aria-pressed={showRail}
-          className={`shrink-0 text-[10px] uppercase tracking-wider ${
-            showRail ? 'text-body' : 'text-muted hover:text-body'
+          className={`shrink-0 rounded-sm px-1.5 py-1 text-label uppercase tracking-wider transition ${
+            showRail ? 'text-body bg-subtle' : 'text-muted hover:text-body hover:bg-subtle'
           }`}
         >
           {compteRendu === null ? 'Signaux' : 'Panneau'}

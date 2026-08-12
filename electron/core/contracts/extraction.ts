@@ -200,7 +200,23 @@ export type ExtractionESN = z.infer<typeof ExtractionESNSchema>
 export const EnhancementStatusSchema = z.discriminatedUnion('status', [
   /** Not waiting on anything: still recording, already extracted, or aborted. */
   z.object({ status: z.literal('idle') }),
-  z.object({ status: z.literal('running') }),
+  /**
+   * Being written now — and `since` is why this variant is not a bare literal.
+   *
+   * The run is bounded but slow: 60 s for the notes pass and 180 s for the
+   * extraction, so « Rédaction du compte-rendu… » can legitimately sit on screen
+   * for minutes. A static sentence for that long is indistinguishable from a
+   * hung one, and the rep's only reading of it is that the app has stopped —
+   * which was the report that produced this field. A clock that moves is the
+   * difference between *slow* and *dead*, and it is the same argument the
+   * recording pill's elapsed time already won.
+   *
+   * Epoch milliseconds, and **null when nothing knows**: a status derived from a
+   * meeting the store says is `extracting` but which this process never started
+   * has no honest start time, and inventing `Date.now()` there would draw a
+   * clock from zero for a run that began before the app did.
+   */
+  z.object({ status: z.literal('running'), since: z.number().nullable() }),
   /**
    * Ended, and no model to analyse it with. The transcript and the rep's notes
    * are safe; this is a promise the app has to keep, not a failure.

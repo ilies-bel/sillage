@@ -30,7 +30,42 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { EnhancementStatus } from '../../../electron/core/contracts/extraction.ts'
 import { invoke, useBroadcast } from '../../app/bridge.ts'
+import { formatElapsed } from '../../app/format.ts'
 import { Button } from '../../ui/index.ts'
+
+/**
+ * How long the rep has been waiting, ticking, beside the sentence that says
+ * what for.
+ *
+ * The run is bounded — 60 s for the notes pass, 180 s for the extraction — but
+ * three minutes of an unchanging line of text reads as a hang, and that reading
+ * is the reason this component exists. A number that moves separates *slow*
+ * from *dead* without the app having to claim a progress it cannot measure: the
+ * model returns once, so there is no honest percentage to draw, and a bar that
+ * crawls to 90 % and waits is a worse lie than a clock.
+ *
+ * `since` null is a run this process did not start, so there is no start to
+ * count from and nothing is drawn — the sentence alone is still the truth.
+ *
+ * Its own component for the reason `Elapsed` is: it re-renders every second,
+ * and the screen it sits on holds a live ProseMirror view with the rep's caret
+ * in it.
+ */
+function RunClock({ since }: { since: number | null }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (since === null) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [since])
+
+  if (since === null) return null
+
+  return (
+    <span className="text-muted tabular-nums text-ui"> · {formatElapsed(Math.max(0, now - since))}</span>
+  )
+}
 
 interface EnhancementNoticeProps {
   meetingId: string
@@ -90,7 +125,14 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
       className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-2"
     >
       {status.status === 'running' ? (
-        <p className="text-muted text-ui">Rédaction du compte-rendu…</p>
+        <p className="text-body min-w-0 flex-1 max-w-[74ch] text-ui">
+          Rédaction du compte-rendu…{' '}
+          <span className="text-muted">
+            Deux à trois minutes selon la longueur de la réunion. Vos notes et la transcription sont
+            déjà enregistrées ; vous pouvez continuer à écrire.
+          </span>
+          <RunClock since={status.since} />
+        </p>
       ) : status.status === 'waitingForModel' ? (
         <>
           {/*

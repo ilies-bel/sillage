@@ -112,13 +112,38 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
         onChange={(event) => setObjet(event.target.value)}
         onBlur={() => void save()}
         onKeyDown={keys}
-        // `min-w-[7rem]` and not `min-w-0`. `flex-1` is `flex: 1 1 0%`, so under
-        // compression this field — the one with a zero basis — gave up every
-        // pixel it had while the client box beside it kept its full 144px: the
-        // header at 960px showed « Né… » and no objet at all. The objet is the
-        // meeting's name and the client is a subtitle, so the floor goes here
-        // and the client truncates first.
-        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] flex-1 truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-copy font-medium outline-none"
+        /*
+         * Sized to what is in it, floored, capped, and **not** growing.
+         *
+         * This field used to be `flex-1`, and both ends of that were wrong.
+         *
+         * Growing was the visible half: `flex-1` takes every spare pixel, so on
+         * a wide window the objet inflated to fill the header and pushed the
+         * client box to the far side of it. At 1440 « Néovia Santé » sat some
+         * 900px from the title it belongs to, reading as a fourth, unlabelled
+         * header item rather than as that meeting's client. A subtitle has to be
+         * beside the thing it subtitles.
+         *
+         * Shrinking to nothing was the other half: `flex: 1 1 0%` gives this
+         * field a zero basis, so under compression it surrendered every pixel it
+         * had while the 144px client box beside it kept all of its — the header
+         * at 960px showed « Né… » and no objet at all. The objet is the
+         * meeting's name and the client is a subtitle, so the floor goes here
+         * and the client gives ground first.
+         *
+         * `field-sizing: content` is what makes hugging possible at all: an
+         * `input` does not shrink-wrap its value the way a `span` would, so
+         * without it a 20-character objet still occupied a 42-character box and
+         * the client stayed adrift. It needs no measuring span and no resize
+         * observer. Chromium-only, which here is every target — Electron ships
+         * its own, so the two platforms of HR-2 render this identically, and a
+         * browser without it falls back to the bounded fixed box.
+         *
+         * `max-w-[42ch]` is the ceiling for the objet that *is* long; nothing
+         * the calendar produces reaches it, and past it the truncation is
+         * kinder than a header with no room for a control.
+         */
+        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-copy font-medium outline-none [field-sizing:content]"
       />
       <input
         value={client}
@@ -128,10 +153,12 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
         onChange={(event) => setClient(event.target.value)}
         onBlur={() => void save()}
         onKeyDown={keys}
-        // `w-36` is what it wants, not what it keeps: `min-w-0` lets it give
-        // ground to the objet, which is the field with the longer value and the
-        // one a rep is more often reading.
-        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner w-36 min-w-0 truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-ui outline-none"
+        // `w-36` is the ceiling it wants, not what it keeps: `min-w-0` lets it
+        // give ground to the objet, which is the field with the longer value and
+        // the one a rep is more often reading. `field-sizing: content` for the
+        // same reason as the objet — a one-word client in a 144px box leaves a
+        // hole between the two halves of what is meant to read as one title.
+        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-0 truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-ui outline-none [field-sizing:content]"
       />
     </div>
   )

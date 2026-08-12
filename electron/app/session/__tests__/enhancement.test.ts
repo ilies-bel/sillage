@@ -263,7 +263,7 @@ test('a meeting that is not ended is owed no notice at all', async () => {
   for (const state of ['idle', 'armed', 'recording', 'awaiting_confirmation', 'done'] as const) {
     assert.deepEqual(h.enhancement.statusOf(h.id, state, false), { status: 'idle' })
   }
-  assert.deepEqual(h.enhancement.statusOf(h.id, 'extracting', true), { status: 'running' })
+  assert.deepEqual(h.enhancement.statusOf(h.id, 'extracting', true), { status: 'running', since: null })
 
   h.cleanup()
 })
@@ -431,6 +431,9 @@ const relaunch = (store: Store) => {
     recipe: () => recipe,
     repEmail: () => 'moi@esn.fr',
     diagnostics,
+    // Pinned, so the elapsed clock the notice draws is assertable rather than
+    // "some number near now".
+    clock: () => 1_700_000_000_000,
     dispatch: (meetingId, command, reason) => orchestrator.dispatch(meetingId, command, reason),
   })
   const orchestrator: Orchestrator = new Orchestrator(store, {
@@ -495,6 +498,19 @@ const strandedInExtracting = async () => {
   const id = 'm1'
   orchestrator.create({ id, title: 'Point Acme', context: sampleContext })
   orchestrator.dispatch(id, 'start', null)
+  store.append(id, {
+    type: 'transcript.segment',
+    segment: {
+      id: 's1',
+      channel: 'far',
+      text: 'on est sur un TJM de 520 euros',
+      startMs: 0,
+      endMs: 2000,
+      isFinal: true,
+      provider: 'test',
+      receivedAt: 1,
+    },
+  })
   orchestrator.dispatch(id, 'end', null)
   await settle()
 
@@ -512,7 +528,7 @@ test('a compte-rendu interrupted by a quit is freed at the next launch', async (
   // does anything.
   const next = relaunch(store)
   assert.equal(next.stateOf(id), 'extracting')
-  assert.deepEqual(next.enhancement.statusOf(id, 'extracting', true), { status: 'running' })
+  assert.deepEqual(next.enhancement.statusOf(id, 'extracting', true), { status: 'running', since: null })
 
   assert.equal(next.reconcileAll(), 1)
 
@@ -583,7 +599,13 @@ test('the status says « en cours » from the end of the meeting, not from the m
   // Historique at that moment, was told the compte-rendu had not been written
   // and offered a button to write it, while the run was already on its way.
   next.enhancement.begin(id)
-  assert.deepEqual(next.enhancement.statusOf(id, 'ended', true), { status: 'running' })
+  // And it carries the moment the rep pressed *Terminer*, not the moment the
+  // model was finally reached: the clock in the notice counts the whole wait,
+  // which is the wait the rep is actually having.
+  assert.deepEqual(next.enhancement.statusOf(id, 'ended', true), {
+    status: 'running',
+    since: 1_700_000_000_000,
+  })
 
   next.orchestrator.dispatch(id, 'end', null)
   await settle()
