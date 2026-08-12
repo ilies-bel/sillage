@@ -821,13 +821,6 @@ describe('DEC-36: the ChatGPT row is a session, not a key', () => {
     await waitFor(() => expect(pane().getByText('session active')).toBeTruthy())
   })
 
-  test('a subscription is « compris dans l’abonnement », never « gratuit »', async () => {
-    // It costs nothing per meeting and can still refuse one when the plan's
-    // quota runs out — the opposite of what the local engine promises.
-    mount(withChatGpt())
-    await open('Modèle de langage')
-    expect(pane().getByText(/compris dans l’abonnement/)).toBeTruthy()
-  })
 })
 
 describe('DEC-34: the settings that are not secrets', () => {

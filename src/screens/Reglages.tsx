@@ -327,20 +327,6 @@ const RESIDENCY_LABEL = {
 } as const
 
 /**
- * The three answers to « qu'est-ce que ça me coûte ».
- *
- * *Compris dans l'abonnement* is not *gratuit*: the ChatGPT row bills nothing
- * per meeting and can still refuse one at 15 h because the plan's quota ran out,
- * which is the opposite of what the local engine promises. Two words for two
- * different guarantees.
- */
-const COST_LABEL: Record<ProviderRow['cost'], string> = {
-  free: ' · gratuit',
-  metered: ' · facturé',
-  included: ' · compris dans l’abonnement',
-}
-
-/**
  * DEC-30, in the two sentences a rep actually reads.
  *
  * The order of the clauses is the decision: the machine first, the cloud second
@@ -639,10 +625,7 @@ function ProviderLine({
         </span>
 
         <span className="flex shrink-0 items-center gap-3">
-          <span className="text-muted text-meta">
-            {RESIDENCY_LABEL[row.residency]}
-            {COST_LABEL[row.cost]}
-          </span>
+          <span className="text-muted text-meta">{RESIDENCY_LABEL[row.residency]}</span>
 
           {/*
             Choosing is a separate act from configuring. A rep with two keys
