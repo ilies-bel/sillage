@@ -23,8 +23,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 const tracked = (...globs) =>
   execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...globs], {

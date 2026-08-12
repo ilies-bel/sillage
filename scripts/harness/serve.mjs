@@ -30,8 +30,9 @@ import http from 'node:http'
 import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
-const HERE = path.dirname(new URL(import.meta.url).pathname)
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 const UPSTREAM = process.env.SILLAGE_URL ?? 'http://localhost:5180'
 const PORT = Number(process.env.SILLAGE_HARNESS_PORT ?? 5181)
 const upstream = new URL(UPSTREAM)
