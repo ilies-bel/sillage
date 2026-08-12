@@ -11,7 +11,7 @@ Read these three before writing code. They are the spec, not background:
 ## What this is
 
 **Sillage** — a desktop meeting notetaker for sales reps at a French ESN. The name is
-carried all the way down: the package id `fr.esn.sillage`, the crate `sillage-audio`, and
+carried all the way down: the package id `fr.ilies-bel.sillage`, the crate `sillage-audio`, and
 the `SILLAGE_*` development overrides. It never joins the call —
 it listens to the machine's own audio, transcribes, writes French notes, and after **one**
 human confirmation pushes to VerySwing CRM and drafts a follow-up in Outlook.

@@ -4,7 +4,7 @@
 > conversation; the app is what the conversation leaves. Chosen because it collides with
 > nothing in the product's vocabulary: *brouillon* is already the Revue gate's email
 > checkbox, *compte-rendu* is the document itself, and neither could also be the app.
-> The name is carried all the way down: the package id `fr.esn.sillage`, the crate
+> The name is carried all the way down: the package id `fr.ilies-bel.sillage`, the crate
 > `sillage-audio`, and the `SILLAGE_*` development overrides.
 > Target user: sales reps ("commerciaux") at a French ESN.
 > Status: pre-implementation spec, **design-complete**. 29 decisions taken (§2), no open

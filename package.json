@@ -39,7 +39,7 @@
     "check:platform": "node scripts/check-platform.mjs"
   },
   "build": {
-    "appId": "fr.esn.sillage",
+    "appId": "fr.ilies-bel.sillage",
     "afterPack": "./scripts/ad-hoc-sign.js",
     "productName": "Sillage",
     "files": [

@@ -706,6 +706,11 @@ const boot = async (): Promise<void> => {
           stored.map((t) => ({ term: t.term, category: t.category, variants: t.variants })),
         )
     },
+    // Said at the top of the end-of-meeting path, not at the model call. The
+    // transcriber flush sits between the two, and `ended` draws no control — so
+    // without this the rep presses *Terminer* and the screen goes blank for the
+    // length of the flush (DEC-39).
+    onEnding: (meetingId) => enhancement.begin(meetingId),
     onEnded: async (meetingId) => {
       const session = orchestrator.session(meetingId)
       if (!session) return
@@ -821,6 +826,14 @@ const boot = async (): Promise<void> => {
    * quietly analyse less material than the first attempt did.
    */
   const runEnhancement = async (meetingId: string): Promise<void> => {
+    // A meeting stranded in `extracting` is freed first, or this does nothing
+    // at all: `extract` is not legal from `extracting`, so `Enhancement` would
+    // dispatch, be refused, and return — the button would click and the screen
+    // would not move. This is the second of the two places that call
+    // `reconcile`; the first is boot, and it catches the overwhelming majority.
+    // This one catches the meeting whose run vanished during *this* session.
+    const meeting = store.projections.getMeeting(meetingId)
+    if (meeting) enhancement.reconcile(meetingId, meeting.state)
     await orchestrator.enhance(meetingId)
   }
 
@@ -1240,6 +1253,35 @@ const boot = async (): Promise<void> => {
    */
   for (const meetingId of new Set(store.projections.drainable().map((e) => e.meetingId))) {
     drain(meetingId)
+  }
+
+  /**
+   * Anything the last run was still *writing*.
+   *
+   * The sibling of the drain above, and the more damaging of the two. A quit or
+   * a crash while the model is being called leaves the meeting persisted in
+   * `extracting` with no run behind it, and that state has no exit: the notice
+   * says « Rédaction du compte-rendu… » and draws no control, the review gate
+   * is closed with *Analyse en cours…*, and `extract` is illegal from
+   * `extracting` so *Rédiger le compte-rendu* is refused before it starts. The
+   * rep is left watching a sentence that will never change, on a call they
+   * actually recorded. See `Enhancement.reconcile`.
+   *
+   * A wide window rather than the default page: a meeting stranded three weeks
+   * ago is exactly the one nobody has managed to open since, and it costs one
+   * indexed read per launch to free it.
+   */
+  const stranded = store.projections
+    .listMeetings(500)
+    .filter((meeting) => enhancement.reconcile(meeting.id, meeting.state))
+  if (stranded.length > 0) {
+    diagnostics.record({
+      severity: 'warn',
+      code: 'enhancement.interrupted.boot',
+      module: 'app',
+      message: `${stranded.length} compte(s)-rendu interrompus par un arrêt de l’application — remis en attente`,
+      detail: { meetingIds: stranded.map((meeting) => meeting.id) },
+    })
   }
 
   registerIpc(ipcMain, {

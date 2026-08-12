@@ -407,3 +407,186 @@ test('reporting is never a dependency — a throwing health board still leaves t
   assert.equal(orchestrator.stateOf('m1'), 'awaiting_confirmation')
   store.close()
 })
+
+/**
+ * A recipe that never answers, so a meeting can be caught mid-run — which is
+ * the only way to reach the state these last tests are about.
+ */
+const hangingRunner = (): ExtractionRunner => ({
+  run: () => new Promise(() => {}),
+})
+
+/**
+ * The same wiring `main.ts` builds, over a store that already has a history.
+ *
+ * This *is* the relaunch: the event log is what survives a quit and the two
+ * objects are what do not, so constructing a fresh pair over an existing store
+ * reproduces the next launch exactly — including `MeetingSession.load` replaying
+ * a meeting straight back into whatever state it was last recorded in.
+ */
+const relaunch = (store: Store) => {
+  const diagnostics = new Diagnostics(store, { environment })
+  const recipe = runner()
+  const enhancement = new Enhancement({
+    recipe: () => recipe,
+    repEmail: () => 'moi@esn.fr',
+    diagnostics,
+    dispatch: (meetingId, command, reason) => orchestrator.dispatch(meetingId, command, reason),
+  })
+  const orchestrator: Orchestrator = new Orchestrator(store, {
+    diagnostics,
+    broadcast: () => {},
+    onEnding: (meetingId) => enhancement.begin(meetingId),
+    onEnded: async (meetingId) => {
+      const session = orchestrator.session(meetingId)
+      if (!session) return
+      await enhancement.run({
+        session,
+        context: sampleContext,
+        transcript: store.projections.segments(meetingId),
+        notes: '',
+      })
+    },
+  })
+  const stateOf = (id: string) => store.projections.getMeeting(id)?.state ?? 'idle'
+  return {
+    enhancement,
+    orchestrator,
+    recipe,
+    stateOf,
+    /** What `main.ts` does at boot, on the meetings the last run left behind. */
+    reconcileAll: () =>
+      store.projections
+        .listMeetings(500)
+        .filter((meeting) => enhancement.reconcile(meeting.id, meeting.state)).length,
+    /** What `main.ts`'s `runEnhancement` does — free it first, then run. */
+    retry: async (id: string) => {
+      enhancement.reconcile(id, stateOf(id))
+      await orchestrator.enhance(id)
+    },
+  }
+}
+
+/** A meeting caught in `extracting`, with the run that put it there abandoned. */
+const strandedInExtracting = async () => {
+  const store = new Store(':memory:')
+  const diagnostics = new Diagnostics(store, { environment })
+  const enhancement = new Enhancement({
+    recipe: () => hangingRunner(),
+    repEmail: () => 'moi@esn.fr',
+    diagnostics,
+    dispatch: (meetingId, command, reason) => orchestrator.dispatch(meetingId, command, reason),
+  })
+  const orchestrator: Orchestrator = new Orchestrator(store, {
+    diagnostics,
+    broadcast: () => {},
+    onEnded: async (meetingId) => {
+      const session = orchestrator.session(meetingId)
+      if (!session) return
+      await enhancement.run({
+        session,
+        context: sampleContext,
+        transcript: store.projections.segments(meetingId),
+        notes: '',
+      })
+    },
+  })
+
+  const id = 'm1'
+  orchestrator.create({ id, title: 'Point Acme', context: sampleContext })
+  orchestrator.dispatch(id, 'start', null)
+  orchestrator.dispatch(id, 'end', null)
+  await settle()
+
+  assert.equal(store.projections.getMeeting(id)?.state, 'extracting')
+  return { store, id }
+}
+
+test('a compte-rendu interrupted by a quit is freed at the next launch', async () => {
+  const { store, id } = await strandedInExtracting()
+
+  // The launch that used to strand it. `extracting` replays out of the log,
+  // nothing is running behind it, and every way out is shut: the notice draws a
+  // spinner with no control, the gate is closed with *Analyse en cours…*, and
+  // `extract` is not legal from `extracting` so the retry is refused before it
+  // does anything.
+  const next = relaunch(store)
+  assert.equal(next.stateOf(id), 'extracting')
+  assert.deepEqual(next.enhancement.statusOf(id, 'extracting', true), { status: 'running' })
+
+  assert.equal(next.reconcileAll(), 1)
+
+  // Back where a model timing out would have left it: `ended`, with the reason
+  // on screen and the retry legal again.
+  assert.equal(next.stateOf(id), 'ended')
+  assert.deepEqual(next.enhancement.statusOf(id, next.stateOf(id), true), {
+    status: 'failed',
+    reason: 'l’application s’est arrêtée pendant la rédaction',
+  })
+  store.close()
+})
+
+test('the transcript and the notes survive the meeting being freed', async () => {
+  const { store, id } = await strandedInExtracting()
+  const before = store.projections.segments(id)
+  assert.ok(before.length > 0)
+
+  const next = relaunch(store)
+  next.reconcileAll()
+
+  // Freeing it costs the enhancement and nothing else — the same promise the
+  // ordinary failure path makes.
+  assert.deepEqual(store.projections.segments(id), before)
+  store.close()
+})
+
+test('a meeting nothing interrupted is left exactly as it is', async () => {
+  const h = open(runner())
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+  assert.equal(h.orchestrator.stateOf(h.id), 'awaiting_confirmation')
+
+  // `reconcile` answers about one combination only. A meeting past the gate, or
+  // recording, or waiting on a model, must not be touched by a boot sweep.
+  for (const state of ['awaiting_confirmation', 'ended', 'recording', 'done'] as const) {
+    assert.equal(h.enhancement.reconcile(h.id, state), false)
+  }
+  assert.equal(h.orchestrator.stateOf(h.id), 'awaiting_confirmation')
+  h.cleanup()
+})
+
+test('the retry writes the compte-rendu the interrupted run never did', async () => {
+  const { store, id } = await strandedInExtracting()
+  const next = relaunch(store)
+
+  // Straight to the retry, without a boot sweep — the meeting whose run
+  // vanished during *this* session takes this path, and it has to work on its
+  // own. Before the fix this called the model zero times and moved nothing.
+  await next.retry(id)
+  await settle()
+
+  assert.equal(next.recipe.calls, 1)
+  assert.equal(next.stateOf(id), 'awaiting_confirmation')
+  store.close()
+})
+
+test('the status says « en cours » from the end of the meeting, not from the model call', async () => {
+  const store = new Store(':memory:')
+  const next = relaunch(store)
+  const id = 'm1'
+  next.orchestrator.create({ id, title: 'Point Acme', context: sampleContext })
+  next.orchestrator.dispatch(id, 'start', null)
+
+  // The window `onEnding` exists for: the meeting is `ended`, the transcriber is
+  // still being flushed, and no run has started. `statusOf` used to answer
+  // `failed` here — a rep who reloaded, or who opened the meeting from
+  // Historique at that moment, was told the compte-rendu had not been written
+  // and offered a button to write it, while the run was already on its way.
+  next.enhancement.begin(id)
+  assert.deepEqual(next.enhancement.statusOf(id, 'ended', true), { status: 'running' })
+
+  next.orchestrator.dispatch(id, 'end', null)
+  await settle()
+  assert.equal(next.stateOf(id), 'awaiting_confirmation')
+  store.close()
+})

@@ -317,18 +317,20 @@
   }
 
   /*
-   * The client facet of the search filter (`search/SearchBar.tsx`) — the one
-   * region of that one line allowed to run out of room.
+   * The filter line of the search (`search/SearchBar.tsx`) — every axis in one
+   * scroller, the one region of that line allowed to run out of room.
    *
    * Two rules, and the base layer is why neither is a utility.
    *
    * **No scrollbar** — and this is a Windows decision (HR-2), not a mac one. The
    * global bar above is 10px under a 22px chip, and on Windows a classic
-   * scrollbar takes layout space: the axis would stand 6px taller than the three
-   * beside it and its chips would sit misaligned by half that, on the platform
-   * this ships to and on no machine it is written on. Nothing is lost by hiding
-   * it: Chromium turns a vertical wheel into horizontal scrolling on an element
-   * that only scrolls horizontally, so a mouse works; a trackpad flicks it; and
+   * scrollbar takes layout space: the line would stand 6px taller than it does
+   * here and its chips would sit half that off the baseline they share with the
+   * field above, on the platform this ships to and on no machine it is written
+   * on. Nothing is lost by hiding it, but only because the component puts the
+   * mouse back: Chromium does *not* turn a vertical wheel into horizontal
+   * scrolling here — it gives the tick to the day list behind — so `Scroller`
+   * carries a non-passive `wheel` listener for it. A trackpad flicks it, and
    * tabbing to a chip past the edge scrolls it into view.
    *
    * **The fade is a `mask-image`**, not a gradient in the page colour, because

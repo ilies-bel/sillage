@@ -32,53 +32,63 @@ export const NO_FILTER: HistoryFilter = {
   intention: 'toutes',
 }
 
+/**
+ * A value that filters — every value of an axis except that axis's « no filter ».
+ *
+ * The neutral value is not among them because **it draws no chip** (see the
+ * labels below). Excluding it from the type rather than skipping it at render
+ * time is what keeps the tables exhaustive: a `Record` over `Exclude<…>` still
+ * fails to compile when `core/contracts/history.ts` gains a value, and it also
+ * fails if the neutral literal is ever renamed there.
+ */
+export type PeriodeChoice = Exclude<HistoryPeriod, 'toute'>
+export type StatutChoice = Exclude<HistoryStatus, 'tous'>
+export type IntentionChoice = Exclude<HistoryIntention, 'toutes'>
+
 /** Ordered, because a chip row that reorders itself is a chip row nobody aims at. */
-export const PERIODES: readonly HistoryPeriod[] = ['toute', '7j', '30j', '90j']
-export const STATUTS: readonly HistoryStatus[] = ['tous', 'a-valider', 'validees', 'abandonnees']
-export const INTENTIONS: readonly HistoryIntention[] = [
-  'toutes',
+export const PERIODES: readonly PeriodeChoice[] = ['7j', '30j', '90j']
+export const STATUTS: readonly StatutChoice[] = ['a-valider', 'validees', 'abandonnees']
+export const INTENTIONS: readonly IntentionChoice[] = [
   'crm.task',
   'crm.opportunity',
   'mail.draft',
 ]
 
 /**
- * The labels — and the one rule that shapes all three tables: **every chip says
- * what it filters, so the row needs no heading.**
+ * The labels — and the one rule that shapes all three tables: **only values that
+ * filter are on screen.**
  *
- * The rows used to be headed `PÉRIODE` / `STATUT` / `INTENTION` in a fixed
- * left-hand column, and the headings were load-bearing: the neutral value of
- * each axis read « Toujours », « Tous », « Toutes », which name nothing on their
- * own. Three near-identical words, stacked, each meaning something different and
- * each legible only by tracking left to a label. That is a caption explaining a
- * control, which is the sign the control is not saying enough.
+ * There used to be a fourth chip at the head of each axis, and it went through
+ * two shapes before going. First « Toujours » / « Tous » / « Toutes » under a
+ * fixed `PÉRIODE` / `STATUT` / `INTENTION` column — three near-identical words,
+ * each legible only by tracking left to a heading. Then the heading was folded
+ * into the chip itself, « Toute période » / « Tous statuts » / « Toutes
+ * intentions », which reads on its own and cost the column.
  *
- * So the neutral chip carries the axis name — « Toute période », « Tous
- * statuts », « Toutes intentions ». It is always first, always present, and it
- * is also the reset for its axis, so the thing that names the dimension is the
- * thing that clears it. The other values were already self-describing (« 7
- * jours » is a période and nothing else), and with the neutral chip named there
- * is nothing left for a heading to add.
+ * What it did not cost is width, and width is what the filter has: four neutral
+ * chips are ~45% of the row, which is the difference between four stacked rows
+ * of chips and one line. They bought the axis name for a reader who mostly does
+ * not need it — « 7 jours » is a période and nothing else, « Validées » is a
+ * statut — and a reset that a pressed chip can do by un-pressing itself.
  *
- * The axis name survives for screen readers as the `role="group"` label in
- * `SearchBar.tsx` — dropped from the screen, not from the accessible tree.
+ * So: no neutral chip. Pressing a pressed chip returns its axis to `NO_FILTER`,
+ * `Effacer` clears every axis at once, and the axis name survives for screen
+ * readers as the `role="group"` label in `SearchBar.tsx` — dropped from the
+ * screen, not from the accessible tree.
  */
-export const PERIODE_LABEL: Record<HistoryPeriod, string> = {
-  toute: 'Toute période',
+export const PERIODE_LABEL: Record<PeriodeChoice, string> = {
   '7j': '7 jours',
   '30j': '30 jours',
   '90j': '90 jours',
 }
 
-export const STATUT_LABEL: Record<HistoryStatus, string> = {
-  tous: 'Tous statuts',
+export const STATUT_LABEL: Record<StatutChoice, string> = {
   'a-valider': 'À valider',
   validees: 'Validées',
   abandonnees: 'Abandonnées',
 }
 
-export const INTENTION_LABEL: Record<HistoryIntention, string> = {
-  toutes: 'Toutes intentions',
+export const INTENTION_LABEL: Record<IntentionChoice, string> = {
   'crm.task': 'Tâche',
   'crm.opportunity': 'Opportunité',
   'mail.draft': 'Mail',
