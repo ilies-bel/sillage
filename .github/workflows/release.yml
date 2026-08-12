@@ -32,6 +32,18 @@ name: Windows installer
 # in hand, not a gap to paper over here — so the release body says so out loud
 # rather than letting each tester discover it alone.
 #
+# The exe does carry a publisher *name*: `author` in package.json becomes the
+# CompanyName version resource and the Publisher row in Add/Remove Programs.
+# That is metadata, not a signature, and it is all an unsigned build can claim.
+#
+# Do NOT set `build.win.publisherName` to match it. That field is not a label:
+# electron-updater copies it into `app-update.yml` and, when it is present,
+# refuses any downloaded installer whose Authenticode subject does not contain
+# it (`NsisUpdater.verifySignature` — a null publisherName is the only thing
+# that skips the check). Ours are unsigned, so setting it would reject every
+# update, silently, after the download had already succeeded. It becomes
+# correct on the same day a certificate does, and not before.
+#
 # It also does not re-run the suite: `check.yml` runs on every push, including
 # the tag push that triggers this.
 

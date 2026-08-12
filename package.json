@@ -1,6 +1,7 @@
 {
   "name": "sillage",
   "version": "0.1.3",
+  "private": true,
   "main": "dist-electron/electron/app/main.js",
   "description": "Desktop meeting notetaker for ESN sales reps: transcribes the machine's own audio, writes French notes, and pushes to VerySwing after one confirmation.",
   "scripts": {
@@ -43,6 +44,7 @@
     "appId": "fr.ilies-bel.sillage",
     "afterPack": "./scripts/ad-hoc-sign.js",
     "productName": "Sillage",
+    "copyright": "Copyright © 2026 Iliès Beldjilali",
     "files": [
       "dist",
       "dist-electron",
@@ -171,9 +173,36 @@
     "npmRebuild": false,
     "beforePack": "./scripts/rebuild-native-for-target.cjs"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "electron",
+    "desktop",
+    "meeting-notes",
+    "notetaker",
+    "transcription",
+    "whisper",
+    "speech-to-text",
+    "crm",
+    "veryswing",
+    "esn",
+    "french"
+  ],
+  "author": {
+    "name": "Iliès Beldjilali",
+    "email": "ilies.beldjilali@shodo-studio.io",
+    "url": "https://github.com/ilies-bel"
+  },
   "license": "UNLICENSED",
+  "homepage": "https://github.com/ilies-bel/sillage#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ilies-bel/sillage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ilies-bel/sillage/issues"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^4.0.3",
