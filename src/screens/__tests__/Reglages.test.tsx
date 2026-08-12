@@ -1049,4 +1049,39 @@ describe('mise à jour', () => {
     })
     await waitFor(() => expect(pane().getByText(/est à jour/)).toBeTruthy())
   })
+
+  /*
+   * Reported from a real install: the update « had to be done three times ».
+   * Part of that was here. A transfer that broke put the panel in `error` with
+   * a button that re-ran the *check* — which could only ever answer « 0.2.0
+   * disponible » again — so recovering cost two clicks and a round trip, every
+   * time. The failure was the download; so is the button.
+   */
+  test('a download that broke offers to resume it, not to look again', async () => {
+    mount()
+    bridge.when('update:download', () => updateStatus({ phase: 'downloading', availableVersion: '0.2.0', percent: 0 }))
+    await openWith({
+      phase: 'error',
+      availableVersion: '0.2.0',
+      reason: 'serveur de mise à jour injoignable',
+    })
+    expect(pane().queryByRole('button', { name: 'Réessayer' })).toBeNull()
+    await act(async () => {
+      pane().getByRole('button', { name: 'Reprendre le téléchargement' }).click()
+    })
+    await waitFor(() => expect(pane().getByText(/Téléchargement…/)).toBeTruthy())
+  })
+
+  test('a retry explains why the bar went back to zero', async () => {
+    mount()
+    await openWith({
+      phase: 'downloading',
+      availableVersion: '0.2.0',
+      percent: 0,
+      reason: 'connexion interrompue, reprise du téléchargement (essai 2 sur 3)',
+    })
+    // Without this line the same download appears to restart itself, which
+    // reads as the app being broken rather than as the app coping.
+    expect(pane().getByText(/reprise du téléchargement \(essai 2 sur 3\)/)).toBeTruthy()
+  })
 })

@@ -57,6 +57,9 @@ export interface AutoUpdaterLike {
 
 export type AutoUpdaterLoader = () => AutoUpdaterLike
 
+const messageOf = (error: unknown): string =>
+  error instanceof Error && error.message ? error.message : 'erreur inconnue'
+
 export interface AutoUpdateOptions {
   /** `app.getVersion()`. Injected so the module never imports Electron. */
   currentVersion: string
@@ -64,10 +67,51 @@ export interface AutoUpdateOptions {
   clock?: () => number
   /** Defaults to `require('electron-updater').autoUpdater`. */
   load?: AutoUpdaterLoader
+  /** The backoff wait. Injected so a test does not spend it. */
+  sleep?: (ms: number) => Promise<void>
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error && error.message ? error.message : 'erreur inconnue'
+/**
+ * How many times a download is attempted before the rep is told it failed.
+ *
+ * Not a taste decision — a reading of what is underneath. `builder-util-runtime`'s
+ * `HttpExecutor.doDownload` has **no retry at all**: the first socket error,
+ * timeout or aborted response calls back with the error, and
+ * `AppUpdater.executeDownload` answers that by deleting the temp file. There is
+ * no resume, so a hiccup at 90 % costs the whole transfer.
+ *
+ * That transfer is ~110 MB differential (measured 0.1.2 → 0.1.3: 453 MB copied
+ * from the previously installed setup exe, 107 MB fetched over ~28 range
+ * requests) and 560 MB when the differential path is unavailable. Any one of
+ * those requests failing rejects all of it. On a laptop on hotel wifi, one
+ * attempt is not a policy.
+ *
+ * Three attempts, because the failure this covers is transient by definition:
+ * a fourth is a different problem and the rep should be told rather than made
+ * to watch.
+ */
+export const DOWNLOAD_ATTEMPTS = 3
+
+/** Waited before attempt 2 and attempt 3. Long enough for wifi to come back. */
+export const DOWNLOAD_BACKOFF_MS = [5_000, 30_000]
+
+/**
+ * Whether trying the identical download again could plausibly work.
+ *
+ * The default is yes, deliberately: an unrecognised failure during a transfer
+ * is far more often a network one than a permanent one, and the cost of a
+ * pointless retry is thirty seconds nobody is watching. Only the failures that
+ * are *statements about the release* are excluded — a missing asset and a
+ * rejected signature are answers, not accidents, and retrying them turns a
+ * clear message into a slow one.
+ */
+export const isRetryableDownloadFailure = (error: unknown): boolean => {
+  const raw = messageOf(error)
+  if (/status 404|ERR_UPDATER_INVALID_SIGNATURE|is not signed|Web Installers are disabled/i.test(raw)) {
+    return false
+  }
+  return true
+}
 
 /**
  * Turns whatever electron-updater threw into something a rep can act on.
@@ -103,10 +147,21 @@ export class AutoUpdate implements UpdatePort {
   #listeners = new Set<(state: UpdateState) => void>()
   /** Set once the load has failed, so a check per hour is not a require per hour. */
   #broken: string | null = null
+  /**
+   * True for the whole of `download()`, including the waits between attempts.
+   *
+   * `AppUpdater.downloadUpdate` reports a failure *twice* — it emits `error`
+   * and then rejects the promise. Without this the panel would flip to « échec »
+   * for a moment between two attempts that are still going to succeed, and the
+   * diagnostics would carry two entries for one transfer.
+   */
+  #downloading = false
+  #sleep: (ms: number) => Promise<void>
 
   constructor(options: AutoUpdateOptions) {
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
     this.#clock = options.clock ?? Date.now
+    this.#sleep = options.sleep ?? ((ms) => new Promise((resolve) => void setTimeout(resolve, ms)))
     this.#load = options.load ?? (() => require('electron-updater').autoUpdater as AutoUpdaterLike)
     this.#state = {
       phase: 'idle',
@@ -139,7 +194,15 @@ export class AutoUpdate implements UpdatePort {
     }
   }
 
-  #fail(code: string, error: unknown): UpdateState {
+  /**
+   * Record a failure, and — unless it is one an in-flight retry owns — show it.
+   *
+   * `show: false` is not "swallow": the diagnostic is written either way, so a
+   * download that succeeded on the third try still leaves the two attempts it
+   * took behind it in the log. It only withholds the *state*, which is the
+   * thing a rep reads as a verdict.
+   */
+  #fail(code: string, error: unknown, options: { show?: boolean } = {}): UpdateState {
     const reason = updateFailureReason(error)
     this.#diagnostics.record({
       severity: 'warn',
@@ -148,7 +211,9 @@ export class AutoUpdate implements UpdatePort {
       message: reason,
       detail: { raw: messageOf(error) },
     })
-    this.#emit({ phase: 'error', reason, percent: null, checkedAt: this.#clock() })
+    if (options.show !== false) {
+      this.#emit({ phase: 'error', reason, percent: null, checkedAt: this.#clock() })
+    }
     return this.#state
   }
 
@@ -253,7 +318,7 @@ export class AutoUpdate implements UpdatePort {
           reason: null,
         })
       })
-      updater.on('error', (error) => void this.#fail('update.failed', error))
+      updater.on('error', (error) => void this.#fail('update.failed', error, { show: !this.#downloading }))
 
       this.#updater = updater
       return updater
@@ -294,16 +359,57 @@ export class AutoUpdate implements UpdatePort {
     }
   }
 
+  /**
+   * Fetch the staged version, retrying a transfer that broke.
+   *
+   * ## Why `error` is a legal starting point
+   *
+   * A download that failed leaves `availableVersion` set — the check that found
+   * it was fine, only the transfer was not. `AppUpdater` keeps its
+   * `updateInfoAndProvider` across a failure too, so `downloadUpdate()` can be
+   * called again without a second check. Refusing to start from `error` is what
+   * made the recovery path *Réessayer* → *Télécharger*: two clicks, one of them
+   * a network round trip that already knew the answer.
+   */
   async download(): Promise<UpdateState> {
-    if (this.#state.phase !== 'available') return this.#state
+    const startable =
+      this.#state.phase === 'available' ||
+      (this.#state.phase === 'error' && this.#state.availableVersion !== null)
+    if (!startable) return this.#state
     const updater = this.#lib()
     if (!updater) return this.#state
+
+    this.#downloading = true
     try {
-      this.#emit({ phase: 'downloading', percent: 0 })
-      await updater.downloadUpdate()
+      for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+        /*
+         * Percent back to zero on every attempt, and said out loud. There is no
+         * resume underneath — the temp file is deleted on failure — so a bar
+         * that carried on from 90 % would be describing a transfer that is not
+         * happening. A rep watching this deserves to know the difference
+         * between slow and starting over.
+         */
+        this.#emit({
+          phase: 'downloading',
+          percent: 0,
+          reason:
+            attempt === 1
+              ? null
+              : `connexion interrompue, reprise du téléchargement (essai ${attempt} sur ${DOWNLOAD_ATTEMPTS})`,
+        })
+        try {
+          await updater.downloadUpdate()
+          return this.#state
+        } catch (error) {
+          const again = attempt < DOWNLOAD_ATTEMPTS && isRetryableDownloadFailure(error)
+          if (!again) return this.#fail('update.download.failed', error)
+          this.#fail('update.download.retry', error, { show: false })
+          await this.#sleep(DOWNLOAD_BACKOFF_MS[attempt - 1] ?? DOWNLOAD_BACKOFF_MS.at(-1) ?? 0)
+        }
+      }
       return this.#state
-    } catch (error) {
-      return this.#fail('update.download.failed', error)
+    } finally {
+      this.#downloading = false
     }
   }
 
