@@ -63,7 +63,15 @@ export const UpdateStateSchema = z.object({
   availableVersion: z.string().min(1).nullable(),
   /** 0…100 while `downloading`, null otherwise. */
   percent: z.number().min(0).max(100).nullable(),
-  /** French, set exactly when `phase` is `error` or `disabled`. */
+  /**
+   * French. Always set on `error` and `disabled`.
+   *
+   * Also set while `downloading` on the second and third attempts, and that is
+   * the point of it being here rather than only on `error`: there is no resume
+   * underneath, so a retry sends the bar back to zero. Without a line saying
+   * why, a rep sees the same download apparently restart itself and reasonably
+   * concludes the app is broken.
+   */
   reason: z.string().nullable(),
   /** When the last check completed, successfully or not. */
   checkedAt: TimestampSchema.nullable(),

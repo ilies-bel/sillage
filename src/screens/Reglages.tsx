@@ -1240,6 +1240,10 @@ function UpdatePanel() {
     void act(async () => {
       status.set(await invoke('update:check', {}))
     })
+  const download = () =>
+    void act(async () => {
+      status.set(await invoke('update:download', {}))
+    })
 
   return (
     <section>
@@ -1273,15 +1277,7 @@ function UpdatePanel() {
       {update.phase === 'available' ? (
         <div className="flex flex-col items-start gap-tight">
           <p className="text-body text-ui">Version {update.availableVersion} disponible.</p>
-          <Button
-            variant="primary"
-            onClick={() =>
-              void act(async () => {
-                status.set(await invoke('update:download', {}))
-              })
-            }
-            {...unavailable(busy, 'Téléchargement en cours…')}
-          >
+          <Button variant="primary" onClick={download} {...unavailable(busy, 'Téléchargement en cours…')}>
             Télécharger
           </Button>
           {/*
@@ -1297,9 +1293,17 @@ function UpdatePanel() {
       ) : null}
 
       {update.phase === 'downloading' ? (
-        <p className="text-body text-ui" role="status">
-          Téléchargement… {update.percent ?? 0}&nbsp;%
-        </p>
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-body text-ui" role="status">
+            Téléchargement… {update.percent ?? 0}&nbsp;%
+          </p>
+          {/*
+            Only present on a retry, and then it is the whole explanation for a
+            bar that just went back to zero. Nothing underneath resumes a broken
+            transfer, so silence here reads as a bug.
+          */}
+          {update.reason ? <p className="text-muted max-w-prose text-meta">{update.reason}</p> : null}
+        </div>
       ) : null}
 
       {update.phase === 'ready' ? (
@@ -1336,9 +1340,25 @@ function UpdatePanel() {
       {update.phase === 'error' ? (
         <div className="flex flex-col items-start gap-tight">
           <p className="text-body text-ui">{update.reason}</p>
-          <Button onClick={check} {...unavailable(busy, 'Vérification en cours…')}>
-            Réessayer
-          </Button>
+          {/*
+            Two different failures, two different buttons.
+
+            A known `availableVersion` means the check succeeded and only the
+            transfer broke, so the useful verb is *download again* — the same
+            state the retries inside the module start from. Sending that case
+            back through *Vérifier* was the shape of the reported clunkiness: an
+            error, then a check that could only ever say « disponible » again,
+            then a second click to do the thing that actually failed.
+          */}
+          {update.availableVersion ? (
+            <Button variant="primary" onClick={download} {...unavailable(busy, 'Téléchargement en cours…')}>
+              Reprendre le téléchargement
+            </Button>
+          ) : (
+            <Button onClick={check} {...unavailable(busy, 'Vérification en cours…')}>
+              Réessayer
+            </Button>
+          )}
         </div>
       ) : null}
 
