@@ -1,6 +1,6 @@
 {
   "name": "sillage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "main": "dist-electron/electron/app/main.js",
   "description": "Desktop meeting notetaker for ESN sales reps: transcribes the machine's own audio, writes French notes, and pushes to VerySwing after one confirmation.",
   "scripts": {
@@ -67,6 +67,10 @@
       "**/node_modules/@napi-rs/**",
       "**/node_modules/@huggingface/transformers/**",
       "**/node_modules/@huggingface/jinja/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**",
+      "**/node_modules/detect-libc/**",
+      "**/node_modules/semver/**",
       "**/node_modules/onnxruntime-common/**",
       "**/node_modules/onnxruntime-node/**"
     ],
