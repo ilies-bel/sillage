@@ -69,7 +69,10 @@ import { providerSection } from '../core/domain/providerRows.ts'
 import { Enhancement } from './session/Enhancement.ts'
 import { Orchestrator, type Broadcaster } from './session/Orchestrator.ts'
 import { Agenda } from './session/Agenda.ts'
-import { registerIpc } from './ipc/register.ts'
+import { registerIpc, updateStatus } from './ipc/register.ts'
+import { AutoUpdate } from '../modules/update/index.ts'
+import { updateReadiness } from '../core/domain/updateGate.ts'
+import type { UpdatePort } from '../core/contracts/update.ts'
 import { runDevRecording } from './devRecord.ts'
 import { loadDevEnv } from './devEnv.ts'
 import type { MsalIdentity } from '../modules/identity/index.ts'
@@ -82,6 +85,27 @@ import type { Meeting, MeetingContext } from '../core/contracts/meeting.ts'
 import type { EnhancementStatus } from '../core/contracts/extraction.ts'
 
 const isDev = !app.isPackaged
+
+/** A minute after boot, then every six hours. See `startUpdateChecks`. */
+const FIRST_UPDATE_CHECK_MS = 60_000
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+/**
+ * The portable `.exe`, which must never update itself.
+ *
+ * `latest.yml` only ever describes the NSIS installer — electron-builder writes
+ * update metadata for `nsis` targets and for nothing else. So a portable build
+ * that took the update path would download an *installer* and run it, silently
+ * converting a rep who deliberately chose the no-install build into an
+ * installed one, with their portable copy left behind and stale.
+ *
+ * `PORTABLE_EXECUTABLE_DIR` is set by electron-builder's own portable
+ * launcher, so this reads a fact about how the app was started rather than a
+ * setting — DEC-34 is about configuration, and there is nothing here for a rep
+ * to configure. Réglages then says updates are unavailable and points at the
+ * releases page, which is the honest answer for that build.
+ */
+const isPortableBuild = (): boolean => Boolean(process.env.PORTABLE_EXECUTABLE_DIR)
 
 /**
  * A worker whose only job is to pull one checkpoint from Hugging Face (DEC-35b).
@@ -653,6 +677,77 @@ const boot = async (): Promise<void> => {
   const llm = () => resolveLlm(settings, diagnostics)
   const now = Date.now()
 
+  /*
+   * ── Self-update (DEC-26, DEC-32) ────────────────────────────────────────
+   *
+   * `null` outside a packaged app, and that is a statement rather than a
+   * shortcut: an unpacked dev run has no `app-update.yml` to read, and letting
+   * electron-updater discover that for itself produces an English exception on
+   * every launch. The channels answer `disabled` on a null updater, so Réglages
+   * still draws the panel and still names the running version.
+   *
+   * Constructed here, before the orchestrator, because the broadcast below
+   * closes over both.
+   */
+  const updates: UpdatePort | null =
+    app.isPackaged && !isPortableBuild()
+      ? new AutoUpdate({ currentVersion: app.getVersion(), diagnostics })
+      : null
+
+  /**
+   * Push the update panel's state to every window.
+   *
+   * Called on two different triggers, which is the whole reason it exists as a
+   * function. The updater moving is the obvious one. The *session* moving is
+   * the one that is easy to miss: `installable` is a fact about the meeting, so
+   * a rep who finishes a call must see *Installer et redémarrer* become
+   * available without reopening the screen — and one who starts a call must see
+   * it go away.
+   */
+  const publishUpdateStatus = (): void => {
+    broadcast('update:changed', updateStatus(updates, orchestrator.liveStates(), app.getVersion()))
+  }
+  updates?.onChanged(publishUpdateStatus)
+
+  /*
+   * The background loop. Two timers, both cleared on quit.
+   *
+   * The first check is deliberately a minute late. Boot has just spent several
+   * seconds of CPU loading the Whisper checkpoint (`prewarmLocalEngine`), and
+   * the rep may already be arming a call; a network round trip competing with
+   * that buys nothing, because an update that appeared this morning will still
+   * be there in sixty seconds.
+   *
+   * Every tick asks the gate twice — once before checking, once again before
+   * downloading — rather than once. They are seconds apart and a meeting can
+   * start in between, and the second one is the expensive question: the check
+   * is a few kilobytes of YAML, the download is most of half a gigabyte.
+   */
+  let firstUpdateCheck: ReturnType<typeof setTimeout> | null = null
+  let updateLoop: ReturnType<typeof setInterval> | null = null
+
+  const stopUpdateChecks = (): void => {
+    if (firstUpdateCheck) clearTimeout(firstUpdateCheck)
+    if (updateLoop) clearInterval(updateLoop)
+    firstUpdateCheck = null
+    updateLoop = null
+  }
+
+  const updateTick = async (): Promise<void> => {
+    if (!updates) return
+    if (!updateReadiness(orchestrator.liveStates()).safe) return
+    const state = await updates.check()
+    if (state.phase !== 'available') return
+    if (!updateReadiness(orchestrator.liveStates()).safe) return
+    await updates.download()
+  }
+
+  const startUpdateChecks = (): void => {
+    if (!updates) return
+    firstUpdateCheck = setTimeout(() => void updateTick(), FIRST_UPDATE_CHECK_MS)
+    updateLoop = setInterval(() => void updateTick(), UPDATE_CHECK_INTERVAL_MS)
+  }
+
   // Built before the orchestrator so `onEnded` can close over it. `identity` is
   // assigned further down and read lazily, which is why `repEmail` is a
   // function: a rep can sign in after the app has booted.
@@ -681,7 +776,19 @@ const boot = async (): Promise<void> => {
 
   const orchestrator: Orchestrator = new Orchestrator(store, {
     diagnostics,
-    broadcast,
+    /*
+     * The plain broadcast, plus one derived one.
+     *
+     * A session transition changes the answer to "may this install now" without
+     * changing anything the updater knows, so `update:changed` has to be
+     * re-derived here. Wrapping the broadcaster is what guarantees it: every
+     * transition goes through `session:changed`, so there is no path that moves
+     * the machine and forgets to refresh the gate.
+     */
+    broadcast: (channel, payload) => {
+      broadcast(channel, payload)
+      if (channel === 'session:changed') publishUpdateStatus()
+    },
     // Asked once per meeting, at the moment it starts — so a key added between
     // two meetings takes effect on the second one rather than at the next
     // launch. Not asked again *during* a meeting: swapping the provider under a
@@ -1317,6 +1424,8 @@ const boot = async (): Promise<void> => {
     // Read lazily: `boot:changed` and this channel must never disagree, and a
     // value captured here would freeze the state at registration time.
     bootState: () => bootState,
+    updates,
+    appVersion: app.getVersion(),
   })
 
   diagnostics.record({
@@ -1329,6 +1438,7 @@ const boot = async (): Promise<void> => {
 
   app.on('before-quit', () => {
     agenda?.stop()
+    stopUpdateChecks()
     store.close()
   })
 
@@ -1365,6 +1475,11 @@ const boot = async (): Promise<void> => {
   // After the window, never before it: the load is several seconds of CPU and
   // the rep should be looking at the app while it happens, not at nothing.
   prewarmLocalEngine()
+
+  // Last, and never awaited. Nothing about this app's job depends on it
+  // (DEC-26), and a slow release feed must not delay a window that is already
+  // on screen.
+  startUpdateChecks()
 }
 
 app.on('second-instance', () => {

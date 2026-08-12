@@ -19,7 +19,10 @@ import type { AuthState, IdentityPort } from '../../core/contracts/identity.ts'
 import type { PushIntent } from '../../core/contracts/push.ts'
 import type { CapabilityReport } from '../../core/contracts/crm.ts'
 import type { ConnectorId } from '../../core/contracts/health.ts'
-import type { Meeting } from '../../core/contracts/meeting.ts'
+import type { Meeting, MeetingState } from '../../core/contracts/meeting.ts'
+import type { UpdatePort, UpdateStatus } from '../../core/contracts/update.ts'
+import { updatesUnavailable } from '../../core/contracts/update.ts'
+import { updateReadiness } from '../../core/domain/updateGate.ts'
 import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
@@ -169,7 +172,47 @@ export interface IpcDeps {
    * a snapshot captured at registration time would freeze the first of those.
    */
   bootState?: () => BootState
+  /**
+   * Self-update. Absent in a dev run and on any build without update metadata,
+   * and the channels answer `disabled` rather than throwing — DEC-26 again: the
+   * screen must render, and « pas de mise à jour automatique » is the honest
+   * thing for it to say.
+   */
+  updates?: UpdatePort | null
+  /** `app.getVersion()`, so the update panel can name the running build even
+   *  when there is no updater to ask. */
+  appVersion?: string
 }
+
+/** What a build with no updater reports, in one place so the French matches. */
+export const NO_UPDATER = 'mise à jour automatique indisponible dans cette build'
+
+/**
+ * The updater's state plus the session's answer to "may this act now".
+ *
+ * Takes its three inputs rather than `IpcDeps`, because `main.ts` calls it too
+ * — on every updater change and on every session transition — and building a
+ * fake deps object there to reach one function would be worse than a signature.
+ * Five call sites, one implementation, so `installable` cannot mean two things.
+ */
+export const updateStatus = (
+  updates: UpdatePort | null | undefined,
+  states: readonly MeetingState[],
+  appVersion: string,
+): UpdateStatus => {
+  const state = updates?.state() ?? updatesUnavailable(appVersion, NO_UPDATER)
+  const readiness = updateReadiness(states)
+  return {
+    ...state,
+    // Only `ready` is installable at all; the gate decides whether it may.
+    installable: state.phase === 'ready' && readiness.safe,
+    blockedReason: state.phase === 'ready' && !readiness.safe ? readiness.reason : null,
+  }
+}
+
+/** The `IpcDeps` form, for the handlers. */
+const statusOf = (deps: IpcDeps): UpdateStatus =>
+  updateStatus(deps.updates, deps.orchestrator.liveStates(), deps.appVersion ?? '0.0.0')
 
 const SIGNED_OUT: AuthState = { status: 'signedOut' }
 
@@ -824,6 +867,51 @@ export const handlers: Handlers = {
   'models:state': (_request, deps) => deps.models?.section() ?? tablesOf(deps).models,
 
   'boot:state': (_request, { bootState }) => bootState?.() ?? NO_BOOT_STATE,
+
+  'update:status': (_request, deps) => statusOf(deps),
+
+  'update:check': async (_request, deps) => {
+    // `check()` never rejects (DEC-26), so there is nothing to catch: an
+    // unreachable server resolves to `phase: 'error'` and the panel prints it.
+    await deps.updates?.check()
+    return statusOf(deps)
+  },
+
+  'update:download': async (_request, deps) => {
+    /*
+     * Gated, and not for consent — for bandwidth. Downloading half a gigabyte
+     * while the rep is on the call being transcribed degrades that call, which
+     * is a way to damage a meeting without ever touching the capture path.
+     */
+    if (updateReadiness(deps.orchestrator.liveStates()).safe) {
+      await deps.updates?.download()
+    }
+    return statusOf(deps)
+  },
+
+  'update:install': async (_request, deps) => {
+    const readiness = updateReadiness(deps.orchestrator.liveStates())
+    /*
+     * The authoritative check. The renderer's `installable` decides what the
+     * button looks like; this decides what happens, because a meeting can start
+     * between the paint and the click and only this side knows in time.
+     */
+    if (!readiness.safe) {
+      deps.recorder.record({
+        severity: 'info',
+        code: 'update.install.refused',
+        module: 'update',
+        message: readiness.reason ?? 'installation impossible',
+        detail: { states: [...deps.orchestrator.liveStates()] },
+      })
+      return { started: false, reason: readiness.reason }
+    }
+    const started = (await deps.updates?.install()) ?? false
+    return {
+      started,
+      reason: started ? null : 'aucune mise à jour n’est prête à être installée',
+    }
+  },
 }
 
 /**
