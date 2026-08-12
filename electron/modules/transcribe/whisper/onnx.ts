@@ -17,6 +17,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { modelSizeBytes } from './catalog.ts'
 
 export interface SessionOptions {
   intraOpNumThreads: number
@@ -88,7 +89,7 @@ export const boundedSessionOptions = (): SessionOptions => ({
 // free + reclaimable, and that is what has to be measured.
 
 const CACHE_TTL_MS = 1_000
-let cache: { gb: number; at: number } | null = null
+let cache: { reading: MemoryReading; at: number } | null = null
 
 /** macOS: `vm_stat` → (free + inactive + speculative) × page size. */
 const macAvailableGB = (): number | null => {
@@ -113,46 +114,163 @@ const linuxAvailableGB = (): number | null => {
   return Number.isFinite(kb) ? (kb * 1024) / 1024 ** 3 : null
 }
 
-export const availableMemoryGB = (): number => {
+/**
+ * What was measured, and whether it means anything.
+ *
+ * `probe` is a real available-memory reading — `vm_stat` on macOS,
+ * `MemAvailable` on Linux, or a development override. `freemem` is the
+ * fallback, and it is **not the same question**: `os.freemem()` counts pages on
+ * the free list, which every modern OS keeps near zero on purpose. Measured on
+ * a 64 GB Mac with 18.9 GB genuinely available, `os.freemem()` reported
+ * 2.69 GB. A gate that cannot tell the two apart will refuse a machine that has
+ * room and blame the machine.
+ */
+export interface MemoryReading {
+  gb: number
+  source: 'probe' | 'freemem'
+  /** Why the probe was not used. Null when it was. */
+  note: string | null
+}
+
+export const measureAvailableMemory = (): MemoryReading => {
   const override = Number.parseFloat(process.env.SILLAGE_ONNX_AVAILABLE_MEM_GB ?? '')
-  if (Number.isFinite(override) && override >= 0) return override
+  if (Number.isFinite(override) && override >= 0) {
+    return { gb: override, source: 'probe', note: null }
+  }
 
   const now = Date.now()
-  if (cache && now - cache.at < CACHE_TTL_MS) return cache.gb
+  if (cache && now - cache.at < CACHE_TTL_MS) return cache.reading
 
   let gb: number | null = null
+  let note: string | null = null
   try {
     if (process.platform === 'darwin') gb = macAvailableGB()
     else if (process.platform === 'linux') gb = linuxAvailableGB()
-  } catch {
+    else note = `pas de sonde mémoire sur ${process.platform}`
+    if (gb !== null && !Number.isFinite(gb)) {
+      gb = null
+      note = 'sonde mémoire illisible'
+    }
+  } catch (error) {
+    // Swallowed silently before, which made a failed probe and a real reading
+    // produce the same number with nothing to tell them apart.
     gb = null
+    note = error instanceof Error && error.message ? error.message : 'sonde mémoire en échec'
   }
-  // Windows' `os.freemem()` is already close to "available"; elsewhere this is
-  // only reached when the real probe failed, and it under-reports — so the gate
-  // errs toward refusing, which is the safe direction.
-  if (gb === null || !Number.isFinite(gb)) gb = os.freemem() / 1024 ** 3
 
-  cache = { gb, at: now }
-  return gb
+  const reading: MemoryReading =
+    gb === null
+      ? { gb: os.freemem() / 1024 ** 3, source: 'freemem', note: note ?? 'sonde mémoire indisponible' }
+      : { gb, source: 'probe', note: null }
+
+  cache = { reading, at: now }
+  return reading
 }
 
-export const minFreeGB = (): number => {
-  const n = Number.parseFloat(process.env.SILLAGE_ONNX_MIN_FREE_GB ?? '')
-  return Number.isFinite(n) && n >= 0 ? n : 2.0
+export const availableMemoryGB = (): number => measureAvailableMemory().gb
+
+/**
+ * The runtime's own baseline, in GB — ORT, the tokenizer, the feature
+ * extractor and the 30-second input window, none of which shrink with the
+ * checkpoint. It is what the smallest models are dominated by: Tiny is 74 MB
+ * of weights, so scaling alone would claim it loads in 180 MB.
+ */
+const RUNTIME_BASELINE_GB = 0.5
+
+/**
+ * Peak resident bytes per byte of checkpoint, during the load.
+ *
+ * One measurement, and it is the only one this rests on: two concurrent loads
+ * of Small — 466 MB of weights — peaked at 2.1 GB (see `prewarmLocalEngine` in
+ * `app/main.ts`), so a single load costs about 1.05 GB, or 2.3× the file.
+ * Rounded up.
+ */
+const LOAD_FACTOR = 2.5
+
+/**
+ * How much *available* RAM loading this checkpoint needs.
+ *
+ * It was a flat 2.0 GB for every model, which was wrong in both directions and
+ * only ever complained about in one. Whisper Tiny is 74 MB and loads in a few
+ * hundred MB; the flat floor refused it on any machine that could not also have
+ * run Medium, and told the rep « moins de 2 Go disponibles » with no way to say
+ * *of what* — a real one read it as disk space and went to check a drive with
+ * 400 GB free on it. The quiet half is worse: Medium is 1530 MB of weights and
+ * wants something closer to 3.7 GB, which the flat floor waved through at 2.0 —
+ * and an ONNX session that cannot allocate does not fail politely, it takes the
+ * process with it.
+ *
+ * An unknown id keeps the old flat 2.0: a checkpoint this file has never heard
+ * of is exactly where a guess should be conservative.
+ */
+export const requiredMemoryGB = (modelId?: string): number => {
+  const override = Number.parseFloat(process.env.SILLAGE_ONNX_MIN_FREE_GB ?? '')
+  if (Number.isFinite(override) && override >= 0) return override
+
+  const bytes = modelId ? modelSizeBytes(modelId) : 0
+  if (bytes <= 0) return 2.0
+  const scaled = (bytes * LOAD_FACTOR) / 1024 ** 3
+  return Math.max(RUNTIME_BASELINE_GB, Math.round(scaled * 10) / 10)
+}
+
+export interface MemoryVerdict {
+  ok: boolean
+  requiredGB: number
+  totalGB: number
+  reading: MemoryReading
 }
 
 /**
- * Fails *open* when the measurement itself throws. Refusing to transcribe
+ * Whether this checkpoint may be loaded, and everything the answer rested on.
+ *
+ * ## The fallback is not allowed to refuse
+ *
+ * When there is no probe, the old code compared `os.freemem()` against the
+ * floor and refused on the result, reasoning that under-reporting "errs toward
+ * refusing, which is the safe direction". It is not the safe direction. This
+ * gate protects the *default* transcription path (DEC-30) — the one DEC-26
+ * leans on precisely because it needs nothing but the machine. Refusing it on a
+ * number the code itself documents as wrong turns a laptop with 30 GB free into
+ * a laptop that cannot transcribe, and says « moins de 2 Go disponibles » while
+ * doing it.
+ *
+ * **Windows reaches this path on every single launch** — there is no probe for
+ * it, and it is the primary platform (HR-2). So the fallback answers the only
+ * question `os.freemem()` can support: not "is the machine busy right now",
+ * which it cannot see, but "could this machine ever hold this model", which
+ * `os.totalmem()` answers exactly. A transient free-page count never refuses;
+ * a 4 GB laptop asked for Whisper Medium still does.
+ *
+ * Fails *open* when the measurement itself throws: refusing to transcribe
  * because `vm_stat` was unavailable would be a failure caused entirely by the
  * safety check.
  */
-export const hasEnoughMemory = (): boolean => {
+/**
+ * The rule itself, with nothing to measure — so it is testable on a host whose
+ * platform and free pages are whatever they happen to be.
+ */
+export const memoryDecision = (
+  reading: MemoryReading,
+  requiredGB: number,
+  totalGB: number,
+): boolean =>
+  reading.source === 'probe'
+    ? reading.gb >= requiredGB
+    : totalGB >= requiredGB + RUNTIME_BASELINE_GB
+
+export const memoryVerdict = (modelId?: string): MemoryVerdict => {
+  const requiredGB = requiredMemoryGB(modelId)
+  const totalGB = os.totalmem() / 1024 ** 3
+  let reading: MemoryReading
   try {
-    return availableMemoryGB() >= minFreeGB()
+    reading = measureAvailableMemory()
   } catch {
-    return true
+    return { ok: true, requiredGB, totalGB, reading: { gb: totalGB, source: 'freemem', note: null } }
   }
+  return { ok: memoryDecision(reading, requiredGB, totalGB), requiredGB, totalGB, reading }
 }
+
+export const hasEnoughMemory = (modelId?: string): boolean => memoryVerdict(modelId).ok
 
 // ── The load mutex ────────────────────────────────────────────────────────
 

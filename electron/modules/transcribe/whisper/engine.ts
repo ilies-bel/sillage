@@ -39,8 +39,8 @@
 import { EventEmitter } from 'node:events'
 import { Worker } from 'node:worker_threads'
 import { buildInitMessage } from './inference.ts'
-import { DEFAULT_MODEL_ID } from './catalog.ts'
-import { acquireLoadSlot, hasEnoughMemory, minFreeGB } from './onnx.ts'
+import { DEFAULT_MODEL_ID, modelById } from './catalog.ts'
+import { acquireLoadSlot, memoryVerdict } from './onnx.ts'
 import { claimLoad, clearSentinel } from './sentinel.ts'
 import { electronPaths, resolveModelsDir, resolveWorkerPath } from './paths.ts'
 import type { PathEnvironment } from './paths.ts'
@@ -200,12 +200,36 @@ export class WhisperEngine extends EventEmitter {
     const workerPath = this.#options.workerPath ?? resolveWorkerPath(env)
     this.#stateDir = this.#options.stateDir ?? modelsDir
 
-    // Refuse before spawning rather than after aborting. An ONNX session that
-    // cannot allocate does not fail politely — it takes the process with it.
-    if (!hasEnoughMemory()) {
-      throw new Error(
-        `mémoire insuffisante pour le modèle local (moins de ${minFreeGB()} Go disponibles)`,
-      )
+    /*
+     * Refuse before spawning rather than after aborting. An ONNX session that
+     * cannot allocate does not fail politely — it takes the process with it.
+     *
+     * « mémoire vive », and both numbers. The old wording was « mémoire
+     * insuffisante … (moins de 2 Go disponibles) », which named neither the
+     * model nor what was measured: a rep read it as disk space and went to
+     * check a drive with 400 GB free. It also named no way out, and there are
+     * two — close something, or pick a smaller checkpoint, which now genuinely
+     * helps because the requirement scales with the model.
+     */
+    const memory = memoryVerdict(this.modelId)
+    if (!memory.ok) {
+      const label = modelById(this.modelId)?.label ?? this.modelId
+      const gb = (n: number): string => n.toFixed(1).replace('.', ',')
+      /*
+       * Two different refusals, because they have two different remedies. With
+       * a probe the machine is *busy* and closing something fixes it. Without
+       * one the only claim being made is about total RAM, so telling the rep to
+       * close applications would be advice that cannot work.
+       */
+      const message =
+        memory.reading.source === 'probe'
+          ? `mémoire vive insuffisante pour ${label} : ${gb(memory.requiredGB)} Go nécessaires, ` +
+            `${gb(memory.reading.gb)} Go disponibles — fermez des applications ou choisissez un modèle plus petit`
+          : `${label} demande ${gb(memory.requiredGB)} Go de mémoire vive et cette machine ` +
+            `en a ${gb(memory.totalGB)} au total — choisissez un modèle plus petit`
+      // The numbers behind the refusal, so the next report of one is not
+      // another round of guessing at which measurement was taken.
+      throw new Error(message, { cause: { model: this.modelId, ...memory } })
     }
 
     // The mutex still matters even though there is now one load per model: a
