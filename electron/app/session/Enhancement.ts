@@ -129,6 +129,23 @@ export class Enhancement {
   #diagnostics: DiagRecorder
   /** One run per meeting. A second `end` must not start a second extraction. */
   #running = new Set<MeetingId>()
+  /**
+   * Meetings whose end-of-meeting path has begun but whose run has not.
+   *
+   * Between the `ended` transition and the first line of `run` sits the
+   * transcriber flush — a second or two on a batch provider, longer on a long
+   * call. In that window the meeting is `ended`, nothing is in `#running`, and
+   * `statusOf` therefore answered `failed`: a rep who pressed *Terminer* and
+   * reloaded, or who opened the meeting from Historique at that moment, was
+   * told the compte-rendu had not been written and offered a button to write
+   * it — while the run was already on its way. `ended` drawing no control, the
+   * screen was otherwise blank, which is the one thing DEC-39 exists to
+   * prevent.
+   *
+   * Set by `begin`, cleared by `run`. Separate from `#running` because that set
+   * is the double-run guard and an entry in it would make `run` return early.
+   */
+  #starting = new Set<MeetingId>()
   #attempts = new Map<MeetingId, number>()
   /**
    * Meetings that ended with no model to analyse them, kept so a model
@@ -160,6 +177,66 @@ export class Enhancement {
   }
 
   /**
+   * The end-of-meeting path has started on this meeting — say so now, rather
+   * than when the model is finally called.
+   *
+   * Called before the transcriber is flushed, which is the part of the path
+   * that takes measurable time and during which the screen used to have
+   * nothing to show. Idempotent, and harmless on a meeting whose run never
+   * materialises: `run` clears it on every exit, and a path that dies before
+   * reaching `run` leaves a meeting reported as *running* until the next
+   * status read, which re-derives from a state the store still has.
+   */
+  begin(meetingId: MeetingId): void {
+    if (this.#running.has(meetingId) || this.#starting.has(meetingId)) return
+    this.#starting.add(meetingId)
+    this.#announce(meetingId)
+  }
+
+  /**
+   * Free a meeting the log says is `extracting` with nothing running behind it.
+   *
+   * That combination has exactly one cause: a run that did not finish because
+   * the process did not. The state is persisted, `#running` is not, so the next
+   * launch replays a meeting into `extracting` and leaves it there — and
+   * `extracting` is the worst state to be stranded in. `statusOf` reports
+   * `running`, so the notice draws « Rédaction du compte-rendu… » with no
+   * control; the review gate is closed with *Analyse en cours…*; the recipe
+   * picker locks itself to « rédaction en cours »; and `extract` is not legal
+   * from `extracting`, so the retry — the one way out of every other failure —
+   * is refused before it does anything. A meeting that reached this state was
+   * unrecoverable short of deleting the database, and it was a rep's own
+   * recorded call.
+   *
+   * So it is treated as what it is: a failed attempt. `extractionFailed` puts
+   * the meeting back in `ended` with its transcript, its notes and its
+   * recording untouched — exactly where a model timing out would have left it —
+   * and the notice then offers *Rédiger le compte-rendu*.
+   *
+   * Deliberately **not** an automatic re-run. The interrupted attempt may be
+   * what stopped the process, and a boot that silently re-enters it is a crash
+   * loop that costs a model call each time round. The rep is told what happened
+   * and given the button.
+   *
+   * `state` is passed in for the same reason `statusOf` takes it: the meeting
+   * projection lives in `modules/store` and `app/session/` may not read it.
+   * Returns whether it actually freed one, so the caller can say how many.
+   */
+  reconcile(meetingId: MeetingId, state: MeetingState): boolean {
+    if (state !== 'extracting') return false
+    if (this.#running.has(meetingId)) return false
+
+    const reason = 'l’application s’est arrêtée pendant la rédaction'
+    if (!this.#deps.dispatch(meetingId, 'extractionFailed', reason).ok) return false
+
+    this.#starting.delete(meetingId)
+    this.#lastFailure.set(meetingId, reason)
+    this.#record('warn', 'enhancement.interrupted', reason, meetingId)
+    this.#announce(meetingId)
+    return true
+  }
+
+  /**
    * Meetings waiting on a model, for the caller that has just been told one
    * exists. A copy, so draining it cannot mutate what is being iterated.
    */
@@ -181,7 +258,9 @@ export class Enhancement {
     state: MeetingState,
     modelReady: boolean,
   ): EnhancementStatus {
-    if (this.#running.has(meetingId) || state === 'extracting') return { status: 'running' }
+    if (this.#running.has(meetingId) || this.#starting.has(meetingId) || state === 'extracting') {
+      return { status: 'running' }
+    }
     // Every other state is either before the question (`idle`, `armed`,
     // `recording`), past it (`awaiting_confirmation`, `pushing`, `done`) or out
     // of it (`aborted`). Only `ended` is a meeting owed a compte-rendu.
@@ -202,6 +281,12 @@ export class Enhancement {
     const meetingId = session.id
 
     if (this.#running.has(meetingId)) return
+
+    // The path `begin` announced has arrived. Cleared here rather than only in
+    // the `finally`, because every early return below is an outcome the status
+    // has to be free to describe — a meeting that found no model is *waiting*,
+    // not still starting.
+    this.#starting.delete(meetingId)
 
     const recipe = this.#deps.recipe()
     if (!recipe) {

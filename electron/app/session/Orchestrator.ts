@@ -68,6 +68,17 @@ export interface OrchestratorOptions {
    */
   onEnded?: (meetingId: MeetingId) => Promise<void>
   /**
+   * The end-of-meeting path has begun — before the transcriber is flushed, not
+   * after.
+   *
+   * `onEnded` runs once the flush has finished, and that flush is seconds a rep
+   * spends looking at a screen with no *Terminer* button left on it and nothing
+   * yet saying why. This is the hook that lets whoever owns the status say
+   * « ça arrive » for the whole of the path rather than only for the part that
+   * calls a model. Synchronous and best-effort: it announces, it does no work.
+   */
+  onEnding?: (meetingId: MeetingId) => void
+  /**
    * The transcription options for a meeting about to record: which provider,
    * with which credential, and which boost terms (DEC-17).
    *
@@ -137,6 +148,7 @@ export class Orchestrator {
   #signals = new Map<MeetingId, SignalProducer>()
   #createSignals: OrchestratorOptions['createSignals']
   #onEnded: OrchestratorOptions['onEnded']
+  #onEnding: OrchestratorOptions['onEnding']
   #recordingOptionsFor: OrchestratorOptions['recordingOptionsFor']
   #correctorFor: OrchestratorOptions['correctorFor']
   #timers: OrchestratorOptions['timers']
@@ -178,6 +190,7 @@ export class Orchestrator {
     this.#recordingDeps = options.recording ?? {}
     this.#createSignals = options.createSignals
     this.#onEnded = options.onEnded
+    this.#onEnding = options.onEnding
     this.#recordingOptionsFor = options.recordingOptionsFor
     this.#correctorFor = options.correctorFor
     this.#timers = options.timers
@@ -292,6 +305,15 @@ export class Orchestrator {
     const enhance = this.#onEnded
     if (!enhance) return
     try {
+      // Before the flush, so the seconds it takes are seconds the screen can
+      // account for. Guarded like every other injected callback here: a status
+      // announcement that throws must not be able to cost the compte-rendu it
+      // is announcing.
+      try {
+        this.#onEnding?.(meetingId)
+      } catch {
+        /* a readout, never a dependency */
+      }
       // The tail of a call is the part with the next steps in it, so the
       // transcriber is flushed before anything reads the transcript.
       await this.stopRecording(meetingId)

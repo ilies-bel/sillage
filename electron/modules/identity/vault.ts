@@ -24,7 +24,7 @@ import type { SecretVault } from '../../core/contracts/secrets.ts'
 export type { SecretVault }
 
 /** Namespaced so an uninstall-reinstall of a *different* app cannot collide. */
-export const VAULT_SERVICE = 'fr.esn.sillage'
+export const VAULT_SERVICE = 'fr.ilies-bel.sillage'
 
 /** The three keytar calls this file uses. Declared so `any` stops at the edge. */
 export interface KeytarLike {
