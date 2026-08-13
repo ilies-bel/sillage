@@ -125,8 +125,10 @@ export function resolveTargetPath(rel, { repoRoot, resourcesPath } = {}) {
  * suitable for both throwing (script use) and in-place UI (boot gate).
  *
  * Behavior:
- *   - Non-darwin platforms: returns `{ ok: true, skipped: true }` (no Rosetta
- *     risk on Linux/Windows; better-sqlite3 prebuilds handle arch themselves).
+ *   - Non-darwin platforms: `skipped: true`, and otherwise the same keys as a
+ *     real run (no Rosetta risk on Linux/Windows; keytar's prebuilds handle
+ *     arch themselves). The shape is deliberately not narrower there — this is
+ *     the branch Windows takes, and Windows is the primary platform (HR-2).
  *   - Missing .node files: skipped with a warning, NOT counted as a mismatch
  *     (a fresh `npm install` won't have rebuilt yet — that's the rebuild
  *     step's job, not this verifier's).
@@ -146,7 +148,18 @@ export function resolveTargetPath(rel, { repoRoot, resourcesPath } = {}) {
  */
 export function verifyAll(repoRoot = process.cwd(), opts = {}) {
   if (os.platform() !== 'darwin') {
-    return { ok: true, skipped: true, mismatches: [] };
+    // Same shape as the darwin return, not a shorter one. A caller reading
+    // `packaged` or `fix` off this got `undefined` on Windows — the primary
+    // platform (HR-2) — which is how the parity test below came to fail on
+    // every non-mac CI run while passing on the machine it was written on.
+    return {
+      ok: true,
+      skipped: true,
+      hardware: detectHardwareArch(),
+      mismatches: [],
+      fix: buildFixCommand({ packaged: opts.packaged }),
+      packaged: !!opts.packaged,
+    };
   }
 
   const expected = detectHardwareArch();
@@ -178,6 +191,7 @@ export function verifyAll(repoRoot = process.cwd(), opts = {}) {
 
   return {
     ok: mismatches.length === 0,
+    skipped: false,
     hardware: expected,
     mismatches,
     fix: buildFixCommand({ packaged: opts.packaged }),

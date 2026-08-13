@@ -153,12 +153,75 @@ test('the default recipe is unchanged — same prompt, same fields, same documen
   assert.match(result.compteRendu, /Éléments retenus/)
 })
 
+/**
+ * An assertion on a sentence, standing in for one on model behaviour — the same
+ * trade `NOTES_PREAMBLE`'s test makes, and for the same reason: no stub can
+ * reproduce the prose the register exists to prevent. What a test *can* hold is
+ * that the instruction is still in the prompt when it leaves.
+ *
+ * Both recipes, because the register is shared on purpose (DEC-44). `libre`
+ * chooses its own headings and still owes the rep the same voice, and a register
+ * wired into one prompt is the failure that shows up as « the free ones read
+ * differently » long after anybody remembers why.
+ */
+test('both reduce prompts carry the same register', async () => {
+  for (const recipeId of ['besoin-commercial', 'libre'] as const) {
+    const free = recipeId === 'libre'
+    const { llm, calls } = spyLlm(free ? { compteRendu: LIBRE_DOCUMENT } : ESN_REPLY)
+    const recipe = new CompteRenduRecipe({ llm })
+
+    await recipe.run({
+      context: sampleContext,
+      recipe: recipeId,
+      transcript: TRANSCRIPT,
+      repEmail: null,
+    })
+
+    const instructions = calls[0]?.instructions ?? ''
+    // Attribution: the bullet that makes the prose report rather than assert,
+    // which is DEC-7 and DEC-21 restated in French.
+    assert.match(instructions, /le client a insisté sur/, `${recipeId} lost the attribution rule`)
+    // And the bound on the quoting licence. This is the expensive line to lose:
+    // `deterministicLeaks.ts` exempts the `citation` *key*, never a quotation,
+    // so an unbounded licence buys voice and spends whole extractions.
+    assert.match(instructions, /jamais une phrase entière/, `${recipeId} lost the quote guard`)
+  }
+})
+
 test('a free reply carrying a deterministic leak is refused like any other', async () => {
   // The free recipe has one prose key and no schema constraining what goes in
   // it, which makes this check the *only* thing standing between a model that
   // read a name off the transcript and a CRM task carrying it (DEC-7).
   const { llm } = spyLlm({
     compteRendu: '## Résumé\n\nÉchange avec Camille Le Roy sur la bascule.\n',
+  })
+  const recipe = new CompteRenduRecipe({ llm })
+
+  await assert.rejects(
+    recipe.run({
+      context: sampleContext,
+      recipe: 'libre',
+      transcript: TRANSCRIPT,
+      repEmail: null,
+    }),
+    /donnée|déterministe|refus/i,
+  )
+})
+
+/**
+ * The exemption is keyed on the JSON path, not on the text looking like a quote.
+ *
+ * DEC-44 lets the prose carry a few of the client's own words, which is the one
+ * register bullet that can fail an extraction: a rep quoting « … » in
+ * `compteRendu` gets no exemption, while the identical string under
+ * `besoin.citation` is passed through untouched (`deterministicLeaks.ts`). The
+ * guard in the prompt is what keeps the two apart, and this is the assertion
+ * that the check it guards against is real — without it, a future reader could
+ * reasonably conclude the guillemets were doing the exempting.
+ */
+test('a name quoted inside « … » leaks exactly like a bare one', async () => {
+  const { llm } = spyLlm({
+    compteRendu: '## Résumé\n\nIl a été clair : « Camille Le Roy pilote la bascule ».\n',
   })
   const recipe = new CompteRenduRecipe({ llm })
 

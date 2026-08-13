@@ -145,4 +145,36 @@ describe('nativeArch parity (cjs ↔ esm)', () => {
       assert.equal(cResult.packaged, true);
     });
   });
+
+  /*
+   * The reason the test above spent a release red.
+   *
+   * `verifyAll` short-circuits off darwin and used to return a *narrower*
+   * object — no `packaged`, no `fix`, no `hardware`. Written and run on a Mac,
+   * that branch is never taken, so the file was green locally and red on every
+   * CI run, on the one platform this app actually ships to (HR-2). Asserting
+   * the key set rather than a value is what makes this hold on every host: it
+   * fails wherever the two paths disagree, not only where the short one runs.
+   */
+  test('both return paths carry the whole documented result shape', () => {
+    const cjs = require('../nativeArch.cjs');
+    return import('../nativeArch.mjs').then((esm) => {
+      const documented = ['fix', 'hardware', 'mismatches', 'ok', 'packaged', 'skipped'];
+      for (const [name, mod] of [
+        ['cjs', cjs],
+        ['esm', esm],
+      ]) {
+        const result = mod.verifyAll(undefined, { packaged: true });
+        assert.deepEqual(
+          Object.keys(result).sort(),
+          documented,
+          `${name}.verifyAll on ${process.platform} returned ${JSON.stringify(Object.keys(result).sort())}`,
+        );
+        // Whichever branch this host took, none of it may be undefined.
+        for (const key of documented) {
+          assert.notEqual(result[key], undefined, `${name}.${key} is undefined on ${process.platform}`);
+        }
+      }
+    });
+  });
 });
