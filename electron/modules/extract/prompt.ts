@@ -20,6 +20,13 @@
  * else about provenance, and `toExtraction.ts` builds the span. The model
  * cannot supply a timing here because there is nowhere to put one.
  *
+ * ## Two shared blocks
+ *
+ * `FORBIDDEN` is spread into all four prompts; `REGISTRE` (DEC-44) into the two
+ * reduce prompts only, because a 240-character note has no register. Each is
+ * documented where it is declared, and the reason the quote guard lives in the
+ * second rather than the first is the reason they are not one block.
+ *
  * ## Why the prompt is told nothing about the attendees
  *
  * The agenda, the subject and the attendee list are all to hand, and none of
@@ -167,6 +174,61 @@ const FORBIDDEN = [
 ]
 
 /**
+ * How the document is *written* — the one thing about it that had no spec
+ * (DEC-44).
+ *
+ * Everything else was pinned: six headings in `recipes.ts`, a header and a recap
+ * rendered by code, a leak check on the prose, a measured confidence per field.
+ * The prose itself rested on one sentence — « rédige-le comme le commercial
+ * l'aurait écrit » — which is the goal, not the instruction, and VISION.md's
+ * definition of done rests on it entirely.
+ *
+ * The register asks the prose to obey in words what the schema already enforces
+ * in structure. A model that writes « le client a insisté sur » is separating
+ * what was said from what it concluded, which is DEC-7 and DEC-21 stated in
+ * French rather than in types; a model that keeps « à l'étude » as « à l'étude »
+ * is refusing to resolve an ambiguity the meeting left open, which is the same
+ * discipline one clause down.
+ *
+ * ## Why it is shared, and why the guillemet guard is not
+ *
+ * Both reduce prompts get it, because voice is orthogonal to whether the plan is
+ * fixed: `libre` chooses its own headings and still owes the rep the same
+ * document. Neither *map* prompt gets it — a 240-character note has no register.
+ *
+ * The one bullet that could have gone in `FORBIDDEN` is the quote guard, and it
+ * must not. `FORBIDDEN` is spread into all four prompts, and two of them are the
+ * map stage, whose `citation` is verbatim transcript and therefore *has* to be
+ * allowed to contain a name (DEC-21, and `deterministicLeaks.ts` exempts it for
+ * exactly that reason). Telling the map stage not to quote a name inside
+ * guillemets would break citations to fix a risk that only exists in prose.
+ *
+ * ## The cost of the quoting licence, stated where it is granted
+ *
+ * `deterministicLeaks.ts` exempts strings whose JSON key is literally
+ * `citation` — not text that happens to be a quotation. A « … » fragment inside
+ * `compteRendu` is inspected like any other prose, and a hit fails the whole
+ * extraction. So the licence is bounded in the bullet itself: a few words, never
+ * a sentence, two or three times at most, and reformulated rather than quoted
+ * when the passage carries a name, an address, a number or a full date. A
+ * fragment is what makes this safe — « des gens qui ont déjà construit » cannot
+ * carry an attendee the way the sentence around it can.
+ */
+const REGISTRE = [
+  'Registre :',
+  "- Troisième personne, jamais « je » ni « nous ». Le rédacteur n'apparaît pas dans le document.",
+  "- Attribue ce qui a été dit, avec le verbe qui convient : « le client a insisté sur », « il l'a formulé explicitement », « le sujet a été évoqué sans être tranché ». Un propos rapporté et une conclusion tirée ne s'écrivent pas de la même façon, et c'est au lecteur de voir laquelle il lit.",
+  "- Garde les réserves telles qu'elles ont été dites : « à l'étude », « à confirmer », « de l'ordre de ». Ne tranche pas ce que l'échange a laissé ouvert — écris qu'il est resté ouvert.",
+  "- Reprends les quantités avec leur approximation d'origine (« environ six mois », « deux, peut-être trois selon le budget »). N'arrondis pas et ne convertis pas.",
+  "- Des phrases complètes, y compris dans les puces. « Régie, 520 € » est un champ recopié ; « Le client travaille en régie et a évoqué un TJM de 520 € » est une phrase.",
+  "- Des paragraphes courts, d'une à trois phrases.",
+  "- Tu peux reprendre entre guillemets quelques mots prononcés par le client quand c'est la formulation elle-même qui compte. Quelques mots, jamais une phrase entière, et deux ou trois fois au plus dans tout le document. Si le passage contient un nom, une adresse, un numéro ou une date complète, reformule-le au lieu de le citer.",
+  '- Les termes techniques anglais restent en anglais, tels qu\'ils ont été prononcés.',
+  "- Pas d'appréciation de ta part, pas d'adjectif vendeur, pas de formule de conclusion. Ce document relève ce qui s'est dit ; ce n'est pas un argumentaire.",
+  '- Vise la densité, pas la longueur : chaque phrase apporte un fait. Pas de phrase de liaison qui n\'apprend rien.',
+]
+
+/**
  * French, unconditionally (HR-6, DEC-22).
  *
  * Not "answer in the language of the call". A rep at a French ESN pastes this
@@ -205,6 +267,8 @@ export const EXTRACT_INSTRUCTIONS = [
   ...COMPTE_RENDU_SECTIONS.map((heading) => `  ${heading}`),
   "Rédige-le comme le commercial l'aurait écrit : des phrases, pas une liste de champs recopiés. Ne mets pas de titre de niveau 1, il est ajouté ensuite.",
   "« ## Résumé » fait deux à quatre phrases et se lit seul : ce que le client cherche, où en est l'échange, ce qui a été convenu. C'est la section que l'on lit trois semaines plus tard sans rouvrir le reste. N'y annonce pas le document (« ce compte-rendu présente… ») et n'y mets pas de liste à puces.",
+  '',
+  ...REGISTRE,
   '',
   'Les autres clés sont les champs structurés. Pour chacun :',
   '- « valeur » est la donnée, en français.',
@@ -272,6 +336,8 @@ export const LIBRE_INSTRUCTIONS = [
   "- Ne crée pas de section pour un sujet qui n'a pas été abordé, et n'écris jamais qu'un sujet n'a pas été évoqué : ce qui n'a pas été dit n'a pas sa place dans le document.",
   "- À l'intérieur d'une section, des phrases ou des puces courtes, selon ce qui se lit le mieux.",
   'Ne mets pas de titre de niveau 1, il est ajouté ensuite.',
+  '',
+  ...REGISTRE,
   '',
   'Règles impératives :',
   "- N'invente rien. Tout ce que tu écris doit avoir été dit dans la matière fournie.",

@@ -63,7 +63,18 @@ function resolveTargetPath(rel, { repoRoot, resourcesPath } = {}) {
 
 function verifyAll(repoRoot = process.cwd(), opts = {}) {
   if (os.platform() !== 'darwin') {
-    return { ok: true, skipped: true, mismatches: [] };
+    // Same shape as the darwin return, not a shorter one. A caller reading
+    // `packaged` or `fix` off this got `undefined` on Windows — the primary
+    // platform (HR-2) — which is how the parity test came to fail on every
+    // non-mac CI run while passing on the machine it was written on.
+    return {
+      ok: true,
+      skipped: true,
+      hardware: detectHardwareArch(),
+      mismatches: [],
+      fix: buildFixCommand({ packaged: opts.packaged }),
+      packaged: !!opts.packaged,
+    };
   }
   const expected = detectHardwareArch();
   const mismatches = [];
@@ -88,6 +99,7 @@ function verifyAll(repoRoot = process.cwd(), opts = {}) {
   }
   return {
     ok: mismatches.length === 0,
+    skipped: false,
     hardware: expected,
     mismatches,
     fix: buildFixCommand({ packaged: opts.packaged }),
