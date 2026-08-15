@@ -246,18 +246,24 @@ export class AutoUpdate implements UpdatePort {
       /*
        * Load-bearing, and silently so.
        *
-       * Every release this project cuts is marked `--prerelease`, because none
-       * of them is signed. With the default `allowPrerelease = false`,
-       * electron-updater resolves the newest version through GitHub's
-       * `/releases/latest` — an endpoint that **excludes prereleases**. The
-       * whole feature would then do nothing at all, on a repository whose
-       * releases page visibly has a newer version on it, and report « à jour »
-       * while doing it.
+       * With the default `allowPrerelease = false`, electron-updater resolves
+       * the newest version through GitHub's `/releases/latest` — an endpoint
+       * that **excludes prereleases**. v0.1.0…v0.1.3 were all cut with
+       * `--prerelease`, so an installed one of those would have found nothing
+       * at all, on a repository whose releases page visibly has a newer version
+       * on it, and reported « à jour » while doing it.
+       *
+       * `release.yml` no longer sets that flag — a prerelease has no
+       * `/releases/latest`, and that URL is now the app's public download link.
+       * This stays `true` anyway, for two reasons: the four prereleases already
+       * published are the versions in testers' hands right now, and this is what
+       * lets a deliberate prerelease reach them later without a code change.
        *
        * With it true and a `currentVersion` carrying no prerelease tag (`0.1.1`
        * does not), the provider takes the newest entry in the releases feed
        * whatever its flag — which is the intended behaviour here. Revisit only
-       * when signed stable releases exist alongside prereleases.
+       * when a prerelease must NOT reach everyone, which needs a channel, not
+       * this switch.
        */
       updater.allowPrerelease = true
 
