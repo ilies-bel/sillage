@@ -154,7 +154,28 @@ jobs:
 
       # A tag, and only a tag, produces a public direct-download URL — this
       # repository is public, so this step is the moment the installer becomes
-      # downloadable by anyone. Marked a prerelease while it is unsigned.
+      # downloadable by anyone.
+      #
+      # WHY THIS IS NOT MARKED `--prerelease`, AND WHY THE FILENAMES CARRY NO VERSION
+      #
+      # Together they are one decision: a permanent download URL that can be
+      # written into a blog post or a mail once and never revisited —
+      #
+      #   https://github.com/ilies-bel/sillage/releases/latest/download/Sillage-Setup.exe
+      #
+      # `/releases/latest` is GitHub's redirect to the newest release that is
+      # neither a draft nor a **prerelease**. v0.1.0…v0.1.3 were all prereleases,
+      # so that URL 404s for every one of them: the flag and the link cannot both
+      # exist. And `/latest/download/<name>` needs `<name>` to be the same string
+      # next release, which `${version}` in `artifactName` guarantees it is not.
+      #
+      # What the flag was carrying was "this build is unsigned". It still is, and
+      # the release notes below say so in the first line — which is where a tester
+      # actually reads it, unlike a grey badge next to the title. Dropping the flag
+      # costs that badge and nothing else.
+      #
+      # `AutoUpdate.ts` sets `allowPrerelease = true` and is unaffected either way:
+      # it takes the newest entry in the feed whatever the flag says.
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -171,8 +192,11 @@ jobs:
           *Informations complémentaires* → *Exécuter quand même*. C'est attendu tant qu'il n'y a
           pas de certificat de signature.
 
-          - `Sillage-Setup-*.exe` — installateur, pas de droits administrateur requis
-          - `Sillage-*-portable.exe` — à lancer sans installer
+          - `Sillage-Setup.exe` — installateur, pas de droits administrateur requis
+          - `Sillage-portable.exe` — à lancer sans installer
+
+          Lien permanent vers la dernière version, à partager tel quel :
+          <https://github.com/ilies-bel/sillage/releases/latest/download/Sillage-Setup.exe>
 
           Le modèle de transcription locale est inclus dans l'installateur : aucun
           téléchargement au premier lancement. Une clé LLM est à saisir dans Réglages pour
@@ -203,5 +227,15 @@ jobs:
             release/*.exe.blockmap \
             release/latest.yml \
             --title "Sillage ${GITHUB_REF_NAME}" \
-            --prerelease \
             --notes-file release-notes.md
+
+          # The point of the two paragraphs above. If this ever prints something
+          # other than the tag just published, the permanent download link is
+          # pointing at the wrong release — fail here rather than let a blog post
+          # quietly serve an old installer.
+          resolved=$(gh release view --json tagName --jq .tagName)
+          if [ "$resolved" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::/releases/latest resolves to '$resolved', not '${GITHUB_REF_NAME}' — the permanent download URL is stale."
+            exit 1
+          fi
+          echo "Permanent link now serves ${GITHUB_REF_NAME}: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/Sillage-Setup.exe"
