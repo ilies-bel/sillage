@@ -94,6 +94,18 @@ machine) or in `core/domain/` — never in an IPC handler.
   their own — a summary of whatever happened, so *both* recipes open on it.
   `COMPTE_RENDU_SECTIONS` is the single source for the ESN headings; the prompt and the tests
   both read it, and it lives in `core/contracts/recipes.ts` beside the recipe that uses it.
+- **The register is declared, shared by both recipes, and the quoting licence is bounded**
+  (DEC-44). `REGISTRE` in `modules/extract/prompt.ts` is what makes the prose *report* rather
+  than assert — attribution, hedges kept as spoken, quantities with their original
+  approximation. It reaches the two **reduce** prompts only; a 240-character note has no
+  register. Two things are load-bearing. **No new markdown**: the document is never rendered
+  as markdown anywhere — `CompteRenduPane` draws it `whitespace-pre-wrap`, the gate edits it
+  in a textarea, VerySwing gets the same string — so a table or a fact-line block lands as
+  literal pipes on every surface a human reads. And **the guillemet guard stays in `REGISTRE`,
+  never in `FORBIDDEN`**: `deterministicLeaks.ts` exempts the `citation` *key*, never a
+  quotation, so a « … » fragment in the prose can fail the whole extraction — but `FORBIDDEN`
+  is also read by the map prompts, whose citations are verbatim transcript and must be allowed
+  to contain names (DEC-21). Tune the register with `npm run replay:extract`, not by reading it.
 - **Two recipes, declared in one file, and never a template the rep writes** (DEC-43,
   amending DEC-13). `core/contracts/recipes.ts` declares a *shape* — headings, field names,
   labels — and never a fact. A third recipe is an entry there plus its prompt in
