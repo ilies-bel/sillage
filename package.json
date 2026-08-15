@@ -1,6 +1,6 @@
 {
   "name": "sillage",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "main": "dist-electron/electron/app/main.js",
   "description": "Desktop meeting notetaker for ESN sales reps: transcribes the machine's own audio, writes French notes, and pushes to VerySwing after one confirmation.",
