@@ -334,7 +334,10 @@ export const LIBRE_INSTRUCTIONS = [
   '- Commence par une section « ## Résumé » de deux à quatre phrases qui se lit seule : de quoi a parlé la réunion, où en est le sujet, ce qui a été décidé. N\'y annonce pas le document (« ce compte-rendu présente… ») et n\'y mets pas de liste à puces.',
   "- Ensuite, trois à six sections de niveau « ## », titrées d'après le contenu réel de l'échange (« Décisions », « Migration de la plateforme », « Points ouverts »…). Choisis-les pour ce qui a été dit, pas pour ce qu'un rendez-vous commercial contient d'habitude.",
   "- Ne crée pas de section pour un sujet qui n'a pas été abordé, et n'écris jamais qu'un sujet n'a pas été évoqué : ce qui n'a pas été dit n'a pas sa place dans le document.",
-  "- À l'intérieur d'une section, des phrases ou des puces courtes, selon ce qui se lit le mieux.",
+  // « des puces courtes » used to end this line, and it now contradicts the
+  // register, which says a bullet is a whole sentence. The choice this bullet
+  // offers is paragraph-or-list; what goes inside either is `REGISTRE`'s.
+  "- À l'intérieur d'une section, des phrases suivies ou des puces, selon ce qui se lit le mieux.",
   'Ne mets pas de titre de niveau 1, il est ajouté ensuite.',
   '',
   ...REGISTRE,
