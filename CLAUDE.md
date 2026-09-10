@@ -212,6 +212,15 @@ machine) or in `core/domain/` — never in an IPC handler.
   The claimed channel is a **hint**, not a filter: narrowing to it made a real quote whose
   speaker the model mislabelled come back « introuvable », which discredits the evidence
   instead of the mistake.
+- **Every control clears 24×24, and it is measured** (`shot.mjs --targets`, WCAG 2.2 Target
+  Size). Forty-odd were under it, all 17–23px tall, and none of them looked wrong in the
+  source: `py-1.5` around `--type-ui` resolves to nineteen pixels. `Button` and `Chip` carry
+  `min-h-[24px]` with `inline-flex items-center` rather than more padding — padding moves the
+  *text*, and these sit on shared baselines beside titles and section headers. The criterion's
+  own exceptions are honoured by the check, not claimed by a class: a control inline in a
+  sentence is exempt, and a checkbox whose `for`-linked label is big enough is measured by the
+  label, because that is what a rep aims at.
+
 - **A gutter is owned by what hangs in it, and geometry is measured, not read.**
   `CompteRenduDocument` sets `GUTTER` itself and no caller passes one: the three surfaces that
   draw a compte-rendu each set their own `pl-6` — 24px, narrower than `### ` — and the session
