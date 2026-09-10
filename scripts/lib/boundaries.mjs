@@ -23,6 +23,18 @@ import { dirname, join, normalize } from 'node:path'
 /** Layers, most specific first. `null` means "not in a layer yet". */
 export const classify = (path) => {
   if (path === 'electron/preload.ts') return { layer: 'app' }
+  /*
+   * The preload's own tests, beside it.
+   *
+   * `preload.ts` is `app` because it is electron wiring (ARCHITECTURE.md §5.B),
+   * and a test for it cannot live under `electron/app/` — it would then be a
+   * test whose subject is two directories away, which is how a test stops being
+   * read with the thing it holds. `electron/__tests__/` is that pair's home and
+   * it inherits the layer, so it is bound by the import rule rather than
+   * exempt from it: without this line it would land in the not-yet-in-a-layer
+   * count, where nothing checks it at all.
+   */
+  if (path.startsWith('electron/__tests__/')) return { layer: 'app' }
   if (path.startsWith('electron/core/')) return { layer: 'core' }
   if (path.startsWith('electron/modules/')) {
     const [, , name] = path.split('/')

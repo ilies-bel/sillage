@@ -187,9 +187,55 @@ try {
     await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
   })
 
-  await step('Échap returns, and Ctrl , opens Réglages', async () => {
+  await step('Demander refuses with the main process’s own sentence (DEC-26)', async () => {
+    /*
+     * No model is configured on a clean profile, so `meeting:ask` cannot answer
+     * — and what a rep must get is the sentence that names the screen to go to,
+     * not « une erreur est survenue ». That string is composed in the main
+     * process and crosses the bridge; nothing else in this repo sees it make
+     * that trip.
+     */
+    await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
+    await page.locator('li').first().getByRole('button').first().click()
+    await page.getByLabel('Poser une question sur cet appel').fill('Quel TJM ?')
+    await page.getByRole('button', { name: 'Demander' }).click()
+    const alert = await page.getByRole('alert').first()
+    await alert.waitFor({ timeout: 30_000 })
+    const text = (await alert.textContent()) ?? ''
+    /*
+     * On a clean profile the meeting held no speech, so the refusal is « Aucune
+     * transcription n'a été enregistrée pour cet appel. » — whichever refusal it
+     * is, what has to hold is that a rep reads *only* the French sentence.
+     *
+     * This is the assertion that found the bug: Electron composes its own
+     * message around a rejected `invoke`, so the alert read « Error invoking
+     * remote method 'meeting:ask': Error: Aucune transcription… » — an English
+     * stack-shaped prefix naming an internal channel, in front of the French, on
+     * the surface DEC-26 exists to keep readable. `preload.ts` takes it back off.
+     */
+    if (/Error invoking remote method|^Error:/.test(text.trim())) {
+      throw new Error(`la plomberie Electron fuit dans la phrase : ${text}`)
+    }
+    if (!/^[A-ZÀÂÉÈÊÎÔÙÜÇ]/.test(text.trim())) {
+      throw new Error(`refus qui ne commence pas par une phrase : ${text}`)
+    }
+  })
+
+  await step('the empty day can replay first run', async () => {
     await page.keyboard.press('Escape')
     await page.getByRole('region', { name: 'Calendrier' }).waitFor()
+    // `Échap` from the reader is one of the three shortcuts installed for every
+    // screen; reaching the calendar here is that assertion as well.
+    // A day with nothing on it: the fresh profile has exactly one meeting, and
+    // any other cell is empty.
+    await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
+    await page.getByRole('button', { name: /Revoir la présentation/ }).click()
+    await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+    await page.getByRole('button', { name: 'Passer' }).click()
+    await page.getByRole('region', { name: 'Calendrier' }).waitFor()
+  })
+
+  await step('Ctrl , opens Réglages from the calendar', async () => {
     await page.keyboard.press('Control+Comma')
     await page.getByRole('navigation', { name: 'Sections des réglages' }).waitFor()
   })
