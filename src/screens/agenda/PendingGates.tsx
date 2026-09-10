@@ -85,6 +85,11 @@ export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGate
   if (total === 0) return null
 
   const shown = rows.slice(0, PENDING_SHOWN)
+  /*
+   * How many of the backlog are on this screen already, drawn by the day list.
+   * Only ever a subtraction of what the caller filtered out — never a guess.
+   */
+  const hiddenHere = Math.max(0, Math.min(total, PENDING_SHOWN) - rows.length)
 
   return (
     <section className="mt-block">
@@ -110,6 +115,23 @@ export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGate
           </Button>
         ) : null}
       </div>
+
+      {/*
+        **Why the count and the rows can disagree, said where they disagree.**
+        `Agenda` removes any meeting already drawn in the day list above — the
+        alternative is the same call twice on one screen — but the count stays
+        the whole backlog, because that is a fact about the rep's work and not
+        about which day cell happens to be open. So « 2 » over one row, with no
+        explanation, read as a section that had lost a row. It has not; the row
+        is thirty pixels up.
+      */}
+      {hiddenHere > 0 ? (
+        <p className="text-muted -mt-1 mb-2 text-meta">
+          {hiddenHere === 1
+            ? 'Une autre est dans la liste du jour, au-dessus.'
+            : `${hiddenHere} autres sont dans la liste du jour, au-dessus.`}
+        </p>
+      ) : null}
 
       <List label="Réunions en attente de validation">
         {shown.map((row) => (
