@@ -102,6 +102,15 @@ describe('the compte-rendu appears where the rep already is', () => {
 
     expect(screen.queryByText(/Compte-rendu/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Compte-rendu' })).toBeNull()
+    /*
+      *Demander* included, and it is the reason this assertion is worth adding.
+      A question box beside a live meeting is a second thing to look at while
+      somebody is talking, and the transcript it would answer from is by
+      definition the part that has already happened. It rides on the
+      compte-rendu pane, so it is absent for free — which is exactly the kind of
+      thing that stops being true the day the pane moves.
+    */
+    expect(screen.queryByLabelText('Poser une question sur cet appel')).toBeNull()
   })
 
   /*
