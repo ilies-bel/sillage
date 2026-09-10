@@ -415,7 +415,9 @@ function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }
       type="button"
       onClick={onClick}
       aria-label={direction === -1 ? 'Filtres précédents' : 'Filtres suivants'}
-      className="text-muted hover:text-body bg-canvas border-subtle flex h-5 w-5 items-center justify-center rounded-full border text-meta leading-none"
+      // `h-6 w-6` — twenty-four pixels, WCAG 2.2's target size. It was twenty,
+      // on the one control that reaches the filters the fade is hiding.
+      className="text-muted hover:text-body bg-canvas border-subtle flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-meta leading-none"
     >
       {direction === -1 ? '‹' : '›'}
     </button>

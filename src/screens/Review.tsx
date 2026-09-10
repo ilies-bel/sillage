@@ -1083,11 +1083,18 @@ function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
             {field.span.startMs === null ? 'vérifié' : `vérifié · ${formatOffset(field.span.startMs)}`}
           </span>
         )}
+        {/*
+          `min-h-[24px]` and centred, not more padding: this sits on the row's
+          baseline beside the label and the verdict, and growing the box
+          downward would push all three apart on eleven rows. Seventeen pixels
+          tall is a control a trackpad misses, and the row below it is a field
+          nobody meant to touch (WCAG 2.2 target size — `shot.mjs --targets`).
+        */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="text-muted hover:text-body ml-auto shrink-0 text-meta"
+          className="text-muted hover:text-body -my-1 ml-auto inline-flex min-h-[24px] shrink-0 items-center text-meta"
         >
           {`source ${open ? '▾' : '▸'}`}
         </button>
@@ -1298,7 +1305,13 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
         className="mt-0.5 shrink-0"
       />
       <span className="min-w-0 flex-1">
-        <label htmlFor={intent.id} className="block">
+        {/*
+          The label *is* the target — it is `for`-linked, so clicking it toggles
+          the box, and a 13×13 checkbox is not something a trackpad hits.
+          `min-h-[24px]` on the label rather than a chunky checkbox: the thing a
+          rep aims at is the sentence, and WCAG 2.2 measures what they aim at.
+        */}
+        <label htmlFor={intent.id} className="flex min-h-[24px] items-center">
           {intent.label}
         </label>
         {/*

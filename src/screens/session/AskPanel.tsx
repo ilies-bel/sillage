@@ -176,7 +176,10 @@ export function AskPanel({ meetingId, onLocate, pinned = false, className }: Ask
                   setQuestion(suggestion)
                   void ask(suggestion)
                 }}
-                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle rounded-sm border px-2 py-0.5 text-meta transition"
+                // `min-h-[24px]`, WCAG 2.2 target size: `py-0.5` around
+                // `--type-meta` resolves to twenty-three pixels, and these sit
+                // in a wrapped row where a miss lands on the chip below.
+                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-2 py-0.5 text-meta transition"
               >
                 {suggestion}
               </button>

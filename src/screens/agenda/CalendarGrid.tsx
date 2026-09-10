@@ -64,11 +64,29 @@ export function CalendarGrid({
   return (
     <section aria-label="Calendrier">
       <header className="mb-2 flex items-center justify-between gap-2">
-        <Button variant="text" aria-label="Mois précédent" onClick={() => onMonth(addMonths(month, -1))}>
+        {/*
+          `min-w-[24px]`, because a chevron is five pixels wide.
+          `Button` gives every control 24px of height; the width comes from its
+          label, and « ‹ » has almost none. These are the two controls a rep uses
+          to look at last month, on a grid that fills the left third of the home
+          screen — and they were a five-pixel target beside a heading (WCAG 2.2;
+          `shot.mjs --targets` measures it).
+        */}
+        <Button
+          variant="text"
+          className="min-w-[24px]"
+          aria-label="Mois précédent"
+          onClick={() => onMonth(addMonths(month, -1))}
+        >
           ‹
         </Button>
         <h2 className="text-strong text-copy">{upperFirst(formatMonthLong(noonOf(month)))}</h2>
-        <Button variant="text" aria-label="Mois suivant" onClick={() => onMonth(addMonths(month, 1))}>
+        <Button
+          variant="text"
+          className="min-w-[24px]"
+          aria-label="Mois suivant"
+          onClick={() => onMonth(addMonths(month, 1))}
+        >
           ›
         </Button>
       </header>

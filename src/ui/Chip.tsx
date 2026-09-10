@@ -15,14 +15,22 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 
+/*
+ * `min-h-[24px]` on the two pressable variants, not on `label`.
+ *
+ * WCAG 2.2's target size, and `py-0.5` around `--type-meta` resolves to
+ * twenty-three pixels — one short, on the filter row where seven of them wrap
+ * and a miss lands on the chip below. `label` is a word in a row and never a
+ * control, so enlarging it would only push the row it sits on apart.
+ */
 const chip = cva('inline-flex shrink-0 items-center', {
   variants: {
     variant: {
       /** Pressable suggestion — Review's "autres sociétés du même groupe". */
       choice:
-        'border-card bg-inner text-body hover:bg-subtle rounded-sm border px-2 py-0.5 text-meta transition',
+        'border-card bg-inner text-body hover:bg-subtle min-h-[24px] rounded-sm border px-2 py-0.5 text-meta transition',
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
-      brand: 'bg-brand-100 text-brand-900 rounded-sm px-2 py-0.5 text-meta',
+      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-2 py-0.5 text-meta',
       /** The uppercase micro-label. Not a control, just a word in a row. */
       label: 'text-muted text-label font-semibold uppercase tracking-wider',
     },

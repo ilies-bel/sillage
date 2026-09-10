@@ -35,7 +35,29 @@ import { cn } from '../lib/utils.ts'
  * is not a primary. `bordered` keeps its shape and loses its ink, which is what
  * a form control that is present-but-inert should look like.
  */
-const button = cva('shrink-0 transition disabled:cursor-not-allowed', {
+/*
+ * **Every control is at least 24px tall, whatever its ink.**
+ *
+ * WCAG 2.2's *Target Size (Minimum)*, and it is not a phone concern: the reps
+ * this ships to are on Windows laptops with trackpads (HR-2). A 19px `nav` or
+ * `text` control sits in a dense rail beside eleven others, and a miss costs a
+ * click that lands on the row below — which on the review gate is a field
+ * nobody meant to touch. Measured rather than eyeballed: `py-1.5` looks
+ * generous in the source and resolves to nineteen pixels once the line-height
+ * under `--type-ui` lands, which is what `shot.mjs --targets` found on eight
+ * controls of the gate alone.
+ *
+ * `inline-flex` + `items-center` rather than more padding, because padding
+ * moves the *text*: these controls sit on shared baselines with labels beside
+ * them — « ‹ Calendrier » next to a title, « Copier » next to a section header
+ * — and growing the box downward would have shifted every one of those. The
+ * glyph stays where it was and the hit area grows around it.
+ *
+ * `justify-center` so `block` buttons still centre their label.
+ */
+const button = cva(
+  'inline-flex min-h-[24px] shrink-0 items-center justify-center transition disabled:cursor-not-allowed',
+  {
   variants: {
     variant: {
       /** The default control: a bordered chip of a button on a card. */
@@ -74,11 +96,12 @@ const button = cva('shrink-0 transition disabled:cursor-not-allowed', {
       text: 'text-muted hover:text-body disabled:opacity-60 text-ui',
       /** The same, when it needs to read as a link rather than a control. */
       link: 'text-muted hover:text-body disabled:opacity-60 text-ui underline',
+      },
+      block: { true: 'w-full', false: '' },
     },
-    block: { true: 'w-full', false: '' },
+    defaultVariants: { variant: 'bordered', block: false },
   },
-  defaultVariants: { variant: 'bordered', block: false },
-})
+)
 
 /**
  * Available, or unavailable *with a stated reason*. There is no third case, and

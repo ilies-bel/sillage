@@ -26,6 +26,13 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * It carries `--targets` too. Every control is measured against WCAG 2.2's
+ * 24×24, with the criterion's own exceptions honoured — a control inline in a
+ * sentence, and a checkbox whose label is the thing a rep actually aims at.
+ * Forty-odd controls were under it across the product, all of them 17 to 23
+ * pixels tall: the reps this ships to are on laptops with trackpads (HR-2), and
+ * a miss on the review gate lands on the field below.
+ *
  * It carries `--geometry` as well, which is the other half of the same problem.
  * Ten of the compte-rendu's twenty-three gutter markers were clipped for three
  * review rounds: present in the DOM, correct in `innerText`, and a third of the
@@ -72,7 +79,7 @@ const drive = (screen) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--viewport', '1280x800'],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--viewport', '1280x800'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

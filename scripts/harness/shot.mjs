@@ -11,6 +11,7 @@
  *   --scan [out.json]  run the impeccable browser detector on the staged screen
  *   --no-png         scan only
  *   --geometry       measure the hanging markers against the box they hang in
+ *   --targets        measure every control against WCAG 2.2's 24×24 minimum
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -636,6 +637,7 @@ function parseArgs(argv) {
     png: true,
     entra: null,
     geometry: false,
+    targets: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -652,6 +654,7 @@ function parseArgs(argv) {
     else if (arg === '--sans-entra') flags.entra = false
     else if (arg === '--no-png') flags.png = false
     else if (arg === '--geometry') flags.geometry = true
+    else if (arg === '--targets') flags.targets = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -675,7 +678,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -741,12 +744,18 @@ async function main() {
   let clipped = []
   let measured = 0
   let tightest = { by: Infinity, text: '' }
+  let small = []
   if (flags.geometry) {
     await page.evaluate(() => document.fonts.ready)
     const seen = await geometry(page)
     clipped = seen.clipped
     measured = seen.measured
     tightest = seen.tightest
+  }
+
+  if (flags.targets) {
+    await page.evaluate(() => document.fonts.ready)
+    small = await targets(page)
   }
 
   /*
@@ -792,6 +801,16 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.targets) {
+    if (small.length === 0) console.log('  cibles: toutes ≥ 24 px')
+    else {
+      console.log(`  ✗ cibles: ${small.length} contrôle(s) sous 24 px`)
+      for (const item of small.slice(0, 8)) {
+        console.log(`   ✗ ${item.w}×${item.h} — « ${item.text} » (${item.tag})`)
+      }
+      process.exitCode = 5
+    }
+  }
   if (flags.geometry) {
     if (clipped.length === 0)
       console.log(
@@ -813,6 +832,84 @@ async function main() {
     console.log('  console:')
     noise.forEach((p) => console.log('   ' + p))
   }
+}
+
+/**
+ * **Is every control big enough to hit?**
+ *
+ * WCAG 2.2's *Target Size (Minimum)* asks for 24×24 CSS pixels, and the
+ * exception it grants is the one that matters here: a control that is **inline
+ * in a sentence** is exempt, because making it 24px tall would break the line it
+ * sits in. Everything else — a chip, a segmented option, a « source ▸ », a
+ * checkbox, a close — is measured.
+ *
+ * The reps this ships to are on Windows laptops with trackpads (HR-2), not on
+ * phones, so this is not about thumbs. It is about a 16px control in a dense
+ * rail beside eleven others: the miss costs a click, the click lands on the row
+ * below, and on the review gate the row below is a field a rep did not mean to
+ * touch.
+ *
+ * Measured, not read: a `py-0.5` looks fine in the source and is 18px on screen
+ * once the line-height under it resolves.
+ */
+async function targets(page) {
+  return page.evaluate(() => {
+    const MIN = 24
+    const out = []
+    const controls = document.querySelectorAll(
+      'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="checkbox"], [role="tab"]',
+    )
+    for (const el of controls) {
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 || box.height === 0) continue
+      // Half a pixel of slack: a 24px box lands on 23.99 under a fractional
+      // line-height, and a check that reports that is a check nobody can clear.
+      const big = (v) => v >= MIN - 0.5
+      if (big(box.width) && big(box.height)) continue
+
+      /*
+       * The inline exception, and it is the whole reason this check is usable.
+       * A control whose parent is a paragraph of prose is *in* a sentence — the
+       * citation inside an answer, the « Réglages » inside a reason — and WCAG
+       * exempts it because enlarging it would break the line. Detected by the
+       * parent being text-bearing rather than by a class, so it cannot be
+       * claimed by adding one.
+       */
+      /*
+       * A checkbox inside its own `<label>` has the *label* as its target — the
+       * whole row is clickable, which is what a rep aims at and what WCAG
+       * measures. Reporting the 13×13 box the OS draws would be reporting the
+       * paint rather than the affordance, and the fix it implied — a giant
+       * checkbox — is not one anybody wants.
+       */
+      const label =
+        el.closest('label') !== el ? el.closest('label') : null
+      // `for=` counts as much as wrapping: both make the whole label the thing
+      // a rep aims at, which is what the criterion measures.
+      const linked = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null
+      for (const target of [label, linked]) {
+        if (!target) continue
+        const around = target.getBoundingClientRect()
+        if (big(around.width) && big(around.height)) { box.__ok = true; break }
+      }
+      if (box.__ok) continue
+
+      const parent = el.parentElement
+      const inline =
+        parent !== null &&
+        getComputedStyle(el).display.startsWith('inline') &&
+        (parent.textContent ?? '').trim().length > (el.textContent ?? '').trim().length + 8
+      if (inline) continue
+
+      out.push({
+        tag: el.tagName.toLowerCase(),
+        text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40),
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+      })
+    }
+    return out
+  })
 }
 
 /**
