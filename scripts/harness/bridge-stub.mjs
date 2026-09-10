@@ -1012,11 +1012,29 @@ export function installAppBridge(config) {
     },
   }
 
+  /*
+    The client-side people, so the reader can name the far speaker when there is
+    exactly one of them (`speakerLabel`). Two on the Néovia call and one on the
+    Lefort call, which is what makes the two readers look different — and which
+    is the point: the app names the turn only when the record settles it.
+  */
+  const INTERLOCUTEURS = {
+    'm-neovia-cadrage': [
+      { name: 'Élodie Vasseur', email: 'elodie.vasseur@neovia-sante.fr', type: 'required', response: 'accepted' },
+      { name: 'Marc Pontier', email: 'marc.pontier@neovia-sante.fr', type: 'required', response: 'accepted' },
+    ],
+    'm-lefort-decouverte': [
+      { name: 'Sophie Bertrand', email: 'sophie.bertrand@groupe-lefort.fr', type: 'required', response: 'accepted' },
+    ],
+  }
+
   const recordFor = (meetingId) => {
-    if (RECORDS[meetingId]) return RECORDS[meetingId]
+    const known = RECORDS[meetingId]
+    if (known) return { interlocuteurs: INTERLOCUTEURS[meetingId] || [], ...known }
     const m = meetingById(meetingId)
     return {
       meeting: m || meeting({ id: meetingId }),
+      interlocuteurs: INTERLOCUTEURS[meetingId] || [],
       segments: SEGMENTS.slice(0, 6),
       notes: 'Rien de particulier à signaler sur cet appel.',
       compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',

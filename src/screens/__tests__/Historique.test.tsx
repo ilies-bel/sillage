@@ -68,6 +68,16 @@ const row = (over: Partial<HistoryRow> = {}): HistoryRow => ({
 
 const record = (over: Partial<HistoryRecord> = {}): HistoryRecord => ({
   meeting: meeting(),
+  /*
+   * Two of them, deliberately: with two people on the client's side the app
+   * cannot say which one spoke, so the reader says « Client » and means it. The
+   * one-attendee case — where it *can* say, from the calendar — has its own
+   * test below.
+   */
+  interlocuteurs: [
+    { name: 'Camille Le Roy', email: 'camille@acme.fr', type: 'required', response: 'accepted' },
+    { name: 'Yann Ferrand', email: 'yann@acme.fr', type: 'required', response: 'accepted' },
+  ],
   segments: [
     {
       id: 'seg-1',
@@ -283,6 +293,54 @@ describe('a row expands into the full record (DEC-25)', () => {
     await waitFor(() =>
       expect(bridge.calls.some((c) => c.channel === 'history:record')).toBe(true),
     )
+  })
+})
+
+describe('who a turn belongs to (DEC-7)', () => {
+  /*
+   * The reader wrote « Client » for every far-channel turn on every call. With
+   * one client contact that is a name the app has, from the calendar, and was
+   * throwing away — and `[source ▸]` landing a rep on « Client » tells them
+   * nothing about whether the cap came from the buyer or from the DSI.
+   */
+  test('two people on the client’s side stays « Client »', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+
+    // The app cannot say which of them spoke, and must not pick the first.
+    const turn = (await screen.findByText('on est plutôt sur un TJM de 520 euros')).closest('li')
+    expect(within(turn as HTMLElement).getByText('Client')).toBeTruthy()
+  })
+
+  test('one person on the client’s side is that person, by first name', async () => {
+    answered()
+    bridge.when('history:record', () =>
+      record({
+        interlocuteurs: [
+          {
+            name: 'Camille Le Roy',
+            email: 'camille@acme.fr',
+            type: 'required',
+            response: 'accepted',
+          },
+        ],
+      }),
+    )
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+
+    const turn = (await screen.findByText('on est plutôt sur un TJM de 520 euros')).closest('li')
+    // The channel is measured by the hardware, the name comes from Graph, and
+    // the join of the two is a fact rather than a guess.
+    expect(within(turn as HTMLElement).getByText('Camille')).toBeTruthy()
+    expect(within(turn as HTMLElement).queryByText('Client')).toBeNull()
+    // The rep is still the rep — the microphone settles that one.
+    const mine = screen.getByText('très bien, je vous envoie deux CV').closest('li')
+    expect(within(mine as HTMLElement).getByText('Moi')).toBeTruthy()
   })
 })
 

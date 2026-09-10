@@ -692,7 +692,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             </div>
 
             {mode === 'transcription' ? (
-              <TranscriptReader meetingId={meetingId} focus={focus} />
+              <TranscriptReader
+                meetingId={meetingId}
+                focus={focus}
+                interlocuteurs={panel.interlocuteurs}
+              />
             ) : mode === 'lecture' ? (
               /*
                 Typeset, with every `#` and every `- ` still on screen in the
@@ -811,6 +815,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */}
             <AskPanel
               meetingId={meetingId}
+              interlocuteurs={panel.interlocuteurs}
               onLocate={(quote, label) => locate({ quote, label, from: 'answer' })}
               className="border-subtle mt-block border-t pt-row"
             />

@@ -17,7 +17,7 @@
  *    the product that writes to an external system is *Valider* (DEC-4).
  */
 import { z } from 'zod'
-import { MeetingSchema } from './meeting.ts'
+import { AttendeeSchema, MeetingSchema } from './meeting.ts'
 import { TranscriptSegmentSchema } from './transcript.ts'
 import { ConfidenceSchema } from './extraction.ts'
 import { OutboxStateSchema, PushIntentKindSchema } from './push.ts'
@@ -154,6 +154,16 @@ export const HistoryRecordSchema = z.object({
   notes: z.string(),
   /** Null when the meeting never reached the gate. */
   compteRendu: z.string().nullable(),
+  /**
+   * The client-side people on the call, from the calendar (DEC-7).
+   *
+   * Carried so the reader can name the far speaker when there is exactly one of
+   * them — the channel is measured by the hardware and the name comes from
+   * Graph, so the join is a fact (`speakerLabel`). Empty for a meeting that
+   * never reached an extraction, which is the correct answer: the app has
+   * nobody to name.
+   */
+  interlocuteurs: z.array(AttendeeSchema),
   /** Each with its cited span, and a measured confidence (DEC-21). */
   fields: z.array(ReviewFieldSchema),
   overall: ConfidenceSchema,

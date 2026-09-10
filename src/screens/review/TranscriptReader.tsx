@@ -30,7 +30,7 @@
  * verification ran against these rows unfiltered.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
+import { speakerLabel, type TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
 import { Centered, CopyButton } from '../../ui/index.ts'
@@ -56,10 +56,14 @@ interface TranscriptReaderProps {
   meetingId: string
   /** Which citation to open on, or null for the top of the call. */
   focus: TranscriptFocus | null
+  /**
+   * The client-side people, from the calendar. Names the far channel when
+   * there is exactly one of them — `speakerLabel`, and the same rule the
+   * reader in *Historique* follows, because two screens naming the same turn
+   * differently is two things for a rep to reconcile.
+   */
+  interlocuteurs: readonly { name: string; email: string }[]
 }
-
-/** `Moi` / `Client`, the same two words the transcript uses in Historique. */
-const SPEAKER: Record<TranscriptSegment['channel'], string> = { rep: 'Moi', far: 'Client' }
 
 /** Accents and case folded, so « Achats » and « achats » are one term. */
 const fold = (value: string): string =>
@@ -73,12 +77,15 @@ const fold = (value: string): string =>
  * reader draws, tab-separated, so a paste into a document keeps them as columns
  * and a paste into a chat still reads as a dialogue.
  */
-const transcriptText = (segments: readonly TranscriptSegment[]): string =>
+const transcriptText = (
+  segments: readonly TranscriptSegment[],
+  interlocuteurs: readonly { name: string; email: string }[],
+): string =>
   segments
-    .map((s) => `${formatOffset(s.startMs)}\t${SPEAKER[s.channel]}\t${s.text}`)
+    .map((s) => `${formatOffset(s.startMs)}\t${speakerLabel(s.channel, interlocuteurs)}\t${s.text}`)
     .join('\n')
 
-export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
+export function TranscriptReader({ meetingId, focus, interlocuteurs }: TranscriptReaderProps) {
   const loaded = useInvoke('review:transcript', { meetingId })
   const segments = loaded.state.status === 'ready' ? loaded.state.value.segments : null
 
@@ -278,7 +285,7 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
         a *Copier* since it was drawn; the gate's did not, which made the same
         artefact behave differently one screen apart.
       */}
-      <CopyButton text={transcriptText(segments)} what="la transcription" />
+      <CopyButton text={transcriptText(segments, interlocuteurs)} what="la transcription" />
       </div>
 
       <div className="mb-3 flex items-baseline gap-inline">
@@ -370,7 +377,7 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
                 {formatOffset(segment.startMs)}
               </span>
               <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
-                {SPEAKER[segment.channel]}
+                {speakerLabel(segment.channel, interlocuteurs)}
               </span>
               {/*
                 The cited line in `--text-strong` rather than a second tint: the

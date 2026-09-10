@@ -892,6 +892,9 @@ export const handlers: Handlers = {
       segments: store.projections.segments(meetingId),
       notes: documentToText(store.projections.document(meetingId)?.doc ?? null),
       compteRendu: stored ? renderCompteRendu(stored.extraction, stored.verification) : null,
+      // From the extraction's deterministic half, which is Graph's answer
+      // (DEC-7) — the same list the gate names as « Interlocuteurs ».
+      interlocuteurs: stored?.extraction.facts.interlocuteurs ?? [],
       fields: stored ? reviewFields(stored.extraction, stored.verification) : [],
       overall: stored?.verification.overall ?? 'ok',
       intents: historyIntents(store, meetingId),

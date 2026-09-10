@@ -43,6 +43,7 @@
  */
 import { useState } from 'react'
 import type { AskAnswer } from '../../../electron/core/contracts/ask.ts'
+import { speakerLabel } from '../../../electron/core/contracts/transcript.ts'
 import { invoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
 import { Button, unavailable } from '../../ui/index.ts'
@@ -55,6 +56,14 @@ export interface AskPanelProps {
    * citation is worth having either way.
    */
   onLocate?: (quote: string, label: string) => void
+  /**
+   * The client-side people, from the calendar. A citation's `label` is what the
+   * reader is opened on, and `speakerLabel` names the far channel when there is
+   * exactly one of them — the same rule the two transcript surfaces follow.
+   * Absent on a surface that has no attendee list to hand, where « Client » is
+   * the correct answer anyway.
+   */
+  interlocuteurs?: readonly { name: string; email: string }[]
   /**
    * **The panel is pinned in a fixed column, so its answers scroll inside it.**
    *
@@ -87,7 +96,13 @@ const SUGGESTIONS = [
   'Qui décide, et quand ?',
 ]
 
-export function AskPanel({ meetingId, onLocate, pinned = false, className }: AskPanelProps) {
+export function AskPanel({
+  meetingId,
+  onLocate,
+  pinned = false,
+  interlocuteurs = [],
+  className,
+}: AskPanelProps) {
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
   /** Newest first. The panel's only memory, and it never leaves the screen. */
@@ -202,14 +217,27 @@ export function AskPanel({ meetingId, onLocate, pinned = false, className }: Ask
         {answers.map((answer, at) => (
           // The question is the identity here — two answers to the same question
           // would be the same row twice, and the index keeps them apart.
-          <Answer key={`${answer.question}-${at}`} answer={answer} onLocate={onLocate} />
+          <Answer
+          key={`${answer.question}-${at}`}
+          answer={answer}
+          onLocate={onLocate}
+          interlocuteurs={interlocuteurs}
+        />
         ))}
       </div>
     </section>
   )
 }
 
-function Answer({ answer, onLocate }: { answer: AskAnswer; onLocate?: AskPanelProps['onLocate'] }) {
+function Answer({
+  answer,
+  onLocate,
+  interlocuteurs,
+}: {
+  answer: AskAnswer
+  onLocate?: AskPanelProps['onLocate']
+  interlocuteurs: readonly { name: string; email: string }[]
+}) {
   /*
    * The honest empty case, and it is a first-class outcome rather than an error.
    * « The record does not say » is the correct answer to most questions about
@@ -238,7 +266,11 @@ function Answer({ answer, onLocate }: { answer: AskAnswer; onLocate?: AskPanelPr
         <ul className="mt-2 space-y-1">
           {answer.citations.map((citation) => {
             const at = citation.span.startMs
-            const label = citation.span.channel === 'rep' ? 'moi' : 'client'
+            // A quote the model gave no channel for is nobody's turn to claim.
+            const label =
+              citation.span.channel === null
+                ? 'client'
+                : speakerLabel(citation.span.channel, interlocuteurs)
             /*
              * **The time is part of the control, not a label beside it.**
              *

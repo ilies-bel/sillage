@@ -52,7 +52,7 @@ import type {
   HistoryRow,
 } from '../../electron/core/contracts/history.ts'
 import type { ReviewField } from '../../electron/core/contracts/review.ts'
-import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
+import { speakerLabel, type TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { AskPanel } from './session/AskPanel.tsx'
@@ -384,11 +384,18 @@ function Record({
         title="Transcription"
         copy={
           record.segments.length > 0
-            ? { text: transcriptText(record.segments), what: 'la transcription' }
+            ? {
+                text: transcriptText(record.segments, record.interlocuteurs),
+                what: 'la transcription',
+              }
             : undefined
         }
       >
-        <Transcript segments={record.segments} quote={located} />
+        <Transcript
+          segments={record.segments}
+          quote={located}
+          interlocuteurs={record.interlocuteurs}
+        />
       </Section>
 
       <Section title="Mes notes">
@@ -452,6 +459,7 @@ function Record({
         <AskPanel
           meetingId={meetingId}
           onLocate={(quote) => setLocated(quote)}
+          interlocuteurs={record.interlocuteurs}
           className="border-subtle border-t pt-3"
         />
       </div>
@@ -501,11 +509,7 @@ function Section({
   )
 }
 
-/** Speaker channels, from the hardware — mic is the rep, loopback is the far end. */
-const CHANNEL_LABEL: Record<TranscriptSegment['channel'], string> = {
-  rep: 'Moi',
-  far: 'Client',
-}
+
 
 /**
  * The transcript as plain text, for the clipboard.
@@ -514,19 +518,26 @@ const CHANNEL_LABEL: Record<TranscriptSegment['channel'], string> = {
  * keeps them as columns and a paste into a chat still reads as a dialogue. It
  * is built from the same rows on screen and adds nothing to them.
  */
-const transcriptText = (segments: readonly TranscriptSegment[]): string =>
+const transcriptText = (
+  segments: readonly TranscriptSegment[],
+  interlocuteurs: readonly { name: string; email: string }[],
+): string =>
   segments
     .map(
       (segment) =>
-        `${formatOffset(segment.startMs)}\t${CHANNEL_LABEL[segment.channel]}\t${segment.text}`,
+        `${formatOffset(segment.startMs)}\t${speakerLabel(segment.channel, interlocuteurs)}\t${segment.text}`,
     )
     .join('\n')
 
 function Transcript({
   segments,
   quote,
+  interlocuteurs,
 }: {
   segments: readonly TranscriptSegment[]
+  /** From the calendar, so the far channel can be named when there is one of
+   *  them (`speakerLabel`, DEC-7). */
+  interlocuteurs: readonly { name: string; email: string }[]
   /**
    * A fragment *Demander* leaned on, to be shown in the record.
    *
@@ -567,7 +578,7 @@ function Transcript({
               {formatOffset(segment.startMs)}
             </span>
             <span className="text-muted w-12 shrink-0 text-[11px]">
-              {CHANNEL_LABEL[segment.channel]}
+              {speakerLabel(segment.channel, interlocuteurs)}
             </span>
             <span className="text-body min-w-0 flex-1">{segment.text}</span>
           </li>
