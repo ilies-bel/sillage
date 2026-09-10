@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import type { ExtractionESN, VerificationReport } from '../../../core/contracts/extraction.ts'
 import { sampleExtraction } from '../../../core/contracts/fixtures.ts'
 import type { MeetingContext } from '../../../core/contracts/meeting.ts'
-import { FAIBLE_MARKER, renderCompteRendu } from '../compteRendu.ts'
+import { FAIBLE_MARKER, renderCompteRendu, unwrapProse } from '../compteRendu.ts'
 import { UNRESOLVED_ACCOUNT, buildFacts, interlocuteursOf } from '../facts.ts'
 
 const allOk: VerificationReport = {
@@ -204,4 +204,43 @@ test('a meeting with no subject gets no task name rather than a placeholder', ()
   assert.equal(facts.taskName, '')
   assert.equal(facts.account, UNRESOLVED_ACCOUNT)
   assert.deepEqual(facts.knownContactIds, [])
+})
+
+/*
+ * ── The model's soft wraps (DEC-44) ─────────────────────────────────────────
+ *
+ * The string composed here is the string stored, rendered and sent to
+ * VerySwing. A model that hard-wraps its prose at seventy-odd columns — which
+ * they do — puts a line break in the middle of a sentence, and no renderer
+ * downstream can undo it without lying about what the CRM will receive. So it
+ * is undone here, once, on the way in.
+ */
+test('a paragraph the model hard-wrapped is joined back into a paragraph', () => {
+  assert.equal(
+    unwrapProse(
+      'Le budget a été voté ce matin.\nNéovia doit sortir ses pipelines Talend avant la\nfin de l’année.',
+    ),
+    'Le budget a été voté ce matin. Néovia doit sortir ses pipelines Talend avant la fin de l’année.',
+  )
+})
+
+test('a blank line is a paragraph and stays one', () => {
+  const prose = 'Premier paragraphe.\n\nSecond paragraphe.'
+  assert.equal(unwrapProse(prose), prose)
+})
+
+test('structure keeps its own line breaks', () => {
+  const prose = ['## Contexte', 'Une phrase.', '- Mode : régie', '- TJM : 550 €'].join('\n')
+  // The heading does not absorb the sentence under it, and the two list items
+  // do not become one.
+  assert.equal(unwrapProse(prose), prose)
+})
+
+test('prose the prompt already asked for passes through untouched', () => {
+  const prose = '## Résumé\n\nUne seule ligne par paragraphe, comme demandé.\n\n## Besoin\n\nIdem.'
+  assert.equal(unwrapProse(prose), prose)
+})
+
+test('it never joins across a structural line, in either direction', () => {
+  assert.equal(unwrapProse('Une phrase.\n## Titre\nSuite.'), 'Une phrase.\n## Titre\nSuite.')
 })

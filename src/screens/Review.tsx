@@ -27,7 +27,7 @@
  * process records them rather than inferring them from a missing row. There is
  * exactly one submit control on this screen and there is no second prompt.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   ReviewEdits,
   ReviewField,
@@ -38,8 +38,19 @@ import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { formatOffset } from '../app/format.ts'
-import { Button, Centered, Chip, List, SectionHeader, Segmented, unavailable } from '../ui/index.ts'
+import {
+  Button,
+  Centered,
+  Chip,
+  CopyButton,
+  List,
+  SectionHeader,
+  Segmented,
+  unavailable,
+} from '../ui/index.ts'
+import { scrollToCenter } from '../lib/scroll.ts'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
+import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
 
 /** The one thing a rep must notice without reading (DEC-21). */
 const FAIBLE = '⚠ faible'
@@ -134,7 +145,72 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * `- ` in a gutter rather than hiding them, so *Lecture* is the same string
    * VerySwing receives (DEC-44) — set as prose instead of dumped as a log.
    */
-  const [mode, setMode] = useState<'lecture' | 'modifier'>('lecture')
+  const [mode, setMode] = useState<'lecture' | 'modifier' | 'transcription'>('lecture')
+  /*
+   * Which citation the transcript is opened on, or null for the top of the call.
+   *
+   * Held here rather than in the reader because the gesture that sets it
+   * happens in the *other* column: a rep presses « voir dans la transcription »
+   * on a field in the rail, and the document column answers. That is the whole
+   * point — the evidence and the value it justifies are side by side, and
+   * neither has to be remembered while the other is found.
+   */
+  const [focus, setFocus] = useState<TranscriptFocus | null>(null)
+  /*
+   * Has the rail been read to the end?
+   *
+   * *Valider* is the one irreversible control in the product and it was live
+   * from first paint. On a 1280×800 laptop the rail shows six of eleven fields,
+   * so a rep could push a compte-rendu, an opportunity and a follow-up into the
+   * client's CRM having never seen the `⚠ faible` row — the exact field DEC-21
+   * exists to make them look at.
+   *
+   * This is **not a second gate** (DEC-4). There is still one button, one
+   * gesture and no confirmation prompt; the button simply refuses until what it
+   * ships has been on screen. When the panel fits — a short extraction, a tall
+   * window — `atEnd` is true on the first measurement and nothing is different.
+   */
+  const [below, setBelow] = useState(false)
+  const railRef = useRef<HTMLDivElement>(null)
+  const measureRail = useCallback(() => {
+    const el = railRef.current
+    if (!el) return
+    /*
+     * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
+     * sub-pixel gap that never closes, and a button that stays refused at the
+     * very bottom of its own scroller is worse than no guard at all.
+     *
+     * Stated as « is there something below the fold », not as « has the rep
+     * reached the end », and that direction is load-bearing. A guard whose
+     * *default* is "refuse" fails closed in every environment that cannot lay
+     * out — jsdom, where every box measures zero — so the one button in the
+     * product would be dead in the renderer's own tests for a reason that has
+     * nothing to do with the product. This way the unmeasurable case is the
+     * permissive one, and the refusal only ever comes from a real measurement.
+     */
+    setBelow(el.scrollTop + el.clientHeight < el.scrollHeight - 8)
+  }, [])
+
+  /*
+   * Measure before paint, and again whenever the rail changes size.
+   *
+   * `onScroll` alone never fires on a panel that already fits, and a plain
+   * `useEffect` would let one frame of the enabled button through. The observer
+   * covers the window being resized and the rows growing as the rep types into
+   * a multiline field.
+   */
+  useLayoutEffect(() => {
+    measureRail()
+    const el = railRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measureRail)
+    observer.observe(el)
+    return () => observer.disconnect()
+  })
+  const locate = (next: TranscriptFocus) => {
+    setFocus(next)
+    setMode('transcription')
+  }
   /** The intents as they stand now. Null until the first preview answers. */
   const [live, setLive] = useState<ReviewIntent[] | null>(null)
   /** Which intents were draftable last time, so a newly possible one is noticed. */
@@ -303,12 +379,25 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * how many there are and the jump lands on the first one a rep would meet
    * scrolling, not on whichever the extractor happened to emit first.
    */
+  /*
+   * Why *Valider* is refusing, in French, beside itself (DEC-26).
+   *
+   * `null` when it is not refusing — `unavailable` takes the boolean and the
+   * reason separately, and `Button` throws on a blank one, so the two are
+   * computed together here rather than left to agree by accident.
+   */
+  const withheld = busy
+    ? 'Envoi en cours. Ne fermez pas la fenêtre.'
+    : below
+      ? 'Faites défiler la colonne jusqu’au bout : tout ce qui part n’a pas encore été affiché.'
+      : null
+
   const faible = panel.fields.filter((field) => field.confidence === 'faible')
   const focusFirstFaible = () => {
     const first = faible[0]
     if (!first) return
     const target = document.getElementById(`field-${first.key}`)
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    scrollToCenter(target)
     // Focus, not just scroll: the rep's next gesture is to correct the value,
     // and a screen reader gets the label read out instead of a silent jump.
     target?.focus({ preventScroll: true })
@@ -344,10 +433,22 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           takes them there.
         */}
         {faible.length > 0 ? (
-          <Button variant="link" className="text-warn shrink-0" onClick={focusFirstFaible}>
+          /*
+            `hover:text-warn` on purpose. `Button`'s `link` variant carries
+            `hover:text-body`, so the one warning on the irreversible screen
+            turned slate grey under the cursor — the gesture that precedes the
+            click removed the colour that made it a warning. And it wears the
+            same `⚠` as the rows it counts, so the banner and the field it jumps
+            to are recognisably the same fact.
+          */
+          <Button
+            variant="link"
+            className="text-warn hover:text-warn shrink-0"
+            onClick={focusFirstFaible}
+          >
             {faible.length === 1
-              ? '1 champ non vérifié dans la transcription'
-              : `${faible.length} champs non vérifiés dans la transcription`}
+              ? `${FAIBLE} — 1 champ non vérifié dans la transcription`
+              : `${FAIBLE} — ${faible.length} champs non vérifiés dans la transcription`}
           </Button>
         ) : null}
       </header>
@@ -374,19 +475,48 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           */}
           <div className="mx-auto max-w-[68ch]">
             <div className="mb-3 flex items-center gap-inline">
-              <SectionHeader className="mb-0 min-w-0 flex-1">Compte-rendu</SectionHeader>
+              <SectionHeader className="mb-0 min-w-0 flex-1">
+                {mode === 'transcription' ? 'Transcription' : 'Compte-rendu'}
+              </SectionHeader>
+              {/*
+                The way out of the app.
+
+                Not every follow-up goes through Outlook and not every rep has a
+                Microsoft account — the demo build has none at all (DEC-28) —
+                and the compte-rendu's real second destination is a paste: into
+                a mail client the app holds no token for, into Teams, into a
+                proposal. `Modifier` selects inside a textarea and `Lecture`
+                does not, which left the reading half of the switch with no way
+                to take the text at all.
+
+                It copies `edits.compteRendu` — what the rep has in front of
+                them, corrections included, and the same string VerySwing will
+                receive (DEC-44).
+              */}
+              {mode === 'transcription' ? null : (
+                <CopyButton text={edits.compteRendu} what="le compte-rendu" />
+              )}
               <Segmented
                 label="Affichage du compte-rendu"
                 options={[
                   { id: 'lecture', label: 'Lecture' },
                   { id: 'modifier', label: 'Modifier' },
+                  { id: 'transcription', label: 'Transcription' },
                 ]}
                 current={mode}
-                onSelect={setMode}
+                onSelect={(next) => {
+                  // Leaving the transcript forgets which citation it was opened
+                  // on, so coming back cold opens at the top of the call rather
+                  // than on a field the rep has since stopped thinking about.
+                  if (next !== 'transcription') setFocus(null)
+                  setMode(next)
+                }}
               />
             </div>
 
-            {mode === 'lecture' ? (
+            {mode === 'transcription' ? (
+              <TranscriptReader meetingId={meetingId} focus={focus} />
+            ) : mode === 'lecture' ? (
               /*
                 Typeset, with every `#` and every `- ` still on screen in the
                 gutter (DEC-44). `pl-6` is the gutter they hang in.
@@ -412,6 +542,30 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-3 text-copy leading-relaxed"
               />
             )}
+
+            {/*
+              The follow-up, under the document it summarises.
+
+              It lived in the rail, which is where every *typed* value lives —
+              and it is not one. It is five paragraphs of French prose the rep is
+              about to send to a client, and a 500px column made it the thing
+              that pushed eleven fields and the decision itself out of the
+              window. Here it has the same measure as the compte-rendu, reads at
+              the same size, and sits under the text it was written from, which
+              is the order a rep checks them in.
+
+              Drawn in every mode, including *Transcription*: a rep who went to
+              the record to settle one field is still about to send this, and
+              hiding it behind a tab they did not choose would be a draft that
+              disappears.
+            */}
+            <MailDraft
+              subject={edits.mailSubject}
+              body={edits.mailBody}
+              to={panel.mailTo}
+              onSubject={(value) => set('mailSubject', value)}
+              onBody={(value) => set('mailBody', value)}
+            />
           </div>
         </main>
 
@@ -445,7 +599,12 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             is not a second gate (DEC-4) — it is the same one button, kept where
             it can be read together with the rows it ships.
           */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-row py-row">
+          <div
+            ref={railRef}
+            onScroll={measureRail}
+            data-below={below}
+            className="fade-below min-h-0 flex-1 overflow-y-auto px-row py-row"
+          >
           <SectionHeader>Prêt à envoyer</SectionHeader>
 
           <List as="div" className="bg-card">
@@ -455,6 +614,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 field={field}
                 value={String(edits[EDIT_KEY[field.key]] ?? '')}
                 onChange={(value) => set(EDIT_KEY[field.key], value)}
+                onLocate={locate}
               />
             ))}
           </List>
@@ -487,14 +647,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               : panel.interlocuteurs.map((a) => a.name || a.email).join(', ')}
           </p>
 
-          <MailDraft
-            subject={edits.mailSubject}
-            body={edits.mailBody}
-            to={panel.mailTo}
-            onSubject={(value) => set('mailSubject', value)}
-            onBody={(value) => set('mailBody', value)}
-          />
-
           </div>
 
           <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
@@ -525,10 +677,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               block
               className="mt-4 py-2"
               onClick={() => void confirm()}
-              {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
+              {...unavailable(withheld !== null, withheld ?? '')}
             >
               {busy ? 'Envoi…' : 'Valider'}
             </Button>
+            {!busy && below ? (
+              <Button
+                variant="link"
+                block
+                className="mt-1.5 text-center"
+                onClick={() => {
+                  const el = railRef.current
+                  el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+                }}
+              >
+                Afficher les champs restants
+              </Button>
+            ) : null}
             <p className="text-muted mt-1.5 text-center text-meta">
               Rien n’est envoyé au client : la relance est créée en brouillon.
             </p>
@@ -543,6 +708,8 @@ interface FieldRowProps {
   field: ReviewField
   value: string
   onChange: (value: string) => void
+  /** Open the transcript on this field's citation, in the other column. */
+  onLocate: (focus: TranscriptFocus) => void
 }
 
 /**
@@ -553,7 +720,7 @@ interface FieldRowProps {
  * « du calendrier, jamais de la transcription » is exactly the answer for those
  * two (DEC-7). A row that simply had no button would read as an oversight.
  */
-function FieldRow({ field, value, onChange }: FieldRowProps) {
+function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
   const [open, setOpen] = useState(false)
   const multiline = MULTILINE.has(field.key)
 
@@ -618,13 +785,39 @@ function FieldRow({ field, value, onChange }: FieldRowProps) {
       )}
 
       {open ? (
-        <p className="text-muted mt-1 text-meta italic">
-          {field.span
-            ? `« ${field.span.quote} »${
-                field.span.startMs === null ? ' — introuvable dans la transcription' : ` — ${formatOffset(field.span.startMs)}`
-              }`
-            : 'Du calendrier Outlook et de VerySwing — jamais lu sur la transcription.'}
-        </p>
+        <div className="mt-1">
+          <p className="text-muted text-meta italic">
+            {field.span
+              ? `« ${field.span.quote} »${
+                  field.span.startMs === null ? ' — introuvable dans la transcription' : ` — ${formatOffset(field.span.startMs)}`
+                }`
+              : 'Du calendrier Outlook et de VerySwing — jamais lu sur la transcription.'}
+          </p>
+          {/*
+            The quote, in the conversation it was said in.
+            
+            A fragment with no context is evidence a rep cannot weigh: « TJM
+            2025 jugé trop haut par les achats » is a sentence somebody is about
+            to send to a CRM under their own name, and until now the only thing
+            behind it was forty characters and nowhere to go. This opens the
+            record in the column next door, on that line.
+
+            Drawn only where there is a citation to follow. The two
+            deterministic rows never had one (DEC-7) and their disclosure says
+            so in a sentence; a jump there would be a control that lands nowhere.
+          */}
+          {field.span ? (
+            <Button
+              variant="link"
+              className="mt-0.5 text-meta"
+              onClick={() =>
+                onLocate({ quote: field.span?.quote ?? '', label: field.label })
+              }
+            >
+              Voir dans la transcription ›
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
@@ -655,9 +848,18 @@ interface MailDraftProps {
 function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
   return (
     <section className="mt-5">
-      <SectionHeader as="h3" className="mb-2">
-        Email de relance (brouillon)
-      </SectionHeader>
+      <div className="mb-2 flex items-center gap-inline">
+        <SectionHeader as="h3" className="mb-0 min-w-0 flex-1">
+          Email de relance (brouillon)
+        </SectionHeader>
+        {/*
+          Subject and body together, in the shape a mail client expects — the
+          rep pastes one thing, not two. This is the control the sentence above
+          (« le texte reste copiable ») was promising with no Outlook token, and
+          it is the whole follow-up path in the build the first demo ships in.
+        */}
+        <CopyButton text={`${subject}\n\n${body}`} what="le brouillon de relance" />
+      </div>
       <p className="text-muted mb-1 text-meta">
         À :{' '}
         {to.length === 0

@@ -23,6 +23,7 @@
  */
 export { StateDot, type StateDotProps } from './StateDot.tsx'
 export { Button, unavailable, type ButtonProps } from './Button.tsx'
+export { CopyButton, type CopyButtonProps } from './CopyButton.tsx'
 export { List, Row, RowTitle, type ListProps, type RowProps, type RowTitleProps } from './List.tsx'
 export { Chip, type ChipProps } from './Chip.tsx'
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader.tsx'

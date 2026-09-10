@@ -124,8 +124,7 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
        * « niveau d'entrée trop faible pour être transcrit » with the measurement
        * in it. The meter is the glance; the diagnostic is the statement.
        */
-      title="En haut votre micro, en bas le client — en gris, trop faible pour être transcrit"
-      className="flex shrink-0 items-stretch gap-1.5"
+            className="flex shrink-0 items-stretch gap-1.5"
     >
       {/*
         The key. Two words, one per half, on the same baselines the bars grow
@@ -139,13 +138,13 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
       </span>
 
       {/*
-        168×28 rather than 128×24. This is the whole of DEC-38's proof of life —
+        148×28 rather than 128×24. This is the whole of DEC-38's proof of life —
         the surface that answers « est-ce qu'il m'entend ? » — and at 2.3px per
         bar over two 11px halves it read as a small blue icon that happened to
         change rather than as a reading. The bar count is unchanged; the bars
         are simply wide enough and tall enough to be a bar.
       */}
-      <span className="flex h-7 w-[168px] shrink-0 items-stretch gap-[2px]">
+      <span className="flex h-7 w-[148px] shrink-0 items-stretch gap-[2px]">
       {samples.map((sample, index) => (
         /*
          * The 1px gutter between the halves is the baseline, and it is drawn by
@@ -158,6 +157,30 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
           <Bar rms={sample.far} floor={floor} channel="far" />
         </div>
       ))}
+      </span>
+
+      {/*
+        What grey means. The third and last thing this instrument has to say.
+
+        The channels are named and the floor was not: a rep watching half the
+        strip go pale had no way to know whether that was a reading or a style.
+        It is the reading DEC-38 exists for — audio the transcriber will drop.
+        It was explained in a `title`, which is to say nowhere: hover-only, out
+        of reach of a keyboard, out of reach of a rep mid-call with their hand
+        off the mouse, and invisible in every screenshot anyone reviews.
+
+        Permanent, and not drawn only while grey is on screen. Speech has gaps,
+        so a below-floor reading is on the strip most seconds of most calls, and
+        a caption that came and went with it would flicker in the header during a
+        client call — which is the one thing DEC-14 says a surface here may not
+        do. A key is part of an instrument; it does not blink.
+
+        The swatch is the token the bars use, so the key cannot drift from what
+        it names.
+      */}
+      <span className="text-muted flex shrink-0 items-center gap-1 self-center whitespace-nowrap text-meta leading-none">
+        <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
+        non transcrit
       </span>
     </div>
   )

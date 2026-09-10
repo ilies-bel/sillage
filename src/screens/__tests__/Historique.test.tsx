@@ -201,7 +201,8 @@ describe('search runs in the main process', () => {
     render(<Historique onBack={() => {}} />)
 
     expect(await screen.findByText(/plutôt sur un TJM de 520 euros/)).toBeTruthy()
-    expect(screen.getByText('Transcript')).toBeTruthy()
+    // French, and the same word the review gate's own tab uses.
+    expect(screen.getByText('Transcription')).toBeTruthy()
     expect(screen.getByText('Mes notes')).toBeTruthy()
   })
 
@@ -292,8 +293,10 @@ describe('push status per intent', () => {
 
     await settled()
     const text = document.body.textContent ?? ''
-    expect(text).toContain('tâche✓')
-    expect(text).toContain('mail⚠')
+    // Words, not a private alphabet: « ✓ » is guessable and « ↻ » is not, and
+    // there is no glyph key anywhere in the product.
+    expect(text).toContain('tâche envoyée')
+    expect(text).toContain('mail en échec')
   })
 
   test('an expanded row states why a push failed (DEC-26)', async () => {

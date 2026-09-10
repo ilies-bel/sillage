@@ -74,6 +74,49 @@ const formatAttendee = (attendee: Attendee): string => {
   return email === '' ? name : `${name} (${email})`
 }
 
+/**
+ * Unwrap the model's prose: a soft line break inside a paragraph becomes a space.
+ *
+ * Models return French prose hard-wrapped at seventy-odd columns more often than
+ * not, and the string they wrap is the string that is stored, rendered and sent
+ * to VerySwing (DEC-44). Nothing downstream can undo it: `whitespace-pre-wrap`
+ * honours the break, so the document reads « …avant la fin de l'année et /
+ * généralise dbt sur les domaines métier. » — a sentence cut after « et », at
+ * every width, on every surface, and in the CRM.
+ *
+ * It is normalised **here**, where the document is composed, rather than in a
+ * renderer, precisely so the stored string is the clean one and the rep still
+ * reads exactly what VerySwing will receive.
+ *
+ * The rule is the closed vocabulary the recipe writes and nothing else:
+ *
+ *   · a blank line is a paragraph break and is kept;
+ *   · a line that opens a heading (`#`) or a list item (`- `) keeps its break,
+ *     and so does the line *before* one — those are structure, not prose;
+ *   · anything else joined to the line above by a single newline was a wrap,
+ *     and becomes one space.
+ *
+ * A model that returns one line per paragraph — which is what the prompt asks
+ * for — passes through untouched.
+ */
+const STRUCTURAL = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||```)/
+
+export const unwrapProse = (prose: string): string => {
+  const out: string[] = []
+  for (const line of prose.split('\n')) {
+    const previous = out[out.length - 1]
+    const joinable =
+      previous !== undefined &&
+      previous.trim() !== '' &&
+      line.trim() !== '' &&
+      !STRUCTURAL.test(line) &&
+      !STRUCTURAL.test(previous)
+    if (joinable) out[out.length - 1] = `${previous.trimEnd()} ${line.trimStart()}`
+    else out.push(line)
+  }
+  return out.join('\n')
+}
+
 /** The suffix a line wears when its citation could not be found. */
 const mark = (report: VerificationReport | undefined, path: string): string =>
   report?.fields[path] === 'faible' ? ` ${FAIBLE_MARKER}` : ''
@@ -185,7 +228,7 @@ export const renderCompteRendu = (
     // to find, and the rep reading it is the person it would have named.
     ...(facts.repEmail === null ? [] : [`**Commercial** : ${facts.repEmail}`]),
     '',
-    interpretation.compteRendu.trim(),
+    unwrapProse(interpretation.compteRendu.trim()),
   ]
 
   // The narrative is the whole document for a free-form recipe. Nothing is

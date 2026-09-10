@@ -479,19 +479,23 @@ export function installAppBridge(config) {
     taskName: 'Néovia Santé — cadrage renfort data',
     accountId: 'CLI-2318',
     accountName: 'Néovia Santé',
+    /*
+      One line per paragraph. `renderCompteRendu` joins with `\n` and never
+      wraps, and `unwrapProse` now undoes any wrap the model arrived with — so a
+      fixture hard-wrapped at 78 columns showed every screenshot of the document
+      a sentence cut after « et », which no rep will ever see. A fixture that
+      lies makes the design pass lie with it.
+    */
     compteRendu: [
       '# Néovia Santé — cadrage renfort data',
       '',
       '## Contexte',
       '',
-      'Le budget de la plateforme data a été voté ce matin en comité d’investissement.',
-      'Néovia doit sortir ses pipelines Talend historiques avant la fin de l’année et',
-      'généralise dbt sur les domaines métier.',
+      'Le budget de la plateforme data a été voté ce matin en comité d’investissement. Néovia doit sortir ses pipelines Talend historiques avant la fin de l’année et généralise dbt sur les domaines métier.',
       '',
       '## Besoin',
       '',
-      'Deux data engineers confirmés et un lead data pour cadrer la migration. Stack',
-      'Databricks / Airflow / dbt, pilotage quotidien côté client.',
+      'Deux data engineers confirmés et un lead data pour cadrer la migration. Stack Databricks / Airflow / dbt, pilotage quotidien côté client.',
       '',
       '## Conditions évoquées',
       '',
@@ -502,8 +506,7 @@ export function installAppBridge(config) {
       '',
       '## Prochaines étapes',
       '',
-      'Envoi de trois CV avec les TJM associés avant vendredi, Sophie Bertrand en copie.',
-      'Point de calage la semaine suivante une fois les profils lus.',
+      'Envoi de trois CV avec les TJM associés avant vendredi, Sophie Bertrand en copie. Point de calage la semaine suivante une fois les profils lus.',
     ].join('\n'),
     besoin:
       'Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
@@ -602,9 +605,18 @@ export function installAppBridge(config) {
     },
   ]
 
+  /*
+    Without a Graph event there are no interlocuteurs, so `draftRelance` opens on
+    « Bonjour, » — `firstNames` in `core/domain/reviewGate.ts` says so. This
+    fixture served the signed-in body either way, which put « Bonjour Élodie, »
+    on the same screen as « Interlocuteurs : aucun au calendrier » and read as a
+    contradiction the product does not actually produce.
+  */
   const REVIEW_PANEL = {
     meeting: meetingById('m-neovia-cadrage'),
-    edits: REVIEW_EDITS,
+    edits: entra
+      ? REVIEW_EDITS
+      : { ...REVIEW_EDITS, mailBody: REVIEW_EDITS.mailBody.replace('Bonjour Élodie,', 'Bonjour,') },
     fields: REVIEW_FIELDS,
     accountCandidates: [
       { accountId: 'CLI-2319', name: 'Néovia Santé — Pôle Ouest', confidence: 'ok' },
@@ -1248,18 +1260,34 @@ export function installAppBridge(config) {
     },
   ]
 
-  // ── boot ──────────────────────────────────────────────────────────────────
+  /*
+    ── boot ────────────────────────────────────────────────────────────────────
+
+    « ouverte · sur cette machine », not « sillage.db · schéma v3 ». `main.ts`
+    stopped publishing the filename and the schema version some time ago — they
+    are a support fact and they live in Diagnostics — and this fixture kept the
+    old string, so every screenshot of screen 0 opened on a SQLite filename and
+    a design pass reported a defect the product does not have.
+
+    The download line carries what a rep waiting on it actually needs: what is
+    being fetched, how far along, and that it happens once. `percent` is the bar;
+    `value` is the sentence beside it, composed in main (see `boot.ts`).
+  */
   const BOOT_READY = {
-    store: { state: 'ready', value: 'sillage.db · schéma v3' },
+    store: { state: 'ready', value: 'ouverte · sur cette machine' },
     devices: { state: 'ready', value: 'moteur de capture chargé' },
     transcription: { state: 'ready', value: 'Whisper (local)' },
     version: '0.4.2',
   }
 
   const BOOT_BOOTING = {
-    store: { state: 'ready', value: 'sillage.db · schéma v3' },
+    store: { state: 'ready', value: 'ouverte · sur cette machine' },
     devices: { state: 'pending' },
-    transcription: { state: 'downloading', value: '42 %', percent: 42 },
+    transcription: {
+      state: 'downloading',
+      value: 'modèle Whisper — 196 Mo sur 466 Mo · environ 1 min',
+      percent: 42,
+    },
     version: '0.4.2',
   }
 
@@ -1502,6 +1530,13 @@ export function installAppBridge(config) {
         ],
       }
     },
+    /*
+      The transcript behind `source ▸`. The same rows Historique shows, because
+      in the product they are the same rows — one projection, read by two
+      screens.
+    */
+    'review:transcript': () => ({ segments: SEGMENTS }),
+
     'review:confirm': (payload) => ({
       ok: true,
       state: 'pushing',

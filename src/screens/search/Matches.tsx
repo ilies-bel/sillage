@@ -11,8 +11,16 @@
  */
 import type { HistoryMatch } from '../../../electron/core/contracts/history.ts'
 
+/*
+ * French, and the same three words every other surface uses.
+ *
+ * « Transcript » is the key in the contract, where English is the rule — and it
+ * was being drawn as if it were a label. It is not a French word, and the review
+ * gate's own tab and Historique's section both say « Transcription », so a rep
+ * met the same artefact under two names one click apart.
+ */
 const WHERE_LABEL: Record<HistoryMatch['where'], string> = {
-  transcript: 'Transcript',
+  transcript: 'Transcription',
   notes: 'Mes notes',
   compteRendu: 'Compte-rendu',
 }

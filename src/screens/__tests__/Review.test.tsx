@@ -26,6 +26,18 @@ import { Review } from '../Review.tsx'
 let bridge: FakeBridge
 let uninstall: () => void
 
+/** One stored transcript row, as `review:transcript` answers with it. */
+const segment = (id: string, channel: 'rep' | 'far', startMs: number, text: string) => ({
+  id,
+  channel,
+  text,
+  startMs,
+  endMs: startMs + 4_000,
+  isFinal: true,
+  provider: 'local-whisper',
+  receivedAt: 1000 + startMs,
+})
+
 const meeting: Meeting = {
   id: 'm1',
   state: 'awaiting_confirmation',
@@ -295,6 +307,84 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
       sources[1]?.click()
     })
     expect(screen.getByText(/jamais lu sur la transcription/)).toBeTruthy()
+  })
+
+  /*
+   * DEC-21's loop, closed.
+   *
+   * A quote with no context is evidence a rep cannot weigh. Following a
+   * citation has to land in the *stored* transcript — the same rows
+   * `spanVerification.ts` checked the quote against — and when the quote is not
+   * in there, the reader has to say so rather than opening silently at 0:00 and
+   * leaving the rep hunting for a sentence that was never said.
+   */
+  test('a citation can be followed into the transcript it was verified against', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      segments: [
+        segment('s1', 'far', 0, 'Bonjour, merci pour le point.'),
+        segment('s2', 'far', 61_000, 'Il nous faut deux dev java senior sur le sujet.'),
+      ],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // The gate opens on the document; the transcript is not fetched until asked.
+    expect(screen.queryByText(/Bonjour, merci pour le point/)).toBeNull()
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    // The record is on screen, and the reader names the field and the moment.
+    expect(await screen.findByText(/Il nous faut deux dev java senior/)).toBeTruthy()
+    // Both the heading and the cited row carry the moment — the reader says
+    // where it landed, and the row says when it was said.
+    expect(screen.getByText(/Citation du champ/)).toBeTruthy()
+    expect(screen.getAllByText('1:01')).toHaveLength(2)
+  })
+
+  test('a citation the transcript does not contain says so, and does not pretend', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      segments: [segment('s1', 'far', 0, 'Rien de ce qui a été cité.')],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    expect(await screen.findByText(/est introuvable dans la transcription/)).toBeTruthy()
+    // The record is still drawn — the rep reads the call and judges for
+    // themselves, which is the whole reason this is the transcript and not a
+    // second summary of it.
+    expect(screen.getByText(/Rien de ce qui a été cité/)).toBeTruthy()
+  })
+
+  /*
+   * The two rows that were never interpreted (DEC-7) have no citation to
+   * follow, and offering one would be a control that lands nowhere (DEC-26).
+   */
+  test('a deterministic row offers no jump, because it has nothing to jump to', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[1]?.click()
+    })
+    expect(screen.queryByRole('button', { name: /Voir dans la transcription/ })).toBeNull()
   })
 })
 

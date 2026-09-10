@@ -19,14 +19,23 @@ let bridge: FakeBridge
 let uninstall: () => void
 
 const booted = (steps: Partial<BootState> = {}): BootState => ({
-  store: { state: 'ready', value: 'sillage.db · schéma v3' },
+  store: { state: 'ready', value: 'ouverte · sur cette machine' },
   devices: { state: 'ready', value: 'moteur de capture chargé' },
   transcription: { state: 'ready', value: 'Whisper (local)' },
   version: '0.1.0',
   ...steps,
 })
 
-const downloading: BootStep = { state: 'downloading', value: '37 %', percent: 37 }
+/*
+ * The value is the sentence beside the bar, not the percentage: the percentage
+ * is `percent`, and the renderer draws it once, on the right of the row. A
+ * fixture that put « 37 % » in both made the two indistinguishable.
+ */
+const downloading: BootStep = {
+  state: 'downloading',
+  value: 'modèle Whisper — 196 Mo sur 466 Mo · environ 1 min',
+  percent: 37,
+}
 
 beforeEach(() => {
   bridge = fakeBridge()
@@ -74,7 +83,7 @@ describe('the three lines', () => {
     // does not hold.
     render(<Splash state={booted()} />)
 
-    expect(screen.getByText('sillage.db · schéma v3')).toBeTruthy()
+    expect(screen.getByText('ouverte · sur cette machine')).toBeTruthy()
     expect(screen.getByText('moteur de capture chargé')).toBeTruthy()
     expect(screen.getByText('Whisper (local)')).toBeTruthy()
   })

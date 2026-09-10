@@ -58,7 +58,7 @@ interface NewMeetingProps {
    * Where this instance is drawn.
    *
    * `header` is the permanent control described above — *Démarrer une réunion*
-   * plus, on any other day, *Ajouter au …*.
+   * plus, on any other day, *Planifier au …*.
    *
    * `empty` is the same scheduling half, drawn a second time **inside** the
    * empty day panel, and only the scheduling half: an empty day is a rep
@@ -157,7 +157,7 @@ export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMee
    * button they need has turned into something else. Selecting a day is looking
    * at a day; it is not a statement about when the next call begins.
    *
-   * *Ajouter au …* is the second control and appears beside it, never instead of
+   * *Planifier au …* is the second control and appears beside it, never instead of
    * it: scheduling is a different intention and reads as one (DEC-31).
    */
   const start = (
@@ -200,7 +200,8 @@ export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMee
         */}
         <Button variant={inEmptyState ? 'bordered' : 'text'} onClick={() => setOpen(true)}>
           {/*
-            « Planifier » in the panel, « Ajouter au … » in the header — two
+            « Planifier une réunion » in the panel, « Planifier au … » in the
+            header — one verb, two
             words for two positions, and deliberately not the same one twice.
             The header control has to name the day because nothing near it does;
             the panel sits directly under « Lundi 31 Août », so repeating the
@@ -208,10 +209,13 @@ export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMee
             accessible name* on one screen, which is a rep — and a screen reader
             — being asked to tell apart two things that read identically.
 
-            It also draws the distinction the empty day actually poses:
-            *Démarrer* is now, *Planifier* is later.
+            One verb for scheduling, in both positions. The screen used to
+            offer « Ajouter au 31 août » in the header and « Planifier une
+            réunion » in the panel beside « Démarrer une réunion » — three verbs
+            for two intentions. There are two: *Démarrer* is now, *Planifier* is
+            later.
           */}
-          {inEmptyState ? 'Planifier une réunion' : `Ajouter au ${formatDayMedium(noonOf(day))}`}
+          {inEmptyState ? 'Planifier une réunion' : `Planifier au ${formatDayMedium(noonOf(day))}`}
         </Button>
         {inEmptyState ? null : start}
       </div>

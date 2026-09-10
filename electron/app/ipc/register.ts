@@ -746,6 +746,22 @@ export const handlers: Handlers = {
    * here is the span the rep saw when they validated — a second derivation
    * would eventually disagree with the record it claims to be.
    */
+  /**
+   * The transcript behind the citations at the gate (DEC-21).
+   *
+   * Final segments only and straight off the projection — the same rows
+   * `spanVerification.ts` ran against, so what the rep reads when they follow a
+   * `source ▸` is what the app checked the quote in. Nothing is filtered here,
+   * and in particular the channel-bleed drop (DEC-41) is *not* applied: that
+   * one exists so the model reads each sentence once, and a rep looking for a
+   * quote must be able to find it wherever it was said.
+   */
+  'review:transcript': ({ meetingId }, { store }) => {
+    const meeting = store.projections.getMeeting(meetingId)
+    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    return { segments: store.projections.segments(meetingId) }
+  },
+
   'history:record': ({ meetingId }, { store }) => {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)

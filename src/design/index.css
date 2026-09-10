@@ -342,6 +342,25 @@
    * `data-fade` is measured in the component, so an axis that fits is not
    * dimmed at an edge it does not have.
    */
+  /*
+   * A column that has more under the fold, said in the one way a scroller can
+   * say it without a control: the last two lines fade out.
+   *
+   * The review rail is the case. It cut « régie » through the middle of its
+   * rounded box against the pinned footer, which reads as a rendering fault
+   * rather than as « keep going » — and the fold is exactly the information the
+   * rep needs, because *Valider* is refusing until they do.
+   *
+   * `[data-below]` rather than always on: a column that fits must not be dimmed
+   * along its last two lines to suggest content that is not there. Same rule the
+   * filter row's horizontal fade follows below, and the same `black`/`transparent`
+   * mask — those are mask coverage, not colours, so no token applies.
+   */
+  .fade-below[data-below="true"] {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+  }
+
   .filter-scroller {
     overflow-x: auto;
     overscroll-behavior-x: contain;

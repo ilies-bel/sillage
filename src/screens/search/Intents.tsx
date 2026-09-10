@@ -15,12 +15,14 @@ import type { HistoryIntent } from '../../../electron/core/contracts/history.ts'
 /*
  * The rep's words, not the CRM's.
  *
- * This said `oppy`, which is `oppyId` — a VerySwing column name — worn as a
- * French label. The CRM boundary (DEC-29) exists so that VSA's vocabulary stops
- * at `modules/crm/vsa/`, and a renderer abbreviating a domain noun into that
- * schema's spelling walks it straight back out. « opportunité » is the word the
- * review gate already uses for the same thing, and a row that named it
- * differently would make the rep check which one to believe.
+ * This said « oppy » — not an abbreviation anybody speaks, but the spelling the
+ * VerySwing schema uses for its opportunity column, worn as a French label. The
+ * CRM boundary (DEC-29) exists so that vocabulary stops inside the adapter, and
+ * a renderer that contracts a domain noun into the adapter's spelling walks it
+ * straight back out — `check-crm-containment.mjs` fails on exactly that.
+ * « opportunité » is the word the review gate already uses for the same thing,
+ * and a row that named it differently would make the rep check which one to
+ * believe.
  */
 const INTENT_SHORT: Record<HistoryIntent['kind'], string> = {
   'crm.task': 'tâche',
@@ -38,21 +40,24 @@ const INTENT_SHORT: Record<HistoryIntent['kind'], string> = {
  * have opposite consequences. `↻` says *in flight* and cannot be read as
  * anything else.
  */
-const STATE_MARK: Record<HistoryIntent['state'], string> = {
-  pending: '↻',
-  blocked: '↻',
-  draining: '↻',
-  drained: '✓',
-  failed: '⚠',
-}
-
-/** The same three states, in words, for anything that cannot see a glyph. */
+/*
+ * Words, and no glyph key to learn.
+ *
+ * This was `✓ / ↻ / ⚠` — three symbols with no legend anywhere in the product,
+ * on the one column that says whether the client's CRM actually received
+ * anything. `✓` is guessable; `↻` is not, and `…` (what it replaced) was
+ * routinely read as a truncated label. A rep should not have to learn a private
+ * alphabet to find out that a push failed.
+ *
+ * They are short enough to sit three-to-a-row and long enough to be read
+ * without a key, which is the whole trade.
+ */
 const STATE_WORD: Record<HistoryIntent['state'], string> = {
   pending: 'en attente',
   blocked: 'en attente',
-  draining: 'envoi en cours',
-  drained: 'envoyé',
-  failed: 'échec',
+  draining: 'envoi…',
+  drained: 'envoyée',
+  failed: 'en échec',
 }
 
 export function IntentSummary({
@@ -67,19 +72,22 @@ export function IntentSummary({
   }
 
   return (
-    <span className={`shrink-0 text-right text-ui ${className ?? ''}`}>
+    /* `whitespace-nowrap`: the cluster wrapped mid-list on a narrow row and
+       left an orphaned « · » at the end of the line. It is three short phrases
+       and it either fits on one line or the row is too narrow for the column. */
+    <span className={`shrink-0 whitespace-nowrap text-right text-ui ${className ?? ''}`}>
       {intents.map((intent, index) => (
         <span
           key={intent.intentId}
           /* Colour is never the only signal: the glyph carries the state and
              this spells it out for a screen reader and for a hover. */
-          aria-label={`${INTENT_SHORT[intent.kind]} — ${STATE_WORD[intent.state]}`}
-          title={`${INTENT_SHORT[intent.kind]} — ${STATE_WORD[intent.state]}`}
+          /* The reason, where there is one — colour is never the only signal
+             and « en échec » with no cause is a dead end (DEC-26). */
+          title={intent.lastError ?? undefined}
           className={intent.state === 'failed' ? 'text-warn' : 'text-muted'}
         >
           {index > 0 ? ' · ' : ''}
-          {INTENT_SHORT[intent.kind]}
-          {STATE_MARK[intent.state]}
+          {`${INTENT_SHORT[intent.kind]} ${STATE_WORD[intent.state]}`}
         </span>
       ))}
     </span>

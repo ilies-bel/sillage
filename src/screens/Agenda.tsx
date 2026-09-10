@@ -388,8 +388,9 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               reason={snapshot?.reason ?? null}
               signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
+              when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
               /*
-                The header's *Ajouter au …* again, this time where the rep is
+                The header's *Planifier au …* again, this time where the rep is
                 looking. Same component and therefore the same form, the same
                 validation and the same `onCreated` — a second copy of the
                 control, never a second way of doing it.

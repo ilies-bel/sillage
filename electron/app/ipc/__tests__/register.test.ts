@@ -872,6 +872,40 @@ test('an expanded row is the four sections of DEC-25', async () => {
   cleanup()
 })
 
+/*
+ * `review:transcript` — the reader behind `source ▸` at the gate (DEC-21).
+ *
+ * It is the same rows `spanVerification.ts` checked the quote against, which is
+ * the whole warrant for the affordance: a citation a rep follows has to land in
+ * the text the app verified, not in a second, prettier copy of it.
+ */
+test('the gate can read the transcript its citations were verified against', async () => {
+  const { ipc, deps, cleanup } = open()
+  captured(deps, 'm1', 'on est plutôt sur un TJM de 520 euros', 'à rappeler jeudi', true)
+
+  const view = await ipc.invoke('review:transcript', { meetingId: 'm1' })
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+
+  // The same segments, and every one of them final — an interim is never
+  // persisted and can never be cited.
+  assert.deepEqual(view.segments, record.segments)
+  assert.ok(view.segments.every((segment) => segment.isFinal))
+
+  // And the citation really occurs in what came back — which is the whole
+  // point of the affordance: following `source ▸` lands in the text the app
+  // checked the quote in, not in a second, prettier copy of it.
+  const quote = record.fields.find((f) => f.key === 'besoin')?.span?.quote
+  assert.ok(quote)
+  assert.ok(view.segments.some((segment) => segment.text.includes(quote)))
+  cleanup()
+})
+
+test('a meeting nobody has heard of is refused rather than answered with nothing', async () => {
+  const { ipc, cleanup } = open()
+  await assert.rejects(() => ipc.invoke('review:transcript', { meetingId: 'nope' }))
+  cleanup()
+})
+
 test('a call that never reached the gate still opens, with the sections it has', async () => {
   const { ipc, deps, cleanup } = open()
   captured(deps, 'm1', 'bonjour', 'quelques notes')

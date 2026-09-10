@@ -243,8 +243,14 @@ export function Reglages({ onBack }: ReglagesProps) {
             thousand pixels of nothing. The cap is the paragraph's, applied
             once, to everything — so a row's state, its reason and its recovery
             are one glance wide.
+
+            38rem and not 46: at 46 the paragraphs ran a hundred and twenty
+            characters a line, which is unifying two measures onto the wrong
+            one. This is the width a connector row needs — a label, a state, a
+            sentence of reason and a *Réessayer* — and it is also a measure
+            prose can be read at.
           */}
-          <div className="max-w-[46rem]">
+          <div className="max-w-[38rem]">
           {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (
@@ -351,7 +357,7 @@ export function Reglages({ onBack }: ReglagesProps) {
 
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */
 function Lede({ children }: { children: ReactNode }) {
-  return <p className="text-muted mb-3 text-ui">{children}</p>
+  return <p className="text-muted mb-3 text-copy leading-relaxed">{children}</p>
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────

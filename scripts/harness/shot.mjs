@@ -16,7 +16,8 @@
  *                    `down` and not retryable.
  *
  * Screens: splash · agenda · agenda-empty · agenda-semaine · agenda-liste ·
- * agenda-client · agenda-search · session · review · historique · reglages ·
+ * agenda-client · agenda-search · session · review · review-transcription ·
+ * review-transcription-introuvable · historique · reglages ·
  * agenda-sans-entra · session-sans-entra · review-sans-entra ·
  * reglages-sans-entra
  *
@@ -82,6 +83,26 @@ const pinnedNow = () => {
   const shown = new Date(guess).toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false })
   const offsetHours = new Date(shown).getHours() - 14
   return guess - offsetHours * 3_600_000
+}
+
+/**
+ * Open the gate, expand the nth field's source and follow it into the record.
+ *
+ * The order is the rep's: the value first, then « où est-ce que ça a été dit ? ».
+ * There is no URL for this state and there should not be one — it is a gesture
+ * on one column answered by the other.
+ */
+async function followSource(page, index) {
+  await SCREENS.review.drive(page)
+  await page.getByRole('button', { name: /^source/ }).nth(index).click()
+  await page.getByRole('button', { name: /Voir dans la transcription/ }).first().click()
+  // Either verdict: the citation was found, or the reader says it was not.
+  await page
+    .getByText(/Citation du champ|est introuvable dans la transcription/)
+    .first()
+    .waitFor()
+  // The smooth scroll has to land before the camera fires.
+  await page.waitForTimeout(700)
 }
 
 /** The screens, and how a rep would reach each one. */
@@ -171,7 +192,9 @@ const SCREENS = {
       // main process would use, and the whole width of the meter, so the still
       // shows the widget as a rep sees it rather than flat.
       await page.evaluate(() => window.__harness.replaySession('m-neovia-cadrage'))
-      await page.getByTitle('votre micro', { exact: false }).waitFor()
+      // The meter names its own channels on screen now, so the stage waits on
+      // what a rep can actually read rather than on a tooltip.
+      await page.getByText('client', { exact: true }).first().waitFor()
     },
   },
 
@@ -193,7 +216,9 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
       await page.getByText('le plan du compte-rendu sera décidé à la fin', { exact: false }).waitFor()
       await page.evaluate(() => window.__harness.replaySession('m-neovia-cadrage'))
-      await page.getByTitle('votre micro', { exact: false }).waitFor()
+      // The meter names its own channels on screen now, so the stage waits on
+      // what a rep can actually read rather than on a tooltip.
+      await page.getByText('client', { exact: true }).first().waitFor()
     },
   },
 
@@ -252,6 +277,35 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Valider' }).waitFor()
       await page.getByText('⚠ faible').first().waitFor()
     },
+  },
+
+  /*
+   * The gate with a citation followed into the record (DEC-21).
+   *
+   * Staged through the gesture rather than by a URL, because there is no URL:
+   * a rep opens the source of the one field the extraction could not verify,
+   * and presses the link under the quote. The screenshot is what they then see
+   * — which is the whole feature, and is invisible in a shot of the gate.
+   *
+   * Not expanded. The reader is a scroller by design and the point of it is
+   * that the cited line is scrolled *to*; unclipping it would photograph the
+   * whole call and lose the one thing worth looking at.
+   */
+  /*
+   * The verified case: the citation is found, highlighted and scrolled to.
+   * Row 2 is *Besoin*, whose quote `spanVerification.ts` matched.
+   */
+  'review-transcription': { scenario: 'review', drive: (page) => followSource(page, 2) },
+
+  /*
+   * The other verdict, and the one Granola has no equivalent of: the field the
+   * extraction could *not* verify. The reader says so at the top rather than
+   * opening silently at 0:00 and leaving the rep to hunt for a sentence that is
+   * not in the record.
+   */
+  'review-transcription-introuvable': {
+    scenario: 'review',
+    drive: (page) => followSource(page, 9),
   },
 
   historique: {

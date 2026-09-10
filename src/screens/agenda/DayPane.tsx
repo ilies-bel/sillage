@@ -30,6 +30,15 @@ interface DayPaneProps {
   reason: string | null
   /** True when Graph is not connected — changes what the empty state offers. */
   signedOut: boolean
+  /**
+   * Where the selected range sits relative to today.
+   *
+   * The empty panel said « Aucune réunion à venir. » on every empty range,
+   * including one ten days behind — a sentence that is simply false about a
+   * Monday that has already happened, on the screen whose whole job is to be
+   * trusted about what is on the calendar. Three ranges, three true sentences.
+   */
+  when: 'past' | 'today' | 'future'
   /** Shown on a row when the range spans more than one day. */
   showDay: boolean
   /**
@@ -43,7 +52,15 @@ interface DayPaneProps {
   onOpen: (meetingId: string) => void
 }
 
-export function DayPane({ entries, reason, signedOut, showDay, action, onOpen }: DayPaneProps) {
+export function DayPane({
+  entries,
+  reason,
+  signedOut,
+  showDay,
+  when,
+  action,
+  onOpen,
+}: DayPaneProps) {
   const upcoming = entries.filter((entry) => !entry.past)
   // Newest first: the call a rep wants after a meeting is the one that just
   // ended, and it is at the bottom of an ascending list.
@@ -67,7 +84,11 @@ export function DayPane({ entries, reason, signedOut, showDay, action, onOpen }:
               : undefined
           }
         >
-          Aucune réunion à venir.
+          {when === 'past'
+            ? 'Aucune réunion n’a été enregistrée sur cette période.'
+            : when === 'today'
+              ? 'Plus aucune réunion aujourd’hui.'
+              : 'Aucune réunion à venir.'}
         </EmptyState>
       )}
 

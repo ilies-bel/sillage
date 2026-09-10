@@ -43,7 +43,7 @@ import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
 import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
-import { Button, EmptyState, List, Row as UiRow, RowTitle } from '../ui/index.ts'
+import { Button, CopyButton, EmptyState, List, Row as UiRow, RowTitle } from '../ui/index.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
@@ -212,7 +212,19 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
 
   return (
     <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-5 py-4">
-      <Section title="Transcript">
+      {/*
+        « Transcription », not « Transcript ». The second is not a French word;
+        the review gate's own tab already says the first, and two screens naming
+        the same artefact differently is two things for a rep to learn.
+      */}
+      <Section
+        title="Transcription"
+        copy={
+          record.segments.length > 0
+            ? { text: transcriptText(record.segments), what: 'la transcription' }
+            : undefined
+        }
+      >
         <Transcript segments={record.segments} />
       </Section>
 
@@ -224,7 +236,10 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
         )}
       </Section>
 
-      <Section title="Compte-rendu">
+      <Section
+        title="Compte-rendu"
+        copy={record.compteRendu ? { text: record.compteRendu, what: 'le compte-rendu' } : undefined}
+      >
         {record.compteRendu ? (
           /*
             Typeset by `CompteRenduDocument`, with every marker still in the
@@ -250,10 +265,30 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  copy,
+  children,
+}: {
+  title: string
+  /**
+   * What « Copier » puts on the clipboard for this section, if anything.
+   *
+   * Historique is a reader (DEC-25) and this does not change that: taking a
+   * copy of what is already on screen writes nothing, sends nothing and pushes
+   * nothing. It is the one gesture a rep needs from an archive — the compte-rendu
+   * of a call three weeks ago, pasted into a proposal — and the screen had it
+   * behind « select the text in a 288px scroller without missing a line ».
+   */
+  copy?: { text: string; what: string }
+  children: React.ReactNode
+}) {
   return (
     <section className="min-w-0">
-      <h3 className="pane-label mb-2">{title}</h3>
+      <div className="mb-2 flex items-center gap-inline">
+        <h3 className="pane-label min-w-0 flex-1">{title}</h3>
+        {copy ? <CopyButton text={copy.text} what={copy.what} className="text-meta" /> : null}
+      </div>
       <div className="max-h-72 overflow-y-auto pr-1">{children}</div>
     </section>
   )
@@ -264,6 +299,21 @@ const CHANNEL_LABEL: Record<TranscriptSegment['channel'], string> = {
   rep: 'Moi',
   far: 'Client',
 }
+
+/**
+ * The transcript as plain text, for the clipboard.
+ *
+ * Same three columns the reader draws, tab-separated — a paste into a document
+ * keeps them as columns and a paste into a chat still reads as a dialogue. It
+ * is built from the same rows on screen and adds nothing to them.
+ */
+const transcriptText = (segments: readonly TranscriptSegment[]): string =>
+  segments
+    .map(
+      (segment) =>
+        `${formatOffset(segment.startMs)}\t${CHANNEL_LABEL[segment.channel]}\t${segment.text}`,
+    )
+    .join('\n')
 
 function Transcript({ segments }: { segments: readonly TranscriptSegment[] }) {
   if (segments.length === 0) {

@@ -217,7 +217,7 @@ describe('the calendar is drawn on a day with nothing in it', () => {
 
     const calendar = await screen.findByRole('region', { name: 'Calendrier' })
     expect(within(calendar).getAllByRole('cell')).toHaveLength(42)
-    expect(screen.getByText('Aucune réunion à venir.')).toBeTruthy()
+    expect(screen.getByText('Plus aucune réunion aujourd’hui.')).toBeTruthy()
     expect(
       screen.getByText('aucune réunion dans la fenêtre de synchronisation'),
     ).toBeTruthy()
@@ -244,7 +244,7 @@ describe('the calendar is drawn on a day with nothing in it', () => {
     // Another day keeps its form: this is scheduling, not a call about to start,
     // so the control names the day and asks for the hour (DEC-31).
     fireEvent.click(cell(thursday))
-    fireEvent.click(screen.getByRole('button', { name: /^Ajouter au / }))
+    fireEvent.click(screen.getByRole('button', { name: /^Planifier au / }))
     fireEvent.change(screen.getByPlaceholderText('Objet (facultatif)'), {
       target: { value: 'Cadrage Nordis' },
     })
@@ -691,7 +691,7 @@ describe('the search is the only entry into the past', () => {
 
     render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
-    expect(screen.getByText('Aucune réunion à venir.')).toBeTruthy()
+    expect(screen.getByText('Plus aucune réunion aujourd’hui.')).toBeTruthy()
 
     const periode = screen.getByRole('group', { name: 'Période' })
     await act(async () => {
@@ -702,7 +702,7 @@ describe('the search is the only entry into the past', () => {
     // « les réunions des 30 derniers jours » is a question, and it has no
     // query string. The day list gives way to the answer.
     expect(await screen.findByText('Acme — restitution')).toBeTruthy()
-    expect(screen.queryByText('Aucune réunion à venir.')).toBeNull()
+    expect(screen.queryByText('Plus aucune réunion aujourd’hui.')).toBeNull()
   })
 
   test('the view switch does not stay on screen over results it cannot change', async () => {

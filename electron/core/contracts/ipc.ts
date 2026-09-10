@@ -16,7 +16,7 @@ import {
   TimestampSchema,
   UserCommandSchema,
 } from './meeting.ts'
-import { TranscriptSegmentSchema } from './transcript.ts'
+import { TranscriptSegmentSchema, TranscriptViewSchema } from './transcript.ts'
 import { SignalSchema } from './signals.ts'
 import { OutboxEntrySchema } from './push.ts'
 import { ConnectorHealthSchema, ConnectorIdSchema, HealthSnapshotSchema } from './health.ts'
@@ -296,6 +296,32 @@ export const invokeChannels = {
   'enhancement:retry': {
     request: z.object({ meetingId: MeetingIdSchema }),
     response: EnhancementStatusSchema,
+  },
+  /**
+   * The stored transcript of the meeting at the gate — read on demand, when the
+   * rep asks to see a citation in context.
+   *
+   * **Why it is a channel and not a field on `ReviewPanel`.** The panel is read
+   * every time the gate opens and again on every `session:changed`; a
+   * fifty-minute call is several hundred segments, and shipping all of them on
+   * a screen most reps confirm without opening a single source would put the
+   * whole conversation across the bridge for nothing. This is asked for once, by
+   * a click, and never at all if nobody clicks.
+   *
+   * **It is not the live transcript pane DEC-38 removed.** That surface was a
+   * proof of life during a call, it was seconds late, and the input meter
+   * replaced it. This is the record afterwards: DEC-21 verifies every citation
+   * against exactly these segments, and `[source ▸]` has always pointed at them
+   * — it simply had no way to show them. Nothing here streams and nothing here
+   * renders while the meeting is `recording`.
+   *
+   * Final segments only, ascending. An interim is never persisted as an event
+   * and can never be cited, so a reader that showed them would be showing text
+   * the verification did not run against.
+   */
+  'review:transcript': {
+    request: z.object({ meetingId: MeetingIdSchema }),
+    response: TranscriptViewSchema,
   },
   /**
    * *Ce qui sera créé*, recomputed from the form as it currently stands.
