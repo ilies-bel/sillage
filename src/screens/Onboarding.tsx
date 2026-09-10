@@ -43,16 +43,23 @@ import type { ConnectorHealth, ConnectorId, HealthSnapshot } from '../../electro
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { Button, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
+import type { SectionId } from './Reglages.tsx'
 
 export interface OnboardingProps {
   /** Recorded as seen, then the calendar. The rep is never sent here again. */
   onDone: () => void
-  /** Straight to *Réglages*, from the step that names what is missing. */
-  onReglages: () => void
+  /**
+   * *Réglages ›*, and it is a **detour**: the caller is told which pane to open
+   * and which step to come back to, because a rep sent to settings from step 2
+   * has not read step 3 yet.
+   */
+  onReglages: (target: { section: SectionId; step: Step }) => void
+  /** Where to resume, coming back from that detour. */
+  initialStep?: Step
 }
 
 /** Three steps, and the rep can always go on to the next one. */
-type Step = 'quoi' | 'besoins' | 'essai'
+export type Step = 'quoi' | 'besoins' | 'essai'
 const ORDER: readonly Step[] = ['quoi', 'besoins', 'essai']
 
 /**
@@ -62,18 +69,24 @@ const ORDER: readonly Step[] = ['quoi', 'besoins', 'essai']
  * Réglages is a screen for somebody who already knows what the app does. Here
  * the row has to answer « why is it asking me this ».
  */
-const NEEDS: Record<(typeof REQUIRED_CONNECTORS)[number], { title: string; why: string }> = {
+const NEEDS: Record<
+  (typeof REQUIRED_CONNECTORS)[number],
+  { title: string; why: string; section: SectionId }
+> = {
   capture: {
     title: 'Le micro et l’audio de votre ordinateur',
     why: 'Sillage ne rejoint jamais la réunion : il écoute ce que votre machine joue et ce que dit votre micro. Sans l’audio système, le client n’est pas enregistré — vous seul le serez.',
+    section: 'connecteurs',
   },
   transcribe: {
     title: 'La transcription',
     why: 'Sur cette machine par défaut. Le modèle est téléchargé une fois et reste ici.',
+    section: 'transcription',
   },
   llm: {
     title: 'L’analyse',
     why: 'Ce qui écrit le compte-rendu à la fin de l’appel. À choisir dans Réglages.',
+    section: 'llm',
   },
 }
 
@@ -89,8 +102,8 @@ const STATE_WORD: Record<ConnectorHealth['state'], string> = {
   down: 'indisponible',
 }
 
-export function Onboarding({ onDone, onReglages }: OnboardingProps) {
-  const [step, setStep] = useState<Step>('quoi')
+export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: OnboardingProps) {
+  const [step, setStep] = useState<Step>(initialStep)
 
   /*
    * Recorded on the way out, and *then* the caller is told.
@@ -120,10 +133,19 @@ export function Onboarding({ onDone, onReglages }: OnboardingProps) {
    * link that actually fixes their problem would be shown this screen again on
    * the next launch — the one rep who least deserves it.
    */
-  const toReglages = useCallback(async () => {
-    await record()
-    onReglages()
-  }, [record, onReglages])
+  const toReglages = useCallback(
+    async (section: SectionId) => {
+      await record()
+      /*
+       * The step goes with it. Réglages replaces this screen rather than
+       * covering it, so without carrying the step the rep comes back to step 1
+       * — re-reading « Sillage écoute l'appel » as the reward for having gone
+       * and fixed the thing the screen asked them to fix.
+       */
+      onReglages({ section, step })
+    },
+    [record, onReglages, step],
+  )
 
   const index = ORDER.indexOf(step)
 
@@ -157,7 +179,7 @@ export function Onboarding({ onDone, onReglages }: OnboardingProps) {
       */}
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-gutter pb-block">
         <div className="measure mx-auto my-auto w-full">
-          {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={() => void toReglages()} /> : <Essai />}
+          {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai />}
         </div>
       </main>
 
@@ -258,7 +280,7 @@ function Promise({ title, children }: { title: string; children: string }) {
  * kept current by `health:changed`, with the same `health:retry` Réglages calls.
  * Nothing here is a checklist the screen maintains for itself.
  */
-function Besoins({ onReglages }: { onReglages: () => void }) {
+function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
   const health = useInvoke('health:snapshot', {})
   const [busy, setBusy] = useState<ConnectorId | null>(null)
 
@@ -343,7 +365,11 @@ function Besoins({ onReglages }: { onReglages: () => void }) {
                       {busy === id ? 'Vérification…' : 'Autoriser'}
                     </Button>
                   ) : (
-                    <Button variant="nav" className="shrink-0" onClick={onReglages}>
+                    <Button
+                      variant="nav"
+                      className="shrink-0"
+                      onClick={() => onReglages(NEEDS[id].section)}
+                    >
                       Réglages ›
                     </Button>
                   )}

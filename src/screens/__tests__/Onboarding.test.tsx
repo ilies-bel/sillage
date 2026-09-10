@@ -47,11 +47,17 @@ const FIRST_RUN: HealthSnapshot = {
   llm: { state: 'down', reason: 'aucun modèle de langage configuré', since: 1, retryable: false },
 }
 
-const open = (health: HealthSnapshot = FIRST_RUN) => {
+const open = (health: HealthSnapshot = FIRST_RUN, initialStep?: 'quoi' | 'besoins' | 'essai') => {
   bridge.when('health:snapshot', () => health)
   const done: number[] = []
-  const reglages: number[] = []
-  render(<Onboarding onDone={() => done.push(1)} onReglages={() => reglages.push(1)} />)
+  const reglages: { section: string; step: string }[] = []
+  render(
+    <Onboarding
+      onDone={() => done.push(1)}
+      onReglages={(target) => reglages.push(target)}
+      initialStep={initialStep}
+    />,
+  )
   return { done, reglages }
 }
 
@@ -123,7 +129,7 @@ describe('every way out records it', () => {
       fireEvent.click(screen.getAllByRole('button', { name: /^Réglages/ })[0] as HTMLElement)
     })
 
-    await waitFor(() => expect(reglages).toEqual([1]))
+    await waitFor(() => expect(reglages).toHaveLength(1))
     expect(bridge.calls.some((call) => call.channel === 'onboarding:seen')).toBe(true)
   })
 
@@ -139,6 +145,46 @@ describe('every way out records it', () => {
 
     // The worst case is seeing this screen once more. It is not a blank window.
     await waitFor(() => expect(done).toEqual([1]))
+  })
+})
+
+describe('Réglages is a detour, and it lands on the right pane', () => {
+  /*
+   * Both links used to land on the section Réglages happens to open on, so a
+   * rep told « à choisir dans Réglages » about the language model arrived on
+   * the connector list. Routing that stops at the screen is not routing.
+   */
+  test('the analysis row opens the language-model pane', async () => {
+    const { reglages } = open()
+    await toBesoins()
+
+    const row = screen.getByText(/aucun modèle de langage configuré/).closest('li')
+    await act(async () => {
+      fireEvent.click(row?.querySelector('button') as HTMLElement)
+    })
+
+    await waitFor(() => expect(reglages[0]?.section).toBe('llm'))
+  })
+
+  /*
+   * And it carries the step. Réglages *replaces* this screen rather than
+   * covering it, so a rep who came back to step 1 would re-read « Sillage
+   * écoute l'appel » as the reward for having gone and fixed what was asked.
+   */
+  test('it carries the step the rep left, and resuming lands there', async () => {
+    const { reglages } = open()
+    await toBesoins()
+
+    const row = screen.getByText(/aucun modèle de langage configuré/).closest('li')
+    await act(async () => {
+      fireEvent.click(row?.querySelector('button') as HTMLElement)
+    })
+    await waitFor(() => expect(reglages[0]?.step).toBe('besoins'))
+
+    // What `App.tsx` does with it: the screen comes back where it was left.
+    cleanup()
+    open(FIRST_RUN, 'besoins')
+    expect(screen.getByRole('heading', { name: 'Ce dont Sillage a besoin' })).toBeTruthy()
   })
 })
 

@@ -533,14 +533,49 @@ export class Orchestrator {
   }
 
   setHealth(connector: ConnectorId, health: ConnectorHealth): void {
-    this.#health = { ...this.#health, [connector]: health }
-    this.#broadcast('health:changed', { connector, health, at: this.#clock() })
+    this.#health = { ...this.#health, [connector]: this.#truthful(connector, health) }
+    this.#broadcast('health:changed', {
+      connector,
+      health: this.#health[connector],
+      at: this.#clock(),
+    })
+  }
+
+  /**
+   * **`retryable` means the app can actually retry it.**
+   *
+   * A module decides whether *its* failure is transient, and it has no idea
+   * whether anybody registered a way to act on that. Three did not — capture on
+   * a device error, transcription on a provider error, and Outlook on an expired
+   * token all reported `retryable: true`, and `retry()` below quietly returned
+   * the unchanged health for every one of them. So Réglages drew a live
+   * *Réessayer*, a rep pressed it, the row said « Vérification… » and came back
+   * saying exactly what it said before. Forever.
+   *
+   * That is the dead button DEC-26 forbids, and the docblock on `registerRetry`
+   * six lines down says so — which is how long the rule had been wrong in the
+   * one file that states it. Onboarding's *Autoriser* inherited it whole.
+   *
+   * The claim is corrected **here**, at the single point where both facts are
+   * known, rather than in each of the three modules. A module that grows a retry
+   * gets the button back by registering it; a module that loses one loses the
+   * button the same day, with no screen to update.
+   *
+   * The reason survives untouched. « micro indisponible — … » is worth reading
+   * whether or not there is a control beside it, and stripping it would trade a
+   * dead button for a bare red dot.
+   */
+  #truthful(connector: ConnectorId, health: ConnectorHealth): ConnectorHealth {
+    if (health.state === 'ok' || !health.retryable) return health
+    return this.#retries.has(connector) ? health : { ...health, retryable: false }
   }
 
   /**
    * A module registers how to retry itself when it registers as a connector.
-   * Without one, a `down` connector renders a disabled control with no way
-   * back — the exact dead button DEC-26 forbids.
+   *
+   * Without one, the connector's `retryable` is cleared on the way in
+   * (`#truthful`) and no screen draws a control — rather than drawing one that
+   * cannot work, which is the exact dead button DEC-26 forbids.
    */
   registerRetry(connector: ConnectorId, retry: () => Promise<ConnectorHealth>): void {
     this.#retries.set(connector, retry)
@@ -548,6 +583,9 @@ export class Orchestrator {
 
   async retry(connector: ConnectorId): Promise<ConnectorHealth> {
     const retry = this.#retries.get(connector)
+    // Unreachable through the UI now that `#truthful` clears the claim — kept
+    // as the answer to a channel called directly, and it is the honest one:
+    // nothing was retried, so nothing changed.
     if (!retry) return this.#health[connector] ?? { state: 'ok' }
     try {
       const health = await retry()

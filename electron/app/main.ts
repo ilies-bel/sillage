@@ -1045,6 +1045,28 @@ const boot = async (): Promise<void> => {
   const crm = vsa ? new VsaCrm({ config: vsa, diagnostics }) : null
   const mail = identity ? new OutlookMail({ identity, diagnostics }) : null
 
+  /*
+   * Outlook's remedy is a **sign-in**, and it had none.
+   *
+   * `mailHealth` reports `retryable: true` for the two token failures — « session
+   * Microsoft expirée », « reconnexion à Microsoft nécessaire » — which drew a
+   * live *Réessayer* in Réglages that could not possibly work: nothing was
+   * registered, so `Orchestrator.retry` returned the same failure it was given.
+   * `#truthful` now clears that claim, so without this the row would correctly
+   * offer nothing at all. What it should offer is the interactive re-acquire,
+   * which is the thing that actually fixes an expired token.
+   *
+   * `signIn()` and not a silent refresh: the whole of these two errors is that
+   * the silent path has already failed and Microsoft wants a human. It is the
+   * same call the *Se connecter* button in Réglages makes.
+   */
+  if (identity) {
+    orchestrator.registerRetry('mail', async () => {
+      await identity.signIn()
+      return { state: 'ok' }
+    })
+  }
+
   orchestrator.setHealth(
     'crm',
     crm

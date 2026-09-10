@@ -84,7 +84,7 @@ import {
 } from '../ui/index.ts'
 import type { SectionNavItem, StateDotProps } from '../ui/index.ts'
 
-type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'maj' | 'diagnostics'
+export type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'maj' | 'diagnostics'
 
 /** VISION.md §6 names them in this order: the two provider tables, then the
  *  connectors, then diagnostics. Updates sit last but one — next to
@@ -109,10 +109,21 @@ const LANDING: SectionId = 'connecteurs'
 
 interface ReglagesProps {
   onBack: () => void
+  /**
+   * Where to open, when the caller knows which pane it is sending the rep to.
+   *
+   * First run's two *Réglages ›* links both used to land on the landing
+   * section, so a rep told « à choisir dans Réglages » about the language model
+   * arrived on the connector list and had to find the pane themselves — which
+   * is the same as not routing at all. The default stays the landing section:
+   * a rep who opened this from the calendar was not sent anywhere in
+   * particular.
+   */
+  section?: SectionId
 }
 
-export function Reglages({ onBack }: ReglagesProps) {
-  const [section, setSection] = useState<SectionId>(LANDING)
+export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
+  const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
   const [busy, setBusy] = useState<string | null>(null)

@@ -27,11 +27,14 @@
  *  2. **Ce dont il a besoin** — the required subsystems (DEC-32), live, with the
  *     control that fixes each one. Not a checklist: the rows are the real health
  *     rows and the buttons are the real retries.
- *  3. **Premier essai** — thirty seconds of recording, ending in a real
- *     compte-rendu. Granola ships a video for this; the equivalent here is that
- *     the rep proves the chain on their own machine, which is stronger and needs
- *     no asset. It is skippable, and skipping it is the common case for a rep
- *     who installed the app between two meetings.
+ *  3. **Votre premier appel** — what will happen, in the order it happens:
+ *     where the button is, what the meter means, and what the rep will be asked
+ *     at the end. Granola ships a two-minute video and transcribes it live; the
+ *     equivalent here would be a fabricated recording, which proves the fixture
+ *     works. The rep's own next meeting is the real trial, so this step's job is
+ *     to make its three beats recognisable when they arrive — and it ends the
+ *     onboarding rather than starting a capture, because starting one from a
+ *     screen somebody is reading puts them into a live recording.
  *
  * ## What it is not
  *

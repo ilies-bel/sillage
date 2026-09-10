@@ -22,8 +22,8 @@ import { Agenda } from './screens/Agenda.tsx'
 import { Session } from './screens/Session.tsx'
 import { Review } from './screens/Review.tsx'
 import { Historique } from './screens/Historique.tsx'
-import { Reglages } from './screens/Reglages.tsx'
-import { Onboarding } from './screens/Onboarding.tsx'
+import { Reglages, type SectionId } from './screens/Reglages.tsx'
+import { Onboarding, type Step } from './screens/Onboarding.tsx'
 import { Splash } from './screens/Splash.tsx'
 
 export function App() {
@@ -37,6 +37,13 @@ export function App() {
   // First run. Read once — nothing broadcasts it, because the only thing that
   // can change it is this window.
   const onboarding = useInvoke('onboarding:state', {})
+  /*
+   * Réglages, opened *from* first run. The onboarding stays mounted-in-spirit:
+   * this is what sends the rep back to it instead of to the calendar.
+   */
+  const [inReglages, setInReglages] = useState<SectionId | null>(null)
+  /** The step to come back to. Kept here because Réglages *replaces* the screen. */
+  const [resume, setResume] = useState<Step>('quoi')
 
   const open = useCallback((meetingId: string) => {
     setRoute({ screen: 'session', meetingId })
@@ -99,14 +106,36 @@ export function App() {
    * has used the app, and holding the window shut over a *preference* is the one
    * outcome worse than showing it a second time.
    */
+  /*
+   * Réglages opened from first run, and the way back out of it is *back into*
+   * first run — not to the calendar the rep has never reached.
+   */
+  if (inReglages && onboarding.state.status === 'ready' && !onboarding.state.value.seen) {
+    return <Reglages section={inReglages} onBack={() => setInReglages(null)} />
+  }
+
   if (onboarding.state.status === 'ready' && !onboarding.state.value.seen) {
     return (
       <Onboarding
         onDone={() => onboarding.set({ seen: true })}
-        onReglages={() => {
-          onboarding.set({ seen: true })
-          setRoute(REGLAGES)
+        /*
+          **Réglages is a detour, not an exit.**
+
+          It used to mark the onboarding seen and navigate, which meant the two
+          rows whose remedy is a setting were one-way doors: the rep who left by
+          the one link that actually fixes their problem never saw step 3, and
+          never saw this screen again. That is the last rep who should lose it.
+
+          So the flag is not written here — `Onboarding` records it, on every
+          exit, including this one, so a rep who quits from Réglages is still not
+          nagged — and the route is remembered instead. Coming back out of
+          Réglages lands on the step they left.
+        */
+        onReglages={({ section, step }) => {
+          setResume(step)
+          setInReglages(section)
         }}
+        initialStep={resume}
       />
     )
   }

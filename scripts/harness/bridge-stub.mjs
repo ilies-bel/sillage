@@ -1018,12 +1018,26 @@ export function installAppBridge(config) {
       DEC-26 forbids.
     */
     premierLancement: {
+      /*
+        The sentence `CaptureSession.probe()` actually produces, and no other.
+
+        This fixture used to invent « macOS n’a pas encore autorisé
+        l’enregistrement de l’écran… » — a string that exists nowhere in
+        `electron/`, because the app does not check TCC: capture reports on
+        whether the native audio module loads. So the onboarding screenshot was a
+        picture of a permission flow the product does not have, and it took an
+        adversarial read of the source to notice, which is exactly what a lying
+        fixture costs.
+
+        `retryable: false` for the same reason: a module that will not load is
+        not fixed by pressing a button, and `Orchestrator.#truthful` would strip
+        the claim anyway.
+      */
       capture: {
         state: 'down',
-        reason:
-          'macOS n’a pas encore autorisé l’enregistrement de l’écran — sans cette autorisation, seul votre micro est capté.',
+        reason: 'module audio natif indisponible — bibliothèque introuvable',
         since: now - 20 * 1000,
-        retryable: true,
+        retryable: false,
       },
       transcribe: {
         state: 'degraded',

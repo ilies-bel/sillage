@@ -46,6 +46,21 @@ const { chromium } = require('playwright')
 const URL_BASE = process.env.SILLAGE_URL ?? 'http://localhost:5180'
 
 /**
+ * The verb on a day-list row, which is **not** one word.
+ *
+ * The armed meeting — the call starting now — carries a filled *Enregistrer*;
+ * every other row carries an outline *Ouvrir*, because opening a meeting that
+ * exists and starting a capture are two different acts. A stage that hard-codes
+ * either one photographs half the calendar and hangs on the other half: renaming
+ * this button broke six stages at once, including both of the features that were
+ * under review at the time.
+ *
+ * Matched as a set rather than as a string, so a stage says « the way into this
+ * row » and stops caring which of the two it is.
+ */
+const OPEN_ROW = /^(Ouvrir|Enregistrer)$/
+
+/**
  * impeccable's in-page detector, run against what the browser actually painted.
  *
  * The skill's own URL mode (`detect.mjs http://localhost:5180`) cannot see this
@@ -196,7 +211,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
       await page.getByText('Rien ne migre dans vos notes.').waitFor()
@@ -223,7 +238,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
       await page.getByText('le plan du compte-rendu sera décidé à la fin', { exact: false }).waitFor()
@@ -244,7 +259,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByText('Compte-rendu en attente', { exact: false }).waitFor()
       await page.getByRole('button', { name: 'Choisir un modèle' }).waitFor()
@@ -268,7 +283,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).waitFor()
       await page.getByText('Le budget de la plateforme data', { exact: false }).waitFor()
@@ -348,7 +363,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).click()
       await page.getByText('Prêt à envoyer').waitFor()
@@ -491,7 +506,7 @@ const SCREENS = {
       await openAgenda(page)
       // The grid itself, not a placeholder (DEC-31): a real, pressable day.
       await page.getByRole('button', { name: /aucune réunion$/ }).first().waitFor()
-      await page.getByRole('button', { name: 'Nouvelle réunion' }).waitFor()
+      await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()
     },
   },
 
@@ -501,7 +516,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
     },
@@ -514,7 +529,7 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await rowNamed(page, 'Néovia Santé — cadrage renfort data')
-        .getByRole('button', { name: 'Ouvrir' })
+        .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).click()
       /*

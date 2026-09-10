@@ -174,3 +174,65 @@ test('a meeting whose devices will not open is aborted, not left claiming to rec
   assert.ok(health && health.state === 'down')
   assert.match(health.reason, /micro indisponible/)
 })
+
+/**
+ * **`retryable` means the app can actually retry it** (DEC-26).
+ *
+ * A module decides whether *its* failure is transient. It has no idea whether
+ * anybody registered a way to act on that, and for a long time nobody had:
+ * capture on a device error, transcription on a provider error and Outlook on an
+ * expired token all reported `retryable: true`, and `Orchestrator.retry` quietly
+ * returned the unchanged health for every one of them.
+ *
+ * So Réglages drew a live *Réessayer*, a rep pressed it, the row said
+ * « Vérification… » and came back saying exactly what it had said before —
+ * forever. The onboarding's *Autoriser* inherited the same bug the day it was
+ * written, on the one screen whose whole job is to get a permission granted.
+ *
+ * The claim is corrected where both facts are known. These two tests are the
+ * rule in both directions, because only having the first would let somebody
+ * "fix" it by clearing `retryable` everywhere.
+ */
+test('a connector with no registered retry never claims to be retryable', () => {
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+
+  orchestrator.setHealth('capture', {
+    state: 'degraded',
+    reason: 'micro indisponible — périphérique occupé',
+    since: 1,
+    retryable: true,
+  })
+
+  const health = orchestrator.health().capture
+  // `assert.equal` narrows the union, so `retryable` is reachable below it.
+  assert.equal(health.state, 'degraded')
+  assert.equal(health.retryable, false)
+  // The reason survives untouched: it is worth reading whether or not there is
+  // a control beside it, and stripping it would trade a dead button for a bare
+  // red dot.
+  assert.match(health.reason, /périphérique occupé/)
+  store.close()
+})
+
+test('registering a retry gives the control back, with no screen to update', async () => {
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+  orchestrator.registerRetry('capture', async () => ({ state: 'ok' }))
+
+  orchestrator.setHealth('capture', {
+    state: 'degraded',
+    reason: 'micro indisponible — périphérique occupé',
+    since: 1,
+    retryable: true,
+  })
+
+  const health = orchestrator.health().capture
+  assert.equal(health.state, 'degraded')
+  assert.equal(health.retryable, true)
+
+  // And it does something: the point of the claim is that pressing it can change
+  // the answer.
+  assert.deepEqual(await orchestrator.retry('capture'), { state: 'ok' })
+  store.close()
+})
