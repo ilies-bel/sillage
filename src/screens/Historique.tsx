@@ -374,7 +374,7 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
             provenance rule: the *ink* carries the authorship, not the face.
           */
           <>
-            <CompteRenduDocument text={record.compteRendu} className="pl-6" />
+            <CompteRenduDocument text={record.compteRendu} />
             {/* Why the gutter is there, in the same words the other two screens use. */}
             <CompteRenduMarkersNote className="text-muted mt-2 text-meta" />
           </>

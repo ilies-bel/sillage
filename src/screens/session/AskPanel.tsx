@@ -26,9 +26,17 @@
  *
  * **It confirms nothing and writes nothing** (DEC-4, DEC-5). No answer touches
  * the rep's notes, the compte-rendu, or VerySwing, and none is stored: it is a
- * read over the log, like *Historique* (DEC-25). The next question starts fresh
- * — a thread would need history, a token budget and a summariser, none of which
- * makes the first question better answered.
+ * read over the log, like *Historique* (DEC-25).
+ *
+ * **Each question is asked alone; the panel keeps what came back.** Nothing of
+ * the previous exchange is sent with the next one — a thread would need history,
+ * a token budget and a summariser, none of which makes the first question better
+ * answered, and DEC-21 verifies each quote against the transcript, not against
+ * what the model said a minute ago. But the *screen* stacks the answers, newest
+ * first. Replacing them meant a rep who asked « et le TJM ? » lost the answer
+ * about the timeline they had asked ten seconds earlier and had not finished
+ * reading, with no way back to it — the panel stores nothing, so the only copy
+ * was the one on screen.
  *
  * **It is not on screen during the call** (DEC-23). The caller decides that;
  * this component is simply never mounted then.
@@ -67,24 +75,28 @@ const SUGGESTIONS = [
 export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
-  const [answer, setAnswer] = useState<AskAnswer | null>(null)
+  /** Newest first. The panel's only memory, and it never leaves the screen. */
+  const [answers, setAnswers] = useState<readonly AskAnswer[]>([])
+  const [asked, setAsked] = useState<readonly string[]>([])
   const [failure, setFailure] = useState<string | null>(null)
 
-  const ask = async (asked: string) => {
-    const trimmed = asked.trim()
+  const ask = async (question: string) => {
+    const trimmed = question.trim()
     if (trimmed === '' || busy) return
 
     setBusy(true)
     setFailure(null)
     /*
-     * The previous answer goes as the new question is sent, deliberately.
-     * Leaving it under a spinner puts the answer to a question the rep has
-     * stopped asking directly above the one they are waiting for, and the two
-     * are indistinguishable at a glance.
+     * The box empties as the question is sent. It used to keep the text, so the
+     * rep's question was on screen twice — once in the field they had stopped
+     * looking at and once above the answer, where it belongs and where it stays
+     * as the answers stack.
      */
-    setAnswer(null)
+    setQuestion('')
+    setAsked((before) => [...before, trimmed])
     try {
-      setAnswer(await invoke('meeting:ask', { meetingId, question: trimmed }))
+      const answer = await invoke('meeting:ask', { meetingId, question: trimmed })
+      setAnswers((before) => [answer, ...before])
     } catch (error) {
       // The main process's own French sentence — « aucun modèle de langage
       // n'est configuré… », « la réunion est en cours… ». Never a stack, and
@@ -94,6 +106,8 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
       setBusy(false)
     }
   }
+
+  const remaining = SUGGESTIONS.filter((suggestion) => !asked.includes(suggestion))
 
   return (
     <section className={className}>
@@ -130,13 +144,16 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
       </form>
 
       {/*
-        The suggestions go once the panel has been used. They are scaffolding for
-        the first question and clutter after it — a rep who has asked one knows
-        what the box is for.
+        The ones not yet asked, and they stay until they run out.
+
+        They used to vanish for good on the first question, which read as the
+        panel having spent what it had — a rep who asked one thing and wondered
+        what else it could do got a blank row where the ideas had been. Filtering
+        by what has been asked keeps the offer honest without ever repeating one.
       */}
-      {answer === null && failure === null && !busy ? (
+      {failure === null && !busy && remaining.length > 0 ? (
         <ul className="mt-2 flex flex-wrap gap-1.5">
-          {SUGGESTIONS.map((suggestion) => (
+          {remaining.map((suggestion) => (
             <li key={suggestion}>
               <button
                 type="button"
@@ -159,7 +176,11 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
         </p>
       ) : null}
 
-      {answer ? <Answer answer={answer} onLocate={onLocate} /> : null}
+      {answers.map((answer, at) => (
+        // The question is the identity here — two answers to the same question
+        // would be the same row twice, and the index keeps them apart.
+        <Answer key={`${answer.question}-${at}`} answer={answer} onLocate={onLocate} />
+      ))}
     </section>
   )
 }
@@ -194,39 +215,68 @@ function Answer({ answer, onLocate }: { answer: AskAnswer; onLocate?: AskPanelPr
           {answer.citations.map((citation) => {
             const at = citation.span.startMs
             const label = citation.span.channel === 'rep' ? 'moi' : 'client'
-            return (
-              <li key={citation.span.quote} className="flex gap-2">
-                <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
-                  {/* A verified quote has a time; an unverified one has nowhere
-                      to point, and « — » says so without claiming a moment. */}
-                  {citation.verified && at !== null ? formatOffset(at) : '—'}
-                </span>
-                {citation.verified ? (
+            /*
+             * **The time is part of the control, not a label beside it.**
+             *
+             * It was a separate span, so the one thing on the row that reads as
+             * « where in the call » was the one thing a rep could not press —
+             * and pressing a timestamp to go to that moment is the gesture every
+             * player has taught them. One button now holds both, which also
+             * makes the target the width of the row rather than the width of a
+             * sentence fragment.
+             */
+            const time = citation.verified && at !== null ? formatOffset(at) : '—'
+            if (citation.verified) {
+              return (
+                <li key={citation.span.quote}>
                   <button
                     type="button"
                     onClick={() => onLocate?.(citation.span.quote, label)}
                     /*
-                      Only a verified quote is a control. Following an unverified
-                      one would open the transcript on nothing and read as the
-                      reader being broken rather than as the citation being wrong.
                       Where there is no transcript beside this panel the quote is
                       still drawn — it is worth reading even when it cannot be
                       opened — so the control degrades to text rather than to a
                       dead button (DEC-26).
                     */
                     disabled={onLocate === undefined}
-                    className="text-body hover:bg-subtle min-w-0 flex-1 rounded-sm px-1 text-left text-ui leading-relaxed transition disabled:hover:bg-transparent"
+                    className="hover:bg-subtle flex w-full gap-2 rounded-sm px-1 py-0.5 text-left transition disabled:hover:bg-transparent"
                   >
-                    « {citation.span.quote} »
-                  </button>
-                ) : (
-                  <span className="min-w-0 flex-1 px-1 text-ui leading-relaxed">
-                    <span className="text-body">« {citation.span.quote} »</span>{' '}
-                    <span className="text-warn">
-                      — introuvable dans la transcription, à ne pas reprendre tel quel.
+                    <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
+                      {time}
                     </span>
+                    <span className="text-body min-w-0 flex-1 text-ui leading-relaxed">
+                      « {citation.span.quote} »
+                    </span>
+                  </button>
+                </li>
+              )
+            }
+            /*
+             * **The mark is on the quote, not on the sentence after it.**
+             *
+             * The quote was set in `--text-body` exactly like a verified one and
+             * the warning trailed it — so the fragment a rep is most likely to
+             * copy into an email looked identical to the fragments that are
+             * actually in the recording, and the disclaimer was a tail their eye
+             * had already passed. Underlined in `--warn`, it is marked where it
+             * is read. It is deliberately not a control: following it would open
+             * the reader on nothing and read as the reader being broken rather
+             * than as the citation being wrong.
+             */
+            return (
+              <li key={citation.span.quote} className="flex gap-2 px-1 py-0.5">
+                <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
+                  {/* No time claimed, because there is nowhere to point. */}
+                  {time}
+                </span>
+                <span className="min-w-0 flex-1 text-ui leading-relaxed">
+                  <span className="text-body decoration-warn underline decoration-dotted decoration-from-font underline-offset-4">
+                    « {citation.span.quote} »
+                  </span>{' '}
+                  <span className="text-warn">
+                    — introuvable dans la transcription, à ne pas reprendre tel quel.
                   </span>
-                )}
+                </span>
               </li>
             )
           })}

@@ -59,11 +59,8 @@ export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps
         goes. Drawing it as one raw block was honest and unreadable: beside the
         rep's own typeset notes it read as a log dump of something the machine
         had produced rather than as the document the product exists to write.
-
-        `pl-6` is the gutter the markers hang in; without it they clip against
-        the pane's left edge.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto pl-6">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <CompteRenduDocument text={compteRendu} />
       </div>
 

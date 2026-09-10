@@ -13,6 +13,16 @@
  * text under it. A flex gutter would indent every line by the width of the
  * widest marker, and the document would read as if it were quoted.
  *
+ * **The document owns the gutter's width, and no caller passes it.** The three
+ * surfaces that draw a compte-rendu each set their own `pl-6`, which is 24px —
+ * narrower than `### `, so ten of the twenty-three markers on a real document
+ * were clipped against the pane's left edge, the `###` losing a third of itself.
+ * That is the exact failure the gutter exists to prevent, and it is invisible in
+ * a DOM test: the text is present, the box is the wrong size. `GUTTER` is
+ * measured against the widest marker in the vocabulary (`### `, four monospace
+ * characters at `--type-meta`, plus the 6px `mr-1.5`) with room to spare, and
+ * `scripts/harness/geometry.mjs` measures the painted rects.
+ *
  * Set at `--type-copy`, the same size as the rep's own notepad. It was one step
  * down, which made the document the app produced quieter than the notes it was
  * written from — on the surfaces where the compte-rendu *is* the output.
@@ -25,6 +35,22 @@ interface CompteRenduDocumentProps {
   className?: string
 }
 
+/**
+ * The gutter every marker hangs in.
+ *
+ * `pl-10` is 40px against `### `, the widest marker in the vocabulary, which
+ * measures 31px at `--type-meta` plus its 6px `mr-1.5`. The three callers each
+ * used to pass their own `pl-6` — 24px, narrower than the thing it had to hold —
+ * and the session pane passed none at all. A caller may add margins and a
+ * `.measure`; it never sets this.
+ *
+ *     node scripts/harness/shot.mjs session-compte-rendu x.png --no-png --geometry
+ *
+ * prints the tightest clearance on the screen, which is the number to tune
+ * against — not the marker that happened to break first.
+ */
+const GUTTER = 'pl-10'
+
 /** What each line class is set in. The `#` gutter is common to all of them. */
 const HEADING_CLASS: Record<1 | 2 | 3, string> = {
   1: 'font-display text-strong mt-block first:mt-0 text-[20px] leading-tight',
@@ -36,7 +62,7 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
   const lines = parseCompteRendu(text)
 
   return (
-    <div className={className}>
+    <div className={className ? `${GUTTER} ${className}` : GUTTER}>
       {lines.map((line, index) => {
         // Index as key: these are lines of one immutable string, they have no
         // identity of their own and the list is replaced wholesale or not at all.
@@ -143,7 +169,11 @@ function Prose({ text }: { text: string }) {
  */
 function Marker({ children }: { children: string }) {
   return (
-    <span className="text-muted absolute top-0 right-full mr-1.5 select-none whitespace-pre font-mono text-meta leading-relaxed">
+    <span
+      // `geometry.mjs` measures every one of these against the box it hangs in.
+      data-hangs="marqueur"
+      className="text-muted absolute top-0 right-full mr-1.5 select-none whitespace-pre font-mono text-meta leading-relaxed"
+    >
       {children}
     </span>
   )

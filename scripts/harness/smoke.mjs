@@ -26,6 +26,13 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * It carries `--geometry` as well, which is the other half of the same problem.
+ * Ten of the compte-rendu's twenty-three gutter markers were clipped for three
+ * review rounds: present in the DOM, correct in `innerText`, and a third of the
+ * `###` simply not painted. A screenshot showed it and no eye caught a nine-pixel
+ * truncation of a character that is *meant* to be faint. Every stage is measured
+ * now, so a padding that stops fitting what hangs in it fails here.
+ *
  * It shells out to `shot.mjs --no-png` rather than importing it, because the CLI
  * *is* the thing under test — `scripts/harness/README.md` tells a reviewer to run
  * exactly this, and a smoke run over a refactored internal would not have caught
@@ -65,7 +72,7 @@ const drive = (screen) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--viewport', '1280x800'],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--viewport', '1280x800'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

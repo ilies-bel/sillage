@@ -662,7 +662,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   is: one muted line between the toolbar and the first heading.
                 */}
                 <CompteRenduMarkersNote className="text-muted border-subtle mb-3 border-b pb-2 text-meta" />
-                <CompteRenduDocument text={edits.compteRendu} className="pl-6" />
+                <CompteRenduDocument text={edits.compteRendu} />
               </>
             ) : (
               /*

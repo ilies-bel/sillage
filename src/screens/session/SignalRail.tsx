@@ -146,7 +146,9 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      {/* `.slate` declares the container the rows measure themselves against;
+          see `index.css`. Below 250px they stack rather than shrink the value. */}
+      <div className="slate min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         <ul className="space-y-1.5">
           {slots.map((kind) => (
             <Slot key={kind} label={KIND_LABEL[kind]} found={byKind.get(kind) ?? []} />
@@ -213,13 +215,13 @@ function Slot({ label, found }: SlotProps) {
 
   return (
     <li
-      className={`border-card flex items-baseline gap-inline rounded-sm border px-2.5 py-1.5 ${
+      className={`slate-row border-card flex items-baseline gap-inline rounded-sm border px-2.5 py-1.5 ${
         empty ? 'border-transparent' : 'bg-inner'
       }`}
     >
       {/* 64px, not 72: every pixel here is a pixel the value does not get,
           and the longest label in the slate (« Démarrage ») fits. */}
-      <span className="text-muted w-16 shrink-0 text-meta">{label}</span>
+      <span className="slate-label text-muted w-16 shrink-0 text-meta">{label}</span>
       {empty ? (
         /*
          * `text-muted`, not the `text-muted/60` that stood here. Tailwind cannot

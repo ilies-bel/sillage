@@ -10,6 +10,7 @@
  *   --no-expand      keep them clipped even on a screen whose plan expands
  *   --scan [out.json]  run the impeccable browser detector on the staged screen
  *   --no-png         scan only
+ *   --geometry       measure the hanging markers against the box they hang in
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -576,6 +577,7 @@ function parseArgs(argv) {
     scan: null,
     png: true,
     entra: null,
+    geometry: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -591,6 +593,7 @@ function parseArgs(argv) {
     else if (arg === '--no-expand') flags.expand = false
     else if (arg === '--sans-entra') flags.entra = false
     else if (arg === '--no-png') flags.png = false
+    else if (arg === '--geometry') flags.geometry = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -613,7 +616,9 @@ async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2))
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
-    console.error('usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png]')
+    console.error(
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry]',
+    )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
   }
@@ -672,6 +677,21 @@ async function main() {
   }
 
   /*
+   * Same reason, same moment: before `--expand`, because unclipping the
+   * scrollers is exactly what would hide a marker hanging out of its box.
+   */
+  let clipped = []
+  let measured = 0
+  let tightest = { by: Infinity, text: '' }
+  if (flags.geometry) {
+    await page.evaluate(() => document.fonts.ready)
+    const seen = await geometry(page)
+    clipped = seen.clipped
+    measured = seen.measured
+    tightest = seen.tightest
+  }
+
+  /*
    * The app shell never scrolls the document: it is `h-full` with its own inner
    * `overflow-y-auto` columns, so a `fullPage` shot of it is exactly one
    * viewport and everything below an inner fold is lost. On the screens whose
@@ -714,12 +734,76 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.geometry) {
+    if (clipped.length === 0)
+      console.log(
+        measured === 0
+          ? '  géométrie: rien à mesurer sur cet écran'
+          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} »`,
+      )
+    else {
+      console.log(`  ✗ géométrie: ${clipped.length} élément(s) hors de leur cadre`)
+      for (const item of clipped.slice(0, 8)) {
+        console.log(`   ✗ ${item.what} « ${item.text} » — ${item.by}px à gauche du cadre`)
+      }
+      process.exitCode = 4
+    }
+  }
   if (unanswered.length) console.log(`  canaux sans réponse: ${[...new Set(unanswered)].join(', ')}`)
   const noise = problems.filter((p) => !IGNORED.some((rule) => rule.test(p)))
   if (noise.length) {
     console.log('  console:')
     noise.forEach((p) => console.log('   ' + p))
   }
+}
+
+/**
+ * **Does what hangs in a gutter still fit on screen?**
+ *
+ * The compte-rendu's `#`, `##`, `###` and `- ` hang left of the prose in an
+ * `absolute right-full` span — which is a promise about *painted geometry*, and
+ * the only kind of promise a DOM test cannot check. Ten of the twenty-three
+ * markers on a real document were clipped for three review rounds: every one of
+ * them was in the accessibility tree, every one of them read correctly in
+ * `page.innerText`, and a third of the `###` was simply not on screen. The
+ * screenshots showed it and nobody's eye caught a nine-pixel truncation of a
+ * character that is *supposed* to be faint.
+ *
+ * So it is measured. Anything marked `data-hangs` is compared against the
+ * padding edge of the nearest ancestor that clips — its scroll container, or
+ * failing that the element it is positioned in. An overhang of a pixel or two is
+ * sub-pixel rounding; anything more is a marker the rep cannot read.
+ */
+async function geometry(page) {
+  return page.evaluate(() => {
+    const clips = (el) => {
+      const style = getComputedStyle(el)
+      return style.overflowX !== 'visible' || style.overflowY !== 'visible'
+    }
+    const frameOf = (el) => {
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        if (clips(node)) return node
+      }
+      return el.offsetParent ?? document.documentElement
+    }
+    const out = []
+    let tightest = { by: Infinity, text: '' }
+    const all = document.querySelectorAll('[data-hangs]')
+    for (const el of all) {
+      const box = el.getBoundingClientRect()
+      if (box.width === 0) continue
+      const frame = frameOf(el)
+      const around = frame.getBoundingClientRect()
+      const pad = parseFloat(getComputedStyle(frame).paddingLeft) || 0
+      const by = Math.round(around.left + pad - box.left)
+      // One pixel is sub-pixel rounding. Two is a character losing a stroke.
+      if (by > 1) out.push({ what: el.dataset.hangs, text: (el.textContent ?? '').trim(), by })
+      // The tightest clearance, so the gutter can be tuned against the widest
+      // marker rather than against the one that happened to break first.
+      if (-by < tightest.by) tightest = { by: -by, text: (el.textContent ?? '').trim() }
+    }
+    return { clipped: out, measured: all.length, tightest }
+  })
 }
 
 /**

@@ -9,7 +9,10 @@
  *    would leave a confident paragraph with one fewer footnote and no sign
  *    anything had gone wrong;
  *  · only a verified quote is a control, because following an unverified one
- *    opens the transcript on nothing and reads as the reader being broken;
+ *    opens the transcript on nothing and reads as the reader being broken —
+ *    and the time is *inside* that control, not a label beside it;
+ *  · an answer is never taken off screen to make room for the next one: the
+ *    panel stores nothing, so the copy on screen is the only copy;
  *  · « the record does not say » renders as an answer, not as an error;
  *  · a refusal from the main process arrives as its own French sentence
  *    (DEC-26), never as a generic failure that hides which.
@@ -109,6 +112,74 @@ describe('an answer never arrives alone', () => {
     const citation = await screen.findByRole('button', { name: /la grille achats plafonne/ })
     fireEvent.click(citation)
     expect(opened).toEqual(['la grille achats plafonne à 550'])
+  })
+
+  /*
+   * The time was a span beside the button, so the one thing on the row that
+   * reads as « where in the call » was the one thing a rep could not press —
+   * against every media player they have ever used.
+   */
+  test('the time is inside the control, not a label beside it', async () => {
+    const opened: string[] = []
+    bridge.when('meeting:ask', () => answer())
+    render(<AskPanel meetingId="m-1" onLocate={(quote) => opened.push(quote)} />)
+    await ask()
+
+    const citation = await screen.findByRole('button', { name: /la grille achats plafonne/ })
+    expect(citation.textContent).toContain('15:40')
+    fireEvent.click(screen.getByText('15:40'))
+    expect(opened).toEqual(['la grille achats plafonne à 550'])
+  })
+})
+
+describe('the panel keeps what it answered', () => {
+  /*
+   * The previous answer used to be cleared as the next question was sent, so a
+   * rep who asked a second thing lost the first — and the panel stores nothing,
+   * so that was the only copy of it.
+   */
+  test('a second question does not take the first answer off screen', async () => {
+    bridge.when('meeting:ask', (payload) =>
+      answer({ question: (payload as { question: string }).question }),
+    )
+    render(<AskPanel meetingId="m-1" />)
+
+    await ask('Quel TJM ?')
+    await screen.findByText('Quel TJM ?')
+    await ask('Qui décide ?')
+
+    await screen.findByText('Qui décide ?')
+    expect(screen.getByText('Quel TJM ?')).toBeTruthy()
+  })
+
+  test('the box empties, so the question is on screen once', async () => {
+    bridge.when('meeting:ask', () => answer({ question: 'Quel TJM ?' }))
+    render(<AskPanel meetingId="m-1" />)
+    await ask('Quel TJM ?')
+
+    await screen.findByText(/plafonne à 550 €/)
+    const box = screen.getByLabelText('Poser une question sur cet appel') as HTMLInputElement
+    expect(box.value).toBe('')
+    // Once: above its answer, and not also in the field they have stopped
+    // looking at.
+    expect(screen.getAllByText('Quel TJM ?')).toHaveLength(1)
+  })
+
+  /*
+   * The suggestions used to go for good on the first question, which read as
+   * the panel having spent what it had.
+   */
+  test('the suggestions not yet asked stay on offer', async () => {
+    bridge.when('meeting:ask', () => answer())
+    render(<AskPanel meetingId="m-1" />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Qui décide, et quand ?' }))
+    })
+    await screen.findByText(/plafonne à 550 €/)
+
+    expect(screen.queryByRole('button', { name: 'Qui décide, et quand ?' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Qu’est-ce qui bloque côté client ?' })).toBeTruthy()
   })
 })
 
