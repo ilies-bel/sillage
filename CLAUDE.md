@@ -238,6 +238,17 @@ machine) or in `core/domain/` — never in an IPC handler.
   every `data-hangs` element against the box it hangs in and prints the tightest clearance, and
   `smoke.mjs` runs it on every stage. Tune the gutter against that number.
 
+- **The prose is checkable too, and only where it claims to be** (DEC-21, DEC-44). The eleven
+  typed rows each carried a `[source ▸]` and the compte-rendu beside them carried none — on the
+  screen whose whole argument is that a claim must be checkable, about the string VerySwing
+  receives. `REGISTRE` licenses « … » for words the client actually said, so a quotation is the
+  one part of that prose that claims to be verbatim, and it is the only part made followable.
+  **No pre-verification**: the reader already says « introuvable » and seeds its search with the
+  fragment, so an invented quotation leads to a screen that says so — and `source ▸` stays a
+  thing asked for by a click and never fetched otherwise. `harnessFixture.test.ts` holds the
+  fixture to it: every quotation in its compte-rendu must be locatable in its transcript. Two
+  were not, and the affordance found them on its first press.
+
 - **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
   same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
   column next door, on that turn, highlighted. When the quote is *not* in the record the reader
