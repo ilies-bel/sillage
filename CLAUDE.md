@@ -366,12 +366,30 @@ machine) or in `core/domain/` — never in an IPC handler.
   differently is two things for a rep to reconcile. It is in `contracts` for the reason
   `meetingAnchor` is: `src/*` may import nothing else.
 
-- **The one control that ships never looks like the four that do not** (DEC-4). The review
-  gate's page-turn and its *Valider* were the same primary block — same fill, width, slot and
-  radius — so a rep pressed that blue block four times at 1280×800 and five at 960×600 before
-  the fifth press wrote to a client's CRM. Four repetitions is training. The page turn is
-  `bordered`; the filled button appears exactly once, at the moment pressing it creates
-  something.
+- **The one control that ships is never the rectangle the rep just pressed** (DEC-4). Colour
+  was not enough: React reused the same `<button>` at the same tree position, so the page turn
+  and *Valider* were the same DOM node in the same 505×37 rectangle, 63 ms apart — a
+  double-click on the fourth turn shipped to the CRM, five Enters on the retained focus shipped
+  on the fifth, and the first frame of every gate painted the ship's fill under the turn's
+  label because the shared `transition` animated one into the other. `POST /v1/crm/tasks` has
+  no idempotency key, so none of the three had an undo. The page turn lives at the foot of the
+  column it turns; the slot holds the decision or the sentence saying what is left, never a
+  greyed copy. Drive it before changing it — the rectangles must not intersect and the turns
+  must leave no focus behind.
+
+- **Leaving the gate never discards a correction.** `edits` was component state, so `Échap` —
+  one of exactly two shortcuts deliberately allowed while typing, on the one screen with a
+  fifty-six-line textarea — threw away a correction with nothing having said so. `PENDING_EDITS`
+  holds drafts per meeting for as long as the window and a confirmation clears them; it is
+  deliberately not a store write, because a draft persisted to Thursday would reappear over a
+  compte-rendu regenerated since.
+
+- **`⚠ faible` is a mark everywhere it appears.** The typesetter learned `**gras**` and
+  `_italique_` and not the one token this product invented (DEC-21), so the marker was
+  pixel-identical to the prose inside the compte-rendu — the only one of its three renderings
+  that leaves the machine. And `--warn` against `--text-muted` is 1.0:1 in luminance, so
+  colour alone carries nothing in greyscale or to a deuteranope: every rendering is
+  `font-semibold` as well. The string is never rewritten; only the ink changes.
 
 - **A field the gate cannot ship is not an editable field** (DEC-26). `draftIntents` composes
   the nine interpretive rows into the opportunity's description and into nothing else, so an
