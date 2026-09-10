@@ -127,8 +127,30 @@ async function followSource(page, index) {
 
 /** The screens, and how a rep would reach each one. */
 const SCREENS = {
+  /*
+   * The boot every rep really gets: the weights ship inside the installer, so
+   * all three steps answer in under a second and the splash is a screen that
+   * flashes. Staged mid-answer, which is the only moment it is on screen.
+   */
   splash: {
     scenario: 'splash',
+    async drive(page) {
+      await page.getByRole('heading', { name: 'Sillage' }).waitFor()
+      // Two steps answered, one still pending — which is the window's own state
+      // for the few hundred milliseconds this screen exists.
+      await page.getByText('ouverte · sur cette machine').waitFor()
+      await page.getByText('Whisper (local)', { exact: false }).waitFor()
+    },
+  },
+
+  /*
+   * The `downloading` variant, which `core/contracts/boot.ts` declares for a
+   * boot-time fetch that does not exist yet — the weights ship inside the
+   * installer. It has its own scenario so it can be looked at, and so it can
+   * never again be mistaken for what a first run does.
+   */
+  'splash-telechargement': {
+    scenario: 'splash-telechargement',
     async drive(page) {
       await page.getByRole('heading', { name: 'Sillage' }).waitFor()
       await page.getByRole('progressbar').waitFor()

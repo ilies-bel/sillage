@@ -1503,7 +1503,38 @@ export function installAppBridge(config) {
     version: '0.4.2',
   }
 
+  /*
+    **The boot a rep actually gets, mid-answer.**
+
+    This staged `downloading` — a progress bar, « 196 Mo sur 466 Mo », an ETA —
+    and `core/contracts/boot.ts` says in as many words that **nothing in the app
+    emits that variant**: the weights ship inside the installer, so a first run
+    answers all three steps in under a second. The variant is declared for a
+    boot-time fetch that does not exist yet, and staging it as *the* splash meant
+    the only screenshot of screen 0 was of a flow the product cannot perform,
+    while the boot every rep really sees had never been photographed at all.
+
+    Two steps answered and one still pending is the honest picture of a launch in
+    flight: it is what the window holds for the few hundred milliseconds the
+    splash exists, and `bootAnswered` is what lets it through.
+  */
   const BOOT_BOOTING = {
+    store: { state: 'ready', value: 'ouverte · sur cette machine' },
+    devices: { state: 'pending' },
+    transcription: { state: 'ready', value: 'Whisper (local) · sur cette machine' },
+    version: '0.4.2',
+  }
+
+  /*
+    The declared-but-unreached variant, kept and named for what it is.
+
+    `boot.ts` argues the variant should exist before the fetch does, so that the
+    day a boot-time download lands the screen is already written rather than
+    improvised — and a screen nobody can photograph is a screen nobody checks.
+    This is its own scenario so it can be looked at, and so it can never again be
+    mistaken for what a first run does.
+  */
+  const BOOT_DOWNLOADING = {
     store: { state: 'ready', value: 'ouverte · sur cette machine' },
     devices: { state: 'pending' },
     transcription: {
@@ -1616,7 +1647,12 @@ export function installAppBridge(config) {
   }
 
   const responders = {
-    'boot:state': () => (scenario === 'splash' ? BOOT_BOOTING : BOOT_READY),
+    'boot:state': () =>
+      scenario === 'splash-telechargement'
+        ? BOOT_DOWNLOADING
+        : scenario === 'splash'
+          ? BOOT_BOOTING
+          : BOOT_READY,
     'auth:state': () =>
       entra
         ? { status: 'signedIn', account: ACCOUNT }
