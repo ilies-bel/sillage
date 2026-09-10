@@ -33,7 +33,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
-import { Centered } from '../../ui/index.ts'
+import { Centered, CopyButton } from '../../ui/index.ts'
 import { scrollToCenter } from '../../lib/scroll.ts'
 
 export interface TranscriptFocus {
@@ -51,6 +51,16 @@ interface TranscriptReaderProps {
 
 /** `Moi` / `Client`, the same two words the transcript uses in Historique. */
 const SPEAKER: Record<TranscriptSegment['channel'], string> = { rep: 'Moi', far: 'Client' }
+
+/**
+ * The transcript as plain text, for the clipboard — the same three columns the
+ * reader draws, tab-separated, so a paste into a document keeps them as columns
+ * and a paste into a chat still reads as a dialogue.
+ */
+const transcriptText = (segments: readonly TranscriptSegment[]): string =>
+  segments
+    .map((s) => `${formatOffset(s.startMs)}\t${SPEAKER[s.channel]}\t${s.text}`)
+    .join('\n')
 
 export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
   const loaded = useInvoke('review:transcript', { meetingId })
@@ -100,7 +110,8 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
         the `⚠ faible` on the row is stating and is worth repeating here rather
         than leaving the rep to scroll looking for something that is not there.
       */}
-      <p className="text-muted border-subtle mb-3 border-b pb-2 text-meta">
+      <div className="border-subtle mb-3 flex items-baseline gap-inline border-b pb-2">
+      <p className="text-muted min-w-0 flex-1 text-meta">
         {/*
           « du champ « X » » rather than « de X ». The field labels are data —
           *Objections*, *Objet*, *Étape* — and French elides `de` before a vowel,
@@ -121,6 +132,13 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
           </span>
         )}
       </p>
+      {/*
+        The record, takeable. Historique's copy of this same transcript has had
+        a *Copier* since it was drawn; the gate's did not, which made the same
+        artefact behave differently one screen apart.
+      */}
+      <CopyButton text={transcriptText(segments)} what="la transcription" />
+      </div>
 
       <ul className="space-y-2">
         {segments.map((segment) => {
