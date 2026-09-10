@@ -35,14 +35,17 @@
  * prose and takes no cursor.
  */
 import { SectionHeader } from '../../ui/index.ts'
+import { AskPanel } from './AskPanel.tsx'
 import { CompteRenduDocument, CompteRenduMarkersNote } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
   /** The rendered markdown, as `renderCompteRendu` produced it. */
   compteRendu: string
+  /** Which call *Demander* asks about. */
+  meetingId: string
 }
 
-export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
+export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden px-row py-row">
       <SectionHeader className="shrink-0">Compte-rendu</SectionHeader>
@@ -81,6 +84,24 @@ export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
         <p>Lecture seule — corrigez-le à l’étape « Relire et valider ».</p>
         <CompteRenduMarkersNote className="mt-0.5" />
       </div>
+
+      {/*
+        *Demander*, pinned under the document — which is where a general-purpose
+        notetaker puts its « ask anything », and the placement is right for the
+        same reason: the question a rep has is about the thing they are reading.
+
+        Under the read-only note rather than above it, because the document is
+        what the rep came for and the question is what they have *after* reading
+        it. And pinned rather than scrolling with the document, so it is reachable
+        from any point of a long compte-rendu.
+
+        No `onLocate`: this pane has no transcript beside it. The citations are
+        still drawn — a quoted sentence with its timestamp is worth reading on its
+        own — they simply do not open, which the panel states rather than
+        offering a control that goes nowhere (DEC-26). The gate is where a
+        citation is followable, because that is where the reader lives.
+      */}
+      <AskPanel meetingId={meetingId} className="border-subtle mt-3 shrink-0 border-t pt-3" />
     </div>
   )
 }

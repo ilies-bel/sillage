@@ -36,6 +36,7 @@ import { BootStateSchema } from './boot.ts'
 import { EnhancementStatusSchema } from './extraction.ts'
 import { RecipeIdSchema } from './recipes.ts'
 import { UpdateStatusSchema } from './update.ts'
+import { AskAnswerSchema } from './ask.ts'
 
 /**
  * Today's calendar and what the app is currently offering to record.
@@ -322,6 +323,28 @@ export const invokeChannels = {
   'review:transcript': {
     request: z.object({ meetingId: MeetingIdSchema }),
     response: TranscriptViewSchema,
+  },
+  /**
+   * *Demander* — one question about one call, answered from that call's record
+   * (`core/contracts/ask.ts`).
+   *
+   * Asked by a gesture and never on its own: it spends a model call, so nothing
+   * prefetches it and there is no such thing as an empty answer arriving with
+   * the screen.
+   *
+   * It writes nothing. The answer is not appended to the meeting's log, is not a
+   * fact about it, and is gone when the rep asks the next question — the same
+   * standing *Historique* has as a reader over the log (DEC-25). Making it
+   * durable would mean deciding what an answer *means* when the transcript it
+   * was derived from is re-read months later, and the honest answer to that is
+   * « ask again ».
+   */
+  'meeting:ask': {
+    request: z.object({
+      meetingId: MeetingIdSchema,
+      question: z.string().min(1).max(500),
+    }),
+    response: AskAnswerSchema,
   },
   /**
    * *Ce qui sera créé*, recomputed from the form as it currently stands.

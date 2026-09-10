@@ -143,6 +143,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   never a greyed copy of *Valider*: a disabled primary is a button a rep presses. That is not a
   second gate — pressing it confirms nothing — and the guard is stated as « is there something
   below the fold », so an environment that cannot lay out fails **open**.
+- **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
+  This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
+  sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers
+  from a document the model itself wrote, so a mistake in the summary becomes a mistake in the
+  answer with nothing left to check it against. `modules/extract/ask.ts` asks over the stored
+  transcript and requires a verbatim fragment for every claim; `core/domain/askAnswer.ts` looks
+  each one up with the same `locateQuote` the gate verifies citations with, takes the
+  timestamps from the segment that was found (never from the model), and **keeps a quote it
+  could not find, marked**. Dropping it would leave a confident paragraph with one fewer
+  footnote and nothing on screen saying anything had gone wrong, which is the exact failure
+  DEC-21 exists to make visible. It writes nothing, stores nothing and confirms nothing — a
+  read over the log like *Historique* (DEC-25) — and it is not mounted during a call (DEC-23).
+  The claimed channel is a **hint**, not a filter: narrowing to it made a real quote whose
+  speaker the model mislabelled come back « introuvable », which discredits the evidence
+  instead of the mistake.
 - **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
   same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
   column next door, on that turn, highlighted. When the quote is *not* in the record the reader

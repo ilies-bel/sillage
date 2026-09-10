@@ -13,6 +13,7 @@
  * every kind below is survivable — the meeting is intact and the extraction can
  * be run again.
  */
+import { LlmError, LlmSchemaError } from '../../core/contracts/llm.ts'
 
 /**
  * `llm`             the provider failed: auth, quota, timeout, network. The
@@ -71,4 +72,42 @@ export const extractionErrorMessage = (kind: ExtractionErrorKind): string => {
     case 'empty-transcript':
       return "Rien n'a été transcrit pendant cette réunion."
   }
+}
+
+/**
+ * Every way a model call can fail, mapped onto the one error the app renders.
+ *
+ * It lived inside `CompteRenduRecipe` while the recipe was the only thing that
+ * called a model. *Demander* is the second (`ask.ts`), and two copies of this
+ * mapping is how one of them quietly stops classifying `auth` — which is the
+ * split DEC-26 cares about, because a wrong key is not fixed by waiting and a
+ * retry button for it is a dead affordance.
+ */
+export const asExtractionError = (error: unknown): ExtractionError => {
+  if (error instanceof ExtractionError) return error
+  if (error instanceof LlmSchemaError) {
+    return new ExtractionError({
+      kind: 'reply-invalid',
+      message: extractionErrorMessage('reply-invalid'),
+      retryable: true,
+      details: error.issues,
+      cause: error,
+    })
+  }
+  if (error instanceof LlmError) {
+    return new ExtractionError({
+      kind: 'llm',
+      message: extractionErrorMessage('llm'),
+      retryable: error.retryable,
+      details: [`${error.kind}: ${error.message}`],
+      cause: error,
+    })
+  }
+  return new ExtractionError({
+    kind: 'llm',
+    message: extractionErrorMessage('llm'),
+    retryable: true,
+    details: [error instanceof Error ? error.message : String(error)],
+    cause: error,
+  })
 }

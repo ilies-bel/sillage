@@ -44,7 +44,9 @@ import {
   passesFilter,
   withFilterDefaults,
 } from '../../core/domain/historySearch.ts'
-import { renderCompteRendu } from '../../modules/extract/index.ts'
+import { askTranscript, renderCompteRendu } from '../../modules/extract/index.ts'
+import { verifyAnswer } from '../../core/domain/askAnswer.ts'
+import type { LlmPort } from '../../core/contracts/llm.ts'
 import type { Store } from '../../modules/store/index.ts'
 import type { Diagnostics } from '../../modules/diagnostics/index.ts'
 import type { Orchestrator } from '../session/Orchestrator.ts'
@@ -165,6 +167,18 @@ export interface IpcDeps {
    * that is still in flight at boot shows as "en cours" rather than as absent.
    */
   capabilities?: () => { report: CapabilityReport | null; reason: string | null }
+  /**
+   * The language model, resolved **per call** (DEC-34).
+   *
+   * A function and not a port, for the reason `providers` is a function: a rep
+   * can paste a key in Réglages and the very next question has to reach it. A
+   * port captured at registration time would leave *Demander* refusing on a
+   * machine the rep has just configured.
+   *
+   * Null is a stated degradation and never a throw — `meeting:ask` answers with
+   * the reason on screen (DEC-26).
+   */
+  llm?: (() => { port: LlmPort } | null) | null
   retention?: RetentionPolicy
   /**
    * What screen 0 reports (DEC-30). Read lazily rather than passed by value:
@@ -769,6 +783,50 @@ export const handlers: Handlers = {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
     return { segments: store.projections.segments(meetingId) }
+  },
+
+  /**
+   * *Demander* — one question about one call (`core/contracts/ask.ts`).
+   *
+   * Three refusals before the model is reached, and each of them is a sentence
+   * on screen rather than an exception (DEC-26):
+   *
+   *  · **the call is still running.** Nothing about the analysis surfaces during
+   *    a meeting (DEC-23), and the transcript a question would be answered from
+   *    is by definition the part that has already happened;
+   *  · **there is no record yet.** A meeting with no final segments has nothing
+   *    to answer from, and « je ne sais pas » from a model asked over an empty
+   *    string is a worse way to say that;
+   *  · **there is no model configured.** The same degradation the compte-rendu
+   *    has, worded for this screen, with Réglages named.
+   *
+   * The transcript is read whole and unfiltered — the channel-bleed drop
+   * (DEC-41) is for the recipe, and a quote must be findable wherever it was
+   * said (the same reasoning `review:transcript` carries).
+   */
+  'meeting:ask': async ({ meetingId, question }, { store, orchestrator, llm }) => {
+    const meeting = store.projections.getMeeting(meetingId)
+    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+
+    const state = orchestrator.stateOf(meetingId) ?? meeting.state
+    if (state === 'recording' || state === 'armed') {
+      throw new Error('La réunion est en cours — les questions attendent la fin de l’appel.')
+    }
+
+    const segments = store.projections.segments(meetingId).filter((segment) => segment.isFinal)
+    if (segments.length === 0) {
+      throw new Error('Aucune transcription n’a été enregistrée pour cet appel.')
+    }
+
+    const resolved = llm?.() ?? null
+    if (!resolved) {
+      throw new Error(
+        'Aucun modèle de langage n’est configuré — ajoutez-en un dans Réglages, « Modèle de langage ».',
+      )
+    }
+
+    const draft = await askTranscript(resolved.port, { question, segments })
+    return verifyAnswer(question, draft, segments)
   },
 
   'history:record': ({ meetingId }, { store }) => {

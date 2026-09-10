@@ -54,6 +54,7 @@ import {
   CompteRenduDocument,
   CompteRenduMarkersNote,
 } from './session/CompteRenduDocument.tsx'
+import { AskPanel } from './session/AskPanel.tsx'
 import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
 
 /** The one thing a rep must notice without reading (DEC-21). */
@@ -695,6 +696,28 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               to={panel.mailTo}
               onSubject={(value) => set('mailSubject', value)}
               onBody={(value) => set('mailBody', value)}
+            />
+
+            {/*
+              *Demander*, under everything it can be asked about — and here its
+              citations are **followable**, because the transcript is one tab
+              away in this very column.
+
+              That is the version of this feature that beats a general-purpose
+              notetaker's ask box outright: theirs answers from a document the
+              model itself wrote, so a mistake in the summary becomes a mistake
+              in the answer with nothing left to check it against. Here a rep
+              reads the answer, presses the quote under it, and lands on the
+              second of the recording it came from — and a quote the app could
+              not find says so instead of being quietly dropped (DEC-21).
+
+              It writes nothing and confirms nothing (DEC-4, DEC-5). The one
+              button on this screen is still the one button.
+            */}
+            <AskPanel
+              meetingId={meetingId}
+              onLocate={(quote, label) => locate({ quote, label, from: 'answer' })}
+              className="border-subtle mt-block border-t pt-row"
             />
           </div>
         </main>

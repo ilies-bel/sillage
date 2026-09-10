@@ -22,6 +22,9 @@ export type {
 export { ExtractionError, extractionErrorMessage } from './errors.ts'
 export type { ExtractionErrorKind } from './errors.ts'
 export { FAIBLE_MARKER, renderCompteRendu } from './compteRendu.ts'
+/** *Demander* (DEC-21, DEC-23) — see `core/contracts/ask.ts`. */
+export { ASK_INSTRUCTIONS, askTranscript } from './ask.ts'
+export type { AskInput } from './ask.ts'
 export {
   CHARS_PER_TOKEN,
   CHUNK_OVERLAP_TOKENS,

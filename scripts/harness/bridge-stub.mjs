@@ -1676,6 +1676,95 @@ export function installAppBridge(config) {
       }
     },
     /*
+      *Demander* — one question, answered over this call's transcript, with the
+      quotes checked against it (DEC-21).
+
+      The stub answers the way the product does rather than the way a demo
+      would: it finds the segments that actually carry the question's terms and
+      quotes them **verbatim**, so the citations verify for the same reason real
+      ones do. One deliberate exception below.
+    */
+    'meeting:ask': (payload) => {
+      const question = fold(payload.question || '')
+      const segments = SEGMENTS.filter((segment) => segment.isFinal)
+      /*
+        Three letters, not four — with a stop list.
+
+        A four-letter floor is the obvious rule and it throws away « TJM », which
+        is the single most discriminating term a rep will ever type into this box
+        on this product. The floor was doing the stop list's job badly; the stop
+        list does it properly.
+      */
+      const STOP = [
+        'que', 'qui', 'quoi', 'quel', 'quelle', 'quels', 'quelles', 'est', 'sur', 'dit',
+        'les', 'des', 'une', 'pour', 'dans', 'avec', 'cette', 'quest', 'ete', 'ils',
+        'elle', 'nous', 'vous', 'leur', 'sont', 'appel', 'client', 'reunion',
+      ]
+      const terms = (question.match(/\p{L}{3,}|\d{2,}/gu) || []).filter(
+        (term) => !STOP.includes(term),
+      )
+
+      const hits = segments
+        .map((segment) => ({
+          segment,
+          score: terms.filter((term) => fold(segment.text).includes(term)).length,
+        }))
+        .filter((hit) => hit.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+
+      if (hits.length === 0) {
+        return {
+          question: payload.question,
+          answered: false,
+          answer: '',
+          citations: [],
+        }
+      }
+
+      const who = (segment) => (segment.channel === 'rep' ? 'Le commercial' : 'Le client')
+      return {
+        question: payload.question,
+        answered: true,
+        answer:
+          who(hits[0].segment) +
+          ' revient dessus à ' +
+          Math.floor(hits[0].segment.startMs / 60000) +
+          ' min : ' +
+          hits[0].segment.text.trim() +
+          (hits.length > 1
+            ? ' ' + who(hits[1].segment) + ' y répond plus loin dans l’échange.'
+            : ''),
+        citations: [
+          ...hits.map((hit) => ({
+            span: {
+              quote: hit.segment.text.trim(),
+              channel: hit.segment.channel,
+              startMs: hit.segment.startMs,
+              endMs: hit.segment.endMs,
+            },
+            verified: true,
+          })),
+          /*
+            One unverified citation, on purpose, and it is the state this whole
+            feature exists to make visible (DEC-21). A screenshot pass over a
+            panel where every quote verifies never sees the `⚠` treatment, and
+            the `⚠` treatment is the difference between this and the ask box on
+            a general-purpose notetaker.
+          */
+          {
+            span: {
+              quote: 'on peut monter à 600 sur le lead si le cadrage tient',
+              channel: 'far',
+              startMs: null,
+              endMs: null,
+            },
+            verified: false,
+          },
+        ],
+      }
+    },
+    /*
       The transcript behind `source ▸`. The same rows Historique shows, because
       in the product they are the same rows — one projection, read by two
       screens.

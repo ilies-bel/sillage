@@ -1423,6 +1423,10 @@ const boot = async (): Promise<void> => {
       cancel: (modelId) => downloads.cancel(modelId),
       section: () => resolveProviders(settings).models,
     },
+    // *Demander* (DEC-21). The same per-use resolution the recipe gets, and for
+    // the same reason: a key pasted in Réglages has to reach the very next
+    // question, not the next launch (DEC-34).
+    llm,
     capabilities: () => ({ report: probe, reason: probeReason }),
     // Read lazily: `boot:changed` and this channel must never disagree, and a
     // value captured here would freeze the state at registration time.

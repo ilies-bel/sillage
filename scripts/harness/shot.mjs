@@ -275,6 +275,29 @@ const SCREENS = {
     },
   },
 
+  /**
+   * *Demander*, with an answer on screen (DEC-21).
+   *
+   * Staged through the gesture, because there is no URL for it and no default
+   * state that shows it: the panel is a text field until somebody asks
+   * something, and the whole of what is worth looking at — the prose, the
+   * citations with their timestamps, and the one quote the app could **not**
+   * find in the recording — exists only after a question.
+   *
+   * The suggestion chip rather than typing: it is the path a rep takes on their
+   * first question, and it exercises the same code.
+   */
+  'session-demander': {
+    scenario: 'compte-rendu',
+    async drive(page) {
+      await SCREENS['session-compte-rendu'].drive(page)
+      await page.getByRole('button', { name: 'Qu’est-ce qui a été dit sur le TJM ?' }).click()
+      // The unverified citation is the last row and the point of the shot.
+      await page.getByText('introuvable dans la transcription', { exact: false }).waitFor()
+      await page.waitForTimeout(300)
+    },
+  },
+
   review: {
     scenario: 'review',
     // The panel is taller than 900px — see the note beside `addStyleTag` below.

@@ -388,7 +388,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         */}
         {showRail && compteRendu !== null ? (
           <aside className="border-subtle bg-card-soft w-[36%] min-w-[360px] max-w-[560px] shrink-0 border-l">
-            <CompteRenduPane compteRendu={compteRendu} />
+            <CompteRenduPane compteRendu={compteRendu} meetingId={meetingId} />
           </aside>
         ) : null}
 

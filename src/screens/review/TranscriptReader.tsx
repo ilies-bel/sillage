@@ -41,6 +41,15 @@ export interface TranscriptFocus {
   quote: string
   /** The field it was cited for, so the reader can say what it is showing. */
   label: string
+  /**
+   * Which surface asked for it.
+   *
+   * The header names what it is showing, and « Citation du champ « client » »
+   * is not what a quote under an answer from *Demander* is — it came from a
+   * sentence the rep asked for, not from a row of the form. Defaulted, so every
+   * existing call site keeps the wording it had.
+   */
+  from?: 'field' | 'answer'
 }
 
 interface TranscriptReaderProps {
@@ -247,12 +256,20 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
           `${segments.length} prises de parole · ${formatOffset(segments[segments.length - 1]!.endMs)}`
         ) : hit ? (
           <>
-            Citation du champ <span className="text-body">« {focus.label} »</span>, à{' '}
+            {focus.from === 'answer' ? (
+              <>Extrait cité par la réponse, à </>
+            ) : (
+              <>
+                Citation du champ <span className="text-body">« {focus.label} »</span>, à{' '}
+              </>
+            )}
             <span className="tabular-nums">{formatOffset(hit.startMs)}</span>.
           </>
         ) : (
           <span className="text-warn">
-            La citation du champ « {focus.label} » est introuvable dans la transcription.
+            {focus.from === 'answer'
+              ? 'Cet extrait est introuvable dans la transcription.'
+              : `La citation du champ « ${focus.label} » est introuvable dans la transcription.`}
           </span>
         )}
       </p>
