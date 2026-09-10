@@ -349,6 +349,29 @@ machine) or in `core/domain/` — never in an IPC handler.
   It ends the meeting it starts and never runs the audio trial — twenty seconds of listening
   would raise an OS prompt no headless run can answer.
 
+- **A turn is named when the record settles who took it, and never otherwise** (`speakerLabel`
+  in `core/contracts/transcript.ts`, DEC-47). Exactly one interlocutor on the far side means
+  the far channel *is* that person — the channel is measured by the hardware, the name comes
+  from Graph, and the join is a fact. Two or more and it says « Client » and means it: there
+  is no diarisation. One rule, three surfaces — the reader in *Historique*, the reader at the
+  gate, and *Demander*'s citation labels — because two screens naming the same turn
+  differently is two things for a rep to reconcile. It is in `contracts` for the reason
+  `meetingAnchor` is: `src/*` may import nothing else.
+
+- **The one control that ships never looks like the four that do not** (DEC-4). The review
+  gate's page-turn and its *Valider* were the same primary block — same fill, width, slot and
+  radius — so a rep pressed that blue block four times at 1280×800 and five at 960×600 before
+  the fifth press wrote to a client's CRM. Four repetitions is training. The page turn is
+  `bordered`; the filled button appears exactly once, at the moment pressing it creates
+  something.
+
+- **A field the gate cannot ship is not an editable field** (DEC-26). `draftIntents` composes
+  the nine interpretive rows into the opportunity's description and into nothing else, so an
+  opportunity that does not ship — an unmatched account, or the rep unchecking it — left nine
+  live textareas over a payload that would never exist. They go read-only, with the reason
+  once above them and the place a correction *does* still land. `reviewGate.test.ts` holds
+  where the fields ride; a stage photographs the configuration.
+
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
