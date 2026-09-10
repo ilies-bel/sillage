@@ -612,11 +612,53 @@ const SCREENS = {
         await page.waitForTimeout(120)
         if (done) break
       }
-      // Refused, and the control says which way the unread band lies.
-      await page.getByRole('button', { name: 'Remonter dans ce qui part' }).waitFor()
-      if ((await page.getByRole('button', { name: /^Valider/ }).count()) > 0) {
-        throw new Error('le gate s’arme alors que la moitié des champs n’a jamais été affichée')
+      const refuses = async (how) => {
+        if ((await page.getByRole('button', { name: /^Valider/ }).count()) > 0) {
+          throw new Error(`le gate s’arme après « ${how} » alors qu’une bande n’a jamais été affichée`)
+        }
       }
+      await refuses('lecture du seul compte-rendu')
+
+      /*
+       * The three other ways a band can be skipped, each of which the guard has
+       * to survive because none of them is reading:
+       *
+       *  · an instant `scrollTo` to the end — a rep's « End » key, a script, a
+       *    browser restoring a scroll position;
+       *  · a flick, which moves in frame-sized steps and is contiguous, so it is
+       *    *allowed* to extend — the assertion is that flicking downwards from a
+       *    column already at its end covers nothing new;
+       *  · a resize, which changes what a scroll coordinate means underneath a
+       *    range recorded in the old one.
+       */
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('.fade-below')) {
+          el.scrollTo({ top: el.scrollHeight })
+          el.dispatchEvent(new Event('scroll'))
+        }
+      })
+      await page.waitForTimeout(300)
+      await refuses('un scrollTo instantané au bas des deux colonnes')
+
+      for (let i = 0; i < 20; i++) {
+        await page.evaluate(() => {
+          for (const el of document.querySelectorAll('.fade-below')) {
+            el.scrollBy({ top: 400 })
+            el.dispatchEvent(new Event('scroll'))
+          }
+        })
+        await page.waitForTimeout(16)
+      }
+      await refuses('un flick rapide vers le bas')
+
+      await page.setViewportSize({ width: 1600, height: 1200 })
+      await page.waitForTimeout(400)
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.waitForTimeout(400)
+      await refuses('un redimensionnement en cours de lecture')
+
+      // And the control still says which way the unread band lies.
+      await page.getByRole('button', { name: 'Remonter dans ce qui part' }).waitFor()
     },
   },
 
@@ -648,8 +690,22 @@ const SCREENS = {
         await page.waitForTimeout(380)
       }
 
+      /*
+        And a correction typed *after* reading must not take the button away.
+        The columns grow as a rep types, and a guard without a latch would
+        re-arm on their own keystrokes over the sentence they are correcting —
+        which is the behaviour the old boolean existed to prevent and which was
+        never the bug.
+      */
+      await page
+        .locator('#field-objections')
+        .fill('le TJM 2025 a été accepté après relecture, sur plusieurs lignes pour faire grandir la colonne')
+      await page.waitForTimeout(400)
+
       const valider = page.getByRole('button', { name: /^Valider/ })
-      await valider.waitFor()
+      if ((await valider.count()) === 0) {
+        throw new Error('le bouton disparaît pendant que le commercial corrige')
+      }
       await valider.click()
 
       // The stub records every call; the confirm has to be there, with the

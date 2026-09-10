@@ -260,6 +260,15 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    */
   const jumping = useRef(false)
 
+  /**
+   * Which columns have been shown end to end, once and for good.
+   *
+   * See `read` for why this is a latch: the columns grow as a rep types, and a
+   * guard that re-armed on their own keystrokes would take the button away over
+   * the sentence they are correcting.
+   */
+  const covered = useRef<Record<Column, boolean>>({ document: false, rail: false })
+
   const measure = useCallback(() => {
     /*
      * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
@@ -293,11 +302,28 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     extend('document', docRef.current)
     extend('rail', railRef.current)
 
+    /*
+     * **Covered once is covered.**
+     *
+     * The range is in scroll coordinates and the columns *grow*: a rep typing
+     * into « Objections » adds lines under the caret, and `scrollHeight` with
+     * them. Without a latch the guard would come back on mid-keystroke, take
+     * *Valider* off the screen over the text they are looking at, and demand
+     * they scroll through a column they have already read — which is the exact
+     * behaviour the old boolean latch existed to prevent and which was never
+     * the bug. The bug was *what* was latched: « the bottom has been touched »
+     * instead of « all of it has been shown ».
+     *
+     * So the union is the measurement and this is the memory of it.
+     */
     const read = (column: Column, el: HTMLElement | null): boolean => {
+      if (covered.current[column]) return true
       if (!el || el.clientHeight === 0) return true
       const range = seen.current[column]
       if (!range) return true
-      return range.from <= 8 && range.to >= el.scrollHeight - 8
+      const done = range.from <= 8 && range.to >= el.scrollHeight - 8
+      if (done) covered.current[column] = true
+      return done
     }
     const readToEnd = {
       current: { document: read('document', docRef.current), rail: read('rail', railRef.current) },
