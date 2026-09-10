@@ -33,7 +33,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
-import { Centered, CopyButton } from '../../ui/index.ts'
+import { Centered, Chip, CopyButton } from '../../ui/index.ts'
 import { scrollToCenter } from '../../lib/scroll.ts'
 
 export interface TranscriptFocus {
@@ -112,6 +112,35 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
       segments.filter((s) => s.text.toLowerCase().includes(trimmed)).map((s) => s.id),
     )
   }, [segments, trimmed])
+
+  /**
+   * Words of the failed query that the record does contain, longest first.
+   *
+   * Three at most: this is a nudge, not a second search UI. Four characters is
+   * the floor — « les », « aux », « 550 » are either grammar or so common that
+   * a lead built on one points at half the call. Accents and case are folded so
+   * « Achats » finds « achats ».
+   */
+  const leads = useMemo(() => {
+    if (!segments || matches.size > 0 || trimmed === '') return []
+    const haystack = segments
+      .map((segment) => segment.text.toLowerCase())
+      .join(' ')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+    const seen = new Set<string>()
+    return trimmed
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 4)
+      .filter((word) => {
+        const folded = word.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+        if (seen.has(folded) || !haystack.includes(folded)) return false
+        seen.add(folded)
+        return true
+      })
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 3)
+  }, [segments, matches, trimmed])
 
   const hitRef = useRef<HTMLLIElement>(null)
   useEffect(() => {
@@ -193,15 +222,32 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
 
       {/*
         The box opens on the whole cited sentence, which by definition matches
-        nothing — that is why the rep is here. Saying what to do about it costs
-        one line and saves a rep reading twenty minutes of transcript: a claim
-        that failed verification is usually in the call, paraphrased or split
-        across two turns, and one word finds it.
+        nothing — that is why the rep is here. « Essayez un mot seul » was the
+        right instruction and still a chore: the rep has to guess which word.
+        The app can compute it. Each candidate is a word of the failed quote
+        that *does* occur in the record, longest first — the longest word is the
+        most specific — so the dead end ends in a tap.
+
+        Content words only: a quote that failed on « la grille achats plafonne à
+        550 » must not offer « la » as a lead.
       */}
       {trimmed !== '' && matches.size === 0 ? (
-        <p className="text-muted mb-3 text-meta">
-          Aucun passage ne contient cette phrase telle quelle — essayez un mot seul.
-        </p>
+        <div className="mb-3">
+          <p className="text-muted text-meta">
+            {leads.length === 0
+              ? 'Aucun passage ne contient cette phrase, ni aucun de ses mots.'
+              : 'Aucun passage ne contient cette phrase. Ces mots-là, oui :'}
+          </p>
+          {leads.length > 0 ? (
+            <ul className="mt-1 flex flex-wrap gap-1.5">
+              {leads.map((lead) => (
+                <li key={lead}>
+                  <Chip onClick={() => setNeedle(lead)}>{lead}</Chip>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
 
       <ul className="space-y-2">

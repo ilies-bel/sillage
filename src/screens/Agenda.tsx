@@ -52,6 +52,7 @@ import { Button, Segmented, unavailable, type SegmentedOption } from '../ui/inde
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
 import { NewMeeting } from './agenda/NewMeeting.tsx'
+import { PendingGates, PENDING_SHOWN } from './agenda/PendingGates.tsx'
 import { buildEntries, countsByDay, marksByDay } from './agenda/entries.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { Results } from './search/Results.tsx'
@@ -147,6 +148,26 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    */
   const search = useHistorySearch(query, filter, RESULT_LIMIT)
   const searching = isSearchActive(query, filter)
+
+  /*
+   * The backlog: calls that were recorded and never confirmed.
+   *
+   * A second question to the same channel rather than a filter over `entries`,
+   * because the answer is not on this screen's calendar — a call from three
+   * weeks ago is still owed and the grid is showing September. The main process
+   * already answers exactly this question for the `À valider` chip; asking it
+   * with no query and that one chip is the same query, and the corpus still
+   * never crosses (DEC-25).
+   *
+   * `PENDING_SHOWN + 1` so the section can say « les 7 › » without fetching
+   * seven rows to count them — one more than it draws is enough to know there
+   * are more, and any real backlog is sent to *Historique* anyway.
+   */
+  const pendingFilter = useMemo<HistoryFilter>(
+    () => ({ ...NO_FILTER, statut: 'a-valider' }),
+    [],
+  )
+  const pending = useHistorySearch('', pendingFilter, PENDING_SHOWN + 1)
 
   const snapshot: AgendaSnapshotPayload | null =
     agenda.state.status === 'ready' ? agenda.state.value : null
@@ -276,7 +297,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             Réglages
           </Button>
           {/*
-            The header drops *Planifier au …* exactly when the day pane is
+            The header drops *Ajouter au …* exactly when the day pane is
             drawing its own — one scheduling control on screen, and it is the
             one the rep is looking at. *Démarrer une réunion* is never dropped:
             it always means now, and without Graph it is the only way in.
@@ -353,6 +374,15 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             onFilter={setFilter}
             clients={search.result?.clients ?? []}
             onHistorique={() => onHistorique(query, filter)}
+            /*
+              The axes appear when the rep asks. On this screen the day list is
+              directly underneath, and a permanent row of « 7 jours »,
+              « À valider » and seven client names reads as a filter *on that
+              list* — which it is not: pressing one replaces it with search
+              results. On *Historique*, where the search is the whole screen,
+              they stay.
+            */
+            chipsAlways={false}
             className="mb-3"
           />
 
@@ -401,7 +431,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               showDay={view !== 'jour'}
               when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
               /*
-                The header's *Planifier au …* again, this time where the rep is
+                The header's *Ajouter au …* again, this time where the rep is
                 looking. Same component and therefore the same form, the same
                 validation and the same `onCreated` — a second copy of the
                 control, never a second way of doing it.
@@ -409,6 +439,29 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               action={
                 <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
               }
+              onOpen={onOpen}
+            />
+          )}
+
+          {/*
+            What the rep owes, under what the rep has planned.
+
+            Below the day and not beside it: it is not about today. It is drawn
+            only when there is something in it, and only when the pane is showing
+            a day — over search results it would be a second list answering a
+            question nobody asked.
+
+            Rows already visible above are dropped: a call held this morning that
+            has not been validated is in *Passées* two inches higher, and the
+            same meeting twice on one screen is a rep wondering whether they are
+            two.
+          */}
+          {searching ? null : (
+            <PendingGates
+              rows={(pending.result?.rows ?? []).filter(
+                (row) => !inRange.some((entry) => entry.meetingId === row.meeting.id),
+              )}
+              onSeeAll={() => onHistorique('', pendingFilter)}
               onOpen={onOpen}
             />
           )}

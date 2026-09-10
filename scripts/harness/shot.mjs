@@ -139,7 +139,7 @@ const SCREENS = {
       // Whichever of the three the range calls for — a past day does not say
       // « à venir » about itself, which is the whole point of the copy.
       await page
-        .getByText(/Aucune réunion n’a été enregistrée|Plus aucune réunion|Aucune réunion à venir/)
+        .getByText(/Aucune réunion ce jour-là|Aucune réunion sur cette période|Plus aucune réunion/)
         .waitFor()
     },
   },
@@ -167,6 +167,13 @@ const SCREENS = {
     scenario: 'agenda',
     async drive(page) {
       await openAgenda(page)
+      /*
+        On the calendar the axes appear when the rep asks for them — under a day
+        list they would read as filters on that list, which they are not.
+        Focusing the field is the ask, and it is the gesture that precedes
+        reaching for a chip anyway.
+      */
+      await page.getByLabel('Rechercher un client, un sujet, une transcription ou une note').focus()
       await page.getByRole('button', { name: 'Néovia Santé', exact: true }).click()
       await page.waitForTimeout(400)
     },
@@ -192,7 +199,7 @@ const SCREENS = {
         .getByRole('button', { name: 'Ouvrir' })
         .click()
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
-      await page.getByText('Se remplit à mesure', { exact: false }).waitFor()
+      await page.getByText('Rien ne migre dans vos notes.').waitFor()
       // A speech-shaped level history over a broadcast — the same channel the
       // main process would use, and the whole width of the meter, so the still
       // shows the widget as a rep sees it rather than flat.

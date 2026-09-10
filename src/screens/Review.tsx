@@ -48,7 +48,7 @@ import {
   Segmented,
   unavailable,
 } from '../ui/index.ts'
-import { scrollToCenter } from '../lib/scroll.ts'
+import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
 
@@ -170,8 +170,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * ships has been on screen. When the panel fits — a short extraction, a tall
    * window — `atEnd` is true on the first measurement and nothing is different.
    */
-  const [below, setBelow] = useState(false)
+  const [below, setBelow] = useState<'document' | 'rail' | null>(null)
   const railRef = useRef<HTMLDivElement>(null)
+  const docRef = useRef<HTMLElement>(null)
   /*
    * Once, and then it stays read.
    *
@@ -181,10 +182,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * text they are looking at. Reaching the end is a fact about the rep, not
    * about the current scroll position.
    */
-  const readToEnd = useRef(false)
-  const measureRail = useCallback(() => {
-    const el = railRef.current
-    if (!el) return
+  const readToEnd = useRef({ document: false, rail: false })
+  const measure = useCallback(() => {
     /*
      * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
      * sub-pixel gap that never closes, and a button that stays refused at the
@@ -197,9 +196,31 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * product would be dead in the renderer's own tests for a reason that has
      * nothing to do with the product. This way the unmeasurable case is the
      * permissive one, and the refusal only ever comes from a real measurement.
+     *
+     * Reaching the end is a fact about the rep and it sticks: the columns grow
+     * as they type into a multiline field, and re-measuring would refuse the
+     * button again mid-keystroke over the text they are looking at.
      */
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) readToEnd.current = true
-    setBelow(!readToEnd.current)
+    const atEnd = (el: HTMLElement | null) =>
+      el !== null && el.scrollTop + el.clientHeight >= el.scrollHeight - 8
+    if (atEnd(docRef.current)) readToEnd.current.document = true
+    if (atEnd(railRef.current)) readToEnd.current.rail = true
+    /*
+     * **Both columns, and this is the whole of the guard's honesty.**
+     *
+     * It measured the rail alone. The rail holds the eleven typed fields — and
+     * the two strings that actually leave the machine, the compte-rendu and the
+     * body of the mail, are in the *other* column. So a rep could scroll the
+     * rail, watch *Valider* arm, and ship a CRM task and an Outlook draft
+     * having read one paragraph of a fifteen-line follow-up, under a caption
+     * asserting that everything that leaves had been shown to them.
+     *
+     * The document first, because it is the column a rep reads first and the
+     * one whose content they own.
+     */
+    setBelow(
+      !readToEnd.current.document ? 'document' : !readToEnd.current.rail ? 'rail' : null,
+    )
   }, [])
 
   /*
@@ -211,11 +232,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * a multiline field.
    */
   useLayoutEffect(() => {
-    measureRail()
-    const el = railRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measureRail)
-    observer.observe(el)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    if (docRef.current) observer.observe(docRef.current)
+    if (railRef.current) observer.observe(railRef.current)
     return () => observer.disconnect()
   })
   const locate = (next: TranscriptFocus) => {
@@ -287,10 +308,13 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * is not drawn until it exists — so the first pass finds nothing, and
      * marking the jump done there meant it never happened at all.
      */
-    const target = document.getElementById(`field-${firstFaible}`)
+    // The *row*, not the field: scrolling the input to the top leaves its own
+    // label and its `⚠ faible` above the fold, which is the finding hidden
+    // again one line higher up.
+    const target = document.getElementById(`row-${firstFaible}`)
     if (!target) return
     openedOn.current = firstFaible
-    scrollToCenter(target)
+    scrollToTop(target)
   })
 
   // The form is seeded once from the server's pre-fill. Re-seeding on every
@@ -453,11 +477,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const focusFirstFaible = () => {
     const first = faible[0]
     if (!first) return
-    const target = document.getElementById(`field-${first.key}`)
-    scrollToCenter(target)
+    scrollToTop(document.getElementById(`row-${first.key}`))
     // Focus, not just scroll: the rep's next gesture is to correct the value,
     // and a screen reader gets the label read out instead of a silent jump.
-    target?.focus({ preventScroll: true })
+    document.getElementById(`field-${first.key}`)?.focus({ preventScroll: true })
   }
 
   return (
@@ -475,9 +498,19 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         </Button>
         <span aria-hidden className="border-subtle h-4 shrink-0 border-l" />
         <h1 className="font-display text-strong shrink-0 text-display leading-none">Revue</h1>
+        {/*
+          The client, unless the title already says it.
+
+          « Néovia Santé — cadrage renfort data · Néovia Santé » is the account
+          name printed twice on one line, which is how a rep learns to stop
+          reading the end of it. Meeting titles in this trade almost always open
+          with the client, so the common case is the redundant one.
+        */}
         <p className="text-muted min-w-0 flex-1 truncate text-ui">
           {panel.meeting.title}
-          {edits.accountName ? ` · ${edits.accountName}` : ''}
+          {edits.accountName && !panel.meeting.title.includes(edits.accountName)
+            ? ` · ${edits.accountName}`
+            : ''}
         </p>
         {/*
           The count, and a way to reach it.
@@ -517,7 +550,12 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <main className="bg-inner min-w-0 flex-1 overflow-y-auto px-gutter py-row">
+        <main
+          ref={docRef}
+          onScroll={measure}
+          data-below={below === 'document'}
+          className="fade-below bg-inner min-h-0 min-w-0 flex-1 overflow-y-auto px-gutter py-row"
+        >
           {/*
             The measure. This column is whatever is left of the window after the
             440px rail — on a 16:9 laptop that is a thousand pixels, and the
@@ -658,8 +696,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           */}
           <div
             ref={railRef}
-            onScroll={measureRail}
-            data-below={below}
+            onScroll={measure}
+            data-below={below === 'rail'}
             className="fade-below min-h-0 flex-1 overflow-y-auto px-row py-row"
           >
           <SectionHeader>Prêt à envoyer</SectionHeader>
@@ -729,7 +767,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               `awaiting_confirmation` and nowhere else, so a second press is
               refused by the machine rather than by a flag here.
             */}
-            {below && !busy ? (
+            {below !== null && !busy ? (
               /*
                 Never an inert primary.
                 
@@ -749,11 +787,15 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 block
                 className="mt-4 py-2"
                 onClick={() => {
-                  const el = railRef.current
+                  // Whichever column is still holding something back, and the
+                  // caption above names which one it is.
+                  const el = below === 'document' ? docRef.current : railRef.current
                   el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
                 }}
               >
-                Afficher le reste de ce qui part
+                {below === 'document'
+                  ? 'Afficher la fin du compte-rendu et du brouillon'
+                  : 'Afficher le reste de ce qui part'}
               </Button>
             ) : (
               <Button
@@ -767,7 +809,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               </Button>
             )}
             <p className="text-muted mt-1.5 text-center text-meta">
-              {below && !busy
+              {below !== null && !busy
                 ? 'Tout ce qui part doit avoir été affiché avant d’être validé.'
                 : reassurance}
             </p>
@@ -799,7 +841,14 @@ function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
   const multiline = MULTILINE.has(field.key)
 
   return (
-    <div className="px-3 py-2">
+    /*
+      `scroll-mt-10`: the gate scrolls to the first unverified row on open, and
+      `block: 'center'` in a 500px column put the *previous* row's value box at
+      the top with its label sheared off above it. The row is brought to the top
+      of the scroller with a row's worth of margin over it, so what a rep lands
+      on is a whole field.
+    */
+    <div id={`row-${field.key}`} className="scroll-mt-10 px-3 py-2">
       <div className="flex items-baseline gap-2">
         <label className="text-muted w-28 shrink-0 text-meta" htmlFor={`field-${field.key}`}>
           {field.label}
@@ -923,8 +972,15 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
   return (
     <section className="mt-5">
       <div className="mb-2 flex items-center gap-inline">
+        {/*
+          « (brouillon) » is a promise about what will be created, so it is only
+          made when one will be. With no Microsoft account the Outlook intent is
+          refused two rows down and this text is the one thing a rep can take —
+          which is what the recipient line says, and what the eyebrow now says
+          with it instead of against it.
+        */}
         <SectionHeader as="h3" className="mb-0 min-w-0 flex-1">
-          Email de relance (brouillon)
+          {to.length === 0 ? 'Email de relance — à copier' : 'Email de relance (brouillon)'}
         </SectionHeader>
         {/*
           Subject and body together, in the shape a mail client expects — the

@@ -401,14 +401,21 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     // and saying so rather than silently listing the whole call.
     expect(box.value).toBe('deux dev java senior')
     expect(screen.getByText('aucun passage')).toBeTruthy()
-    expect(screen.getByText(/essayez un mot seul/)).toBeTruthy()
 
-    // One word finds the paraphrase.
+    // The dead end ends in a tap: the words of the failed quote that the record
+    // *does* contain, longest first, and nothing shorter than four characters.
+    expect(screen.getByText(/Ces mots-là, oui/)).toBeTruthy()
+    const leads = screen.getAllByRole('button', { name: /^(senior|java|deux|dev)$/ })
+    // Longest first — the longest word is the most specific — and « dev » is
+    // absent: three characters is grammar or a token so common that a lead
+    // built on one points at half the call.
+    expect(leads.map((l) => l.textContent)).toEqual(['senior', 'deux', 'java'])
+
     await act(async () => {
-      fireEvent.change(box, { target: { value: 'java' } })
+      leads[0]?.click()
     })
     expect(screen.getByText('1 passage')).toBeTruthy()
-    expect(screen.queryByText(/essayez un mot seul/)).toBeNull()
+    expect(screen.queryByText(/Ces mots-là, oui/)).toBeNull()
   })
 
   test('a verified citation does not pre-fill the search over its own hit', async () => {
@@ -749,9 +756,13 @@ describe('the gate says which screen it is', () => {
     // The meeting is in the header too — as the line under the screen's name,
     // not as the name. (It also fills the *Objet* field, which is why this
     // reads the header rather than the document.)
-    expect(screen.getByRole('banner').textContent).toContain(
-      'Acme Industries — besoin Dev Java · Acme Industries',
-    )
+    //
+    // The client is *not* appended here: this title already opens with it, and
+    // « Acme Industries — besoin Dev Java · Acme Industries » is the account
+    // name printed twice on one line.
+    const banner = screen.getByRole('banner').textContent ?? ''
+    expect(banner).toContain('Acme Industries — besoin Dev Java')
+    expect(banner).not.toContain('Dev Java · Acme Industries')
   })
 
   test('closed, there is no header at all — only the reason and the way back', async () => {

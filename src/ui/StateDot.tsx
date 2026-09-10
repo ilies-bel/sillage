@@ -29,6 +29,16 @@ const dot = cva('h-1.5 w-1.5 shrink-0 rounded-full', {
       down: 'bg-danger',
       /* Selection and navigation, per VISION.md §6. 3.05:1 — non-text UI. */
       selected: 'bg-brand-500',
+      /*
+       * Asked and not yet answered — an outline, not a colour.
+       *
+       * `none` was doing this job on the splash and it draws *nothing*, so the
+       * one row still waiting read as a row whose dot had failed to render
+       * beside two that had one. A ring says « the slot is here and it is
+       * empty », which is exactly the state, and it commits to no semantic
+       * colour: a pending answer is not a green light and not a red one.
+       */
+      pending: 'bg-transparent ring-1 ring-inset ring-card',
       /* Present but says nothing. Keeps the row's text aligned with its neighbours. */
       none: 'bg-transparent',
     },

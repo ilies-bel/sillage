@@ -298,6 +298,26 @@ export function installAppBridge(config) {
       confirmedAt: at(-9, 10, 30),
       updatedAt: at(-9, 10, 30),
     }),
+    /*
+      A call recorded four days ago and never confirmed — the state
+      *En attente de validation* exists for, and the one the fixture had no
+      example of: the only « À valider » row was from today, which the calendar
+      already draws under *Passées*, so the section could never appear and the
+      feature could not be reviewed.
+    */
+    meeting({
+      id: 'm-nordis-support',
+      state: 'awaiting_confirmation',
+      title: 'Nordis Retail — cadrage support N2',
+      eventId: 'AAMkAGI2-nordis-support',
+      clientName: 'Nordis Retail',
+      scheduledStart: at(-4, 10, 0),
+      createdAt: at(-4, 9, 58),
+      startedAt: at(-4, 10, 1),
+      endedAt: at(-4, 10, 42),
+      confirmedAt: null,
+      updatedAt: at(-4, 10, 44),
+    }),
     meeting({
       id: 'm-lefort-decouverte',
       state: 'done',
@@ -680,6 +700,17 @@ export function installAppBridge(config) {
     )
 
   const HISTORY_ROWS = [
+    {
+      meeting: meetingById('m-nordis-support'),
+      status: 'À valider',
+      intents: [],
+      matches: [
+        {
+          where: 'notes',
+          excerpt: 'deux profils support N2, astreinte à cadrer avec les achats',
+        },
+      ],
+    },
     {
       meeting: meetingById('m-lefort-cv'),
       status: 'À valider',

@@ -120,15 +120,20 @@ describe('the compte-rendu appears where the rep already is', () => {
     await screen.findByText(/Cadrage du renfort data/)
 
     // Both are on screen together, unasked.
-    expect(screen.getByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeTruthy()
+    expect(screen.getByText('Rien ne migre dans vos notes.')).toBeTruthy()
 
-    // One name for the control whether it hides one pane or two.
-    fireEvent.click(screen.getByRole('button', { name: /^Volets/ }))
+    // Putting them away is a verb inside the thing it closes.
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer' }))
 
     expect(screen.queryByText(/Cadrage du renfort data/)).toBeNull()
-    expect(screen.queryByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeNull()
+    expect(screen.queryByText('Rien ne migre dans vos notes.')).toBeNull()
     // The surface the rep owns is untouched by any of it (DEC-5).
     expect(document.querySelector('.ProseMirror')).toBeTruthy()
+
+    // And the way back is in the header, spelled out, where there is now a
+    // notepad's width to spell it in.
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les volets' }))
+    expect(screen.getByText(/Cadrage du renfort data/)).toBeTruthy()
   })
 })
 

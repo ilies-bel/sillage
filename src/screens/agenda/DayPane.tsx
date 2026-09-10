@@ -84,11 +84,20 @@ export function DayPane({
               : undefined
           }
         >
-          {when === 'past'
-            ? 'Aucune réunion n’a été enregistrée sur cette période.'
-            : when === 'today'
-              ? 'Plus aucune réunion aujourd’hui.'
-              : 'Aucune réunion à venir.'}
+          {/*
+            Three ranges, three true sentences — and none of them answers a
+            question the rep did not ask.
+
+            It said « Aucune réunion n'a été enregistrée sur cette période »,
+            which is wrong twice on a day view: « sur cette période » of a single
+            Monday, and « enregistrée » answers whether anything was *recorded*
+            when the rep asked whether anything was *in the calendar*.
+          */}
+          {when === 'today'
+            ? 'Plus aucune réunion aujourd’hui.'
+            : showDay
+              ? 'Aucune réunion sur cette période.'
+              : 'Aucune réunion ce jour-là.'}
         </EmptyState>
       )}
 

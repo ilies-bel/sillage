@@ -295,46 +295,22 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         ) : null}
 
         {/*
-          Whether the rail is showing at all, and nothing else — there is no
-          longer anything to choose between (see the docblock). A rep who finds
-          it distracting runs the pure notepad of DEC-11 and loses nothing,
-          because the signals are still extracted and both surfaces are still
-          there at the gate.
+          Only the way *back*. Putting the volets away is a verb inside the
+          thing it closes — `SignalRail`'s own header — because a word in the
+          header ( « SIGNAUX », then « PANNEAU », then « VOLETS » ) was the one
+          control in the app whose effect could not be guessed from its face.
 
-          One word, and it does not change. It named *Signaux* during the call
-          and *Panneau* after it, which is more accurate and is still one
-          control learned twice: a rep who presses SIGNAUX and finds PANNEAU
-          there an hour later has to work out whether it is the same button.
-          « Volets » is what Outlook calls the same thing, covers one pane or
-          two, and the accessible name says which are in it.
+          It is drawn only while they are hidden, which is exactly when there is
+          a notepad's width of room to spell it out: with the panes shown, this
+          slot is what was truncating the meeting's own title on a 1280 laptop.
+          A control that is not on screen is not a dead control (DEC-26) — it is
+          the state it belongs to.
         */}
-        {/*
-          `text-label`, not `text-[10px]`. The arbitrary size was the same 10px
-          the token resolves to, so nothing moved — but it was the one piece of
-          type on this screen that the scale did not own, and `check:tokens`
-          cannot see a size it was never asked about. The tracking and the caps
-          match `StateDot`'s label, which is the other 10px thing in this header.
-        */}
-        <button
-          type="button"
-          onClick={() => setShowRail((v) => !v)}
-          aria-pressed={showRail}
-          aria-label={
-            compteRendu === null ? 'Volets : signaux' : 'Volets : compte-rendu et signaux'
-          }
-          /*
-            Brand blue when the volets are showing, the way `Segmented` marks a
-            selected view — a grey pill on a grey header reads as a control that
-            is switched *off*, which is the opposite of what it meant.
-          */
-          className={`shrink-0 rounded-sm px-1.5 py-1 text-label uppercase tracking-wider transition ${
-            showRail
-              ? 'text-brand-700 bg-brand-50'
-              : 'text-muted hover:text-body hover:bg-subtle'
-          }`}
-        >
-          Volets
-        </button>
+        {showRail ? null : (
+          <Button variant="text" className="shrink-0" onClick={() => setShowRail(true)}>
+            {compteRendu === null ? 'Afficher les signaux' : 'Afficher les volets'}
+          </Button>
+        )}
       </header>
 
       {saveFailed ? (
@@ -433,8 +409,8 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         {showRail ? (
           <aside className="border-subtle bg-card-soft w-[22%] min-w-[210px] max-w-[300px] shrink-0 border-l">
             <SignalRail
+              onHide={() => setShowRail(false)}
               signals={allSignals}
-              recording={recording}
               recipe={recipe ?? DEFAULT_RECIPE}
             />
           </aside>

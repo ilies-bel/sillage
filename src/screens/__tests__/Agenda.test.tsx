@@ -248,8 +248,8 @@ describe('the calendar is drawn on a day with nothing in it', () => {
     // header drops its copy rather than putting two of the same thing on one
     // screen, and the panel's is the one the rep is looking at.
     fireEvent.click(cell(thursday))
-    expect(screen.queryByRole('button', { name: /^Planifier au / })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Planifier une réunion' }))
+    expect(screen.queryByRole('button', { name: /^Ajouter au / })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter une réunion' }))
     fireEvent.change(screen.getByPlaceholderText('Objet (facultatif)'), {
       target: { value: 'Cadrage Nordis' },
     })
@@ -690,6 +690,27 @@ describe('the search is the only entry into the past', () => {
     expect(screen.queryByText('Acme — TJM à revoir')).toBeNull()
   })
 
+  /*
+   * A meeting that reached the gate and was never confirmed is the product's
+   * quietest failure: everything was captured and nothing was sent, and the rep
+   * believes the call is filed. It is the one class of failure that does not
+   * announce itself (DEC-26), so the home screen asks the question for them.
+   */
+  test('calls that were recorded and never validated are on the home screen', async () => {
+    searched({
+      clients: [],
+      rows: [{ ...historyRow({ title: 'Nordis — cadrage support' }), status: 'À valider' }],
+    })
+    signedOut()
+
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+
+    expect(await screen.findByText('En attente de validation')).toBeTruthy()
+    expect(screen.getByText('Nordis — cadrage support')).toBeTruthy()
+    expect(screen.getByText('Rien n’a été envoyé')).toBeTruthy()
+  })
+
   test('a chip on its own is a search, with nothing typed', async () => {
     searched({ clients: [], rows: [historyRow()] })
     signedOut()
@@ -697,6 +718,20 @@ describe('the search is the only entry into the past', () => {
     render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     expect(screen.getByText('Plus aucune réunion aujourd’hui.')).toBeTruthy()
+
+    /*
+     * The axes are not on the calendar until the rep asks for them: under a day
+     * list, a permanent row of « 7 jours » and seven client names reads as a
+     * filter on that list, and it is not one — pressing a chip *replaces* it.
+     * Focusing the field is the ask, and it is the gesture that precedes
+     * reaching for a chip anyway.
+     */
+    expect(screen.queryByRole('group', { name: 'Période' })).toBeNull()
+    await act(async () => {
+      fireEvent.focus(
+        screen.getByLabelText('Rechercher un client, un sujet, une transcription ou une note'),
+      )
+    })
 
     const periode = screen.getByRole('group', { name: 'Période' })
     await act(async () => {

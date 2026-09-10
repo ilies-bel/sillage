@@ -46,13 +46,15 @@ const LABEL: Record<BootStepId, string> = {
 }
 
 /**
- * `none` for `pending`: an unanswered question is not a green light and not a
- * red one. `selected` (brand blue) for the download, because orange has exactly
+ * `pending` for `pending`: an unanswered question is not a green light and not
+ * a red one — but it is not *nothing* either. `none` draws no dot at all, so on
+ * a splash whose two other rows have one, the row still being waited on read as
+ * a rendering fault. An outline is the slot, present and empty. `selected` (brand blue) for the download, because orange has exactly
  * one meaning in this product — armed or recording — and a first-run model
  * fetch is neither.
  */
 const TONE: Record<BootStep['state'], StateDotProps['tone']> = {
-  pending: 'none',
+  pending: 'pending',
   ready: 'ok',
   downloading: 'selected',
   failed: 'down',

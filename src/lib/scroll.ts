@@ -17,3 +17,17 @@ export function scrollToCenter(target: Element | null | undefined): void {
   if (typeof target?.scrollIntoView !== 'function') return
   target.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
+
+/**
+ * The same, brought to the *top* of its scroller.
+ *
+ * `center` is right when the point is « look at this in context ». It is wrong
+ * when the target is a row taller than a third of the column: centring a 180px
+ * field in a 500px rail leaves the row above sheared through the middle at the
+ * top edge, and what the rep lands on is half of something else. Honour the
+ * element's own `scroll-margin-top`, which is what `start` does.
+ */
+export function scrollToTop(target: Element | null | undefined): void {
+  if (typeof target?.scrollIntoView !== 'function') return
+  target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}

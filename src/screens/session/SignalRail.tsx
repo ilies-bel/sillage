@@ -40,12 +40,27 @@
  */
 import type { Signal, SignalKind } from '../../../electron/core/contracts/signals.ts'
 import { DEFAULT_RECIPE, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
+import { Button } from '../../ui/index.ts'
 
 interface SignalRailProps {
   signals: Signal[]
-  recording: boolean
   /** Which compte-rendu the meeting is set to produce — it owns the slate. */
   recipe?: RecipeId
+  /**
+   * Put the side panes away, from the rail's own header.
+   *
+   * The control used to live in the session header as a word — « SIGNAUX »,
+   * then « PANNEAU », then « VOLETS » — an all-caps chip with no verb, in the
+   * position Granola puts *Share*, and the only control in the app whose effect
+   * could not be guessed from its face. A verb inside the thing it closes needs
+   * no guessing, and it gives the header back seventy pixels at the one moment
+   * the header does not have them: during a recording, where the meeting's own
+   * title was truncating to « Néovia Santé — cadrage renf… ».
+   *
+   * Getting them *back* is the session header's job — with the panes away there
+   * is a whole notepad's width to say « Afficher les volets » in.
+   */
+  onHide?: () => void
 }
 
 /** French, short, and stable — the label is a category, not a sentence. */
@@ -60,7 +75,7 @@ const KIND_LABEL: Record<SignalKind, string> = {
   autre: 'Autre',
 }
 
-export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: SignalRailProps) {
+export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalRailProps) {
   const ordered = [...signals].sort((a, b) => a.seq - b.seq)
   const byKind = new Map<SignalKind, Signal[]>()
   for (const signal of ordered) {
@@ -105,6 +120,11 @@ export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: Sign
         <span className="text-muted shrink-0 tabular-nums text-label" aria-hidden>
           {slots.length > 0 ? `${covered}/${slots.length}` : heard}
         </span>
+        {onHide ? (
+          <Button variant="text" className="shrink-0" onClick={onHide}>
+            Masquer
+          </Button>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
@@ -134,11 +154,17 @@ export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: Sign
             dit.
           </p>
         ) : null}
-        <p className="text-muted mt-row text-label">
-          {recording
-            ? 'Se remplit à mesure · ne clique nulle part · rien ne migre dans vos notes.'
-            : 'Ne se réordonne pas · ne clique nulle part · rien ne migre dans vos notes.'}
-        </p>
+        {/*
+          One clause, and it is the one that is about the rep.
+
+          It read « Se remplit à mesure · ne clique nulle part · rien ne migre
+          dans vos notes. » Two of those three defend decisions nobody
+          questioned — no rep has ever suspected a panel of reordering itself —
+          and they were the last line of the rail, which is where the eye ends.
+          What is worth a line is DEC-5's promise: the one surface the rep owns
+          is not written into by anything here.
+        */}
+        <p className="text-muted mt-row text-label">Rien ne migre dans vos notes.</p>
       </div>
     </section>
   )

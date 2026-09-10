@@ -90,6 +90,19 @@ export interface SearchBarProps {
    * recorded anything is exactly the rep who needs to see that the room exists.
    */
   onHistorique?: () => void
+  /**
+   * Whether the chip row is drawn before the rep has asked anything.
+   *
+   * `true` on *Historique*, which is the search: the chips are its axes and
+   * there is nothing else on the screen for them to be mistaken for.
+   *
+   * `false` on the calendar, where the day list sits directly underneath and
+   * the chips — « 7 jours », « À valider », seven client names — read as
+   * filters *on that list*, which they are not: pressing one replaces it. They
+   * appear when the field is focused, when something is typed, or when a chip
+   * is already on, which is every moment they are relevant and no other.
+   */
+  chipsAlways?: boolean
   className?: string
 }
 
@@ -100,13 +113,23 @@ export function SearchBar({
   onFilter,
   clients,
   onHistorique,
+  chipsAlways = true,
   className,
 }: SearchBarProps) {
+  /*
+   * Focus opens the axes and blur does not close them: a rep who focused the
+   * field to reach a chip would watch the chips vanish on the way to clicking
+   * one. Once asked for, they stay for the life of the screen.
+   */
+  const [asked, setAsked] = useState(false)
+  const chips = chipsAlways || asked || query !== '' || isFiltering(filter)
+
   return (
     <div className={className}>
       <div className="flex items-center gap-inline">
         <input
           type="search"
+          onFocus={() => setAsked(true)}
           aria-label="Rechercher un client, un sujet, une transcription ou une note"
           placeholder="Rechercher un client, un sujet, un mot dit en réunion…"
           value={query}
@@ -123,6 +146,7 @@ export function SearchBar({
       </div>
 
       {/* One line: every axis in one scroller, and the reset outside it. */}
+      {chips ? (
       <div className="mt-2 flex items-center gap-tight">
         {/* Joined rather than passed as the array: the caller writes
             `clients={result?.clients ?? []}`, so a fresh `[]` arrives on every
@@ -200,6 +224,7 @@ export function SearchBar({
           </Button>
         ) : null}
       </div>
+      ) : null}
     </div>
   )
 }
