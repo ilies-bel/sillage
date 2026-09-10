@@ -289,7 +289,7 @@ export class OpenAiCompatibleLlm implements LlmPort {
       if (deadline.expired) {
         throw new LlmError({
           kind: 'timeout',
-          message: `le modèle n’a pas répondu en ${Math.round(options.timeoutMs / 1000)} s`,
+          message: `le modèle n’a pas répondu en ${Math.round(options.timeoutMs / 1000)}\u00a0s`,
           retryable: true,
           cause: error,
         })

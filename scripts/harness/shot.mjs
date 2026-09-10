@@ -16,7 +16,8 @@
  *                    `down` and not retryable.
  *
  * Screens: splash · agenda · agenda-empty · agenda-semaine · agenda-liste ·
- * agenda-client · agenda-search · session · review · review-transcription ·
+ * agenda-client · agenda-search · session · review · review-valider ·
+ * review-transcription ·
  * review-transcription-introuvable · historique · reglages ·
  * agenda-sans-entra · session-sans-entra · review-sans-entra ·
  * reglages-sans-entra
@@ -135,7 +136,11 @@ const SCREENS = {
     async drive(page) {
       await openAgenda(page)
       await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
-      await page.getByText('Aucune réunion à venir.').waitFor()
+      // Whichever of the three the range calls for — a past day does not say
+      // « à venir » about itself, which is the whole point of the copy.
+      await page
+        .getByText(/Aucune réunion n’a été enregistrée|Plus aucune réunion|Aucune réunion à venir/)
+        .waitFor()
     },
   },
 
@@ -274,8 +279,25 @@ const SCREENS = {
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).click()
       await page.getByText('Prêt à envoyer').waitFor()
-      await page.getByRole('button', { name: 'Valider' }).waitFor()
+      /*
+        The gate as it *opens*: scrolled to the one field the extraction could
+        not verify, and with the live control in the primary slot being the one
+        that shows the rest of the payload. `Valider` is not on screen yet and
+        that is the design — see `review-valider` for the other half.
+      */
       await page.getByText('⚠ faible').first().waitFor()
+      await page.waitForTimeout(600)
+    },
+  },
+
+  /** The same gate once the rail has been read to the end: *Valider* is live. */
+  'review-valider': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.getByRole('button', { name: /Afficher le reste/ }).click()
+      await page.getByRole('button', { name: 'Valider' }).waitFor()
+      await page.waitForTimeout(600)
     },
   },
 
@@ -383,7 +405,15 @@ const SCREENS = {
         .getByRole('button', { name: 'Ouvrir' })
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).click()
-      await page.getByRole('button', { name: 'Valider' }).waitFor()
+      /*
+        `expand: true` unclips the rail, so the whole payload is on screen and
+        the gate's live control is already *Valider* — the scroll guard is
+        satisfied by there being nothing below a fold. Without the expansion it
+        would be *Afficher le reste de ce qui part*, which is the `review`
+        screen's own case.
+      */
+      await page.getByText('Prêt à envoyer').waitFor()
+      await page.getByText('Aucun destinataire au calendrier.').waitFor()
     },
   },
 

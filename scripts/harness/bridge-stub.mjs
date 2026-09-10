@@ -916,7 +916,7 @@ export function installAppBridge(config) {
       llm: { state: 'ok' },
       crm: {
         state: 'down',
-        reason: 'VerySwing injoignable — la sandbox VSA n’a pas répondu en 10 s',
+        reason: 'VerySwing injoignable — la sandbox VSA n’a pas répondu en 10 s',
         since: now - 26 * MIN,
         retryable: true,
       },

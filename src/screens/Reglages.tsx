@@ -250,7 +250,13 @@ export function Reglages({ onBack }: ReglagesProps) {
             width a connector row needs — a label, a state, a sentence of reason
             and a *Réessayer*.
           */}
-          <div className="measure">
+          {/*
+            Centred, not left-hugging. Capped at the reading measure the pane
+            kept a third of its width empty down the right, which reads as a
+            layout that ran out rather than one that stopped. Centred it reads
+            as a column — which is what every settings pane worth copying does.
+          */}
+          <div className="measure mx-auto">
           {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (

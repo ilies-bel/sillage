@@ -275,7 +275,18 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           <Button variant="text" onClick={onReglages}>
             Réglages
           </Button>
-          <NewMeeting day={selected} today={today} onCreated={created} />
+          {/*
+            The header drops *Planifier au …* exactly when the day pane is
+            drawing its own — one scheduling control on screen, and it is the
+            one the rep is looking at. *Démarrer une réunion* is never dropped:
+            it always means now, and without Graph it is the only way in.
+          */}
+          <NewMeeting
+            day={selected}
+            today={today}
+            onCreated={created}
+            showSchedule={searching || inRange.some((entry) => !entry.past)}
+          />
         </div>
       </header>
 

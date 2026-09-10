@@ -122,7 +122,8 @@ describe('the compte-rendu appears where the rep already is', () => {
     // Both are on screen together, unasked.
     expect(screen.getByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Panneau' }))
+    // One name for the control whether it hides one pane or two.
+    fireEvent.click(screen.getByRole('button', { name: /^Volets/ }))
 
     expect(screen.queryByText(/Cadrage du renfort data/)).toBeNull()
     expect(screen.queryByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeNull()

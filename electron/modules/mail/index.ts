@@ -57,7 +57,7 @@ export const mailHealth = (error: unknown, at: number): ConnectorHealth => {
       }
     }
     if (error.retryable) {
-      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)} s` : ''
+      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)}\u00a0s` : ''
       // Degraded, not down: the meeting is recorded, the compte-rendu is
       // written, and the draft is one retry away. A throttled request is not a
       // lost follow-up.

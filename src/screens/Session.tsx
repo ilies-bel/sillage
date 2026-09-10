@@ -301,8 +301,12 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           because the signals are still extracted and both surfaces are still
           there at the gate.
 
-          The word names what disappears, which during the call is *Signaux* and
-          afterwards is both panes.
+          One word, and it does not change. It named *Signaux* during the call
+          and *Panneau* after it, which is more accurate and is still one
+          control learned twice: a rep who presses SIGNAUX and finds PANNEAU
+          there an hour later has to work out whether it is the same button.
+          « Volets » is what Outlook calls the same thing, covers one pane or
+          two, and the accessible name says which are in it.
         */}
         {/*
           `text-label`, not `text-[10px]`. The arbitrary size was the same 10px
@@ -315,11 +319,21 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           type="button"
           onClick={() => setShowRail((v) => !v)}
           aria-pressed={showRail}
+          aria-label={
+            compteRendu === null ? 'Volets : signaux' : 'Volets : compte-rendu et signaux'
+          }
+          /*
+            Brand blue when the volets are showing, the way `Segmented` marks a
+            selected view — a grey pill on a grey header reads as a control that
+            is switched *off*, which is the opposite of what it meant.
+          */
           className={`shrink-0 rounded-sm px-1.5 py-1 text-label uppercase tracking-wider transition ${
-            showRail ? 'text-body bg-subtle' : 'text-muted hover:text-body hover:bg-subtle'
+            showRail
+              ? 'text-brand-700 bg-brand-50'
+              : 'text-muted hover:text-body hover:bg-subtle'
           }`}
         >
-          {compteRendu === null ? 'Signaux' : 'Panneau'}
+          Volets
         </button>
       </header>
 
@@ -388,21 +402,36 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           Wider than the signal rail for the reason it always was: at 280px this
           prose wrapped every heading and turned a document into a column of
           stubs.
+
+          36 % rather than 30, and a 560px ceiling rather than 440. Once the
+          analysis has landed, the document is the thing being judged and it was
+          the narrowest prose on the screen: 384px at 1280 against a notepad of
+          640 holding four bullet points and six hundred pixels of white. The
+          notepad keeps its floor and every pixel it needs to write in; what it
+          gives up is space it was not using.
         */}
         {showRail && compteRendu !== null ? (
-          <aside className="border-subtle bg-card-soft w-[30%] min-w-[320px] max-w-[440px] shrink-0 border-l">
+          <aside className="border-subtle bg-card-soft w-[36%] min-w-[360px] max-w-[560px] shrink-0 border-l">
             <CompteRenduPane compteRendu={compteRendu} />
           </aside>
         ) : null}
 
         {/*
-          280px for the signal rail, and the same floor-and-ceiling reasoning as
-          the notepad's. It is the last column in both layouts, so a compte-rendu
+          The signal rail, with the same floor-and-ceiling reasoning as the
+          notepad's. It is the last column in both layouts, so a compte-rendu
           arriving inserts a pane rather than moving the one the rep has been
           glancing at for the length of the call.
+
+          22 % and a 300px ceiling, up from 20 % and 280. The label column takes
+          64px of it and the row its padding, which at 1280 left the *value* —
+          the thing the rail exists to show — **117 pixels**: « 2 × Data
+          Engineer confirmé — Databricks, Airflow, dbt » set six words to a line
+          is a staircase, not a reading. The floor stays at 210 so the
+          arithmetic still holds at the app's own minimum window (960px): 360 of
+          document and 211 of rail leave the notepad 389, above its 380 floor.
         */}
         {showRail ? (
-          <aside className="border-subtle bg-card-soft w-[20%] min-w-[210px] max-w-[280px] shrink-0 border-l">
+          <aside className="border-subtle bg-card-soft w-[22%] min-w-[210px] max-w-[300px] shrink-0 border-l">
             <SignalRail
               signals={allSignals}
               recording={recording}

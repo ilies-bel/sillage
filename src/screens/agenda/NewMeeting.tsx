@@ -72,12 +72,28 @@ interface NewMeetingProps {
    * a rep choose between two identical buttons.
    */
   variant?: 'header' | 'empty'
+  /**
+   * `false` while the day pane is drawing its own *Planifier une réunion*.
+   *
+   * An empty day offered three creation controls — *Planifier au 31 août* and
+   * *Démarrer une réunion* in the header, *Planifier une réunion* in the panel
+   * — for two intentions. The panel's is the one the rep is looking at, so on
+   * an empty day the header keeps only *Démarrer*, which always means *now* and
+   * is the product's one indispensable action.
+   */
+  showSchedule?: boolean
 }
 
 /** The hour a working day is assumed to start at, when the rep does not say. */
 const DEFAULT_CLOCK = '09:00'
 
-export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMeetingProps) {
+export function NewMeeting({
+  day,
+  today,
+  onCreated,
+  variant = 'header',
+  showSchedule = true,
+}: NewMeetingProps) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [client, setClient] = useState('')
@@ -178,7 +194,7 @@ export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMee
 
   const inEmptyState = variant === 'empty'
 
-  if (forNow && !inEmptyState) {
+  if ((forNow || !showSchedule) && !inEmptyState) {
     return (
       <div className="flex items-center gap-inline">
         {alert}

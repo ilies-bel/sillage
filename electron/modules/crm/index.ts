@@ -97,7 +97,7 @@ export const crmHealth = (error: unknown, at: number): ConnectorHealth => {
       }
     }
     if (error.retryable) {
-      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)} s` : ''
+      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)}\u00a0s` : ''
       // Degraded, not down: the compte-rendu is written and one retry away from
       // VerySwing. A 500 is weather, and the outbox row survives it.
       return { state: 'degraded', reason: `VerySwing temporairement indisponible${wait}`, since: at, retryable: true }

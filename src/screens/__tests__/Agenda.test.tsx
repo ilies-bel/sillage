@@ -242,9 +242,14 @@ describe('the calendar is drawn on a day with nothing in it', () => {
     await screen.findByRole('region', { name: 'Calendrier' })
 
     // Another day keeps its form: this is scheduling, not a call about to start,
-    // so the control names the day and asks for the hour (DEC-31).
+    // so the control asks for the hour (DEC-31).
+    //
+    // On a day with nothing on it the control is the empty panel's own — the
+    // header drops its copy rather than putting two of the same thing on one
+    // screen, and the panel's is the one the rep is looking at.
     fireEvent.click(cell(thursday))
-    fireEvent.click(screen.getByRole('button', { name: /^Planifier au / }))
+    expect(screen.queryByRole('button', { name: /^Planifier au / })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Planifier une réunion' }))
     fireEvent.change(screen.getByPlaceholderText('Objet (facultatif)'), {
       target: { value: 'Cadrage Nordis' },
     })

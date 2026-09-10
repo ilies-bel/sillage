@@ -556,7 +556,8 @@ test('a forbidden account is down with no retry, and a throttle names the wait',
     NOW,
   )
   assert.equal(throttled.state, 'degraded')
-  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30 s/)
+  // U+00A0 — see the same assertion in calendar.test.ts.
+  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30\u00a0s/)
 })
 
 test('an unknown failure is down but retryable, and never silent', () => {

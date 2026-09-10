@@ -179,7 +179,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
                 intent, its state, its VerySwing id and its failure sentence, is
                 « Envois » in the expanded record two clicks below.
               */}
-              <IntentSummary intents={row.intents} variant="compact" className="w-36" />
+              <IntentSummary intents={row.intents} variant="compact" className="w-48" />
         </UiRow>
       </button>
 

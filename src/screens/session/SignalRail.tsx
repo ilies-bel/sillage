@@ -172,7 +172,9 @@ function Slot({ label, found }: SlotProps) {
         empty ? 'border-transparent' : 'bg-inner'
       }`}
     >
-      <span className="text-muted w-[4.5rem] shrink-0 text-meta">{label}</span>
+      {/* 64px, not 72: every pixel here is a pixel the value does not get,
+          and the longest label in the slate (« Démarrage ») fits. */}
+      <span className="text-muted w-16 shrink-0 text-meta">{label}</span>
       {empty ? (
         /*
          * `text-muted`, not the `text-muted/60` that stood here. Tailwind cannot

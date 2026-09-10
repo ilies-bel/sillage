@@ -76,15 +76,30 @@ const STATE_WORD: Record<HistoryIntent['state'], string> = {
  */
 export type IntentSummaryVariant = 'full' | 'compact'
 
-/** « 1 en échec · 2 envoyées », ordered by what a rep is looking for. */
+/**
+ * « 1 envoi en échec · 2 effectués », ordered by what a rep is looking for.
+ *
+ * The first part names the artefact, and it is the first part precisely because
+ * the failure is what a rep scans a column of these for. Without the noun the
+ * cell read « 2 envoyées » — envoyées *what*: the CRM task, the opportunity,
+ * the Outlook draft? On a list with no column header that is a cell a rep has
+ * to open a row to interpret.
+ */
 const counted = (intents: readonly HistoryIntent[]): string => {
   const failed = intents.filter((i) => i.state === 'failed').length
   const drained = intents.filter((i) => i.state === 'drained').length
   const waiting = intents.length - failed - drained
+  const plural = (n: number) => (n > 1 ? 's' : '')
   const parts: string[] = []
-  if (failed > 0) parts.push(`${failed} en échec`)
-  if (waiting > 0) parts.push(`${waiting} en attente`)
-  if (drained > 0) parts.push(`${drained} envoyée${drained > 1 ? 's' : ''}`)
+  if (failed > 0) parts.push(`${failed} envoi${plural(failed)} en échec`)
+  if (waiting > 0)
+    parts.push(failed > 0 ? `${waiting} en attente` : `${waiting} envoi${plural(waiting)} en attente`)
+  if (drained > 0)
+    parts.push(
+      failed > 0 || waiting > 0
+        ? `${drained} effectué${plural(drained)}`
+        : `${drained} envoi${plural(drained)} effectué${plural(drained)}`,
+    )
   return parts.join(' · ')
 }
 

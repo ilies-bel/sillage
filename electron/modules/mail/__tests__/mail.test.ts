@@ -205,7 +205,8 @@ test('every failure a rep can hit maps to a reason and an honest retry flag', ()
     NOW,
   )
   assert.equal(throttled.state, 'degraded')
-  assert.ok(throttled.state === 'degraded' && throttled.reason.includes('30 s'))
+  // U+00A0 — see the same assertion in calendar.test.ts.
+  assert.ok(throttled.state === 'degraded' && throttled.reason.includes('30\u00a0s'))
 
   const noScope = mailHealth(new GraphError({ status: 403, message: 'denied', retryable: false }), NOW)
   assert.equal(noScope.state === 'down' && noScope.retryable, false)

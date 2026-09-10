@@ -24,14 +24,26 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 
-const button = cva('shrink-0 transition disabled:cursor-not-allowed disabled:opacity-50', {
+/*
+ * `disabled:opacity-50` was the whole of the disabled treatment, and on
+ * `primary` it produced a *lighter navy pill with white text on it* — a control
+ * that still reads as the thing to press, and whose label lands around 2.6:1.
+ * A rep pressed it, nothing happened, and the reason was 12px grey underneath.
+ *
+ * So each variant states what it looks like when it cannot be used. `primary`
+ * gives up its fill entirely: a disabled primary is not a quieter primary, it
+ * is not a primary. `bordered` keeps its shape and loses its ink, which is what
+ * a form control that is present-but-inert should look like.
+ */
+const button = cva('shrink-0 transition disabled:cursor-not-allowed', {
   variants: {
     variant: {
       /** The default control: a bordered chip of a button on a card. */
       bordered:
-        'border-card bg-inner text-strong hover:bg-subtle rounded-sm border px-3 py-1.5 text-ui font-medium',
+        'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle rounded-sm border px-3 py-1.5 text-ui font-medium',
       /** One per view at most. Brand blue marks action and navigation. */
-      primary: 'bg-brand-700 text-inner rounded-sm px-3 py-1.5 text-ui font-medium',
+      primary:
+        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
       /**
        * The way back out of a screen — *‹ Calendrier*, and only that.
        *
@@ -42,11 +54,11 @@ const button = cva('shrink-0 transition disabled:cursor-not-allowed disabled:opa
        * `--brand-700` is 6.28:1 on white and the step the ramp nominates for
        * links.
        */
-      nav: 'text-brand-700 hover:text-brand-900 text-ui',
+      nav: 'text-brand-700 hover:text-brand-900 disabled:text-muted text-ui',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
-      text: 'text-muted hover:text-body text-ui',
+      text: 'text-muted hover:text-body disabled:opacity-60 text-ui',
       /** The same, when it needs to read as a link rather than a control. */
-      link: 'text-muted hover:text-body text-ui underline',
+      link: 'text-muted hover:text-body disabled:opacity-60 text-ui underline',
     },
     block: { true: 'w-full', false: '' },
   },

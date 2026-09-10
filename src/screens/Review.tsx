@@ -260,6 +260,39 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const panel: ReviewPanel | null =
     loaded.state.status === 'ready' && loaded.state.value.open ? loaded.state.value.panel : null
 
+  /*
+   * The gate opens on the doubt.
+   *
+   * The header says « ⚠ faible — 1 champ non vérifié dans la transcription »,
+   * and on a 1280×800 laptop the field it means was six rows below the fold:
+   * six of eleven fields visible, and the only untrustworthy one not among
+   * them. The screen was flagging something and then hiding it — which is the
+   * whole confidence machinery (DEC-21) surfacing a finding and burying it in
+   * the same breath.
+   *
+   * Scrolled to, not focused: this is a screen a rep arrives at to *read*, and
+   * a caret that lands in a text field on load steals the first keystroke and
+   * the first Tab. The banner is still there to jump back to, and it focuses.
+   *
+   * Once per field, so a `session:changed` broadcast reloading the panel does
+   * not yank the column back while the rep is somewhere else in it.
+   */
+  const firstFaible = panel?.fields.find((field) => field.confidence === 'faible')?.key ?? null
+  const openedOn = useRef<string | null>(null)
+  useEffect(() => {
+    if (firstFaible === null || openedOn.current === firstFaible) return
+    /*
+     * Only once it is actually there. The panel arrives one render before the
+     * fields do — `edits` is seeded from it in the effect above, and the form
+     * is not drawn until it exists — so the first pass finds nothing, and
+     * marking the jump done there meant it never happened at all.
+     */
+    const target = document.getElementById(`field-${firstFaible}`)
+    if (!target) return
+    openedOn.current = firstFaible
+    scrollToCenter(target)
+  })
+
   // The form is seeded once from the server's pre-fill. Re-seeding on every
   // render of the panel would throw away what the rep is in the middle of
   // typing the first time a broadcast lands.
@@ -397,11 +430,24 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * reason separately, and `Button` throws on a blank one, so the two are
    * computed together here rather than left to agree by accident.
    */
-  const withheld = busy
-    ? 'Envoi en cours. Ne fermez pas la fenêtre.'
-    : below
-      ? 'Faites défiler la colonne jusqu’au bout : tout ce qui part n’a pas encore été affiché.'
-      : null
+  /*
+   * « la relance est créée en brouillon » is a promise, and it was printed
+   * whether or not a brouillon was going to be created.
+   *
+   * On the build the first demo ships in (DEC-28) there is no Microsoft account,
+   * so the Outlook intent is unavailable and unchecked with « Aucun destinataire
+   * au calendrier. » on its own row — and three lines under it the screen still
+   * reassured the rep about a draft that will not exist. A false reassurance on
+   * the one screen whose entire job is being believed.
+   *
+   * What is always true is the half that matters: nothing reaches the client.
+   */
+  const draftingMail = intents.some(
+    (intent) => intent.kind === 'mail.draft' && intent.available && checked.includes(intent.id),
+  )
+  const reassurance = draftingMail
+    ? 'Rien n’est envoyé au client : la relance est créée en brouillon.'
+    : 'Rien n’est envoyé au client : aucun brouillon ne sera créé.'
 
   const faible = panel.fields.filter((field) => field.confidence === 'faible')
   const focusFirstFaible = () => {
@@ -683,30 +729,47 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               `awaiting_confirmation` and nowhere else, so a second press is
               refused by the machine rather than by a flag here.
             */}
-            <Button
-              variant="primary"
-              block
-              className="mt-4 py-2"
-              onClick={() => void confirm()}
-              {...unavailable(withheld !== null, withheld ?? '')}
-            >
-              {busy ? 'Envoi…' : 'Valider'}
-            </Button>
-            {!busy && below ? (
+            {below && !busy ? (
+              /*
+                Never an inert primary.
+                
+                *Valider* used to sit here disabled while the rail had not been
+                read: a mid-blue pill where the primary action goes, white text
+                on it, and the thing the rep actually had to do — scroll — in a
+                12px underlined link *below* it. A rep presses the big button,
+                nothing happens, and the explanation is smaller than the mistake.
+                
+                So the slot always holds the live control. While the payload is
+                still below the fold that control is the one that shows it; once
+                it has been seen, it is the one that ships it. Still one
+                confirmation (DEC-4) — pressing this one confirms nothing.
+              */
               <Button
-                variant="link"
+                variant="primary"
                 block
-                className="mt-1.5 text-center"
+                className="mt-4 py-2"
                 onClick={() => {
                   const el = railRef.current
                   el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
                 }}
               >
-                Afficher les champs restants
+                Afficher le reste de ce qui part
               </Button>
-            ) : null}
+            ) : (
+              <Button
+                variant="primary"
+                block
+                className="mt-4 py-2"
+                onClick={() => void confirm()}
+                {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
+              >
+                {busy ? 'Envoi…' : 'Valider'}
+              </Button>
+            )}
             <p className="text-muted mt-1.5 text-center text-meta">
-              Rien n’est envoyé au client : la relance est créée en brouillon.
+              {below && !busy
+                ? 'Tout ce qui part doit avoir été affiché avant d’être validé.'
+                : reassurance}
             </p>
           </div>
         </aside>

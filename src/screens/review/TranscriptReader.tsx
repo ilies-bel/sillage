@@ -29,7 +29,7 @@
  * hunting for a quote has to be able to find it wherever it was said, and the
  * verification ran against these rows unfiltered.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
@@ -78,6 +78,37 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
     if (!segments || !focus) return null
     return segments.find((segment) => segment.text.includes(focus.quote)) ?? null
   }, [segments, focus])
+
+  /*
+   * The way out of « introuvable ».
+   *
+   * Saying the citation is not in the record is the honest half; leaving the
+   * rep at 0:04 of a twenty-minute call with nowhere to go is the other half,
+   * and it was missing. The claim is usually *in* there — paraphrased, split
+   * across two turns, said in different words — and finding it was a read.
+   *
+   * So the box opens carrying the quote that did not match, and every segment
+   * containing what is typed is marked. It filters nothing: the context either
+   * side is the reason a rep came here rather than to the field.
+   */
+  const [needle, setNeedle] = useState('')
+  const seeded = useRef<string | null>(null)
+  useEffect(() => {
+    const quote = focus?.quote ?? null
+    if (quote === null || seeded.current === quote) return
+    seeded.current = quote
+    // Only when the citation failed — a verified one is already pointed at, and
+    // a search box that pre-filled itself over a hit would be noise.
+    setNeedle(hit === null ? quote : '')
+  }, [focus, hit])
+
+  const trimmed = needle.trim().toLowerCase()
+  const matches = useMemo(() => {
+    if (trimmed === '' || !segments) return new Set<string>()
+    return new Set(
+      segments.filter((s) => s.text.toLowerCase().includes(trimmed)).map((s) => s.id),
+    )
+  }, [segments, trimmed])
 
   const hitRef = useRef<HTMLLIElement>(null)
   useEffect(() => {
@@ -140,14 +171,53 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
       <CopyButton text={transcriptText(segments)} what="la transcription" />
       </div>
 
+      <div className="mb-3 flex items-baseline gap-inline">
+        <input
+          value={needle}
+          onChange={(event) => setNeedle(event.target.value)}
+          aria-label="Rechercher dans la transcription"
+          placeholder="Rechercher dans la transcription…"
+          className="text-strong placeholder:text-muted bg-inner border-subtle min-w-0 flex-1 rounded-sm border px-2 py-1 text-ui"
+        />
+        {trimmed === '' ? null : (
+          <span className={`shrink-0 text-meta ${matches.size === 0 ? 'text-warn' : 'text-muted'}`}>
+            {matches.size === 0
+              ? 'aucun passage'
+              : `${matches.size} passage${matches.size > 1 ? 's' : ''}`}
+          </span>
+        )}
+      </div>
+
+      {/*
+        The box opens on the whole cited sentence, which by definition matches
+        nothing — that is why the rep is here. Saying what to do about it costs
+        one line and saves a rep reading twenty minutes of transcript: a claim
+        that failed verification is usually in the call, paraphrased or split
+        across two turns, and one word finds it.
+      */}
+      {trimmed !== '' && matches.size === 0 ? (
+        <p className="text-muted mb-3 text-meta">
+          Aucun passage ne contient cette phrase telle quelle — essayez un mot seul.
+        </p>
+      ) : null}
+
       <ul className="space-y-2">
         {segments.map((segment) => {
           const cited = segment === hit
+          const found = matches.has(segment.id)
           return (
             <li
               key={segment.id}
               ref={cited ? hitRef : undefined}
-              className={`flex gap-3 rounded-sm px-2 py-1 ${cited ? 'bg-brand-50' : ''}`}
+              /*
+                Two marks, and they are different things: the wash is *the
+                citation*, the rule is *what the rep is looking for*. A search
+                that reused the wash would make a match indistinguishable from a
+                verified span, on the screen whose whole job is that distinction.
+              */
+              className={`flex gap-3 rounded-sm px-2 py-1 ${cited ? 'bg-brand-50' : ''} ${
+                found && !cited ? 'border-brand-500 border-l-2 pl-1.5' : ''
+              }`}
             >
               <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                 {formatOffset(segment.startMs)}
@@ -162,7 +232,7 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
               */}
               <span
                 className={`min-w-0 flex-1 text-ui leading-relaxed ${
-                  cited ? 'text-strong' : 'text-body'
+                  cited || found ? 'text-strong' : 'text-body'
                 }`}
               >
                 {segment.text}
