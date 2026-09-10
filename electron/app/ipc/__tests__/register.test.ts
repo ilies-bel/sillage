@@ -75,7 +75,12 @@ class FakeIpcMain implements IpcMainLike {
  */
 const signIn = (deps: IpcDeps) => {
   deps.identity = {
-    account: () => ({ id: 'a-1', name: 'Julien Marchand', email: 'julien@synapse-it.fr' }),
+    account: () => ({
+      homeAccountId: 'a-1',
+      username: 'julien.marchand@synapse-it.fr',
+      name: 'Julien Marchand',
+      tenantId: 't-1',
+    }),
     signIn: async () => {
       throw new Error('jamais appelé ici')
     },
