@@ -192,3 +192,50 @@ describe('⚠ faible', () => {
     ])
   })
 })
+
+/*
+ * ── the only part of the prose that claims to be verbatim ───────────────────
+ *
+ * `REGISTRE` licenses « … » for a few words the client actually said, when the
+ * formulation itself is the point. Everything else in the compte-rendu is the
+ * model reporting — hedges kept, quantities approximate — so a quotation is the
+ * one thing in two thousand four hundred pixels of prose that can be checked
+ * against the recording, and it was the one thing with no way to check it while
+ * every typed field beside it carried a `[source ▸]`.
+ */
+describe('a quoted fragment', () => {
+  it('is a run of its own, with the guillemets and without them', () => {
+    const runs = parseInline('Le client parle d’« une quarantaine de jobs » restants.')
+    const quote = runs.find((run) => run.kind === 'quote')
+    expect(quote).toBeTruthy()
+    // `text` is what the rep reads, `inner` is what `locateQuote` is handed.
+    expect(quote?.text).toBe('« une quarantaine de jobs »')
+    expect(quote && 'inner' in quote && quote.inner).toBe('une quarantaine de jobs')
+  })
+
+  it('leaves the string untouched', () => {
+    const line = 'L’équipe est décrite comme « trois personnes, dont deux à mi-temps ».'
+    expect(parseInline(line).map((run) => run.text).join('')).toBe(line)
+  })
+
+  it('does not span a line, and is never empty', () => {
+    // A stray guillemet is prose. Two of them around nothing is not a quotation
+    // and must not become a control.
+    for (const line of ['un « seul guillemet ouvrant', 'fermant » tout seul', '« »']) {
+      expect(parseInline(line).some((run) => run.kind === 'quote')).toBe(false)
+    }
+  })
+
+  it('sits beside the other marks without disturbing them', () => {
+    const line = '- **Objections** : « le TJM est trop haut » ⚠ faible'
+    const runs = parseInline(line)
+    expect(runs.map((run) => run.text).join('')).toBe(line)
+    expect(runs.filter((run) => run.kind !== 'plain').map((run) => run.kind)).toEqual([
+      'marker',
+      'strong',
+      'marker',
+      'quote',
+      'faible',
+    ])
+  })
+})

@@ -32,6 +32,30 @@ import { parseCompteRendu, parseInline } from './compteRenduLines.ts'
 interface CompteRenduDocumentProps {
   /** The rendered document, exactly as `renderCompteRendu` produced it. */
   text: string
+  /**
+   * **Open the record on a fragment the model quoted** (DEC-21).
+   *
+   * The eleven typed fields each carry a `[source ▸]`; the prose beside them
+   * carried none, on the screen whose whole argument is that a claim must be
+   * checkable against the recording — and the prose is the string VerySwing
+   * receives and the rep pastes into a proposal. The only part of it that
+   * *claims* to be verbatim is what sits inside guillemets: `REGISTRE` licenses
+   * « … » for a few words the client actually said, and everything else is the
+   * model reporting.
+   *
+   * So those are the fragments this makes followable, and nothing else. There is
+   * no pre-verification and deliberately none: the reader already says
+   * « introuvable » when a quote is not in the record, and seeds its search with
+   * the fragment that failed — so a quotation the model invented leads to a
+   * screen that says so, without this surface fetching a transcript nobody asked
+   * for. `source ▸` is asked for by a click and never otherwise, and this keeps
+   * that rule.
+   *
+   * Absent on a surface with no record beside it. The quote is still drawn — it
+   * is worth reading either way — it simply does not become a control that goes
+   * nowhere (DEC-26).
+   */
+  onQuote?: (quote: string) => void
   className?: string
 }
 
@@ -58,7 +82,7 @@ const HEADING_CLASS: Record<1 | 2 | 3, string> = {
   3: 'text-strong mt-row first:mt-0 text-copy font-semibold leading-snug',
 }
 
-export function CompteRenduDocument({ text, className }: CompteRenduDocumentProps) {
+export function CompteRenduDocument({ text, onQuote, className }: CompteRenduDocumentProps) {
   const lines = parseCompteRendu(text)
 
   return (
@@ -84,7 +108,7 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
               <div className={HEADING_CLASS[line.level]}>
-                <Prose text={line.text} />
+                <Prose text={line.text} onQuote={onQuote} />
               </div>
             </div>
           )
@@ -95,7 +119,7 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
               <p className="text-body text-copy leading-relaxed">
-                <Prose text={line.text} />
+                <Prose text={line.text} onQuote={onQuote} />
               </p>
             </div>
           )
@@ -103,7 +127,7 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
 
         return (
           <p key={key} className="text-body whitespace-pre-wrap text-copy leading-relaxed">
-            <Prose text={line.text} />
+            <Prose text={line.text} onQuote={onQuote} />
           </p>
         )
       })}
@@ -137,7 +161,7 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
  * read-only and a rep dragging across it wants the prose. The editable copy at
  * the gate is where the raw string is selectable in full.
  */
-function Prose({ text }: { text: string }) {
+function Prose({ text, onQuote }: { text: string; onQuote?: (quote: string) => void }) {
   return (
     <>
       {parseInline(text).map((run, index) => {
@@ -154,6 +178,26 @@ function Prose({ text }: { text: string }) {
             <strong key={key} className="text-strong font-semibold">
               {run.text}
             </strong>
+          )
+        }
+        if (run.kind === 'quote') {
+          if (!onQuote) return <span key={key}>{run.text}</span>
+          return (
+            /*
+              Underlined and dotted, the same treatment `Demander` gives a
+              citation — a quotation is evidence on every surface of this
+              product and should look like the same thing on all of them.
+              `inline` so it never breaks the line it sits in, and the guillemets
+              travel with it because the string is the rep's to read whole.
+            */
+            <button
+              key={key}
+              type="button"
+              onClick={() => onQuote(run.inner)}
+              className="text-body hover:text-strong decoration-muted underline decoration-dotted decoration-from-font underline-offset-4 transition"
+            >
+              {run.text}
+            </button>
           )
         }
         if (run.kind === 'faible') {

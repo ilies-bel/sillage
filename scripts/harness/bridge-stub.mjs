@@ -366,6 +366,20 @@ export function installAppBridge(config) {
     ['far', 'Concrètement il nous manque deux data engineers, et si possible un profil plus senior pour cadrer.'],
     ['rep', 'D’accord. Sur quelle stack ? Vous êtes toujours partis sur Databricks ?'],
     ['far', 'Oui, Databricks et Airflow, avec du dbt qu’on est en train de généraliser sur les domaines métier.'],
+    /*
+      The two turns the compte-rendu quotes.
+
+      Its prose lifted « trois personnes, dont deux à mi-temps sur le sujet » and
+      « une quarantaine, peut-être un peu plus » out of thin air — the call
+      contained neither, so the fixture's document quoted a conversation that had
+      not happened. The real composer cannot do that: the model only ever sees
+      the transcript, and `REGISTRE` licenses guillemets for words the client
+      actually said. Nothing on screen could show it until the prose's
+      quotations became followable; the first one pressed opened the reader on
+      « Cet extrait est introuvable dans la transcription ».
+    */
+    ['far', 'Côté équipe on est trois personnes, dont deux à mi-temps sur le sujet.'],
+    ['far', 'Sur les jobs Talend restants, on en a une quarantaine, peut-être un peu plus, sans inventaire consolidé.'],
     ['far', 'Le vrai sujet c’est qu’on doit sortir les pipelines Talend historiques d’ici la fin de l’année.'],
     ['rep', 'Et vous visez un démarrage à quelle échéance ?'],
     ['far', 'Idéalement début septembre. On ne veut pas attaquer la migration sans les renforts en face.'],

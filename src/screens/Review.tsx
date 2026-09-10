@@ -1006,7 +1006,17 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                     corrigez-le dans « Modifier ».
                   </p>
                 ) : null}
-                <CompteRenduDocument text={edits.compteRendu} />
+                {/*
+                  Every fragment the model quoted opens the record on it — the
+                  same reader `source ▸` opens, and the same one that says
+                  « introuvable » and seeds its search when the quote is not
+                  there. The prose is what VerySwing receives; until now it was
+                  the only claim on this screen with no way to check it.
+                */}
+                <CompteRenduDocument
+                  text={edits.compteRendu}
+                  onQuote={(quote) => locate({ quote, label: 'compte-rendu', from: 'answer' })}
+                />
               </>
             ) : (
               /*

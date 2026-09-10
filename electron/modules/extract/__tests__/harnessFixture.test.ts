@@ -25,6 +25,14 @@
  * A comment saying « keep the fixture faithful » has been written twice and
  * ignored twice. This is the check.
  *
+ * It holds a second property now, for the same reason and found the same way.
+ * `REGISTRE` licenses guillemets for words the client *actually said*, so a
+ * quotation in the compte-rendu is the one part of that prose which claims to be
+ * verbatim — and the fixture's document quoted two phrases the call did not
+ * contain. Nothing could show it until the prose's quotations became followable
+ * (DEC-21); the first one pressed opened the reader on « Cet extrait est
+ * introuvable dans la transcription ».
+ *
  * It asserts the one property that can be asserted without a model: the prose
  * sections of the fixture's compte-rendu pass the same leak check the real reply
  * must pass. The deterministic header is exempt for the reason the real one is —
@@ -80,5 +88,43 @@ test('the fixture’s compte-rendu is a document the composer could have produce
       'calendaire — le vrai composeur refuserait cette extraction (DEC-7), donc les captures ' +
       'montrent un document que le produit n’écrit pas. Attribue au côté (« le client », ' +
       '« la DSI ») : le canal est mesuré, la personne ne l’est pas.',
+  )
+})
+
+
+test('every quotation in the fixture’s compte-rendu is in the fixture’s call', () => {
+  const source = readFileSync(STUB, 'utf8')
+
+  const prose = /'## Résumé',([\s\S]*?)'## Éléments retenus'/.exec(source)?.[1]
+  const lines = /const LINES = \[([\s\S]*?)\n  \]/.exec(source)?.[1]
+  assert.ok(prose && lines, 'le harnais a changé de forme — mets ce test à jour')
+
+  /*
+   * The same fold `locateQuote` applies: accents dropped, case folded,
+   * punctuation collapsed. The model's transcription of what it read and the
+   * transcriber's own disagree on a comma often enough that an exact match would
+   * fail a citation that is perfectly real.
+   */
+  const fold = (text: string) =>
+    text
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+
+  const call = fold(lines)
+  const quotes = [...prose.matchAll(/«[\s\u00a0\u202f]?(\S(?:[^«»]*\S)?)[\s\u00a0\u202f]?»/gu)].map(
+    (match) => match[1] ?? '',
+  )
+  assert.ok(quotes.length >= 3, `attendues au moins trois citations, trouvées ${quotes.length}`)
+
+  const invented = quotes.filter((quote) => !call.includes(fold(quote)))
+  assert.deepEqual(
+    invented,
+    [],
+    'le compte-rendu de démonstration cite des mots que l’appel ne contient pas — ' +
+      'le vrai composeur ne peut pas : le modèle ne voit que la transcription, et ' +
+      'REGISTRE n’autorise les guillemets que pour ce que le client a dit.',
   )
 })

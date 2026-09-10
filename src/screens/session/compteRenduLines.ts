@@ -144,6 +144,25 @@ export type InlineRun =
    * a typesetter is for.
    */
   | { kind: 'faible'; text: string }
+  /**
+   * **A fragment the model quoted, which is the only part of the prose that
+   * claims to be verbatim** (DEC-21, DEC-44).
+   *
+   * `REGISTRE` licenses « … » for a few words the client actually said, when the
+   * formulation itself is the point — and nothing else in the compte-rendu makes
+   * that claim: the rest is the model reporting, hedges kept, quantities
+   * approximate. So the eleven typed fields each carried a `[source ▸]` and the
+   * two thousand four hundred pixels of prose beside them carried none, on the
+   * screen whose whole argument is that a claim must be checkable against the
+   * record.
+   *
+   * It is a run so that a surface which *has* the transcript can make it lead
+   * there. The parser only ever says « these words are inside guillemets »;
+   * whether they are in the recording is a question for whoever holds the
+   * segments, and a surface that does not hold them draws the quote as prose
+   * rather than as a control that goes nowhere (DEC-26).
+   */
+  | { kind: 'quote'; text: string; inner: string }
 
 /*
  * `\*\*(\S(?:[^*]*\S)?)\*\*` — bold may not be empty and may not open or close
@@ -153,8 +172,14 @@ export type InlineRun =
  * word boundary on both sides. Without the look-arounds `sillage_audio.rs` and
  * `elodie_v@…` would each swallow half a line into an italic run.
  */
+/*
+ * `«\s(…)\s»` — the French pair, with its spaces, and never spanning a line.
+ * The inner group is what `locateQuote` is handed; the run's own `text` is the
+ * whole thing including the guillemets, because the round-trip property is that
+ * the runs concatenate back to the exact string.
+ */
 const INLINE =
-  /(⚠\u00a0?\sfaible)|\*\*(\S(?:[^*]*\S)?)\*\*|(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])/gu
+  /(⚠\u00a0?\sfaible)|\*\*(\S(?:[^*]*\S)?)\*\*|(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])|(«[  ]?(\S(?:[^«»]*\S)?)[  ]?»)/gu
 
 /**
  * Split one line's prose into runs.
@@ -174,7 +199,10 @@ export function parseInline(text: string): InlineRun[] {
 
     const faible = match[1]
     const bold = match[2]
-    if (faible !== undefined) {
+    const quoted = match[4]
+    if (quoted !== undefined) {
+      runs.push({ kind: 'quote', text: quoted, inner: match[5] as string })
+    } else if (faible !== undefined) {
       // Whole, including its space — it is one mark, and splitting it would let
       // a line break fall between the glyph and the word.
       runs.push({ kind: 'faible', text: faible })

@@ -454,7 +454,14 @@ function Record({
             provenance rule: the *ink* carries the authorship, not the face.
           */
           <>
-            <CompteRenduDocument text={record.compteRendu} />
+            {/*
+              The same affordance the gate gives it, and here the record is in
+              the box above: pressing a quotation lights the turn it came from.
+            */}
+            <CompteRenduDocument
+              text={record.compteRendu}
+              onQuote={(quote) => setLocated(quote)}
+            />
             {/* Why the gutter is there, in the same words the other two screens use. */}
             <CompteRenduMarkersNote className="text-muted mt-2 text-meta" />
           </>

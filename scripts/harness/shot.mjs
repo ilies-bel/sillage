@@ -783,6 +783,39 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The prose given the provenance the fields already had** (DEC-21).
+   *
+   * Eleven typed rows each carried a `[source ▸]` and the twenty-four hundred
+   * pixels of compte-rendu beside them carried none — on the screen whose whole
+   * argument is that a claim must be checkable, about the string VerySwing
+   * actually receives. The only part of that prose which *claims* to be verbatim
+   * is what sits inside guillemets, so that is what leads to the record.
+   */
+  'review-citation-prose': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+      const quoted = page
+        .locator('main.fade-below button')
+        .filter({ hasText: '«' })
+        .first()
+      await quoted.click()
+      /*
+        The reader, opened on that fragment — the same one `source ▸` opens, and
+        the same one that says « introuvable » and seeds its search when the
+        quotation is not in the record.
+
+        Waited on by its *search field*, which is the one thing present in both
+        outcomes: a quote that is found lights a turn and says where, one that is
+        not says so and offers the nearest passages. A stage that waited on
+        either sentence would pass on one branch and hang on the other.
+      */
+      await page.getByPlaceholder('Rechercher dans la transcription…').waitFor()
+    },
+  },
+
   'review-sans-opportunite': {
     scenario: 'review',
     expand: true,
