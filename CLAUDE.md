@@ -482,8 +482,10 @@ node scripts/harness/serve.mjs                 # the same app at a URL, for tool
 ```
 
 `scripts/harness/README.md` has the screen list. `--scan` runs a design detector inside the
-rendered page and `--geometry` measures every element that hangs outside its box against the
-box that clips it. **A design pass that only reads `src/` has not looked at the product** — the
+rendered page; `--geometry`, `--targets`, `--prose` and `--a11y` are the four measured checks,
+and each exists because something shipped past a screenshot — clipped gutter markers, forty
+controls under 24×24, a measure rendering eighty-one characters, a control whose only name is
+« ‹ ». **A design pass that only reads `src/` has not looked at the product** — the
 defects that matter here live in rendered geometry and in the accessibility tree.
 
 ```

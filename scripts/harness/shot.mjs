@@ -13,6 +13,7 @@
  *   --geometry       measure the hanging markers against the box they hang in
  *   --targets        measure every control against WCAG 2.2's 24×24 minimum
  *   --prose          count the characters a line of each prose surface really holds
+ *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -726,6 +727,7 @@ function parseArgs(argv) {
     geometry: false,
     targets: false,
     prose: false,
+    a11y: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -744,6 +746,7 @@ function parseArgs(argv) {
     else if (arg === '--geometry') flags.geometry = true
     else if (arg === '--targets') flags.targets = true
     else if (arg === '--prose') flags.prose = true
+    else if (arg === '--a11y') flags.a11y = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -767,7 +770,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -853,6 +856,12 @@ async function main() {
     long = await prose(page)
   }
 
+  let unnamed = []
+  if (flags.a11y) {
+    await page.evaluate(() => document.fonts.ready)
+    unnamed = await a11y(page)
+  }
+
   /*
    * The app shell never scrolls the document: it is `h-full` with its own inner
    * `overflow-y-auto` columns, so a `fullPage` shot of it is exactly one
@@ -896,6 +905,14 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.a11y) {
+    if (unnamed.length === 0) console.log('  arbre: chaque contrôle a un nom')
+    else {
+      console.log(`  ✗ arbre: ${unnamed.length} problème(s)`)
+      for (const item of unnamed.slice(0, 8)) console.log(`   ✗ ${item.why} — ${item.what}`)
+      process.exitCode = 7
+    }
+  }
   if (flags.prose) {
     if (long.length === 0) console.log('  mesure: aucune ligne au-delà de 75 caractères')
     else {
@@ -937,6 +954,115 @@ async function main() {
     console.log('  console:')
     noise.forEach((p) => console.log('   ' + p))
   }
+}
+
+/**
+ * **The accessibility tree, which is half of what a design pass is looking at.**
+ *
+ * `CLAUDE.md` has said since the harness existed that « the defects that matter
+ * here live in rendered geometry and in the accessibility tree », and only the
+ * first half was ever measured. Three things are checked, and each is a defect
+ * a screenshot cannot show:
+ *
+ *  · **a control with no accessible name** — a button whose only content is a
+ *    glyph, an input with a placeholder and no label. It is on screen, it is
+ *    hittable, and to a screen reader it is « bouton ». The month chevrons and
+ *    the meter would each have been one without their `aria-label`;
+ *  · **a form control with no label at all** — `placeholder` is not one: it
+ *    disappears the moment a rep types, so the field a screen reader announces
+ *    as unnamed is also the field a sighted rep can no longer identify;
+ *  · **a skipped heading level** — the record's four panes jumped `h1 → h3`
+ *    once already, and a heading list is how a screen is navigated without a
+ *    mouse. `h1 → h2 → h4` is a rung missing from the ladder.
+ *
+ * The name is computed the way the platform computes it — `aria-label`,
+ * `aria-labelledby`, a `<label for>`, wrapping label text, then content — rather
+ * than trusted from one attribute.
+ */
+async function a11y(page) {
+  return page.evaluate(() => {
+    const out = []
+    const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+    const nameOf = (el) => {
+      const aria = el.getAttribute('aria-label')
+      if (aria && aria.trim()) return aria.trim()
+      const by = el.getAttribute('aria-labelledby')
+      if (by) {
+        const named = by
+          .split(/\s+/)
+          .map((id) => text(document.getElementById(id)))
+          .filter(Boolean)
+          .join(' ')
+        if (named) return named
+      }
+      if (el.id) {
+        const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+        if (text(label)) return text(label)
+      }
+      const wrapping = el.closest('label')
+      if (wrapping && wrapping !== el && text(wrapping)) return text(wrapping)
+      const title = el.getAttribute('title')
+      if (title && title.trim()) return title.trim()
+      return text(el)
+    }
+
+    const drawn = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (el.closest('[aria-hidden="true"]')) return false
+      return el.offsetParent !== null || style.position === 'fixed'
+    }
+
+    const describe = (el) =>
+      `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${(el.className || '').toString().split(' ')[0]}`
+
+    /*
+     * **A glyph is not a name.**
+     *
+     * The first version fell back to `textContent`, so « ‹ » counted and the
+     * month chevrons passed with their `aria-label` deleted — the check could
+     * not catch the exact defect it was written for. A name with no letter and
+     * no digit in it is a name a screen reader reads as punctuation: « ‹ »,
+     * « › », « ▸ », « — ». The rule is the same one `StateDot` already enforces
+     * for a colour, one modality over.
+     */
+    const speakable = (name) => /[\p{L}\p{N}]/u.test(name)
+
+    for (const el of document.querySelectorAll('button, a[href], [role="button"], select')) {
+      if (!drawn(el)) continue
+      const name = nameOf(el)
+      if (!speakable(name)) {
+        out.push({
+          why: name === '' ? 'contrôle sans nom accessible' : `nom illisible « ${name} »`,
+          what: describe(el),
+        })
+      }
+    }
+
+    for (const el of document.querySelectorAll('input:not([type="hidden"]), textarea')) {
+      if (!drawn(el)) continue
+      const named =
+        el.getAttribute('aria-label') ||
+        el.getAttribute('aria-labelledby') ||
+        (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) ||
+        el.closest('label')
+      // A placeholder is not a label: it is gone the moment a rep types.
+      if (!named) out.push({ why: 'champ sans étiquette (le placeholder n’en est pas une)', what: describe(el) })
+    }
+
+    let previous = 0
+    for (const el of document.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      if (!drawn(el)) continue
+      const level = Number(el.tagName.slice(1))
+      if (previous !== 0 && level > previous + 1) {
+        out.push({ why: `niveau de titre sauté (h${previous} → h${level})`, what: text(el).slice(0, 40) })
+      }
+      previous = level
+    }
+
+    return out
+  })
 }
 
 /**

@@ -26,6 +26,14 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * It carries `--a11y`, which is the half of a design pass a screenshot cannot
+ * show and which nothing had ever measured — `CLAUDE.md` has claimed since this
+ * harness existed that the defects that matter live « in rendered geometry and
+ * in the accessibility tree », and only the first half was checked. A control
+ * with no accessible name, a field whose only label is a placeholder that
+ * vanishes the moment a rep types, a rung missing from the heading ladder. A
+ * glyph is not a name: « ‹ » passes a textContent test and reads as punctuation.
+ *
  * It carries `--prose`, which counts the characters a line of each reading
  * surface really holds. `.measure` was `66ch` on the reasoning that a measure is
  * a count of characters — and `ch` is the advance of the digit zero, so it
@@ -95,7 +103,7 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''
