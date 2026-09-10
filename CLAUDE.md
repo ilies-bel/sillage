@@ -219,7 +219,9 @@ machine) or in `core/domain/` — never in an IPC handler.
   speaker the model mislabelled come back « introuvable », which discredits the evidence
   instead of the mistake.
 - **Every control clears 24×24, and it is measured** (`shot.mjs --targets`, WCAG 2.2 Target
-  Size). Forty-odd were under it, all 17–23px tall, and none of them looked wrong in the
+  Size). *Not rendered* and *crushed to nothing* are different: the check skips a control with
+  no layout box and reports one that has a box of zero, because the second is a field that lost
+  a flex fight and is the worst target there is. Forty-odd were under it, all 17–23px tall, and none of them looked wrong in the
   source: `py-1.5` around `--type-ui` resolves to nineteen pixels. `Button` and `Chip` carry
   `min-h-[24px]` with `inline-flex items-center` rather than more padding — padding moves the
   *text*, and these sit on shared baselines beside titles and section headers. The criterion's
@@ -485,8 +487,13 @@ box that clips it. **A design pass that only reads `src/` has not looked at the 
 defects that matter here live in rendered geometry and in the accessibility tree.
 
 ```
-node scripts/harness/smoke.mjs                 # every stage, driven, with the geometry check
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all three checks
 ```
+
+**Both sizes, always.** `smoke.mjs` drives 1280×800 *and* 960×600 — the width
+`main.ts` declares as the minimum — because every check passed at the comfortable
+size while 960 held a text field crushed to fourteen pixels and a client name
+painted over the label beside it.
 
 A stage is held together by the product's own French strings, so a copy change breaks one
 silently. That happened twice — the second time it broke six stages at once, including both
