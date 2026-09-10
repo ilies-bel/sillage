@@ -155,6 +155,22 @@ machine) or in `core/domain/` — never in an IPC handler.
   It is **never a gate**: *Continuer* is live on a step where nothing has been granted, and
   every exit — *Passer* and *Réglages ›* included — records `onboarding:seen`, because nagging
   somebody who said no is how an onboarding becomes the thing people close without reading.
+- **The keyboard is declared in one file and printed in Réglages** (`src/app/shortcuts.ts`).
+  VISION.md §6 says « keyboard-first » and there was not one global shortcut, so every route
+  cost a rep a mouse and a hunt. Six now: `Ctrl/⌘ N K H ,`, `Échap`, `Ctrl/⌘ Entrée`. Three
+  things are load-bearing. **Both modifiers, always, never detected** — Windows is the primary
+  platform and macOS is where this is typed, so a branch on the host is the mac-first mistake
+  `check-platform.mjs` exists to catch, and accepting both costs nothing. **The typing guard is
+  `closest`, not the target's tag** — a keydown in the notepad lands on the `<p>` the caret is
+  in, so a tag check sees an ordinary paragraph and lets `Ctrl N` start a recording from inside
+  the rep's own notes; `Échap` and `Ctrl Entrée` are the two exceptions because that is what
+  they do in every mail client. **An unclaimed key is never `preventDefault`ed**, so a screen
+  with no search leaves `Ctrl K` to the platform rather than turning it into a dead control
+  (DEC-26). It is not a command palette — that is modal chrome (HR-10) — and the gate's
+  accelerator exists only while *Valider* is already armed, as an absent handler rather than a
+  handler that declines, because a second path that could confirm what the button is refusing
+  is a second gate (DEC-4). The Réglages pane is a *view* of `SHORTCUTS`, never a second list.
+
 - **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
   This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
   sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers
@@ -170,6 +186,15 @@ machine) or in `core/domain/` — never in an IPC handler.
   The claimed channel is a **hint**, not a filter: narrowing to it made a real quote whose
   speaker the model mislabelled come back « introuvable », which discredits the evidence
   instead of the mistake.
+- **A gutter is owned by what hangs in it, and geometry is measured, not read.**
+  `CompteRenduDocument` sets `GUTTER` itself and no caller passes one: the three surfaces that
+  draw a compte-rendu each set their own `pl-6` — 24px, narrower than `### ` — and the session
+  pane set none at all, so ten of twenty-three markers were clipped for three review rounds.
+  Every one of them was in the accessibility tree and correct in `innerText`; a third of the
+  `###` was simply not painted. A DOM test cannot see that, so `shot.mjs --geometry` measures
+  every `data-hangs` element against the box it hangs in and prints the tightest clearance, and
+  `smoke.mjs` runs it on all twenty-six stages. Tune the gutter against that number.
+
 - **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
   same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
   column next door, on that turn, highlighted. When the quote is *not* in the record the reader
