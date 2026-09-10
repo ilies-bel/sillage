@@ -73,6 +73,36 @@ machine) or in `core/domain/` — never in an IPC handler.
   being heard" have opposite fixes. The transcript itself is untouched: captured, stored, and
   still the only thing a citation may point at (DEC-21). Do not reintroduce a live transcript
   surface to prove the tool is working; that job now has an instrument.
+- **The compte-rendu is typeset, and every marker stays on screen.** The document is drawn by
+  `CompteRenduDocument` — the `#`, the `##` and the `- ` hang muted in a left gutter, the way an
+  editor shows them, and the prose beside them is set as prose. That is not a markdown renderer
+  and must not become one: the invariant below is that VerySwing receives the string the rep
+  read, and a renderer *hides* the markers, so a table that appeared would look like a table on
+  screen and land in the CRM as literal pipes. `compteRenduLines.ts` recognises exactly the
+  closed vocabulary the recipe writes; anything else falls through and is drawn verbatim, which
+  is the point. Its one property — `serialize(parse(x)) === x` — is proved for every fixture,
+  and a DOM test asserts the pane's own text still contains every marker. The prompt's soft
+  wraps are undone at *composition* time by `unwrapProse`, not at render time, so the stored
+  string is the clean one.
+- **One reading measure, `.measure` in `index.css`, 38rem.** The notepad, the compte-rendu on
+  three screens, the follow-up draft and Réglages' prose all share it. Every one of them used to
+  set its own width, and each was set by what fit rather than by what reads — 98 characters a
+  line in the notepad, 130 at the gate. Nothing is clipped and nothing overlaps, which is
+  exactly why three screenshot reviews missed it: an unreadably long line is invisible in a
+  picture. A new pane that holds prose uses the class; it never picks its own number.
+- **The gate opens on the doubt, and never draws an inert primary** (DEC-4, DEC-21). The rail
+  scrolls to the first `⚠ faible` field on open — the screen was flagging a field in the header
+  and hiding it six rows below the fold. *Valider* is withheld until the rail has been on
+  screen, and while it is withheld the primary slot holds the control that *shows* the rest,
+  never a greyed copy of *Valider*: a disabled primary is a button a rep presses. That is not a
+  second gate — pressing it confirms nothing — and the guard is stated as « is there something
+  below the fold », so an environment that cannot lay out fails **open**.
+- **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
+  same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
+  column next door, on that turn, highlighted. When the quote is *not* in the record the reader
+  says so and seeds its search with the fragment that failed. It is asked for by a click and
+  never fetched otherwise, and it is **not** the live transcript pane DEC-38 removed: that was a
+  proof of life during a call and is still the input meter's job.
 - **No `/NN` opacity modifier on a design token.** Tailwind cannot recompute alpha on a bare
   `var()`, so `bg-muted/30` compiles to *no rule at all* — the class name is spelled right,
   nothing throws, and the element is simply unstyled. Two shipped that way: the meter's
