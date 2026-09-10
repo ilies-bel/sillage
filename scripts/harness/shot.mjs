@@ -364,9 +364,16 @@ const SCREENS = {
     async drive(page) {
       await SCREENS['session-compte-rendu'].drive(page)
       await page.getByRole('button', { name: 'Qu’est-ce qui a été dit sur le TJM ?' }).click()
-      // The unverified citation is the last row and the point of the shot.
+      /*
+        The answer first, then its last citation.
+
+        Waiting only on the tail — « introuvable dans la transcription » — was
+        racing the render of a list that arrives in one commit, and the stage
+        failed twice in eight runs. The prose is what lands first, so waiting on
+        it is waiting for the panel to have answered at all.
+      */
+      await page.getByText(/revient dessus à/).waitFor()
       await page.getByText('introuvable dans la transcription', { exact: false }).waitFor()
-      await page.waitForTimeout(300)
     },
   },
 

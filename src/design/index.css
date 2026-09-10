@@ -256,6 +256,30 @@
    * the same element — the rule matched, computed, and was overridden, which is
    * the same silent-no-op class of failure as `bg-muted/30`.
    */
+  /*
+   * **The suggestions are scaffolding, and a narrow column cannot afford them.**
+   *
+   * At 960 — the window's own minimum — the compte-rendu column is 542px tall
+   * and *Demander* takes 250 of it: an input, two captions, and three suggested
+   * questions that wrap to two rows at that width. The document was left with
+   * 292px of a 2046px scroll, which is fourteen per cent of the thing the
+   * screen exists to show. The chips answer « what can I ask it », which is a
+   * question a rep has once; the document is the deliverable, every time.
+   *
+   * A container query, for the reason the slate's is one: this panel is a
+   * different width on the session screen, at the gate and on the reader, and
+   * the question is whether *this* instance has the room.
+   */
+  .ask {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 430px) {
+    .ask .ask-suggestions {
+      display: none;
+    }
+  }
+
   @container (max-width: 250px) {
     .slate .slate-row {
       display: block;

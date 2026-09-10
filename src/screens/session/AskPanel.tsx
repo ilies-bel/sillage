@@ -125,7 +125,11 @@ export function AskPanel({ meetingId, onLocate, pinned = false, className }: Ask
   const remaining = SUGGESTIONS.filter((suggestion) => !asked.includes(suggestion))
 
   return (
-    <section className={pinned ? `flex min-h-0 flex-col ${className ?? ''}` : className}>
+    <section
+      className={
+        pinned ? `ask flex min-h-0 flex-col ${className ?? ''}` : `ask ${className ?? ''}`
+      }
+    >
       <form
         className="flex shrink-0 items-center gap-inline"
         onSubmit={(event) => {
@@ -167,7 +171,7 @@ export function AskPanel({ meetingId, onLocate, pinned = false, className }: Ask
         by what has been asked keeps the offer honest without ever repeating one.
       */}
       {failure === null && !busy && remaining.length > 0 ? (
-        <ul className="mt-2 flex shrink-0 flex-wrap gap-1.5">
+        <ul className="ask-suggestions mt-2 flex shrink-0 flex-wrap gap-1.5">
           {remaining.map((suggestion) => (
             <li key={suggestion}>
               <button
