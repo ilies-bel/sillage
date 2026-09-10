@@ -5,9 +5,19 @@ device, without Graph, VerySwing or an LLM key — and runs a design detector
 inside that same rendered page.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--sans-entra]
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--no-png] [--sans-entra]
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
+
+**`--no-expand` is the flag a design pass wants.** Three screens ask for
+`expand` in their own plan because what matters on them sits below an inner
+fold — but the same unclipping deletes whatever is *pinned* to the bottom of a
+column, and the review gate now pins its decision there. A shot of `review`
+without this flag photographs a screen no rep has ever seen: the whole panel at
+once, with the one button somewhere in the middle of it. Use `--no-expand` on
+`review`, `historique` and `reglages` whenever the question is « what does the
+rep get », and shoot at **1280×800** as well as 1440×900 — the reps this ships
+to are on Windows laptops (HR-2).
 
 ## The two entry points
 
@@ -32,6 +42,16 @@ state. That is why every browser-mode design pass this repo has run came back
 empty — not because the screens were clean. `?scenario=` picks the dataset,
 `?freeze=0` unpins the clock. Only the entry screens are reachable that way;
 anything behind a click needs `shot.mjs`.
+
+## Two screens that only exist as a gesture
+
+`review-transcription` and `review-transcription-introuvable` are the same
+screen reached the way a rep reaches it: open a field's `source ▸`, then press
+« Voir dans la transcription › ». There is no URL for that state and there
+should not be one — it is a gesture on one column answered by the other. The
+first stages a citation the extraction verified (found, highlighted, scrolled
+to); the second stages the one it could not, where the reader says so instead of
+opening silently at 0:00.
 
 ## Why it works
 
@@ -82,7 +102,7 @@ what `serve.mjs` drops the meta for.
 
 | screen | what it stages |
 |---|---|
-| `splash` | screen 0 (DEC-30): base locale ready, audio still pending, the first-run model download at 42 % with its progress bar |
+| `splash` | screen 0 (DEC-30): base locale ready (« ouverte · sur cette machine », the phrase `main.ts` really publishes), audio still pending, the first-run model download at 42 % with its size and its remaining time under the bar |
 | `agenda` | *Calendrier* on a full day — month grid with marks, two calls ahead, one **Prêt** (armed, HR-7), two under *Passées*, the search bar with client chips, `Tout fonctionne` in the header |
 | `agenda-empty` | DEC-31's own case: a day with nothing on it, grid and search bar still drawn. The day is found by its accessible name, not by date, so the shot does not expire |
 | `agenda-semaine` | the same day in the **Semaine** view |
@@ -92,7 +112,9 @@ what `serve.mjs` drops the meta for.
 | `session` | *En réunion* — the rep's own ProseMirror notes filling the frame, the seven-slot signal rail on the right, and the two-channel level meter in the recording pill fed a speech-shaped history over `audio:level` — the rep above the baseline, the far end below, both with bars under the transcription floor — `00:22:00` on the clock |
 | `session-attente` | the same meeting **ended with no model configured** (DEC-39) — the notice that used to be a blank screen, stating that the transcript and the notes are safe and that the compte-rendu follows as soon as a model exists, beside *Choisir un modèle* |
 | `session-compte-rendu` | the same meeting **after the analysis** — three columns: the rep's own notes, still editable and still theirs (DEC-5), the compte-rendu, and the slate, all drawn at once with nothing pressed. *Relire et valider* is still the only door to the gate (DEC-4) |
-| `review` | the gate (DEC-4): the compte-rendu, eleven fields with `⚠ faible` on *Objections*, group-account chips, the Outlook draft, and the three intents above one *Valider* |
+| `review` | the gate (DEC-4): the compte-rendu typeset with its markers in the gutter and the Outlook draft under it at the reading measure, eleven fields each stating what verified it, and the three intents pinned above one *Valider*. Shoot it `--no-expand` |
+| `review-transcription` | the same gate with a **verified** citation followed into the record: the cited turn highlighted and scrolled to, headed « Citation du champ « Besoin », à 3:58. », with the field still on screen beside it |
+| `review-transcription-introuvable` | the other verdict — the one field the extraction could not verify. The reader says the quote is not in the transcript instead of opening silently at 0:00 |
 | `historique` | the reader (DEC-25): seven calls with per-intent push status, one row expanded into transcript · notes · compte-rendu · extraction · envois |
 | `reglages` | *Connecteurs*, opened where the header control lands: **Requis** with one *à vérifier*, **Facultatifs** with VerySwing down and Outlook to check, two *Réessayer*, and the VSA tenant probe |
 | `agenda-sans-entra` | the same calendar with **no Entra app registration** — see below |
