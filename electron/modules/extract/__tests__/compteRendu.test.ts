@@ -150,7 +150,19 @@ test('a field whose citation did not verify wears ⚠ faible, and only that fiel
 
   assert.match(document, new RegExp(`- \\*\\*TJM évoqué\\*\\* : .*${FAIBLE_MARKER}`))
   assert.doesNotMatch(document, new RegExp(`- \\*\\*Besoin\\*\\* : .*${FAIBLE_MARKER}`))
-  assert.equal(document.split(FAIBLE_MARKER).length - 1, 2)
+  // Two marked fields, plus the one line at the foot that says what the marker
+  // means. The marker is not only read at the gate: this string is the body of
+  // the VerySwing task, where a delivery manager who has never seen the review
+  // screen gets a dingbat and a lowercase adjective at the end of a line.
+  assert.equal(document.split(FAIBLE_MARKER).length - 1, 3)
+  assert.match(document, /n’a pas été retrouvée dans la transcription/)
+})
+
+test('a compte-rendu with nothing to flag carries no apparatus at all', () => {
+  const document = renderCompteRendu(sampleExtraction, allOk)
+
+  assert.ok(!document.includes(FAIBLE_MARKER))
+  assert.doesNotMatch(document, /retrouvée dans la transcription/)
 })
 
 // The marker is the half of DEC-18 that was doing the work. The other half —

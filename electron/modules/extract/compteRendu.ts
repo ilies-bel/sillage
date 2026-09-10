@@ -335,5 +335,25 @@ export const renderCompteRendu = (
     ),
   ]
 
-  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
+  /*
+   * **The marker explains itself, once, in the document that carries it.**
+   *
+   * `⚠ faible` is written into the compte-rendu on purpose — the whole of DEC-21
+   * is that a rep skimming the document, rather than opening the form, still
+   * sees which sentence the app could not stand behind. But this string is also
+   * the body of the VerySwing task, and there it is read by a delivery manager,
+   * a consultant, a recruiter — none of whom have ever seen the review gate, its
+   * header banner or its orange rail. To them it was a dingbat and a lowercase
+   * adjective at the end of a line.
+   *
+   * One line at the foot, and only when a marker is actually present, so a
+   * clean compte-rendu carries no apparatus at all. It is the same rule the
+   * screens follow (DEC-26): nothing on it is unexplained.
+   */
+  const document = lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+  const legend = document.includes(FAIBLE_MARKER)
+    ? `\n\n${FAIBLE_MARKER} : la citation de cette valeur n’a pas été retrouvée dans la transcription. À confirmer auprès du client.`
+    : ''
+
+  return `${document}${legend}\n`
 }

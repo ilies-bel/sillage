@@ -487,6 +487,22 @@ export interface DraftIntentsInput {
   edits: ReviewEdits
   mailTo: readonly string[]
   /**
+   * Whether a Microsoft account is connected at all.
+   *
+   * Optional and defaulting to `true`, so every caller written before this
+   * drafts exactly what it always drafted.
+   *
+   * It exists because « Aucun destinataire au calendrier. » was the *only*
+   * reason this row could give, and on the build the first demo ships in
+   * (DEC-28) it is a true sentence about the wrong thing: there is no Entra
+   * registration, so there is no calendar to have attendees in and no account to
+   * draft from either. A rep reading it goes looking for people to add to a
+   * meeting, which is a search that cannot succeed. Both causes are real and
+   * they have different remedies, so the row names the one that is actually in
+   * the way — the deeper one first.
+   */
+  mailAccount?: boolean
+  /**
    * Which recipe produced the document being confirmed. Defaults to the ESN one,
    * so a caller written before DEC-43 drafts exactly what it always drafted.
    */
@@ -551,7 +567,8 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
   const opportunityId = intentIdFor(meetingId, 'crm.opportunity')
   const opportunityPossible = typedFields && edits.accountId !== null && taskPossible
   const opportunityChecked = opportunityPossible && checked.has(opportunityId)
-  const mailPossible = mailTo.length > 0
+  const mailAccount = input.mailAccount ?? true
+  const mailPossible = mailAccount && mailTo.length > 0
 
   const description = [
     edits.besoin,
@@ -661,7 +678,11 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
         label: INTENT_LABEL[kind],
         summary: mailPossible ? `${edits.mailSubject} → ${mailTo.join(', ')}` : 'Indisponible',
         available: mailPossible,
-        reason: mailPossible ? null : 'Aucun destinataire au calendrier.',
+        reason: mailPossible
+          ? null
+          : !mailAccount
+            ? 'Aucun compte Microsoft connecté.'
+            : 'Aucun destinataire au calendrier.',
       },
       // A draft, never a send (HR-8). `modules/mail` posts to
       // `/me/messages`, which creates a draft in the rep's mailbox.

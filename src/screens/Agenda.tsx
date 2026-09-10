@@ -47,7 +47,13 @@ import {
   weekOf,
   type DayKey,
 } from '../app/calendar.ts'
-import { formatAgo, formatDayLong, formatDayMedium, formatMonthLong } from '../app/format.ts'
+import {
+  formatAgo,
+  formatDayLong,
+  formatDayMedium,
+  formatMonthLong,
+  upperFirst,
+} from '../app/format.ts'
 import { Button, Segmented, unavailable, type SegmentedOption } from '../ui/index.ts'
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
@@ -388,8 +394,8 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           />
 
           <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-strong capitalize text-copy">
-              {searching ? 'Résultats' : rangeLabel(view, selected, month)}
+            <h2 className="text-strong text-copy">
+              {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month))}
             </h2>
             {/*
               The view switch belongs to the day list, so it goes with it. A

@@ -31,6 +31,30 @@ const dayShort = new Intl.DateTimeFormat(LOCALE, {
   timeZone: TIME_ZONE,
 })
 
+/**
+ * **The first letter, and only the first letter.**
+ *
+ * French does not capitalise the names of days or months, so `Intl` correctly
+ * returns « jeudi 10 septembre » and « septembre 2026 » — and five call sites
+ * were putting them on screen through Tailwind's `capitalize`, which is
+ * `text-transform: capitalize` and capitalises **every word**. The calendar's
+ * own headings therefore read « Jeudi 10 Septembre » and « Septembre 2026 », in
+ * 20px type, in a product whose compte-rendu gets « jeudi 10 septembre 2026 »
+ * right two screens away.
+ *
+ * It is done here rather than in CSS because `::first-letter` does not apply to
+ * an inline box, so the fix would have had to change the layout of the spans it
+ * landed on. A string is a string.
+ *
+ * `Array.from` and not `[0]`: a first letter can be a surrogate pair, and
+ * slicing one in half is how a formatter turns a date into a replacement
+ * character.
+ */
+export const upperFirst = (value: string): string => {
+  const [first, ...rest] = Array.from(value)
+  return first === undefined ? value : first.toLocaleUpperCase(LOCALE) + rest.join('')
+}
+
 /** `5 août` — a day inside a month the reader already has in front of them. */
 const dayMedium = new Intl.DateTimeFormat(LOCALE, {
   day: 'numeric',

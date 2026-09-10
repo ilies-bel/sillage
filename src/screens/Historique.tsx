@@ -226,6 +226,20 @@ function Row({ row, expanded, onToggle }: RowProps) {
   )
 }
 
+/**
+ * An adapter's failure sentence, closed off so the next sentence can start.
+ *
+ * These come from `VsaCrm` and `OutlookMail` and are written as fragments —
+ * « jeton Microsoft expiré — reconnexion nécessaire », « la sandbox VSA n'a pas
+ * répondu en 10 s ». They are never rewritten (a paraphrase is one more thing
+ * that can disagree with the log); they are punctuated.
+ */
+const sentence = (reason: string | null): string => {
+  const trimmed = reason?.trim() ?? ''
+  if (trimmed === '') return 'Cause non enregistrée.'
+  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
 /** Which application a rep has to open to find out what really happened. */
 const WHERE_TO_LOOK: Record<HistoryIntent['kind'], string> = {
   'crm.task': 'VerySwing',
@@ -260,7 +274,17 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
           {/* The adapter's own sentence. Never a rewrite of it: what a rep
               reads here is what the CRM said, and a paraphrase would be one
               more thing that can disagree with the log. */}
-          <span className="text-muted">{intent.lastError ?? 'Cause non enregistrée.'}</span>{' '}
+          {/*
+            The adapter's sentence, then ours, with a separator between them.
+
+            They were joined by a bare space, and the adapter's sentence does not
+            end in a full stop — so the row read « …reconnexion nécessaire À
+            vérifier dans Outlook avant de refaire l'envoi. », a capital À
+            colliding with a lowercase word and the boundary between two
+            different voices swallowed. The em dash is the one this app already
+            uses to join a clause to its consequence.
+          */}
+          <span className="text-muted">{sentence(intent.lastError)}</span>{' '}
           {/*
             Named by the system that was actually being written to. « À vérifier
             dans VerySwing » under a failed *Outlook* draft sends the rep to the

@@ -309,13 +309,33 @@ const SCREENS = {
     scenario: 'review',
     async drive(page) {
       await SCREENS.review.drive(page)
-      for (let i = 0; i < 4; i++) {
-        const reveal = page.getByRole('button', { name: /^Afficher / })
-        if ((await reveal.count()) === 0) break
-        await reveal.first().click()
-        await page.waitForTimeout(700)
+      /*
+        Match on the *shape* of the two controls rather than on their wording.
+
+        This waited on `/^Afficher /` and on the exact string `Valider`, and both
+        changed the same week: the reveal control became a page turn (« Lire la
+        suite du compte-rendu » / « Voir la suite de ce qui part ») and the
+        primary started naming what it ships (« Valider malgré 1 champ non
+        vérifié »). The stage then failed at every viewport — so the one screen
+        that photographs the armed gate, which is the product's headline claim,
+        could not be photographed by the documented design pass, and nothing said
+        so until a reviewer tried.
+
+        `/^(Lire|Voir) la suite/` is the page turn and `/^Valider/` is the
+        primary in both of its states. A copy change that breaks *these* has
+        changed what the controls are, not how they are worded, and should fail
+        here.
+
+        The loop is bounded well above the number of turns a column needs: the
+        document is about three screenfuls at 800px and grows with the recipe.
+      */
+      for (let i = 0; i < 12; i++) {
+        const turn = page.getByRole('button', { name: /^(Lire|Voir) la suite/ })
+        if ((await turn.count()) === 0) break
+        await turn.first().click()
+        await page.waitForTimeout(500)
       }
-      await page.getByRole('button', { name: 'Valider' }).waitFor()
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
       await page.waitForTimeout(400)
     },
   },

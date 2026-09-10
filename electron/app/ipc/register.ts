@@ -547,7 +547,7 @@ export const handlers: Handlers = {
    * `panel` field to fill in. There is no code path from here to a partially
    * rendered gate during a call.
    */
-  'review:get': ({ meetingId }, { store, orchestrator }) => {
+  'review:get': ({ meetingId }, { store, orchestrator, identity }) => {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
 
@@ -577,11 +577,15 @@ export const handlers: Handlers = {
     // extraction has not run yet — offering an opportunity built from fields
     // that are not in the document on screen.
     const recipe = extraction.interpretation.recipe
+    // Whether there is an account to draft from at all. Both passes, or the
+    // gate would open on one reason and its first preview would replace it.
+    const mailAccount = authState(identity).status === 'signedIn'
     const probe = draftIntents({
       meetingId,
       facts: extraction.facts,
       edits,
       mailTo,
+      mailAccount,
       recipe,
       checked: [],
     })
@@ -590,6 +594,7 @@ export const handlers: Handlers = {
       facts: extraction.facts,
       edits,
       mailTo,
+      mailAccount,
       recipe,
       checked: defaultChecked(probe),
     })
@@ -634,7 +639,7 @@ export const handlers: Handlers = {
    * throwing: this runs while the rep is typing, and a rejected promise there
    * would surface as an error banner over a screen that is working fine.
    */
-  'review:preview': ({ meetingId, edits, intentIds }, { store }) => {
+  'review:preview': ({ meetingId, edits, intentIds }, { store, identity }) => {
     const stored = store.projections.extraction(meetingId)
     if (!stored) return { intents: [] }
 
@@ -645,6 +650,10 @@ export const handlers: Handlers = {
         facts,
         edits,
         mailTo: mailRecipients(facts.interlocuteurs),
+        // Whether there is an account to draft from, so the disabled row can
+        // name the blocker that is actually in the way rather than the one it
+        // happens to notice first (DEC-26, DEC-28).
+        mailAccount: authState(identity).status === 'signedIn',
         recipe: stored.extraction.interpretation.recipe,
         checked: intentIds,
       }).map((d) => d.view),

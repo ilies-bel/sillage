@@ -18,7 +18,7 @@
  *    a line in this pane, not a banner over the product.
  */
 import type { ReactNode } from 'react'
-import { formatRange, formatTime, formatDayMedium } from '../../app/format.ts'
+import { formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
 import { Button, EmptyState, List, Row, RowTitle, SectionHeader, StateDot } from '../../ui/index.ts'
 import { STATE_LABEL, type AgendaEntry } from './entries.ts'
@@ -128,7 +128,7 @@ function EntryRow({ entry, showDay, onOpen }: EntryRowProps) {
     <Row density="roomy" align="center">
       <span className="text-muted w-28 shrink-0 tabular-nums text-ui">
         {showDay ? (
-          <span className="block capitalize">{formatDayMedium(noonOf(entry.day))}</span>
+          <span className="block">{upperFirst(formatDayMedium(noonOf(entry.day)))}</span>
         ) : null}
         {entry.end === null || entry.end <= entry.start
           ? formatTime(entry.start)

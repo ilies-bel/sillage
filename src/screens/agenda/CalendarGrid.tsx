@@ -19,7 +19,13 @@
  * orange.
  */
 import { addMonths, monthMatrix, monthOf, noonOf, type DayKey } from '../../app/calendar.ts'
-import { formatDayLong, formatDayNumber, formatMonthLong, formatWeekdayShort } from '../../app/format.ts'
+import {
+  formatDayLong,
+  formatDayNumber,
+  formatMonthLong,
+  formatWeekdayShort,
+  upperFirst,
+} from '../../app/format.ts'
 import { cn } from '../../lib/utils.ts'
 import { Button } from '../../ui/index.ts'
 import type { DayMark } from './entries.ts'
@@ -61,7 +67,7 @@ export function CalendarGrid({
         <Button variant="text" aria-label="Mois précédent" onClick={() => onMonth(addMonths(month, -1))}>
           ‹
         </Button>
-        <h2 className="text-strong text-copy capitalize">{formatMonthLong(noonOf(month))}</h2>
+        <h2 className="text-strong text-copy">{upperFirst(formatMonthLong(noonOf(month)))}</h2>
         <Button variant="text" aria-label="Mois suivant" onClick={() => onMonth(addMonths(month, 1))}>
           ›
         </Button>
@@ -74,9 +80,9 @@ export function CalendarGrid({
               <th
                 key={day}
                 scope="col"
-                className="text-muted pb-1 text-label font-medium capitalize"
+                className="text-muted pb-1 text-label font-medium"
               >
-                {formatWeekdayShort(noonOf(day))}
+                {upperFirst(formatWeekdayShort(noonOf(day)))}
               </th>
             ))}
           </tr>

@@ -222,6 +222,21 @@
     min-height: 100%;
     /* The same measure, in the same unit. See `.measure` above. */
     max-width: 66ch;
+    /*
+     * Centred in whatever column it is given.
+     *
+     * The measure caps the text; it does not cap the column. During a call the
+     * session screen is notes plus the signal rail and nothing else (DEC-23), so
+     * on a 1280 laptop the notepad is a ~1500px column holding 554px of writing
+     * — the rep's own notes hugging the left edge with a thousand pixels of
+     * nothing beside them, which reads as a pane that failed to load rather than
+     * as a page.
+     *
+     * `auto` and not a fixed inset: after the call the same notepad is one of
+     * three columns and the measure fills it, where auto margins resolve to
+     * zero and nothing moves.
+     */
+    margin-inline: auto;
     color: var(--ink-rep);
   }
 
@@ -397,6 +412,43 @@
   .fade-below[data-below="true"] {
     -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
     mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+  }
+
+  /*
+   * The same sentence at the other edge, and the review rail is why it exists.
+   *
+   * The gate scrolls to the first `⚠ faible` row on open (DEC-21), which on a
+   * 1280×800 laptop lands the rail ninety-four per cent of the way down its own
+   * scroll. Seven rows are then above the fold with nothing saying so, and the
+   * top edge cuts a value box clean through — a floating « début septembre 2026 »
+   * with the label that names it sheared off above it. That reads as a rendering
+   * fault, which is precisely what `fade-below` was written to stop the *other*
+   * edge doing.
+   *
+   * The combined rule is not optional: two `mask-image` declarations do not
+   * compose, so a column with content above *and* below needs the four-stop
+   * gradient or one of the two fades silently wins.
+   */
+  .fade-below[data-above="true"] {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 28px);
+    mask-image: linear-gradient(to bottom, transparent, black 28px);
+  }
+
+  .fade-below[data-above="true"][data-below="true"] {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black 28px,
+      black calc(100% - 28px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black 28px,
+      black calc(100% - 28px),
+      transparent
+    );
   }
 
   .filter-scroller {

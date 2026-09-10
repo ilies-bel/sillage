@@ -39,7 +39,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
 import { invoke } from '../../app/bridge.ts'
 import { atParis, noonOf, parseClock, type DayKey } from '../../app/calendar.ts'
-import { formatDayMedium } from '../../app/format.ts'
+import { formatDayMedium, upperFirst } from '../../app/format.ts'
 import { Button, unavailable } from '../../ui/index.ts'
 
 interface NewMeetingProps {
@@ -279,7 +279,7 @@ export function NewMeeting({
       />
 
       <label className="text-muted flex items-center gap-2 text-ui">
-        <span className="capitalize">{formatDayMedium(noonOf(day))}</span>
+        <span>{upperFirst(formatDayMedium(noonOf(day)))}</span>
         <input
           type="time"
           value={clock}

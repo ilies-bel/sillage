@@ -64,6 +64,26 @@ class FakeIpcMain implements IpcMainLike {
   }
 }
 
+/**
+ * A rep who is signed into Microsoft.
+ *
+ * `open()` deliberately leaves `identity` null — that is the build the first
+ * demo ships in (DEC-28) and every channel has to answer in it. But an Outlook
+ * draft genuinely cannot be created without an account, so a test that expects
+ * one has to say the rep has one. It used to not need saying, and the gate
+ * offered a draft it could not create.
+ */
+const signIn = (deps: IpcDeps) => {
+  deps.identity = {
+    account: () => ({ id: 'a-1', name: 'Julien Marchand', email: 'julien@synapse-it.fr' }),
+    signIn: async () => {
+      throw new Error('jamais appelé ici')
+    },
+    signOut: async () => {},
+    token: async () => 'jeton',
+  }
+}
+
 const open = () => {
   let now = 1000
   const clock = () => now++
@@ -391,6 +411,7 @@ test('DEC-23: confirming mid-call is refused before a single event is written', 
 
 test('the open gate pre-fills every field and cites a source for the interpretive ones', async () => {
   const { ipc, deps, cleanup } = open()
+  signIn(deps)
   atGate(deps, 'm1')
 
   const panel = await editsFor(ipc, 'm1')
@@ -824,8 +845,40 @@ test('the search happens in the main process: no transcript crosses the boundary
   cleanup()
 })
 
+/**
+ * **A disabled row names the blocker that is actually in the way** (DEC-26).
+ *
+ * « Aucun destinataire au calendrier. » was the only sentence the Outlook row
+ * had, and on the build the first demo ships in (DEC-28) it is a true statement
+ * about the wrong thing: there is no Entra registration, so there is no calendar
+ * for a meeting to have attendees in *and* no account to draft from. A rep reads
+ * it and goes looking for people to add to the invitation — a search that cannot
+ * succeed, because adding ten attendees would change nothing.
+ *
+ * Both causes are real and they have different remedies, so the deeper one is
+ * named first.
+ */
+test('with no Microsoft account the Outlook row says so, not that nobody is invited', async () => {
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+
+  const panel = await editsFor(ipc, 'm1')
+  const mail = panel.intents.find((intent) => intent.kind === 'mail.draft')
+
+  assert.equal(mail?.available, false)
+  assert.equal(mail?.reason, 'Aucun compte Microsoft connecté.')
+
+  // And the two VerySwing intents are untouched by it — the CRM does not go
+  // through Microsoft, and an optional connector never disables another (DEC-26).
+  assert.ok(panel.intents.filter((i) => i.kind !== 'mail.draft').every((i) => i.available))
+  cleanup()
+})
+
 test('a row carries the push status of each intent', async () => {
   const { ipc, deps, cleanup } = open()
+  // The mail draft is one of the three statuses this row reports, and it is only
+  // drafted when there is an account to draft from.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
   await ipc.invoke('review:confirm', {

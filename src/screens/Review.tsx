@@ -209,6 +209,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       el !== null && el.scrollTop + el.clientHeight >= el.scrollHeight - 8
     if (atEnd(docRef.current)) readToEnd.current.document = true
     if (atEnd(railRef.current)) readToEnd.current.rail = true
+
+    /*
+     * « There is something above », written straight onto the element.
+     *
+     * Not React state: it is a purely visual property of the scroll position,
+     * it changes on every scroll tick, and routing it through `useState` would
+     * re-render two long columns to move a mask. `data-below` is state because
+     * the *button* depends on it; this one nothing depends on.
+     */
+    for (const el of [docRef.current, railRef.current]) {
+      if (el) el.dataset.above = String(el.scrollTop > 8)
+    }
     /*
      * **Both columns, and this is the whole of the guard's honesty.**
      *
@@ -721,7 +733,24 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             ref={railRef}
             onScroll={measure}
             data-below={below === 'rail'}
-            className="fade-below min-h-0 flex-1 overflow-y-auto px-row py-row"
+            /*
+              `pb-block` on top of `py-row`, and it is not decoration.
+
+              Two things sit at the bottom of this scroller — the group chips and
+              « Interlocuteurs : … », the list of people the Outlook draft goes to
+              — and the pinned « Ce qui sera créé » panel begins at the scroller's
+              bottom edge to the pixel. The detector measured the recipients line
+              at `top: 503.30` and the panel at `top: 503.30`: at the scroll
+              position the gate opens on, the names of the people about to be
+              mailed were exactly one hundred per cent hidden, on the screen whose
+              only job is to show a rep what they are about to send.
+
+              Trailing space also lets the *last* rows reach the top of the
+              column, which is what the `⚠ faible` jump needs: without it the
+              scroller hits its maximum before the target row gets there and the
+              rep lands on a value box whose label has been sheared off above it.
+            */
+            className="fade-below min-h-0 flex-1 overflow-y-auto px-row pb-block pt-row"
           >
           <SectionHeader>Prêt à envoyer</SectionHeader>
 

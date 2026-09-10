@@ -1647,6 +1647,17 @@ export function installAppBridge(config) {
               ? null
               : 'Compte non résolu — une opportunité ne peut pas être créée sans client identifié.',
           },
+          /*
+            The same two reasons `reviewGate.ts` gives, in the same order.
+
+            The `sans-entra` scenario is the build the first demo ships in
+            (DEC-28) — no Entra registration, so no calendar and no account to
+            draft from. « Aucun destinataire au calendrier. » was the only
+            sentence this row had, and there it is a true statement about the
+            wrong thing: a rep reads it and goes looking for attendees to add,
+            which is a search that cannot succeed. The blocker that is actually
+            in the way is named first.
+          */
           {
             id: payload.meetingId + ':mail.draft',
             kind: 'mail.draft',
@@ -1654,7 +1665,12 @@ export function installAppBridge(config) {
             summary:
               mailTo.length > 0 ? edits.mailSubject + ' → ' + mailTo.join(', ') : 'Indisponible',
             available: mailTo.length > 0,
-            reason: mailTo.length > 0 ? null : 'Aucun destinataire au calendrier.',
+            reason:
+              mailTo.length > 0
+                ? null
+                : entra
+                  ? 'Aucun destinataire au calendrier.'
+                  : 'Aucun compte Microsoft connecté.',
           },
         ],
       }

@@ -103,7 +103,16 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
    */
   const extra = [...byKind.keys()].filter((kind) => !slots.includes(kind))
   const covered = slots.filter((kind) => byKind.has(kind)).length
-  const heard = ordered.length
+  /*
+   * Rows, not signals.
+   *
+   * With no slate this counted `ordered.length` — every signal heard — while the
+   * list below draws one row per *kind*, so a free-recipe rail said « 8 » over
+   * seven visible rows because one of them held two lines. A number beside a
+   * list that does not count the list is a number a rep has to solve, and the
+   * arithmetic is invisible: nothing on screen says which row held two.
+   */
+  const heard = slots.length + extra.length
 
   return (
     <section className="flex h-full min-h-0 flex-col">
@@ -117,7 +126,17 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
           nobody set — so it counts what has been heard instead. `tabular-nums`
           either way, so it does not jitter as it changes.
         */}
-        <span className="text-muted shrink-0 tabular-nums text-label" aria-hidden>
+        <span
+          className="text-muted shrink-0 tabular-nums text-label"
+          /*
+            The ratio is read aloud as « quatre sur sept » and means nothing
+            without the list, so it stays hidden from the accessibility tree and
+            the rows carry the information. The bare count is not a ratio and is
+            worth a sentence.
+          */
+          aria-hidden={slots.length > 0 || undefined}
+          aria-label={slots.length > 0 ? undefined : `${heard} sujet${heard > 1 ? 's' : ''} relevé${heard > 1 ? 's' : ''}`}
+        >
           {slots.length > 0 ? `${covered}/${slots.length}` : heard}
         </span>
         {onHide ? (
