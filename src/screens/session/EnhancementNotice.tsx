@@ -125,7 +125,7 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
       className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-2"
     >
       {status.status === 'running' ? (
-        <p className="text-body min-w-0 flex-1 max-w-[74ch] text-ui">
+        <p className="text-body min-w-0 flex-1 measure text-ui">
           Rédaction du compte-rendu…{' '}
           <span className="text-muted">
             Deux à trois minutes selon la longueur de la réunion. Vos notes et la transcription sont
@@ -136,13 +136,13 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
       ) : status.status === 'waitingForModel' ? (
         <>
           {/*
-            `max-w-[74ch]` and not the full strip. At 1440 this sentence ran to
+            `.measure` and not the full strip. At 1440 this sentence ran to
             206 characters on one line — long enough that the eye loses the
             start on the way back, on the one line of prose in the product that
             has to be read rather than scanned. Two shorter lines beat one that
             spans a laptop.
           */}
-          <p className="text-body min-w-0 flex-1 max-w-[74ch] text-ui">
+          <p className="text-body min-w-0 flex-1 measure text-ui">
             Compte-rendu en attente — aucun modèle d’analyse n’est configuré.{' '}
             <span className="text-muted">
               La transcription et vos notes sont enregistrées ; le compte-rendu sera rédigé dès
@@ -165,7 +165,7 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
         </>
       ) : (
         <>
-          <p className="text-body min-w-0 max-w-[74ch] flex-1 text-ui">
+          <p className="text-body min-w-0 measure flex-1 text-ui">
             {status.reason === null
               ? 'Le compte-rendu n’a pas encore été rédigé.'
               : `Le compte-rendu n’a pas pu être rédigé : ${status.reason}`}{' '}

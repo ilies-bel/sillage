@@ -166,10 +166,14 @@ function Marker({ children }: { children: string }) {
  */
 export function CompteRenduMarkersNote({ className }: { className?: string }) {
   return (
-    <p className={className}>
-      Les marques <span className="font-mono">##</span> et{' '}
-      <span className="font-mono">-</span> font partie du texte : VerySwing et le
-      brouillon reçoivent exactement ce qui est affiché.
+    // `.measure` on the note itself, not inherited from the wrapper: `ch`
+    // resolves against the *element's* font size, and this line is set at
+    // `--type-meta` inside a box sized for `--type-copy`. Left to the wrapper it
+    // ran to a hundred and eleven characters — the exact failure « one reading
+    // measure » exists to prevent, reintroduced one font size down.
+    <p className={`measure ${className ?? ''}`}>
+      <span className="font-mono">##</span> et <span className="font-mono">-</span> font partie
+      du texte : VerySwing reçoit exactement ce qui est affiché.
     </p>
   )
 }

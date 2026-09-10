@@ -187,15 +187,30 @@
    * overlaps, which is why it survived every screenshot review: an unreadably
    * long line is invisible in a picture and obvious in use.
    *
-   * 38rem is 608px, which is about eighty characters at the body size — and it
-   * is also, to within a few pixels, the column Granola sets a note in. Stated
-   * once here so a new pane cannot quietly pick its own.
+   * **`ch`, not `rem`** — a measure is a count of characters and it has to hold
+   * at whatever size the text is set at. It was `38rem`, and the comment above
+   * claimed that was « about eighty characters at the body size ». Measured, it
+   * is eighty-seven at `--type-copy` and a hundred and eleven at `--type-meta`,
+   * because a fixed pixel width is a different measure for every font size that
+   * lands in it — so the one class written to end this problem was reintroducing
+   * it one size down, on the caption under the compte-rendu and on Réglages'
+   * explanations.
+   *
+   * `66ch` is ~554px at the body size — within a few pixels of the column
+   * Granola sets a note in — and it stays sixty-six characters at 11px, at 12px
+   * and at 14px, which is the whole point. Stated once here so a new pane cannot
+   * quietly pick its own.
+   *
+   * Applied to a wrapper, `ch` resolves against the *wrapper's* font size, so a
+   * wrapper holding prose at one size is exactly right and a wrapper holding
+   * three sizes is right for its own. Prose that is not in a `.measure` wrapper
+   * wears the class itself, where its own size settles it.
    *
    * It is a *maximum*. A pane narrower than this keeps its own width; the class
    * never widens anything.
    */
   .measure {
-    max-width: 38rem;
+    max-width: 66ch;
   }
 
   /*
@@ -205,7 +220,8 @@
   .notepad .ProseMirror {
     outline: none;
     min-height: 100%;
-    max-width: 38rem;
+    /* The same measure, in the same unit. See `.measure` above. */
+    max-width: 66ch;
     color: var(--ink-rep);
   }
 

@@ -365,7 +365,9 @@ export function Reglages({ onBack }: ReglagesProps) {
 
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */
 function Lede({ children }: { children: ReactNode }) {
-  return <p className="text-muted mb-3 text-copy leading-relaxed">{children}</p>
+  // `74ch`, not the shared `.measure`: 38rem is 87 characters at `--type-copy`,
+  // and a measure is a count of characters rather than a width.
+  return <p className="text-muted mb-3 measure text-copy leading-relaxed">{children}</p>
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────
@@ -577,7 +579,7 @@ function Providers({
 
       {/* Why nothing is selected, from the registry's own refusal (DEC-26). */}
       {section.selected === null && section.reason ? (
-        <p className="text-warn mb-2 text-ui">{section.reason}</p>
+        <p className="text-warn mb-2 measure text-ui">{section.reason}</p>
       ) : null}
 
       <List as="div">
@@ -1195,7 +1197,10 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
         </p>
       ) : (
         <>
-          <p className={`mb-2 text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
+          {/* `.measure` on the sentence itself: it is set at `--type-ui`, one
+              step below the body, so a box sized for body copy runs it to
+              ninety-seven characters. */}
+          <p className={`mb-2 measure text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
             {report.summary} · {formatAgo(report.at, Date.now())}
           </p>
           <List>

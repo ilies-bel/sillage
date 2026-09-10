@@ -84,12 +84,18 @@ machine) or in `core/domain/` — never in an IPC handler.
   and a DOM test asserts the pane's own text still contains every marker. The prompt's soft
   wraps are undone at *composition* time by `unwrapProse`, not at render time, so the stored
   string is the clean one.
-- **One reading measure, `.measure` in `index.css`, 38rem.** The notepad, the compte-rendu on
+- **One reading measure, `.measure` in `index.css`, `66ch` — a count of characters, not a width.** The notepad, the compte-rendu on
   three screens, the follow-up draft and Réglages' prose all share it. Every one of them used to
   set its own width, and each was set by what fit rather than by what reads — 98 characters a
   line in the notepad, 130 at the gate. Nothing is clipped and nothing overlaps, which is
   exactly why three screenshot reviews missed it: an unreadably long line is invisible in a
   picture. A new pane that holds prose uses the class; it never picks its own number.
+  It was `38rem`, which is a *different* measure at every font size that lands in it —
+  eighty-seven characters at `--type-copy` and a hundred and eleven at `--type-meta` — so
+  the class written to end this problem was reintroducing it one size down, on the caption
+  under the compte-rendu and on Réglages' explanations. `ch` resolves against the element's
+  own size, so prose that is not inside a `.measure` wrapper wears the class itself. The
+  detector's `line-length` finding is zero across all twenty-one screens and is the check.
 - **The harness fixture is the document the composer writes, or the design pass is
   fiction.** `bridge-stub.mjs`'s compte-rendu was four invented headings for five review
   rounds — no deterministic header, no « Éléments retenus », no list sections — roughly half
