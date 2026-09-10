@@ -238,6 +238,100 @@ describe('the rows are measured, and the remedy fits the fault', () => {
   })
 })
 
+describe('the dry run', () => {
+  /*
+   * Step 2 asks for the permissions and reads the connector health back, which
+   * is a statement about *grants* and not about sound: the grant can be given
+   * and the loopback still produce nothing. Capture is the one subsystem that
+   * cannot be repaired after the call, so it is the one worth listening to
+   * before one.
+   */
+  const toEssai = async () => {
+    await toBesoins()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continuer' }))
+    })
+    await screen.findByRole('heading', { name: 'Votre premier appel' })
+  }
+
+  test('it is offered and never automatic', async () => {
+    open()
+    await toEssai()
+
+    // A capture that started because somebody opened a page is a capture
+    // nobody asked for.
+    expect(bridge.calls.some((call) => call.channel === 'capture:essai')).toBe(false)
+    expect(screen.getByRole('button', { name: /^Essai de/ })).toBeTruthy()
+  })
+
+  test('it names which side was not heard, and what to check', async () => {
+    bridge.when('capture:essai', () => ({
+      rep: { heard: true, peak: 0.42 },
+      far: { heard: false, peak: 0.003 },
+      floor: 0.008,
+      seconds: 20,
+    }))
+    open()
+    await toEssai()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+
+    // The failure a rep cannot discover on their own: their own voice is in the
+    // transcript, so the recording looks like it worked.
+    expect(await screen.findByText(/le client non/)).toBeTruthy()
+    expect(screen.getByText(/autorisation d’enregistrement de l’écran/)).toBeTruthy()
+    // And the other channel is reported separately, not merged into a verdict.
+    expect(screen.getByText(/Ce que vous dites sera transcrit/)).toBeTruthy()
+  })
+
+  test('silence is not called a fault', async () => {
+    bridge.when('capture:essai', () => ({
+      rep: { heard: false, peak: 0.001 },
+      far: { heard: false, peak: 0.001 },
+      floor: 0.008,
+      seconds: 20,
+    }))
+    open()
+    await toEssai()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+
+    // The rep may simply have said nothing. Telling them their machine is
+    // broken is a false statement they would act on.
+    const summary = await screen.findByText(/Rien n’a été entendu pendant l’essai/)
+    expect(summary.textContent).toMatch(/Si vous avez parlé ou joué un son/)
+  })
+
+  test('a refusal keeps the main process’s own sentence (DEC-26)', async () => {
+    bridge.when('capture:essai', () => {
+      throw new Error('Une réunion est en cours d’enregistrement — l’essai attendrait la fin.')
+    })
+    open()
+    await toEssai()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/Une réunion est en cours/)
+  })
+
+  test('it never blocks the way out', async () => {
+    const { done } = open()
+    await toEssai()
+
+    // *Terminer* is live whether the trial has been run, has failed, or has
+    // never been touched. It is not a gate (DEC-26).
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Terminer' }))
+    })
+    await waitFor(() => expect(done).toEqual([1]))
+  })
+})
+
 describe('the three steps', () => {
   test('the first one says the thing a rep would otherwise get wrong', async () => {
     open()

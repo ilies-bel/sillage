@@ -41,6 +41,14 @@
 import { useCallback, useState } from 'react'
 import type { ConnectorHealth, ConnectorId, HealthSnapshot } from '../../electron/core/contracts/health.ts'
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
+import {
+  ESSAI_MEETING_ID,
+  ESSAI_SECONDS,
+  essaiLines,
+  essaiSummary,
+  type EssaiResult,
+} from '../../electron/core/contracts/essai.ts'
+import { LevelMeter } from './session/LevelMeter.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { Button, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
 import type { SectionId } from './Reglages.tsx'
@@ -388,17 +396,152 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
 }
 
 /**
- * Step 3 — the first call.
+ * The trial itself.
  *
- * Granola ships a video for this and transcribes it live, which proves the chain
- * on the rep's own machine in two minutes. The equivalent here is the rep's own
- * next meeting: there is no asset to ship, and a fabricated demo recording would
- * prove that the *fixture* works.
+ * Three states and no fourth: not yet run, listening, and what was heard. There
+ * is no « échec » — a channel that heard nothing may simply have had nothing to
+ * hear, and telling a rep their audio is broken because they sat in silence is
+ * a false statement about their machine that they will act on
+ * (`core/domain/essaiVerdict.ts` carries the wording).
  *
- * So this step is the smallest true thing — where the button is, what happens
- * when it is pressed, and what the rep will be asked at the end. It ends the
- * onboarding rather than starting a recording, because starting one from here
- * would put a rep who is reading an explanation into a live capture.
+ * The meter is `LevelMeter`, the same component the session header draws, fed by
+ * the same `audio:level` broadcast under the trial's reserved id — so what the
+ * rep watches here is the instrument they will watch during the call, and not a
+ * second one that could disagree.
+ */
+function EssaiAudio() {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<EssaiResult | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  const run = async () => {
+    setBusy(true)
+    setFailure(null)
+    setResult(null)
+    try {
+      setResult(await invoke('capture:essai', {}))
+    } catch (error) {
+      // The main process's own sentence — « une réunion est en cours »,
+      // « module audio natif indisponible » — never a generic failure (DEC-26).
+      setFailure(error instanceof Error ? error.message : 'essai impossible')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="border-card bg-card mb-block rounded-sm border px-4 py-3">
+      <div className="flex items-baseline gap-inline">
+        <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
+          {busy ? 'À vous — parlez, ou lancez une vidéo' : 'Vérifier que tout est capté'}
+        </h3>
+        <Button
+          variant={result === null ? 'primary' : 'bordered'}
+          className="shrink-0"
+          onClick={() => void run()}
+          {...unavailable(busy, 'Essai en cours…')}
+        >
+          {busy ? 'À l’écoute…' : result === null ? `Essai de ${ESSAI_SECONDS} s` : 'Recommencer'}
+        </Button>
+      </div>
+
+      <p className="text-muted measure mt-1 text-ui leading-relaxed">
+        {busy
+          ? 'Sillage écoute les deux côtés pendant vingt secondes. Rien n’est enregistré ni conservé.'
+          : 'Vingt secondes, pour savoir avant le premier client si votre micro et l’audio de votre ordinateur arrivent bien tous les deux.'}
+      </p>
+
+      {busy ? (
+        <div className="mt-3 flex items-center gap-3">
+          {/*
+            The meeting meter, on the trial's reserved id. Both channels,
+            mirrored about a baseline — the rep above, the machine below —
+            because « personne n’est entendu » and « le client n’est pas
+            entendu » have opposite fixes (DEC-38).
+          */}
+          <LevelMeter meetingId={ESSAI_MEETING_ID} />
+          <p className="text-muted text-meta" role="status">
+            Dites une phrase, et jouez n’importe quel son sur votre ordinateur.
+          </p>
+        </div>
+      ) : null}
+
+      {failure ? (
+        <p role="alert" className="text-danger measure mt-2 text-ui">
+          {failure}
+        </p>
+      ) : null}
+
+      {result ? (
+        <div className="mt-3">
+          <p
+            className={`measure text-ui ${
+              result.rep.heard && result.far.heard ? 'text-body' : 'text-warn'
+            }`}
+          >
+            {essaiSummary(result)}
+          </p>
+          {/*
+            The same shape as step 2's rows — name, then the measured state on
+            the right, then the sentence under both. Two screens that report a
+            subsystem's state should not report it in two different orders.
+          */}
+          <ul className="mt-2 space-y-row">
+            {essaiLines(result).map((line) => (
+              <li key={line.channel}>
+                <div className="flex items-baseline gap-inline">
+                  <h4 className="text-strong min-w-0 flex-1 text-ui font-semibold">{line.title}</h4>
+                  <span className="shrink-0">
+                    <StateDot
+                      tone={line.heard ? 'ok' : 'warn'}
+                      label={line.heard ? 'entendu' : 'rien entendu'}
+                    />
+                  </span>
+                </div>
+                <p className="text-muted measure mt-0.5 text-ui leading-relaxed">{line.sentence}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * Step 3 — what will happen, and twenty seconds of proof that it can.
+ *
+ * ## The trial
+ *
+ * Everything else in this app is recoverable after the call: a model can be
+ * configured later and the compte-rendu still gets written (DEC-39), a CRM that
+ * is down drains, a token expires and the draft lands on the next attempt.
+ * **Capture is the one thing that cannot be repaired afterwards.** Step 2 asks
+ * for the permissions and reads the connector health back, which is a statement
+ * about *grants* and not about sound — the grant can be given and the loopback
+ * still produce nothing, and the microphone can be granted and muted in
+ * hardware. The only way to know is to listen.
+ *
+ * So the rep can. `capture:essai` opens both channels for twenty seconds and
+ * reports what each one heard, separately, because the two have opposite
+ * failures: silence on their own channel means the compte-rendu reads as a
+ * briefing the client delivered; silence on the machine's means it reads as a
+ * monologue — and that second one is invisible from the inside, because their
+ * own voice is in the transcript and the recording looks like it worked.
+ *
+ * Granola plays a video out of the speakers and transcribes it back. The
+ * mechanism is right; the framing is theirs — it demonstrates the product. This
+ * demonstrates the *machine*, which is the question a rep about to run it on a
+ * real client actually has.
+ *
+ * It is offered, never automatic: a capture that started because somebody opened
+ * a page is a capture nobody asked for. It stores nothing, transcribes nothing
+ * and creates no meeting.
+ *
+ * ## The three beats
+ *
+ * They stay, above the trial, because knowing where the button is and what the
+ * end asks for is what makes the first real call unremarkable.
  */
 function Essai() {
   return (
@@ -409,6 +552,8 @@ function Essai() {
       <p className="text-body mb-block text-copy leading-relaxed">
         Rien de plus à préparer. Voilà ce qui se passera.
       </p>
+
+      <EssaiAudio />
 
       <ol className="space-y-row">
         <Beat n="1" title="Vous démarrez">

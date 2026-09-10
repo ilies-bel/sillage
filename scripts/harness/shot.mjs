@@ -490,6 +490,24 @@ const SCREENS = {
   },
 
   /*
+   * The dry run, after it has answered — and answered with the case that
+   * matters: the rep was heard and the machine was not, which is the failure a
+   * rep cannot discover on their own because their own voice is in the
+   * transcript and the recording looks like it worked.
+   */
+  'onboarding-essai-fait': {
+    scenario: 'onboarding',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('heading', { name: 'Votre premier appel' }).waitFor()
+      await page.getByRole('button', { name: /^Essai de/ }).click()
+      await page.getByText('c’est la moitié qui compte le plus').waitFor()
+    },
+  },
+
+  /*
    * The keyboard, printed (`app/shortcuts.ts`). Its own stage because it is its
    * own pane, and because a table that drifts from the matcher is exactly the
    * kind of thing nobody looks at again.

@@ -20,6 +20,11 @@ import {
   type AccessStatus,
   type CaptureAccess,
 } from '../core/domain/capturePermission.ts'
+import { ESSAI_MEETING_ID, ESSAI_SECONDS, type EssaiResult } from '../core/contracts/essai.ts'
+import { SPEECH_FLOOR } from '../core/domain/inputLevel.ts'
+
+/** The trial's meter tick. The same cadence `Recording` draws a meeting's at. */
+const ESSAI_POLL_MS = 100
 import { MeetingApps } from '../modules/capture/MeetingApps.ts'
 import { createIdentity, resolveIdentityConfig } from '../modules/identity/index.ts'
 import { GraphCalendar, calendarHealth } from '../modules/calendar/index.ts'
@@ -1554,6 +1559,82 @@ const boot = async (): Promise<void> => {
     })
   }
 
+  /**
+   * **The dry run** (`core/contracts/essai.ts`, DEC-45).
+   *
+   * Twenty seconds of real capture on both channels, reporting what each one
+   * heard, storing nothing and transcribing nothing. It is the only thing in the
+   * product that answers « will this actually record my next call » before the
+   * call — every other subsystem is recoverable afterwards and capture is not.
+   *
+   * Three things are load-bearing.
+   *
+   * **It refuses while a meeting is recording.** Opening a second handle on the
+   * same devices is exactly the failure `CaptureSession.start` guards against
+   * internally, and the guarantee that a meeting keeps recording (DEC-26) is not
+   * one to test against an onboarding screen.
+   *
+   * **It reuses the meeting meter.** The frames go out on `audio:level` under
+   * `ESSAI_MEETING_ID`, so what a rep watches here is the same instrument, drawn
+   * from the same `takeLevels` pull, as the header during a call (DEC-38). A
+   * second, trial-only meter would be a second thing that can disagree.
+   *
+   * **It always stops.** The stop is in a `finally` and the timer is `unref`ed:
+   * a trial must never be the reason a device stays open or the process refuses
+   * to exit.
+   */
+  let essaiRunning = false
+  const runEssai = async (): Promise<EssaiResult> => {
+    if (essaiRunning) throw new Error('Un essai est déjà en cours.')
+    if (orchestrator.recording()) {
+      throw new Error('Une réunion est en cours d’enregistrement — l’essai attendrait la fin.')
+    }
+    const loaded = CaptureSession.probe()
+    if (loaded.state !== 'ok') throw new Error(loaded.reason)
+
+    essaiRunning = true
+    const session = new CaptureSession({ diagnostics, clock: () => Date.now() })
+    const peak = { rep: 0, far: 0 }
+    const startedAt = Date.now()
+    let poll: ReturnType<typeof setInterval> | null = null
+
+    try {
+      await session.start()
+      await new Promise<void>((resolve) => {
+        poll = setInterval(() => {
+          try {
+            const levels = session.takeLevels()
+            peak.rep = Math.max(peak.rep, levels.rep)
+            peak.far = Math.max(peak.far, levels.far)
+            broadcast('audio:level', {
+              meetingId: ESSAI_MEETING_ID,
+              rep: levels.rep,
+              far: levels.far,
+              floor: SPEECH_FLOOR,
+            })
+          } catch {
+            // A meter that throws loses its tick. It never ends the trial.
+          }
+          if (Date.now() - startedAt >= ESSAI_SECONDS * 1000) resolve()
+        }, ESSAI_POLL_MS)
+        poll.unref?.()
+      })
+    } finally {
+      if (poll) clearInterval(poll)
+      essaiRunning = false
+      // Awaited, and its failure swallowed: a device that will not close is a
+      // diagnostic, not a reason to fail a trial that already has its answer.
+      await session.stop().catch(() => undefined)
+    }
+
+    return {
+      rep: { heard: peak.rep > SPEECH_FLOOR, peak: Math.min(1, peak.rep) },
+      far: { heard: peak.far > SPEECH_FLOOR, peak: Math.min(1, peak.far) },
+      floor: SPEECH_FLOOR,
+      seconds: Math.round((Date.now() - startedAt) / 100) / 10,
+    }
+  }
+
   registerIpc(ipcMain, {
     drain,
     store,
@@ -1587,6 +1668,7 @@ const boot = async (): Promise<void> => {
     // the same reason: a key pasted in Réglages has to reach the very next
     // question, not the next launch (DEC-34).
     llm,
+    essai: runEssai,
     capabilities: () => ({ report: probe, reason: probeReason }),
     // Read lazily: `boot:changed` and this channel must never disagree, and a
     // value captured here would freeze the state at registration time.

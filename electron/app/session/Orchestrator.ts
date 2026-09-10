@@ -142,6 +142,18 @@ export class Orchestrator {
   #health: HealthSnapshot
   #retries = new Map<ConnectorId, () => Promise<ConnectorHealth>>()
   #recordings = new Map<MeetingId, Recording>()
+
+  /**
+   * Whether any meeting currently holds the audio devices.
+   *
+   * Asked by the onboarding dry run (`core/contracts/essai.ts`), which opens the
+   * same devices and must refuse rather than race a live call for them: the
+   * guarantee that a meeting keeps recording (DEC-26) is not one to test against
+   * an onboarding screen.
+   */
+  recording(): boolean {
+    return this.#recordings.size > 0
+  }
   /** DEC-16's grace countdown, one per meeting that is actually recording. */
   #endWatch = new Map<MeetingId, EndOfMeetingWatch>()
   #recordingDeps: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>

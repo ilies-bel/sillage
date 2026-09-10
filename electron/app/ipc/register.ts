@@ -27,6 +27,7 @@ import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
 import type { BootState } from '../../core/contracts/boot.ts'
+import type { EssaiResult } from '../../core/contracts/essai.ts'
 import type { EnhancementStatus } from '../../core/contracts/extraction.ts'
 import {
   INTENT_LABEL,
@@ -167,6 +168,12 @@ export interface IpcDeps {
   preferences?: ProviderPreferences | null
   /** Starting, cancelling and reporting Hugging Face downloads (DEC-35b). */
   models?: ModelDownloads | null
+  /**
+   * Twenty seconds of real capture, reporting what each channel heard
+   * (`core/contracts/essai.ts`). Composed in `main.ts`, because it opens the
+   * audio devices and broadcasts, and both are wiring.
+   */
+  essai?: (() => Promise<EssaiResult>) | null
   /**
    * The DEC-24 capability diff, or why there is none. Read lazily so a probe
    * that is still in flight at boot shows as "en cours" rather than as absent.
@@ -522,6 +529,18 @@ export const handlers: Handlers = {
   'health:snapshot': (_request, { orchestrator }) => orchestrator.health(),
 
   'health:retry': ({ connector }, { orchestrator }) => orchestrator.retry(connector),
+
+  /*
+   * The dry run. Refused rather than silently queued when there is no
+   * implementation wired — a renderer that gets an unexplained rejection draws
+   * « une erreur est survenue » and the rep learns nothing (DEC-26).
+   */
+  'capture:essai': async (_request, { essai }) => {
+    if (!essai) {
+      throw new Error('L’essai audio n’est pas disponible dans cette configuration.')
+    }
+    return essai()
+  },
 
   'diagnostics:recent': ({ limit }, { diagnostics }) => diagnostics.recent(limit ?? 200),
 

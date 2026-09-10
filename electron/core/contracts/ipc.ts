@@ -9,6 +9,7 @@
  * This is the direct answer to an 11,810-line `ipcHandlers.ts`.
  */
 import { z } from 'zod'
+import { EssaiResultSchema } from './essai.ts'
 import {
   MeetingIdSchema,
   MeetingSchema,
@@ -235,6 +236,22 @@ export const invokeChannels = {
   'health:retry': {
     request: z.object({ connector: ConnectorIdSchema }),
     response: ConnectorHealthSchema,
+  },
+  /**
+   * The dry run (`core/contracts/essai.ts`): open both channels for a fixed
+   * number of seconds, report what was heard on each, keep nothing.
+   *
+   * An `invoke` that resolves when the listening is over rather than a
+   * start/stop pair, because the trial has one honest shape — it runs for its
+   * twenty seconds and reports — and a pair would need a state machine, a
+   * timeout for the renderer that navigates away mid-trial, and an answer to
+   * « what does a second start mean ». While it runs it broadcasts `audio:level`
+   * under `ESSAI_MEETING_ID`, so the meter a rep sees here is the meter they
+   * will see during the call, drawn from the same measurement.
+   */
+  'capture:essai': {
+    request: z.object({}),
+    response: EssaiResultSchema,
   },
   'diagnostics:recent': {
     request: z.object({ limit: z.number().int().positive().max(1000).default(200) }),

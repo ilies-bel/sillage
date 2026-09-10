@@ -1683,6 +1683,35 @@ export function installAppBridge(config) {
     'health:snapshot': healthSnapshot,
     'health:retry': () => ({ state: 'ok' }),
 
+    /*
+      The onboarding dry run (`core/contracts/essai.ts`).
+
+      It replays the same level history the session meter is fed, on the trial's
+      reserved id, and then answers — so a screenshot of this step catches a
+      meter with a history in it rather than twenty flat bars, and the stage can
+      photograph the result without waiting twenty real seconds.
+
+      The verdict is the one that matters: the rep heard, the machine not. That
+      is the failure this whole step exists to catch, and it is the one nobody
+      would think to stage.
+    */
+    'capture:essai': () => {
+      LEVEL_HISTORY.forEach((rep, index) => {
+        harness.emit('audio:level', {
+          meetingId: 'essai-audio',
+          rep,
+          far: index > LEVEL_HISTORY.length - 4 ? 0.002 : FAR_LEVEL_HISTORY[index],
+          floor: 0.008,
+        })
+      })
+      return {
+        rep: { heard: true, peak: 0.42 },
+        far: { heard: false, peak: 0.003 },
+        floor: 0.008,
+        seconds: 20,
+      }
+    },
+
     'diagnostics:recent': () => DIAGNOSTICS,
     'diagnostics:export': (payload) => ({
       path: '/Users/julien/Desktop/sillage-diagnostics-' + payload.mode + '.ndjson',
