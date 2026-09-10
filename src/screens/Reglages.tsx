@@ -70,7 +70,7 @@ import type { CapabilityFinding, CapabilityReport } from '../../electron/core/co
 import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { SHORTCUTS, useShortcuts } from '../app/shortcuts.ts'
+import { SHORTCUTS } from '../app/shortcuts.ts'
 import { formatAgo } from '../app/format.ts'
 import {
   Button,
@@ -139,9 +139,6 @@ interface ReglagesProps {
 
 export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
   const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
-  // `Échap` leaves. Every write here lands the moment it is made, so there is
-  // nothing unsaved to lose on the way out (`app/shortcuts.ts`).
-  useShortcuts({ retour: onBack })
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
   const [busy, setBusy] = useState<string | null>(null)
@@ -433,7 +430,15 @@ function Raccourcis() {
       <List as="div">
         {SHORTCUTS.map((shortcut) => (
           <Row as="div" key={shortcut.id} align="center">
-            <span className="text-strong min-w-0 flex-1 text-copy">{shortcut.label}</span>
+            <span className="min-w-0 flex-1">
+              <span className="text-strong text-copy">{shortcut.label}</span>
+              {/* Where it works, when that is not everywhere. Four of the six
+                  were silent on the screen a rep was looking at, and a table
+                  that promises six global keys is worse than no table. */}
+              {shortcut.where ? (
+                <span className="text-muted ml-2 text-meta">{shortcut.where}</span>
+              ) : null}
+            </span>
             {/*
               `kbd`, and not a styled span: this is a key on a keyboard, and the
               element that says so is the one a screen reader announces as one.

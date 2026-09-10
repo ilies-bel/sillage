@@ -38,9 +38,17 @@ const HEALTHY: HealthSnapshot = {
 /** What a machine actually looks like the first time the app is opened on it. */
 const FIRST_RUN: HealthSnapshot = {
   ...HEALTHY,
+  /*
+    The sentence `core/domain/capturePermission.ts` really composes for a Mac
+    whose screen-recording prompt has not been answered. It said « macOS n'a pas
+    encore autorisé l'enregistrement de l'écran », which the app never emitted —
+    a test fixture is a fixture too, and one that invents a string cannot hold
+    the screen that prints it.
+  */
   capture: {
-    state: 'down',
-    reason: 'macOS n’a pas encore autorisé l’enregistrement de l’écran',
+    state: 'degraded',
+    reason:
+      'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Autorisez-le pour que Sillage puisse l’enregistrer.',
     since: 1,
     retryable: true,
   },
@@ -194,7 +202,7 @@ describe('the rows are measured, and the remedy fits the fault', () => {
     await toBesoins()
 
     // The connector's own sentence, not a rewrite of it.
-    expect(screen.getByText(/macOS n’a pas encore autorisé/)).toBeTruthy()
+    expect(screen.getByText(/l’audio système n’est pas autorisé/)).toBeTruthy()
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
@@ -234,7 +242,15 @@ describe('the rows are measured, and the remedy fits the fault', () => {
     // « Audio » is what Réglages calls it, and Réglages is a screen for somebody
     // who already knows what the app does. Here the row has to answer « why is
     // it asking me this ».
-    expect(screen.getByText(/le client n’est pas enregistré — vous seul le serez/)).toBeTruthy()
+    expect(screen.getByText(/il écoute ce que votre machine joue et ce que dit votre micro/)).toBeTruthy()
+
+    /*
+     * And it says it *once*. « vous seul le serez » closed this sentence and the
+     * permission warning forty pixels below it, verbatim, on the row a first-run
+     * rep reads most carefully. The warning keeps the clause, because it is the
+     * one that only appears when it is true.
+     */
+    expect(screen.getAllByText(/vous seul le serez/)).toHaveLength(1)
   })
 })
 
@@ -284,6 +300,39 @@ describe('the dry run', () => {
     expect(screen.getByText(/autorisation d’enregistrement de l’écran/)).toBeTruthy()
     // And the other channel is reported separately, not merged into a verdict.
     expect(screen.getByText(/Ce que vous dites sera transcrit/)).toBeTruthy()
+  })
+
+  /*
+   * The one that was missing. The card offered *Recommencer* and nothing else,
+   * so the one screen in the product that has just *established* the far end is
+   * dead was the one screen with nothing to press — and running it again would
+   * fail identically.
+   */
+  test('a channel that heard nothing gets the control that fixes it', async () => {
+    bridge.when('capture:essai', () => ({
+      rep: { heard: true, peak: 0.42 },
+      far: { heard: false, peak: 0.003 },
+      floor: 0.008,
+      seconds: 20,
+    }))
+    open()
+    await toEssai()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+    await screen.findByText(/le client non/)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+
+    // The same call step 2's row makes — never a second path that could one day
+    // disagree about what « autoriser » means.
+    const retry = bridge.calls.find((call) => call.channel === 'health:retry')
+    expect(retry?.payload).toEqual({ connector: 'capture' })
+    // And it listens again, because a grant that changed nothing and a grant
+    // that fixed it look identical until something listens.
+    expect(bridge.calls.filter((call) => call.channel === 'capture:essai')).toHaveLength(2)
   })
 
   test('silence is not called a fault', async () => {

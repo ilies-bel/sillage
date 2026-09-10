@@ -133,8 +133,13 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   const searchRef = useRef<HTMLInputElement>(null)
   useShortcuts({
     rechercher: () => searchRef.current?.focus(),
+    /*
+      Overridden here, and only here: `App.tsx` opens the reader on an empty
+      query, and this screen has one on the field beside it. `Ctrl/⌘ H` from
+      the calendar carries what the rep has already typed, which is the whole
+      relationship between the two screens (DEC-25).
+    */
     historique: () => onHistorique(query, filter),
-    reglages: onReglages,
   })
 
   /**

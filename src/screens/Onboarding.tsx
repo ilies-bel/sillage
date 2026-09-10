@@ -83,7 +83,11 @@ const NEEDS: Record<
 > = {
   capture: {
     title: 'Le micro et l’audio de votre ordinateur',
-    why: 'Sillage ne rejoint jamais la réunion : il écoute ce que votre machine joue et ce que dit votre micro. Sans l’audio système, le client n’est pas enregistré — vous seul le serez.',
+    // The clause « vous seul le serez » used to close this sentence *and* the
+    // permission warning forty pixels below it, verbatim, on the row a first-run
+    // rep reads most carefully. The warning is the one that has to carry it: it
+    // is the one that appears only when it is true.
+    why: 'Sillage ne rejoint jamais la réunion : il écoute ce que votre machine joue et ce que dit votre micro. Il lui faut les deux pour que l’appel soit entier.',
     section: 'connecteurs',
   },
   transcribe: {
@@ -187,7 +191,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
       */}
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-gutter pb-block">
         <div className="measure mx-auto my-auto w-full">
-          {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai />}
+          {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai onReglages={() => void toReglages('connecteurs')} />}
         </div>
       </main>
 
@@ -409,10 +413,28 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
  * rep watches here is the instrument they will watch during the call, and not a
  * second one that could disagree.
  */
-function EssaiAudio() {
+function EssaiAudio({ onReglages }: { onReglages: () => void }) {
   const [busy, setBusy] = useState(false)
+  const [granting, setGranting] = useState(false)
   const [result, setResult] = useState<EssaiResult | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+
+  /*
+   * The same retry the permission row makes, from the screen that measured the
+   * failure. It re-runs the trial afterwards, because a grant that changed
+   * nothing and a grant that fixed it look identical until something listens.
+   */
+  const grant = async () => {
+    setGranting(true)
+    try {
+      await invoke('health:retry', { connector: 'capture' })
+    } catch {
+      // The row already carries its own sentence; a failed retry repeats it.
+    } finally {
+      setGranting(false)
+    }
+    await run()
+  }
 
   const run = async () => {
     setBusy(true)
@@ -499,6 +521,30 @@ function EssaiAudio() {
                   </span>
                 </div>
                 <p className="text-muted measure mt-0.5 text-ui leading-relaxed">{line.sentence}</p>
+                {/*
+                  **The remedy, on the row that just proved it is needed.**
+
+                  The card offered *Recommencer* and nothing else — so the one
+                  screen in the product that has just *established* that the far
+                  end is dead was the one screen with nothing to press, and
+                  running it again would fail identically. `health:retry` on
+                  `capture` is the same call step 2's *Autoriser* makes: it asks
+                  the OS, or opens the privacy pane when the OS has stopped
+                  asking (`core/domain/capturePermission.ts`).
+                */}
+                {!line.heard ? (
+                  <div className="mt-1.5 flex items-baseline gap-inline">
+                    <Button
+                      onClick={() => void grant()}
+                      {...unavailable(granting, 'Vérification…')}
+                    >
+                      {granting ? 'Vérification…' : 'Autoriser'}
+                    </Button>
+                    <Button variant="nav" onClick={onReglages}>
+                      Réglages ›
+                    </Button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -543,7 +589,7 @@ function EssaiAudio() {
  * They stay, above the trial, because knowing where the button is and what the
  * end asks for is what makes the first real call unremarkable.
  */
-function Essai() {
+function Essai({ onReglages }: { onReglages: () => void }) {
   return (
     <section>
       <h2 className="text-strong font-display mb-3 text-[22px] leading-tight">
@@ -553,7 +599,7 @@ function Essai() {
         Rien de plus à préparer. Voilà ce qui se passera.
       </p>
 
-      <EssaiAudio />
+      <EssaiAudio onReglages={onReglages} />
 
       <ol className="space-y-row">
         <Beat n="1" title="Vous démarrez">

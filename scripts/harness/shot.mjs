@@ -576,7 +576,10 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Réglages' }).click()
       await page.getByRole('button', { name: 'Raccourcis clavier' }).click()
       await page.getByRole('heading', { name: 'Raccourcis clavier' }).waitFor()
-      await page.getByText('Valider, quand la revue le permet').waitFor()
+      // The label alone: the row also prints *where* a scoped shortcut works,
+      // and a stage that matched the whole row would break every time that
+      // scope is worded differently.
+      await page.getByText('Valider', { exact: true }).waitFor()
     },
   },
 

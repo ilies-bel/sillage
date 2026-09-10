@@ -24,6 +24,8 @@ import { Review } from './screens/Review.tsx'
 import { Historique } from './screens/Historique.tsx'
 import { Reglages, type SectionId } from './screens/Reglages.tsx'
 import { Onboarding, type Step } from './screens/Onboarding.tsx'
+import { useShortcuts } from './app/shortcuts.ts'
+import { NO_FILTER } from './screens/search/filters.ts'
 import { Splash } from './screens/Splash.tsx'
 
 export function App() {
@@ -79,6 +81,33 @@ export function App() {
     setRoute(historiqueOf(query, filter))
   }, [])
   const reglages = useCallback(() => setRoute(REGLAGES), [])
+
+  /*
+   * **The three that are about *where you are*, installed once, for every
+   * screen** (`app/shortcuts.ts`).
+   *
+   * They were on the calendar, Historique and Réglages, and on nothing else —
+   * so on the session screen none of the six fired, and at the review gate one
+   * did. A rep who read the printed table and pressed `Échap` during a call got
+   * nothing, which teaches them the keyboard is broken rather than that it is
+   * scoped. Here they work wherever the rep is, which is what a *global*
+   * shortcut means.
+   *
+   * `retour` is offered only when there is somewhere to go back to: on the
+   * calendar it is not claimed at all, so `Échap` stays whatever the platform
+   * says it is rather than becoming a key that does nothing (DEC-26). It never
+   * ends a recording — leaving the session screen is navigation, the meeting
+   * goes on recording, and the header says so from wherever the rep lands.
+   *
+   * The other two stay where their control is, and the table says so: *Démarrer
+   * une réunion* is the calendar's control and the search field is the
+   * calendar's and the reader's.
+   */
+  useShortcuts({
+    historique: () => historique('', NO_FILTER),
+    reglages,
+    ...(route.screen === 'agenda' ? {} : { retour: back }),
+  })
 
   /*
    * The splash holds the window until every required step is answered — and

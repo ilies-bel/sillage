@@ -43,6 +43,17 @@ export interface Shortcut {
   /** As a rep reads it. `Ctrl` and `⌘` both work; the label says so once. */
   keys: string
   label: string
+  /**
+   * Where it works, when that is not everywhere — printed beside the row.
+   *
+   * Two of the six need a control that exists on one screen: *Démarrer une
+   * réunion* is the calendar's, and the search field is the calendar's and the
+   * reader's. A table that printed six global shortcuts while four of them
+   * were silent on the screen a rep was looking at would be worse than no
+   * table: it would be a promise, and the rep would conclude the keyboard is
+   * broken rather than that it is scoped.
+   */
+  where?: string
 }
 
 export type ShortcutId = 'nouvelle' | 'rechercher' | 'historique' | 'reglages' | 'retour' | 'valider'
@@ -52,12 +63,22 @@ export type ShortcutId = 'nouvelle' | 'rechercher' | 'historique' | 'reglages' |
  * that are not the calendar, then the two that act on what is on screen.
  */
 export const SHORTCUTS: readonly Shortcut[] = [
-  { id: 'nouvelle', keys: 'Ctrl/⌘ N', label: 'Démarrer une réunion' },
-  { id: 'rechercher', keys: 'Ctrl/⌘ K', label: 'Rechercher dans les appels' },
+  { id: 'nouvelle', keys: 'Ctrl/⌘ N', label: 'Démarrer une réunion', where: 'depuis le calendrier' },
+  {
+    id: 'rechercher',
+    keys: 'Ctrl/⌘ K',
+    label: 'Rechercher dans les appels',
+    where: 'calendrier et historique',
+  },
   { id: 'historique', keys: 'Ctrl/⌘ H', label: 'Ouvrir l’historique' },
   { id: 'reglages', keys: 'Ctrl/⌘ ,', label: 'Ouvrir les réglages' },
   { id: 'retour', keys: 'Échap', label: 'Revenir au calendrier' },
-  { id: 'valider', keys: 'Ctrl/⌘ Entrée', label: 'Valider, quand la revue le permet' },
+  {
+    id: 'valider',
+    keys: 'Ctrl/⌘ Entrée',
+    label: 'Valider',
+    where: 'à la revue, quand le bouton est armé',
+  },
 ]
 
 /** What a key press resolves to, before anyone decides whether to honour it. */

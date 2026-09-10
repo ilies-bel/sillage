@@ -101,13 +101,12 @@ export function Historique({
   const rows: readonly HistoryRow[] | null = search.result?.rows ?? null
 
   /*
-   * `Échap` goes back to the calendar and `Ctrl/⌘ K` puts the cursor in the
-   * field — the two the reader is for (`app/shortcuts.ts`). Nothing here
-   * writes, so leaving costs nothing and there is no confirmation to guard
-   * (DEC-25).
+   * `Ctrl/⌘ K` puts the cursor in the field — the one shortcut that needs a
+   * control this screen owns. `Échap` is installed once, in `App.tsx`, for
+   * every screen: two handlers on one key would both fire.
    */
   const searchRef = useRef<HTMLInputElement>(null)
-  useShortcuts({ retour: onBack, rechercher: () => searchRef.current?.focus() })
+  useShortcuts({ rechercher: () => searchRef.current?.focus() })
 
   const toggle = useCallback((meetingId: string) => {
     setExpanded((previous) => (previous === meetingId ? null : meetingId))
