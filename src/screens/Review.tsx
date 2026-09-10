@@ -231,14 +231,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * covers the window being resized and the rows growing as the rep types into
    * a multiline field.
    */
-  useLayoutEffect(() => {
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    if (docRef.current) observer.observe(docRef.current)
-    if (railRef.current) observer.observe(railRef.current)
-    return () => observer.disconnect()
-  })
   const locate = (next: TranscriptFocus) => {
     setFocus(next)
     setMode('transcription')
@@ -280,6 +272,29 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
 
   const panel: ReviewPanel | null =
     loaded.state.status === 'ready' && loaded.state.value.open ? loaded.state.value.panel : null
+
+  /*
+   * Attached once the columns exist, and not again on every render.
+   *
+   * It used to run with no dependency array, which built and tore down a
+   * `ResizeObserver` — and forced a synchronous layout read — on every
+   * keystroke in the compte-rendu. The observer already covers everything a
+   * re-render could change: the textareas grow with their content
+   * (`field-sizing`), the window resizes, the rows grow as the rep types. What
+   * it cannot see is the columns *appearing*, so `staged` is the dependency:
+   * the gate renders a spinner until the panel and the pre-fill have both
+   * landed, and only then are there elements to observe.
+   */
+  const staged = panel !== null && edits !== null
+  useLayoutEffect(() => {
+    if (!staged) return
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    if (docRef.current) observer.observe(docRef.current)
+    if (railRef.current) observer.observe(railRef.current)
+    return () => observer.disconnect()
+  }, [measure, staged])
 
   /*
    * The gate opens on the doubt.
