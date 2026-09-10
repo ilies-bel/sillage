@@ -268,7 +268,11 @@ function Promise({ title, children }: { title: string; children: string }) {
   return (
     <li>
       <h3 className="text-strong text-copy font-semibold">{title}</h3>
-      <p className="text-muted text-ui leading-relaxed">{children}</p>
+      {/* `.measure` on the paragraph and not inherited: `ch` resolves against
+          the element's own size, so 66ch of `--type-copy` is 97 characters once
+          the text inside is `--type-ui`. The class goes on the prose that wears
+          the size. */}
+      <p className="text-muted measure text-ui leading-relaxed">{children}</p>
     </li>
   )
 }
@@ -344,7 +348,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                   />
                 </span>
               </div>
-              <p className="text-muted mt-1 text-ui leading-relaxed">{NEEDS[id].why}</p>
+              <p className="text-muted measure mt-1 text-ui leading-relaxed">{NEEDS[id].why}</p>
 
               {row && row.state !== 'ok' ? (
                 <div className="mt-2 flex items-baseline gap-inline">
@@ -432,7 +436,7 @@ function Beat({ n, title, children }: { n: string; title: string; children: stri
       <span className="text-brand-700 w-4 shrink-0 tabular-nums text-copy font-semibold">{n}</span>
       <div className="min-w-0">
         <h3 className="text-strong text-copy font-semibold">{title}</h3>
-        <p className="text-muted text-ui leading-relaxed">{children}</p>
+        <p className="text-muted measure text-ui leading-relaxed">{children}</p>
       </div>
     </li>
   )
