@@ -124,8 +124,21 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
        * « niveau d'entrée trop faible pour être transcrit » with the measurement
        * in it. The meter is the glance; the diagnostic is the statement.
        */
-            className="flex shrink-0 items-stretch gap-1.5"
+      /*
+       * A column, not a row.
+       *
+       * The instrument has three things to say — which channel is which, what
+       * it is reading, and what the grey means — and the header has a hundred
+       * and eighty horizontal pixels to spare, not three hundred. Laid out
+       * across, the key cost ninety of them and the meeting's own title
+       * truncated to « Néovia Santé — ca… » on a 1280 laptop, which is the
+       * screen telling a rep less about the call they are in so that it can
+       * tell them more about the microphone. Stacked, the key costs fifteen
+       * pixels of header height, on the axis this screen has to spare.
+       */
+      className="flex shrink-0 flex-col items-end gap-0.5"
     >
+      <div className="flex items-stretch gap-1.5">
       {/*
         The key. Two words, one per half, on the same baselines the bars grow
         from — so the label is not describing the meter, it is *on* the row it
@@ -158,6 +171,7 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         </div>
       ))}
       </span>
+      </div>
 
       {/*
         What grey means. The third and last thing this instrument has to say.
@@ -178,7 +192,7 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         The swatch is the token the bars use, so the key cannot drift from what
         it names.
       */}
-      <span className="text-muted flex shrink-0 items-center gap-1 self-center whitespace-nowrap text-meta leading-none">
+      <span className="text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
         <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
         non transcrit
       </span>
