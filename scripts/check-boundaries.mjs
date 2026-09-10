@@ -46,9 +46,38 @@ if (violations.length > 0) {
   process.exit(1)
 }
 
-// The skipped count is printed on purpose. Those are files that survived
-// demolition and have not reached their porting step yet; a silently growing
-// exemption list is how a boundary rule stops meaning anything.
+/*
+ * **The exemption is frozen at its size, not merely printed.**
+ *
+ * Those are the files that survived demolition and have not reached their
+ * porting step (ARCHITECTURE.md §3). They are outside `core/`, `modules/` and
+ * `app/`, so the import rule does not reach them and neither does the platform
+ * check — which means a file dropped into `electron/services/` today is
+ * unconstrained by anything in this repo, and the count was the only thing
+ * standing between that and shipping.
+ *
+ * A printed number is not a check. `RESIDUE` is what the tree holds today; the
+ * count may fall as steps port their subject in, and it may never rise. A step
+ * that ports a file lowers it; nothing else is allowed to touch it.
+ */
+const RESIDUE = 42
+
+if (skipped > RESIDUE) {
+  console.error(
+    `\n${skipped} fichiers hors des trois couches, pour ${RESIDUE} attendus.\n` +
+      "Un nouveau fichier sous electron/services, audio, lib, update ou utils n'est soumis\n" +
+      "à aucune règle d'import ni à la vérification de plateforme (ARCHITECTURE.md §3).\n" +
+      'Écris-le dans core/, modules/ ou app/ — ou porte son voisin et baisse ce chiffre.',
+  )
+  process.exit(1)
+}
+
+// Falling is the point of the number, so it says so when it falls.
+const note =
+  skipped < RESIDUE
+    ? ` — ${RESIDUE - skipped} de moins qu'attendu, baisse RESIDUE dans ce fichier`
+    : ''
+
 console.log(
-  `boundaries ok — ${checked} files checked, ${skipped} not yet in a layer (see ARCHITECTURE.md §3)`,
+  `boundaries ok — ${checked} files checked, ${skipped} not yet in a layer${note} (see ARCHITECTURE.md §3)`,
 )

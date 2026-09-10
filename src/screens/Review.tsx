@@ -686,6 +686,34 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   is: one muted line between the toolbar and the first heading.
                 */}
                 <CompteRenduMarkersNote className="text-muted border-subtle mb-3 border-b pb-2 text-meta" />
+                {/*
+                  **The two halves of this screen are two documents, and only
+                  one of them is edited here.**
+
+                  The CRM task carries `edits.compteRendu` — this text. The
+                  opportunity carries the typed fields from the rail beside it.
+                  Both go out on the same press, and nothing reconciles them: a
+                  rep who corrects « Objections » on the right has corrected the
+                  opportunity and not this paragraph, and if the extraction
+                  flagged that field, the `⚠ faible` written into this string
+                  (DEC-21 — the marker is in the document on purpose, so a reader
+                  who never opens the form still sees it) is now stale.
+
+                  There is no clever reconciliation to build. Regenerating the
+                  prose from an edited field would put AI writing back into text
+                  the rep has already corrected; propagating the edit as a string
+                  replacement would be a find-and-replace inside a paragraph
+                  nobody asked us to touch. What the screen owes is the sentence,
+                  once, where the confusion happens.
+                */}
+                {faible.length > 0 ? (
+                  <p className="text-muted mb-3 text-meta">
+                    Les corrections faites à droite vont dans l’opportunité. Ce texte-ci part
+                    dans la tâche VerySwing tel qu’il est affiché — s’il porte un{' '}
+                    <span className="text-warn">{FAIBLE}</span> que vous avez levé, corrigez-le
+                    dans « Modifier ».
+                  </p>
+                ) : null}
                 <CompteRenduDocument text={edits.compteRendu} />
               </>
             ) : (
