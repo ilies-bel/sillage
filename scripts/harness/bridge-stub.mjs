@@ -796,6 +796,28 @@ export function installAppBridge(config) {
         },
       ],
     },
+    /*
+      Today's call, and the reason it is here.
+
+      `CLIENTS` offers « Néovia Santé » as a filter chip — the store builds that
+      list from the client names it holds, and today's meeting is one of them —
+      while `HISTORY_ROWS` had no Néovia row at all. So pressing the chip the
+      screen itself offered answered « Aucun appel ne correspond », on the one
+      client the whole fixture is built around, and `agenda-client` photographed
+      an empty state for five review rounds. *Historique* is every meeting, not
+      every *finished* meeting (DEC-25).
+    */
+    {
+      meeting: meetingById('m-neovia-cadrage'),
+      status: 'À valider',
+      intents: [],
+      matches: [
+        {
+          where: 'transcript',
+          excerpt: '…la grille achats plafonne à 550 euros sur un profil confirmé…',
+        },
+      ],
+    },
     {
       meeting: meetingById('m-sodexial-staffing'),
       status: 'Validée',

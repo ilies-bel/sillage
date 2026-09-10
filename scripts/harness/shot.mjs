@@ -192,7 +192,18 @@ const SCREENS = {
       */
       await page.getByLabel('Rechercher un client, un sujet, une transcription ou une note').focus()
       await page.getByRole('button', { name: 'Néovia Santé', exact: true }).click()
-      await page.waitForTimeout(400)
+      /*
+        A **row**, not a pause.
+
+        The chip list comes from the store's distinct client names and the rows
+        come from its meetings, so the two can disagree — and they did: the
+        fixture offered « Néovia Santé », the client the whole thing is built
+        around, and had no row for it, so this stage photographed « Aucun appel
+        ne correspond » for five review rounds. A screenshot of an empty state
+        is indistinguishable from a screenshot of a working filter unless
+        somebody reads the words, and the timeout made it silent.
+      */
+      await rowNamed(page, 'cadrage renfort data').getByRole('button', { name: 'Ouvrir' }).waitFor()
     },
   },
 
