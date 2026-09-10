@@ -51,7 +51,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SHOT = path.join(HERE, 'shot.mjs')
 
-/** Four at a time. One browser each; twenty-five in series is three minutes. */
+/** Four at a time. One browser each; the whole list in series is three minutes. */
 const LANES = 4
 
 const screens = () =>
@@ -84,7 +84,7 @@ const drive = (screen) =>
         code === 0
           ? null
           : // The first line only: a Playwright timeout carries its whole call
-            // log, and twenty-five of those is a wall nobody reads.
+            // log, and a wall of those is something nobody reads.
             { screen, reason: (out.split('\n').find((l) => l.includes('✗')) ?? out).trim() },
       )
     })

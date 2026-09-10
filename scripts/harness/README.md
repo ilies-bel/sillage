@@ -5,9 +5,23 @@ device, without Graph, VerySwing or an LLM key — and runs a design detector
 inside that same rendered page.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--no-png] [--sans-entra]
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--no-png] [--sans-entra]
+node scripts/harness/smoke.mjs                 # every stage, driven, with the geometry check
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
+
+**Run `smoke.mjs` before and after a copy change.** A stage is a scripted path
+through the real renderer and it is held together by the product's own French
+strings, so renaming a button breaks stages silently — nothing runs them but a
+person deciding to look at a screen. It has happened twice, and the second time
+it broke six at once, including both of the features under review.
+
+**`--geometry` measures what a picture hides.** Anything marked `data-hangs` —
+the compte-rendu's gutter markers today — is compared against the padding edge
+of the box that clips it, and the tightest clearance on the screen is printed.
+Ten of twenty-three markers were clipped for three review rounds: every one of
+them was in the accessibility tree, every one read correctly in `innerText`, and
+a third of the `###` was simply not painted.
 
 **`--no-expand` is the flag a design pass wants.** Three screens ask for
 `expand` in their own plan because what matters on them sits below an inner

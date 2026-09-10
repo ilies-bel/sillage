@@ -143,6 +143,32 @@ machine) or in `core/domain/` — never in an IPC handler.
   never a greyed copy of *Valider*: a disabled primary is a button a rep presses. That is not a
   second gate — pressing it confirms nothing — and the guard is stated as « is there something
   below the fold », so an environment that cannot lay out fails **open**.
+- **The capture permission is asked for, and the two channels are reported apart**
+  (`core/domain/capturePermission.ts`, DEC-45). The app never looked at TCC at all: `probe()`
+  asked only whether the native module loads, so onboarding's row and Réglages' *Requis* card
+  both carried a `retryable: false` capture health with no registered retry and no remedy
+  anywhere — install, refuse the macOS prompt, and no screen in the product could ask again
+  while the OS had quietly stopped prompting. Three rules. **A permission never asked for is
+  a prompt; one already refused is the settings pane** — the OS silently returns the old
+  answer, so offering *Autoriser* for a refusal is the dead control DEC-26 forbids. **One
+  missing channel is `degraded`, never `down`**: a meeting still happens and a transcript
+  still exists, and the sentence names which side goes missing because losing the microphone
+  and losing the system audio have opposite fixes. **Capability-tested, never
+  platform-tested**: `getMediaAccessStatus` throws where it does not exist, `askForMediaAccess`
+  is simply absent, and both degrade to « we did not measure it », which counts as usable —
+  Windows has none of these to grant and must not be shown a permission warning. The
+  screen-recording prompt has no ask API; `desktopCapturer.getSources` is what fires it.
+
+- **The dry run is offered, never automatic, and silence is not a fault** (DEC-45).
+  `capture:essai` opens both channels for twenty seconds, reports what each heard, and keeps
+  nothing — no meeting, no store row, no transcription — and refuses while a meeting is
+  recording, because opening a second handle on the same devices is not a thing to test
+  against an onboarding screen. It reuses the session's own `LevelMeter` on a reserved
+  meeting id, so the instrument a rep watches here is the one they will watch during the call.
+  A channel that heard nothing is reported as « rien n'a été entendu », never as a broken
+  machine: the rep may simply have said nothing, and a false statement about their hardware
+  is one they will act on.
+
 - **First run asks for the permissions before they are needed** (`Onboarding.tsx`). The app
   had none, so the first time a rep pressed *Démarrer une réunion* the OS asked them for
   microphone and screen-recording permission in its own words, over a screen that had explained
@@ -193,7 +219,7 @@ machine) or in `core/domain/` — never in an IPC handler.
   Every one of them was in the accessibility tree and correct in `innerText`; a third of the
   `###` was simply not painted. A DOM test cannot see that, so `shot.mjs --geometry` measures
   every `data-hangs` element against the box it hangs in and prints the tightest clearance, and
-  `smoke.mjs` runs it on all twenty-six stages. Tune the gutter against that number.
+  `smoke.mjs` runs it on every stage. Tune the gutter against that number.
 
 - **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
   same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
@@ -279,6 +305,35 @@ machine) or in `core/domain/` — never in an IPC handler.
   of that test passed with the stage disabled. Everything fails open (DEC-26): a graph that
   will not build, a frame it rejects, a rate that is not 16 kHz, all leave the microphone
   exactly as it arrived.
+- **A quote is attributed to a side, never to a person** (DEC-47). The transcript has two
+  channels and that is the whole of what the recording establishes about who spoke; which of
+  two client-side people said a sentence is not in the record. `deterministicLeaks.ts` already
+  refuses a reply naming a Graph attendee outside a citation, so the rule was enforced before
+  it was written down — stating it in `REGISTRE` turns a refused extraction into a usable one.
+
+- **The harness fixture is checked, not trusted** (`modules/extract/__tests__/harnessFixture.test.ts`).
+  It has now been caught lying three times, each time flattering the app: four invented
+  headings at half the real length; a `degraded` Outlook row and a Whisper download the app
+  cannot emit; and a compte-rendu attributing quotes to named attendees, which the real
+  composer would have refused outright. The lesson was written in a comment twice and ignored
+  twice. The test runs the product's own leak check over the fixture's prose, reads the
+  attendee names out of the stub rather than restating them, and guards itself against finding
+  nobody.
+
+- **Something happens at 14:30** (DEC-46). `Agenda.onArmed` fires on the arming *edge*, never
+  on the thirty-second tick, and `main.ts` raises one OS notification from it. Its click
+  restores, shows and focuses the window and broadcasts `session:open` — the only thing in the
+  product that navigates without the rep having pressed something inside it. It never starts a
+  recording, and a notification that will not show is not a meeting that will not record.
+
+- **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
+  of it shared one blind spot: the preload, the real channel names, the Zod validation on both
+  sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
+  renamed on one side of the bridge would ship. Sixteen steps under Playwright's Electron
+  driver on a throwaway `--user-data-dir`, which is also the only way first run is reachable.
+  It ends the meeting it starts and never runs the audio trial — twenty seconds of listening
+  would raise an OS prompt no headless run can answer.
+
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
@@ -345,6 +400,7 @@ only under `electron/modules/crm/vsa/`. Anywhere else means the abstraction leak
 ```
 npm test                  # the suite. prints which tests are deferred, and why
 npm run check             # typecheck + import boundaries + CRM containment + platform branches
+npm run test:e2e          # builds, then walks the real application under Electron
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```
 
@@ -360,8 +416,18 @@ node scripts/harness/serve.mjs                 # the same app at a URL, for tool
 ```
 
 `scripts/harness/README.md` has the screen list. `--scan` runs a design detector inside the
-rendered page. **A design pass that only reads `src/` has not looked at the product** — the
+rendered page and `--geometry` measures every element that hangs outside its box against the
+box that clips it. **A design pass that only reads `src/` has not looked at the product** — the
 defects that matter here live in rendered geometry and in the accessibility tree.
+
+```
+node scripts/harness/smoke.mjs                 # every stage, driven, with the geometry check
+```
+
+A stage is held together by the product's own French strings, so a copy change breaks one
+silently. That happened twice — the second time it broke six stages at once, including both
+features under review — and both times the lesson was written down in a comment. A comment is
+not a check.
 
 ## Platforms — Windows is the primary one (HR-2)
 
