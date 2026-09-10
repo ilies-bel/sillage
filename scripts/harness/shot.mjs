@@ -680,8 +680,48 @@ const SCREENS = {
       await page.waitForTimeout(400)
       await refuses('un redimensionnement en cours de lecture')
 
+      /*
+       * **The two that walked through the latch.**
+       *
+       * `covered` exists so a rep typing into « Objections » cannot disarm the
+       * button by growing the column under their own caret. It was content-blind
+       * and viewport-blind, and both showed:
+       *
+       *  · **the Transcription tab** — a rep checking a quote, which is the
+       *    DEC-21 gesture this product is proudest of, opens the transcript,
+       *    reads it to the end and comes back to *Lecture*. The transcript is
+       *    shorter than the document, so the column was « covered », and
+       *    *Valider* went live with 1700 of the compte-rendu's 2447 pixels never
+       *    drawn — the whole « EMAIL DE RELANCE » block among them, subject,
+       *    recipients and body of the mail that goes to the client;
+       *  · **a window that shrinks** — opened where both columns fit the guard is
+       *    satisfied and correctly so; shrunk, the latch kept saying it.
+       */
+      await page.getByRole('button', { name: 'Transcription', exact: true }).click()
+      await page.waitForTimeout(400)
+      for (let i = 0; i < 30; i++) {
+        const done = await page.evaluate(() => {
+          const doc = document.querySelector('main.fade-below')
+          if (!doc || doc.scrollTop + doc.clientHeight >= doc.scrollHeight - 8) return true
+          doc.scrollBy({ top: doc.clientHeight - 64 })
+          doc.dispatchEvent(new Event('scroll'))
+          return false
+        })
+        await page.waitForTimeout(90)
+        if (done) break
+      }
+      await page.getByRole('button', { name: 'Lecture', exact: true }).click()
+      await page.waitForTimeout(400)
+      await refuses('avoir lu la transcription puis être revenu au compte-rendu')
+
+      await page.setViewportSize({ width: 1280, height: 3000 })
+      await page.waitForTimeout(500)
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.waitForTimeout(600)
+      await refuses('avoir ouvert grand puis rétréci la fenêtre')
+
       // And the control still says which way the unread band lies.
-      await page.getByRole('button', { name: 'Remonter dans ce qui part' }).waitFor()
+      await page.getByRole('button', { name: /Remonter|la suite/ }).first().waitFor()
     },
   },
 

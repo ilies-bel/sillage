@@ -86,6 +86,14 @@ const PENDING_EDITS = new Map<string, ReviewEdits>()
 type Column = 'document' | 'rail'
 
 /**
+ * How much a column may shrink before what was covered stops counting.
+ *
+ * Two lines of the decision footer, which reflows on its own as the button
+ * arrives — see the note beside it in `read`.
+ */
+const SHRINK_SLACK = 64
+
+/**
  * How long the *Ce qui sera créé* rows lag the field being typed into.
  *
  * Short enough that the rep never sees the old account name while looking at
@@ -269,6 +277,37 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    */
   const covered = useRef<Record<Column, boolean>>({ document: false, rail: false })
 
+  /**
+   * **What was covered, and of what.**
+   *
+   * The latch above froze an answer about *pixels*: a range recorded against one
+   * content, compared to `scrollHeight` of whatever is in the column now. Two
+   * ordinary gestures walked straight through it.
+   *
+   * **The Transcription tab.** A rep checking a quote — the DEC-21 gesture this
+   * product is proudest of — opens the transcript, scrolls it to the end, and
+   * comes back to *Lecture*. The transcript is short, so the column was covered;
+   * the latch held; and *Valider* went live with **1700 of the compte-rendu's
+   * 2447 pixels never drawn**, the entire « EMAIL DE RELANCE » block among them
+   * — the subject, the recipients and the body of the mail that goes to the
+   * client. On a real call the transcript is many times the document's height,
+   * so this fires hardest on a *short* call, which is the one a rep reads
+   * fastest.
+   *
+   * **A window that shrinks.** Opened on a display where both columns fit, the
+   * guard is satisfied and correctly so. Shrink the window and the latch keeps
+   * saying so, with seventeen hundred pixels below the fold.
+   *
+   * So the latch is stamped with what it was a statement about: which document
+   * the column was showing, and how tall the box was. A stamp that no longer
+   * matches is not a lie to be corrected — it is a measurement of something
+   * else, and it is discarded.
+   */
+  const coveredOf = useRef<Record<Column, { content: string; height: number } | null>>({
+    document: null,
+    rail: null,
+  })
+
   const measure = useCallback(() => {
     /*
      * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
@@ -317,12 +356,46 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * So the union is the measurement and this is the memory of it.
      */
     const read = (column: Column, el: HTMLElement | null): boolean => {
-      if (covered.current[column]) return true
-      if (!el || el.clientHeight === 0) return true
+      if (!el || el.clientHeight === 0) return covered.current[column] || true
+
+      /*
+       * The stamp, checked before the latch is believed. `content` names what
+       * the column is showing — the left one swaps between the document, the
+       * editable copy and the transcript — and `height` is the box the range was
+       * measured in. A shorter box has more below the fold than the one that was
+       * covered; a taller one only ever has less, so growth is not invalidating.
+       */
+      const stamp = { content: column === 'document' ? mode : 'rail', height: el.clientHeight }
+      const was = coveredOf.current[column]
+      if (covered.current[column]) {
+        /*
+         * `SHRINK_SLACK`, and it is not a fudge.
+         *
+         * The pinned decision footer reflows on its own: the sub-line under it
+         * wraps to two lines while it says what is left to read and to one once
+         * the button is there, which changes the rail's box by about thirty
+         * pixels. That is the app's chrome moving, not the window, and treating
+         * it as a resize made the guard oscillate — arm, reflow, shrink,
+         * invalidate, disarm, reflow, arm — so the honest reader could never
+         * finish. Sixty-four pixels is two lines of chrome and a long way from
+         * the two thousand a real resize takes.
+         */
+        if (was && was.content === stamp.content && stamp.height >= was.height - SHRINK_SLACK) {
+          return true
+        }
+        // Something else is in the column, or there is more of it below the fold
+        // than there was. Neither is a thing the rep has read.
+        covered.current[column] = false
+        coveredOf.current[column] = null
+        seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
+      }
       const range = seen.current[column]
       if (!range) return true
       const done = range.from <= 8 && range.to >= el.scrollHeight - 8
-      if (done) covered.current[column] = true
+      if (done) {
+        covered.current[column] = true
+        coveredOf.current[column] = stamp
+      }
       return done
     }
     const readToEnd = {
@@ -367,7 +440,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     setBelow(
       !readToEnd.current.document ? 'document' : !readToEnd.current.rail ? 'rail' : null,
     )
-  }, [])
+    // `mode` is read by the stamp above: the left column shows a different
+    // document in each of the three, and a range measured over one of them says
+    // nothing about another.
+  }, [mode])
 
   /*
    * Measure before paint, and again whenever the rail changes size.

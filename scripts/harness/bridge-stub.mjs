@@ -1985,11 +1985,37 @@ export function installAppBridge(config) {
     */
     'review:transcript': () => ({ segments: SEGMENTS }),
 
-    'review:confirm': (payload) => ({
-      ok: true,
-      state: 'pushing',
-      intentIds: payload.intentIds || [],
-    }),
+    /*
+      **A confirmation that changes nothing is a fixture showing the product
+      failing.**
+
+      This answered `{ok: true}` and mutated no fixture, so the screenshot taken
+      after the one irreversible press showed the calendar with the meeting still
+      « À valider », the backlog count unchanged, and the row indistinguishable
+      from one that had never been validated. In the product that is not what
+      happens: `register.ts` emits `confirmation.recorded`, the state machine
+      moves to `pushing`, and `Agenda` reloads on `session:changed`. The picture
+      published as the proof was a picture of the press not landing — a rep
+      looking at that screen presses *Valider* again, on an endpoint with no
+      idempotency key.
+
+      So the stub does what the main process does: it moves the meeting, drops it
+      out of the backlog, and broadcasts. It is the same rule as everywhere else
+      here — a stub that answers with something it then forgets makes a working
+      path look broken, and a broken one look fine.
+    */
+    'review:confirm': (payload) => {
+      const meeting = meetingById(payload.meetingId)
+      if (meeting) {
+        meeting.state = 'pushing'
+        meeting.confirmedAt = now
+        meeting.updatedAt = now
+      }
+      const row = HISTORY_ROWS.find((r) => r.meeting.id === payload.meetingId)
+      if (row) row.status = 'Validée'
+      harness.emit('session:changed', { meetingId: payload.meetingId, state: 'pushing' })
+      return { ok: true, state: 'pushing', intentIds: payload.intentIds || [] }
+    },
 
     'history:search': (payload) => {
       const query = payload.query || ''
