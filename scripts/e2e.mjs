@@ -63,14 +63,21 @@ const step = async (name, body) => {
 
 let app = null
 let page = null
+let noise = []
 
-try {
+/**
+ * One launch, on the profile directory the whole run shares.
+ *
+ * `--user-data-dir` is Electron's own switch and needs no support in the app:
+ * the store, the model directory and the preferences all hang off
+ * `app.getPath('userData')`, so pointing it at a temporary directory is what
+ * makes the first-run path reachable and leaves a developer's real database
+ * alone. Called twice — the second time on a database the first one filled,
+ * which is the launch every rep after their first day actually performs and
+ * which nothing here had ever exercised.
+ */
+const launch = async () => {
   app = await electron.launch({
-    // `--user-data-dir` is Electron's own switch and needs no support in the
-    // app: the store, the model directory and the preferences all hang off
-    // `app.getPath('userData')`, so pointing it at a temporary directory is what
-    // makes the first-run path reachable and leaves a developer's real database
-    // alone.
     args: [path.join(REPO, '.'), `--user-data-dir=${profile}`],
     env: {
       ...process.env,
@@ -89,11 +96,14 @@ try {
    * the errors that matter here are exactly the bridge ones this file exists to
    * catch: « canal inconnu », a Zod parse failure, a missing preload.
    */
-  const noise = []
   page.on('console', (message) => {
     if (message.type() === 'error') noise.push(message.text())
   })
   page.on('pageerror', (error) => noise.push(String(error)))
+}
+
+try {
+  await launch()
 
   await step('the window opens and paints', async () => {
     await page.waitForSelector('#root > *', { timeout: 45_000 })
@@ -303,6 +313,42 @@ try {
     }
     // And it did run: a log with nothing in it is a log that was never written.
     if (events.length === 0) throw new Error('journal vide — les sondes n’ont rien écrit')
+  })
+
+  /*
+   * ── the second launch, on a database the first one filled ───────────────────
+   *
+   * Every step above ran against a store created from nothing. That is the
+   * *first* launch, and it is the one a rep performs once; every other day of
+   * their working life is this one — a schema that has to open, projections that
+   * have to read rows written by a previous process, a preference that has to
+   * come back. Nothing in this repo had ever opened a non-empty database.
+   */
+  await step('the app reopens on the database it left behind', async () => {
+    await app.close()
+    noise = []
+    await launch()
+    await page.waitForSelector('#root > *', { timeout: 45_000 })
+    // No first run: `onboarding:seen` was written to this store and read back
+    // out of it by a different process.
+    await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
+  })
+
+  await step('the meeting written last time is still there', async () => {
+    await page.keyboard.press('Control+h')
+    await page.getByRole('heading', { name: 'Historique' }).waitFor()
+    // Rows, from SQLite, written by the process that has since exited.
+    await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
+    const rows = await page.locator('[aria-label="Appels enregistrés"] > li').count()
+    if (rows === 0) throw new Error('la base rouverte ne contient aucune réunion')
+  })
+
+  await step('the second launch logs no unexplained error either', async () => {
+    const events = await page.evaluate(() => window.app.invoke('diagnostics:recent', { limit: 200 }))
+    const errors = events.filter((event) => event.severity === 'error')
+    if (errors.length > 0) {
+      throw new Error(errors.slice(0, 3).map((e) => `${e.code}: ${e.message}`).join(' · '))
+    }
   })
 
   await step('nothing threw in the renderer', async () => {
