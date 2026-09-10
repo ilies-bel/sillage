@@ -354,10 +354,15 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
-  renamed on one side of the bridge would ship. Sixteen steps under Playwright's Electron
+  renamed on one side of the bridge would ship. Twenty-three steps under Playwright's Electron
   driver on a throwaway `--user-data-dir`, which is also the only way first run is reachable.
   It ends the meeting it starts and never runs the audio trial — twenty seconds of listening
-  would raise an OS prompt no headless run can answer.
+  would raise an OS prompt no headless run can answer. **It launches twice**: every other test
+  in the repo, and every step of the first launch, runs against a store created from nothing,
+  and a rep does that once — the second launch, on a database a previous process filled, is
+  every other day of their working life and nothing had ever exercised it. It reads the real
+  diagnostic log back on both launches and fails on an `error` severity, which is how the
+  refusal-versus-failure defect was found.
 
 - **A turn is named when the record settles who took it, and never otherwise** (`speakerLabel`
   in `core/contracts/transcript.ts`, DEC-47). Exactly one interlocutor on the far side means
