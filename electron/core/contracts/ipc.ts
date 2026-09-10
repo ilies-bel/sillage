@@ -700,6 +700,17 @@ export const broadcastChannels = {
   'diag:appended': z.object({ event: DiagEventSchema }),
   /** Pushed on every arming tick, so the agenda never has to poll. */
   'agenda:changed': AgendaSnapshotSchema,
+  /**
+   * **Open this meeting** — the app asking the window to go somewhere.
+   *
+   * The only broadcast that navigates, and it exists for one case: the rep is in
+   * Teams, the 14:30 has started, and Sillage is behind three windows with the
+   * offer on a screen nobody is looking at. The OS notification is what reaches
+   * them; this is what the notification's click does. Everything else in this
+   * product is the rep asking the app, and it stays that way — nothing sends
+   * this on a timer, only on a click the rep made.
+   */
+  'session:open': z.object({ meetingId: MeetingIdSchema }),
   'auth:changed': AuthStateSchema,
   /**
    * The whole boot state, not a patch. Three fields and a version string is

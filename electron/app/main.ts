@@ -6,7 +6,15 @@
  * sink and the orchestrator, registers IPC, and shows a window. Anything that
  * decides something belongs in `app/session/` or `core/domain/`.
  */
-import { app, BrowserWindow, desktopCapturer, ipcMain, shell, systemPreferences } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  ipcMain,
+  Notification,
+  shell,
+  systemPreferences,
+} from 'electron'
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
@@ -181,6 +189,17 @@ const environment = (): DiagEnvironment => ({
   // answer, and a wrong one here is the first thing to check on a capture bug.
   nativeArch: process.arch,
 })
+
+/**
+ * Windows needs this before it will show a toast at all.
+ *
+ * On macOS a `Notification` works with no ceremony; on Windows — the primary
+ * platform (HR-2) — the Action Center refuses one from a process with no
+ * AppUserModelID, silently. It is the packaged app id, so a toast is attributed
+ * to Sillage rather than to `electron.app.Electron`, and setting it off Windows
+ * is a documented no-op rather than a platform branch.
+ */
+app.setAppUserModelId('fr.ilies-bel.sillage')
 
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
@@ -495,6 +514,51 @@ const requestCaptureAccess = async (): Promise<void> => {
   }
 }
 
+/**
+ * **The 14:30 starts and nothing happens.**
+ *
+ * The agenda knew the meeting, labelled it « PRÊT », and drew *Enregistrer* —
+ * on a window behind Teams, Outlook and a browser, which is where this app sits
+ * for the whole of a rep's day. There was no `Notification` and no `Tray`
+ * anywhere in `electron/`: the one moment the product exists for was the one
+ * moment it said nothing.
+ *
+ * So the OS says it, once, on the arming edge — `Agenda.onArmed` fires at the
+ * transition and never on the tick, so a call cannot produce a notification
+ * every thirty seconds. Clicking it brings the window forward and opens that
+ * meeting, which is the whole of what a rep wants at 14:30.
+ *
+ * **It never starts a recording.** A capture that began because an OS
+ * notification was clicked is a capture nobody agreed to, on a call that may be
+ * a private conversation the rep stepped into (DEC-4's reasoning, one screen
+ * earlier). It offers; the rep presses.
+ *
+ * Failing is free: `Notification.isSupported()` is false on a Linux without a
+ * daemon and on a macOS where the user has turned them off, and everything here
+ * is wrapped — a meeting arms, and is on screen, whether or not the OS agreed
+ * to mention it (DEC-26).
+ */
+const announceMeeting = (
+  meetingId: string,
+  subject: string,
+  open: (meetingId: string) => void,
+): void => {
+  try {
+    if (!Notification.isSupported()) return
+    const notification = new Notification({
+      title: subject || 'Réunion',
+      // What it is offering, in one line, and it is an offer. « Enregistrer ? »
+      // and not « Enregistrement en cours » — nothing has started.
+      body: 'La réunion commence. Ouvrir Sillage pour l’enregistrer ?',
+      silent: false,
+    })
+    notification.on('click', () => open(meetingId))
+    notification.show()
+  } catch {
+    // A notification that will not show is not a meeting that will not record.
+  }
+}
+
 const audioBootStep = (health: ConnectorHealth): BootStep =>
   health.state === 'ok'
     ? { state: 'ready', value: 'moteur de capture chargé' }
@@ -625,6 +689,26 @@ const boot = async (): Promise<void> => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(channel, payload)
     }
+  }
+
+  /**
+   * Bring the window forward and open the meeting — the OS notification's click
+   * and nothing else sends this.
+   *
+   * `show()` before `focus()`, and both before the broadcast: a renderer told to
+   * navigate while its window is still minimised navigates somewhere nobody can
+   * see, and on Windows a minimised window ignores `focus()` until it is shown.
+   */
+  const announceArmed = (meetingId: string, subject: string): void => {
+    announceMeeting(meetingId, subject, (id) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue
+        if (window.isMinimized()) window.restore()
+        window.show()
+        window.focus()
+      }
+      broadcast('session:open', { meetingId: id })
+    })
   }
 
   // ── Screen 0 (DEC-30) ────────────────────────────────────────────────────
@@ -1154,6 +1238,7 @@ const boot = async (): Promise<void> => {
       healthFor: calendarHealth,
       onHealth: (health) => orchestrator.setHealth('calendar', health),
       onChanged: (snapshot) => broadcast('agenda:changed', snapshot),
+      onArmed: ({ meetingId, subject }) => announceArmed(meetingId, subject),
     })
 
     orchestrator.registerRetry('calendar', async () => {

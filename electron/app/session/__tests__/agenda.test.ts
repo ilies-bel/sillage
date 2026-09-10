@@ -67,6 +67,7 @@ const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams')
   const calendar = new FakeCalendar(events)
   const health: ConnectorHealth[] = []
   const snapshots: ReturnType<Agenda['snapshot']>[] = []
+  const armed: { meetingId: string; subject: string }[] = []
   let audio = meetingAudio
 
   const agenda = new Agenda({
@@ -76,6 +77,7 @@ const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams')
     clock: () => T0,
     onHealth: (h) => void health.push(h),
     onChanged: (s) => void snapshots.push(s),
+    onArmed: (a) => void armed.push(a),
   })
 
   return {
@@ -85,6 +87,7 @@ const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams')
     store,
     health,
     snapshots,
+    armed,
     setAudio: (value: string | null) => void (audio = value),
   }
 }
@@ -219,4 +222,64 @@ test('a meeting id is derived from the event, and is not the event id', async ()
   assert.equal(meetingIdFor('AAA'), meetingIdFor('AAA'))
   assert.notEqual(meetingIdFor('AAA'), meetingIdFor('BBB'))
   assert.match(meetingIdFor('AAA'), /^evt-[0-9a-f]{16}$/)
+})
+
+
+/*
+ * ── the announcement (`main.ts`) ────────────────────────────────────────────
+ *
+ * The agenda knew the 14:30, labelled it « PRÊT » and drew *Enregistrer* — on a
+ * window sitting behind Teams, Outlook and a browser, which is where this app
+ * lives for the whole of a rep's day. The OS notification is what reaches them,
+ * and it hangs off this callback. What has to hold is that it fires on the
+ * *edge*: the arming loop ticks every thirty seconds, and a notification per
+ * tick would be the app that gets muted on day one.
+ */
+
+test('a meeting that arms announces itself exactly once, however many ticks pass', async () => {
+  const h = harness([event('AAA')])
+
+  await h.agenda.tick({ now: T0 - 60_000 })
+  await h.agenda.tick({ now: T0 - 45_000 })
+  await h.agenda.tick({ now: T0 - 30_000 })
+
+  assert.equal(h.armed.length, 1)
+  assert.equal(h.armed[0]?.meetingId, meetingIdFor('AAA'))
+  // The event's own subject — it is the notification's title, and a rep glancing
+  // at a toast has to recognise the call from it.
+  assert.equal(h.armed[0]?.subject, event('AAA').context.subject)
+  h.store.close()
+})
+
+test('a meeting that never arms is never announced', async () => {
+  // No conferencing audio: the window is open, nothing is running, and there is
+  // nothing to offer. A toast here would be the app interrupting a rep about a
+  // call they have not joined.
+  const h = harness([event('AAA')], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+
+  assert.deepEqual(h.armed, [])
+  h.store.close()
+})
+
+test('a listener that throws does not stop the meeting arming', async () => {
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store)
+  const agenda = new Agenda({
+    calendar: new FakeCalendar([event('AAA')]),
+    orchestrator,
+    meetingAudio: () => 'Teams',
+    clock: () => T0,
+    onArmed: () => {
+      throw new Error('pas de service de notification')
+    },
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+
+  // A notification that will not show is not a meeting that will not record
+  // (DEC-26).
+  assert.equal(orchestrator.stateOf(meetingIdFor('AAA')), 'armed')
+  assert.equal(agenda.snapshot().armed?.meetingId, meetingIdFor('AAA'))
+  store.close()
 })

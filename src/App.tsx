@@ -49,6 +49,18 @@ export function App() {
     setRoute({ screen: 'session', meetingId })
   }, [])
 
+  /*
+   * The OS notification's click, and the only thing in this product that
+   * navigates without the rep having pressed something *in* it.
+   *
+   * That exception is the whole point: at 14:30 the rep is in Teams and this
+   * window is behind three others, so the offer is on a screen nobody is
+   * looking at. The notification reaches them; this is what its click does. It
+   * opens the meeting and starts nothing — a capture that began because a
+   * notification was clicked is a capture nobody agreed to.
+   */
+  useBroadcast('session:open', ({ meetingId }) => open(meetingId))
+
   // Offered by the session only once the machine has reached the gate, so
   // there is no route into the review screen during a call (DEC-23).
   const review = useCallback((meetingId: string) => {

@@ -71,6 +71,16 @@ export interface AgendaOptions {
   onChanged?: (snapshot: AgendaSnapshot) => void
   /** Maps a failure to a health state. Injected so `app/` keeps that mapping. */
   healthFor?: (error: unknown, at: number) => ConnectorHealth
+  /**
+   * A meeting has just become armed — **once per meeting**, at the transition.
+   *
+   * `#arm` returns early when the same meeting is already armed, so this fires
+   * on the edge and never on the tick. `main.ts` uses it to raise an OS
+   * notification, which is the only thing that reaches a rep who is in Teams
+   * with this window behind three others; a callback that fired every thirty
+   * seconds would be a notification every thirty seconds.
+   */
+  onArmed?: (armed: { meetingId: string; subject: string }) => void
 }
 
 export class Agenda {
@@ -205,6 +215,14 @@ export class Agenda {
     }
 
     this.#armed = { meetingId, eventId: event.id, subject: event.context.subject }
+    // After the state is set and before the diagnostic, so a listener that
+    // throws cannot leave the agenda armed-but-unrecorded — and it is wrapped,
+    // because a notification is never a reason a meeting fails to arm (DEC-26).
+    try {
+      this.#options.onArmed?.({ meetingId, subject: event.context.subject })
+    } catch {
+      // The offer is on screen either way; the notification is the extra.
+    }
     this.#diagnostics.record({
       severity: 'info',
       code: 'agenda.armed',
