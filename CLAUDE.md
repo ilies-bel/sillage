@@ -373,6 +373,19 @@ machine) or in `core/domain/` — never in an IPC handler.
   differently is two things for a rep to reconcile. It is in `contracts` for the reason
   `meetingAnchor` is: `src/*` may import nothing else.
 
+- **The arming guard measures the *rep*, not the scroller** (DEC-4, DEC-21). It was « the
+  bottom has been touched », and the gate opens by jumping the rail to the first `⚠ faible` row
+  — which on the ESN document lands at exactly `scrollHeight − clientHeight`, so the flag was
+  true before the rep had done anything and reading the document alone armed *Valider* with
+  seven of eleven fields never drawn, *Client* among them. The guard was inverted by its own
+  good behaviour: the jump only happens when there is something to check. What is recorded is
+  the union of the viewports each column has *shown*; a scroll the app performs is marked and
+  records where it landed, never the bands it animated past. The page turn is pinned to the
+  foot of the **box** — at the foot of the *content* it was reachable for sixteen pixels of a
+  1761-pixel scroll — and points up when the unread band is above. Drive it at three viewports
+  before touching it; jsdom measures every box as zero, so the renderer's tests can only hold
+  the permissive default.
+
 - **The one control that ships is never the rectangle the rep just pressed** (DEC-4). Colour
   was not enough: React reused the same `<button>` at the same tree position, so the page turn
   and *Valider* were the same DOM node in the same 505×37 rectangle, 63 ms apart — a
@@ -470,7 +483,7 @@ only under `electron/modules/crm/vsa/`. Anywhere else means the abstraction leak
 
 ```
 npm test                  # the suite. prints which tests are deferred, and why
-npm run check             # typecheck + import boundaries + CRM containment + platform branches
+npm run check             # typecheck + boundaries + CRM containment + platform + French
 npm run test:e2e          # builds, then walks the real application under Electron
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```
