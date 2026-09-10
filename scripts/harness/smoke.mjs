@@ -26,6 +26,15 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * It carries `--contrast`, computed from the styles the browser resolved rather
+ * than from sampled pixels — with transitions switched off, because
+ * `getComputedStyle` returns the *current animated value* and a reading taken
+ * mid-flight is a reading of a frame. That is how the bundled detector reports
+ * « Démarrer une réunion » at 4.0:1 on an element that rests at fourteen, and
+ * the first version of this check reproduced the same false positive at 1.16:1
+ * on the same button. A check that cries wolf is a check whose findings get
+ * waved through.
+ *
  * It carries `--a11y`, which is the half of a design pass a screenshot cannot
  * show and which nothing had ever measured — `CLAUDE.md` has claimed since this
  * harness existed that the defects that matter live « in rendered geometry and
@@ -103,7 +112,7 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

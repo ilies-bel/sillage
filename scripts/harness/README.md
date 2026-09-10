@@ -5,7 +5,7 @@ device, without Graph, VerySwing or an LLM key — and runs a design detector
 inside that same rendered page.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--no-png] [--sans-entra]
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--no-png] [--sans-entra]
 node scripts/harness/smoke.mjs                 # every stage × two sizes, with all four checks
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
@@ -16,12 +16,15 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Four measured checks, and each exists because something shipped past a
+**Five measured checks, and each exists because something shipped past a
 screenshot.** `--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
 the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
-because nothing counted), `--a11y` (a control whose only name is « ‹ »). All four
-run on every stage at 1280×800 *and* at 960×600 — the width `main.ts` declares as
+because nothing counted), `--a11y` (a control whose only name is « ‹ »), and
+`--contrast`, computed from resolved styles with transitions switched off —
+`getComputedStyle` returns the current *animated* value, which is how the bundled
+detector reports a resting 14:1 button as 4.0:1. All five run on every stage at
+1280×800 *and* at 960×600 — the width `main.ts` declares as
 the minimum, where a text field was crushed to fourteen pixels while every check
 at the comfortable size passed.
 

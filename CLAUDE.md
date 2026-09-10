@@ -500,10 +500,13 @@ node scripts/harness/serve.mjs                 # the same app at a URL, for tool
 ```
 
 `scripts/harness/README.md` has the screen list. `--scan` runs a design detector inside the
-rendered page; `--geometry`, `--targets`, `--prose` and `--a11y` are the four measured checks,
-and each exists because something shipped past a screenshot — clipped gutter markers, forty
-controls under 24×24, a measure rendering eighty-one characters, a control whose only name is
-« ‹ ». **A design pass that only reads `src/` has not looked at the product** — the
+rendered page; `--geometry`, `--targets`, `--prose`, `--a11y` and `--contrast` are the five
+measured checks, and each exists because something shipped past a screenshot — clipped gutter
+markers, forty controls under 24×24, a measure rendering eighty-one characters, a control
+whose only name is « ‹ ». `--contrast` is computed from resolved styles **with transitions
+switched off**: `getComputedStyle` returns the current *animated* value, which is how the
+bundled detector reads a resting 14:1 button as 4.0:1 — and how the first version of this
+check reproduced the same false positive at 1.16:1. **A design pass that only reads `src/` has not looked at the product** — the
 defects that matter here live in rendered geometry and in the accessibility tree.
 
 ```

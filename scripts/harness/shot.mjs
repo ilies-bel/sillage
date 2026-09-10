@@ -14,6 +14,7 @@
  *   --targets        measure every control against WCAG 2.2's 24×24 minimum
  *   --prose          count the characters a line of each prose surface really holds
  *   --a11y           names on controls, labels on fields, and the heading ladder
+ *   --contrast       every text run against the ground it is painted on (WCAG AA)
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -897,6 +898,7 @@ function parseArgs(argv) {
     targets: false,
     prose: false,
     a11y: false,
+    contrast: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -916,6 +918,7 @@ function parseArgs(argv) {
     else if (arg === '--targets') flags.targets = true
     else if (arg === '--prose') flags.prose = true
     else if (arg === '--a11y') flags.a11y = true
+    else if (arg === '--contrast') flags.contrast = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -939,7 +942,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -1025,6 +1028,12 @@ async function main() {
     long = await prose(page)
   }
 
+  let dim = []
+  if (flags.contrast) {
+    await page.evaluate(() => document.fonts.ready)
+    dim = await contrast(page)
+  }
+
   let unnamed = []
   if (flags.a11y) {
     await page.evaluate(() => document.fonts.ready)
@@ -1074,6 +1083,16 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.contrast) {
+    if (dim.length === 0) console.log('  contraste: tout le texte passe AA')
+    else {
+      console.log(`  ✗ contraste: ${dim.length} texte(s) sous le seuil`)
+      for (const item of dim.slice(0, 8)) {
+        console.log(`   ✗ ${item.ratio}:1 (min ${item.need}) — « ${item.text} » ${item.fg} sur ${item.bg}`)
+      }
+      process.exitCode = 8
+    }
+  }
   if (flags.a11y) {
     if (unnamed.length === 0) console.log('  arbre: chaque contrôle a un nom')
     else {
@@ -1123,6 +1142,109 @@ async function main() {
     console.log('  console:')
     noise.forEach((p) => console.log('   ' + p))
   }
+}
+
+/**
+ * **Every text run against the ground it is painted on.**
+ *
+ * The bundled detector reports contrast by *sampling pixels*, which makes it
+ * unreliable here in both directions: it read « Démarrer une réunion » as 4.0:1
+ * on the calendar, and the same element resolves to about 14:1 — it had sampled
+ * an antialiased edge, or a frame of the `transition` mid-flight. A check that
+ * cries wolf is a check whose findings get waved through, which is worse than
+ * none.
+ *
+ * This computes it instead, from the styles the browser resolved: the element's
+ * own colour, the first ancestor that actually paints a background, and WCAG's
+ * own relative-luminance formula. The threshold is AA — 4.5:1, or 3:1 for text
+ * that is large (24px, or 18.66px bold), which is the exemption the criterion
+ * itself grants and not one invented here.
+ *
+ * It cannot see a gradient or an image behind text, and it says so rather than
+ * guessing: an ancestor painting neither a colour nor nothing is skipped.
+ */
+async function contrast(page) {
+  /*
+   * **Transitions off, first.**
+   *
+   * `getComputedStyle` returns the *current animated value*, so a reading taken
+   * while a `transition: background-color` is in flight is a reading of a frame
+   * — which is exactly how the bundled detector reported « Démarrer une
+   * réunion » at 4.0:1 on an element that rests at fourteen. My own first
+   * version reproduced the same false positive, at 1.16:1, on the same button:
+   * grey ink over a blue that is not a colour anything in this product paints,
+   * because it was halfway between two.
+   *
+   * A colour is a design decision and a transition is presentation, so the
+   * measurement is of the resting state. Injected and then removed, so nothing
+   * else in the run sees a page with its motion disabled.
+   */
+  const stylesheet = await page.addStyleTag({
+    content: '*, *::before, *::after { transition: none !important; animation: none !important; }',
+  })
+  await page.waitForTimeout(50)
+  const findings = await page.evaluate(() => {
+    const channel = (v) => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    }
+    const luminance = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    const parse = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number)
+    const opaque = (value) => value && !/rgba\([^)]*,\s*0\s*\)|transparent/.test(value)
+
+    const groundOf = (el) => {
+      for (let node = el; node; node = node.parentElement) {
+        const style = getComputedStyle(node)
+        // A gradient or an image is a ground this cannot compute against, and
+        // guessing white under it is how a check invents a finding.
+        if (style.backgroundImage !== 'none') return null
+        if (opaque(style.backgroundColor)) return style.backgroundColor
+      }
+      return 'rgb(255, 255, 255)'
+    }
+
+    const drawn = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (Number(style.opacity) < 0.99) return false
+      if (el.closest('[aria-hidden="true"]')) return false
+      return el.offsetParent !== null || style.position === 'fixed'
+    }
+
+    const out = []
+    const seen = new Set()
+    for (const el of document.querySelectorAll('body *')) {
+      // Only the element that *owns* the text, so a wrapper is not measured for
+      // its children's ink.
+      const own = [...el.childNodes].some(
+        (node) => node.nodeType === 3 && (node.textContent ?? '').trim().length > 1,
+      )
+      if (!own || !drawn(el)) continue
+
+      const style = getComputedStyle(el)
+      const ground = groundOf(el)
+      if (!ground) continue
+
+      const size = parseFloat(style.fontSize)
+      const bold = Number(style.fontWeight) >= 700
+      // WCAG's own exemption, not one invented here.
+      const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5
+
+      const a = luminance(parse(style.color))
+      const b = luminance(parse(ground))
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      if (ratio >= need) continue
+
+      const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 32)
+      const key = `${style.color}|${ground}|${text}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ text, fg: style.color, bg: ground, ratio: Math.round(ratio * 100) / 100, need })
+    }
+    return out
+  })
+  await stylesheet.evaluate((node) => node.remove())
+  return findings
 }
 
 /**
