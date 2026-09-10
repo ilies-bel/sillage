@@ -634,7 +634,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 value={edits.compteRendu}
                 onChange={(event) => set('compteRendu', event.target.value)}
                 rows={Math.max(20, edits.compteRendu.split('\n').length + 2)}
-                className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-3 text-copy leading-relaxed"
+                className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-3 text-copy leading-relaxed [field-sizing:content]"
               />
             )}
 
@@ -1011,9 +1011,18 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
       <textarea
         aria-label="Corps du brouillon"
         value={body}
+        /*
+          `rows` counts *newlines*, and the lines a rep reads are wrapped ones:
+          a nine-line draft in a 600px column is fourteen, so the box scrolled
+          inside a column that scrolls inside a screen and the sign-off was
+          behind two scrollbars. `field-sizing: content` is the measurement,
+          done by the engine — Chromium-only, which here is every target
+          (`MeetingTitle` leans on the same fact), and `rows` stays as the floor
+          for anything that does not have it.
+        */
         rows={Math.max(6, body.split('\n').length + 1)}
         onChange={(event) => onBody(event.target.value)}
-        className="text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed"
+        className="text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
       />
     </section>
   )

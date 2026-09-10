@@ -297,14 +297,26 @@ const SCREENS = {
     },
   },
 
-  /** The same gate once the rail has been read to the end: *Valider* is live. */
+  /**
+   * The same gate once **both** columns have been read to the end.
+   *
+   * The guard covers the document and the mail draft as well as the rail —
+   * those are the two strings that actually leave the machine — so reaching
+   * *Valider* takes one press per column, and the primary slot names which one
+   * it is showing each time.
+   */
   'review-valider': {
     scenario: 'review',
     async drive(page) {
       await SCREENS.review.drive(page)
-      await page.getByRole('button', { name: /Afficher le reste/ }).click()
+      for (let i = 0; i < 4; i++) {
+        const reveal = page.getByRole('button', { name: /^Afficher / })
+        if ((await reveal.count()) === 0) break
+        await reveal.first().click()
+        await page.waitForTimeout(700)
+      }
       await page.getByRole('button', { name: 'Valider' }).waitFor()
-      await page.waitForTimeout(600)
+      await page.waitForTimeout(400)
     },
   },
 
