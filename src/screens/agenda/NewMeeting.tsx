@@ -54,12 +54,30 @@ interface NewMeetingProps {
    * remove.
    */
   onCreated: (meeting: Meeting) => void | Promise<void>
+  /**
+   * Where this instance is drawn.
+   *
+   * `header` is the permanent control described above — *Démarrer une réunion*
+   * plus, on any other day, *Ajouter au …*.
+   *
+   * `empty` is the same scheduling half, drawn a second time **inside** the
+   * empty day panel, and only the scheduling half: an empty day is a rep
+   * looking at nothing and asking « et maintenant ? », and the answer was a
+   * grey text link at the far end of the header, some seventeen hundred pixels
+   * away and between *Réglages* and the blue button. An empty state whose
+   * action is off-screen is a dead end with a sentence in it (DEC-26).
+   *
+   * A second *Démarrer une réunion* is deliberately not drawn: there is one
+   * indispensable action in this product and putting it on screen twice makes
+   * a rep choose between two identical buttons.
+   */
+  variant?: 'header' | 'empty'
 }
 
 /** The hour a working day is assumed to start at, when the rep does not say. */
 const DEFAULT_CLOCK = '09:00'
 
-export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
+export function NewMeeting({ day, today, onCreated, variant = 'header' }: NewMeetingProps) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [client, setClient] = useState('')
@@ -158,7 +176,9 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
     </span>
   ) : null
 
-  if (forNow) {
+  const inEmptyState = variant === 'empty'
+
+  if (forNow && !inEmptyState) {
     return (
       <div className="flex items-center gap-inline">
         {alert}
@@ -169,16 +189,31 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
 
   if (!open) {
     return (
-      <div className="flex items-center gap-inline">
+      <div className="flex items-center justify-center gap-inline">
         {alert}
         {/*
-          `text`, not `primary`. Two filled buttons side by side make the rep
-          choose between them; only one of these is the thing they came to do.
+          `text` in the header, not `primary`: two filled buttons side by side
+          make the rep choose between them, and only one of them is the thing
+          they came to do. In the empty panel there is no competing button, and
+          the whole point of drawing it there is that it can be seen — so it is
+          the panel's own action and looks like one.
         */}
-        <Button variant="text" onClick={() => setOpen(true)}>
-          {`Ajouter au ${formatDayMedium(noonOf(day))}`}
+        <Button variant={inEmptyState ? 'bordered' : 'text'} onClick={() => setOpen(true)}>
+          {/*
+            « Planifier » in the panel, « Ajouter au … » in the header — two
+            words for two positions, and deliberately not the same one twice.
+            The header control has to name the day because nothing near it does;
+            the panel sits directly under « Lundi 31 Août », so repeating the
+            date there buys nothing and puts two buttons with the *same
+            accessible name* on one screen, which is a rep — and a screen reader
+            — being asked to tell apart two things that read identically.
+
+            It also draws the distinction the empty day actually poses:
+            *Démarrer* is now, *Planifier* is later.
+          */}
+          {inEmptyState ? 'Planifier une réunion' : `Ajouter au ${formatDayMedium(noonOf(day))}`}
         </Button>
-        {start}
+        {inEmptyState ? null : start}
       </div>
     )
   }

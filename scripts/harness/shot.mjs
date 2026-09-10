@@ -7,6 +7,7 @@
  *
  *   --viewport WxH   default 1440x900
  *   --expand         unclip the inner scrollers so `fullPage` means the screen
+ *   --no-expand      keep them clipped even on a screen whose plan expands
  *   --scan [out.json]  run the impeccable browser detector on the staged screen
  *   --no-png         scan only
  *   --sans-entra     stage any screen with **no Entra app registration** — the
@@ -359,7 +360,8 @@ const rowNamed = (page, text) => page.locator('li').filter({ hasText: text }).fi
 function parseArgs(argv) {
   const flags = {
     viewport: { width: 1440, height: 900 },
-    expand: false,
+    /* `null` = follow the screen's own plan; `--expand`/`--no-expand` override it. */
+    expand: null,
     scan: null,
     png: true,
     entra: null,
@@ -368,6 +370,14 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--expand') flags.expand = true
+    /*
+     * The other way. Two screens ask for `expand` in their own plan because
+     * what matters on them is below an inner fold — but the same unclipping
+     * erases whatever is *pinned* to the bottom of a column, which is how a
+     * sticky action bar looks correct in every screenshot and is missing in
+     * the window. `--no-expand` shoots the viewport the rep really gets.
+     */
+    else if (arg === '--no-expand') flags.expand = false
     else if (arg === '--sans-entra') flags.entra = false
     else if (arg === '--no-png') flags.png = false
     else if (arg === '--scan') {
@@ -459,7 +469,7 @@ async function main() {
    * and `fullPage` means what it says. Width, type and layout are unchanged;
    * only the clipping is.
    */
-  if (plan.expand || flags.expand) {
+  if (flags.expand ?? plan.expand) {
     await page.addStyleTag({
       content: `
         html, body, #root { height: auto !important; overflow: visible !important; }

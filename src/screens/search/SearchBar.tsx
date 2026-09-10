@@ -313,14 +313,64 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
     }
   }, deps)
 
+  /**
+   * One page of chips, in the direction asked for. 80 % rather than 100 %, so
+   * the chip that was at the edge is still on screen after the jump and the rep
+   * keeps their place in the row.
+   */
+  const page = (direction: -1 | 1) => {
+    const el = ref.current
+    if (!el) return
+    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: 'smooth' })
+  }
+
   return (
-    <div
-      ref={ref}
-      data-fade={fade}
-      className="filter-scroller flex min-w-0 flex-1 items-center gap-tight"
-    >
-      {children}
+    /*
+     * The fade says « there is more ». It does not say « and here is how ».
+     *
+     * A mask is a good signal and a bad affordance: it is easy to read as the
+     * row simply ending, it offers nothing to a rep whose hand is on a mouse
+     * (Chromium hands a vertical tick to the ancestor, which is why the wheel
+     * handler above exists at all), and it is invisible in any review of a
+     * screenshot. Two chevrons, drawn only on the side that is actually cut, are
+     * the control the mask was standing in for — and they are never dead
+     * (DEC-26): a row that fits has neither.
+     *
+     * Absolutely positioned rather than laid out inline, because a button that
+     * takes width would change how much of the row fits, which is the input to
+     * whether the button should be there at all.
+     */
+    <div className="relative flex min-w-0 flex-1 items-center">
+      <div
+        ref={ref}
+        data-fade={fade}
+        className="filter-scroller flex min-w-0 flex-1 items-center gap-tight"
+      >
+        {children}
+      </div>
+      {fade === 'start' || fade === 'both' ? (
+        <Page direction={-1} onClick={() => page(-1)} />
+      ) : null}
+      {fade === 'end' || fade === 'both' ? (
+        <Page direction={1} onClick={() => page(1)} />
+      ) : null}
     </div>
+  )
+}
+
+/** One chevron. Named for what it does, not for the glyph on it. */
+function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={direction === -1 ? 'Filtres précédents' : 'Filtres suivants'}
+      className={`text-muted hover:text-body bg-canvas border-subtle absolute top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border text-meta leading-none ${
+        direction === -1 ? 'left-0' : 'right-0'
+      }`}
+    >
+      {direction === -1 ? '‹' : '›'}
+    </button>
   )
 }
 

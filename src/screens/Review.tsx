@@ -6,7 +6,7 @@
  *   │                             │ Besoin   …        [source ▸] │
  *   │                             │ …                            │
  *   │                             │ ── Email de relance ──       │
- *   │                             │ ☑ tâche ☑ oppy ☑ brouillon   │
+ *   │                             │ ☑ tâche ☑ oppor. ☑ brouillon │
  *   │                             │              [ Valider ]     │
  *   └─────────────────────────────┴──────────────────────────────┘
  *
@@ -38,7 +38,8 @@ import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { formatOffset } from '../app/format.ts'
-import { Button, Centered, Chip, List, SectionHeader, unavailable } from '../ui/index.ts'
+import { Button, Centered, Chip, List, SectionHeader, Segmented, unavailable } from '../ui/index.ts'
+import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 
 /** The one thing a rep must notice without reading (DEC-21). */
 const FAIBLE = '⚠ faible'
@@ -119,6 +120,21 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const [checked, setChecked] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  /*
+   * How the compte-rendu is drawn: typeset for reading, or the raw textarea.
+   *
+   * *Lecture* is the default because the gate's job is to be read and
+   * confirmed; correcting it is the exception. It used to open on a borderless
+   * textarea on the pane's own white, which is indistinguishable from a preview
+   * — the eyebrow said « · modifiable » to make up for it, which is a caption
+   * doing a control's work. A two-word switch says it instead, and says it
+   * where the rep is looking.
+   *
+   * Both halves show every marker. `CompteRenduDocument` hangs the `#` and the
+   * `- ` in a gutter rather than hiding them, so *Lecture* is the same string
+   * VerySwing receives (DEC-44) — set as prose instead of dumped as a log.
+   */
+  const [mode, setMode] = useState<'lecture' | 'modifier'>('lecture')
   /** The intents as they stand now. Null until the first preview answers. */
   const [live, setLive] = useState<ReviewIntent[] | null>(null)
   /** Which intents were draftable last time, so a newly possible one is noticed. */
@@ -282,6 +298,22 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   // blank — then what the form currently says.
   const intents = live ?? panel.intents
 
+  /*
+   * The unverified fields, in the order they are drawn — so the banner can name
+   * how many there are and the jump lands on the first one a rep would meet
+   * scrolling, not on whichever the extractor happened to emit first.
+   */
+  const faible = panel.fields.filter((field) => field.confidence === 'faible')
+  const focusFirstFaible = () => {
+    const first = faible[0]
+    if (!first) return
+    const target = document.getElementById(`field-${first.key}`)
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    // Focus, not just scroll: the rep's next gesture is to correct the value,
+    // and a screen reader gets the label read out instead of a silent jump.
+    target?.focus({ preventScroll: true })
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/*
@@ -301,10 +333,22 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           {panel.meeting.title}
           {edits.accountName ? ` · ${edits.accountName}` : ''}
         </p>
-        {panel.overall === 'faible' ? (
-          <p className="text-warn shrink-0 text-ui">
-            Certains champs n’ont pas pu être vérifiés dans la transcription.
-          </p>
+        {/*
+          The count, and a way to reach it.
+
+          It read « Certains champs n'ont pas pu être vérifiés » — no number, no
+          control, and the field it was about a thousand pixels down a scrolling
+          column. « Certains » is the vaguest possible statement of a measured
+          quantity: the app knows exactly how many and exactly which. A rep who
+          reads this has one question, and the banner now answers it and then
+          takes them there.
+        */}
+        {faible.length > 0 ? (
+          <Button variant="link" className="text-warn shrink-0" onClick={focusFirstFaible}>
+            {faible.length === 1
+              ? '1 champ non vérifié dans la transcription'
+              : `${faible.length} champs non vérifiés dans la transcription`}
+          </Button>
         ) : null}
       </header>
 
@@ -317,35 +361,91 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       <div className="flex min-h-0 flex-1">
         <main className="bg-inner min-w-0 flex-1 overflow-y-auto px-gutter py-row">
           {/*
-            « · modifiable » is not decoration. This is a borderless textarea on
-            the same white as the pane, which is exactly what a read-only preview
-            looks like — and the rep's last chance to correct the compte-rendu is
-            the one surface they must not mistake for one.
+            The measure. This column is whatever is left of the window after the
+            440px rail — on a 16:9 laptop that is a thousand pixels, and the
+            document was set across all of it at a hundred and thirty characters
+            a line. The rep's one job here is to *read* it; a line that long is
+            read by nobody, and the fault is invisible in a screenshot because
+            nothing is clipped or overlapping.
+
+            `mx-auto` rather than left-aligned: the eyebrow, the switch and the
+            text then share one optical column instead of leaving a slab of
+            white down the right of the pane.
           */}
-          <SectionHeader>Compte-rendu · modifiable</SectionHeader>
-          {/*
-            Not `font-mono`. The compte-rendu is a document the rep reads and
-            edits, and the monospace read as a log dump of something the machine
-            had produced rather than as prose they own (`5.3 Revue` sets it in
-            the body face at 13/1.5). The design also inks AI sentences apart
-            from the rep's — that needs the editor, not a textarea, and is not
-            built here.
-          */}
-          <textarea
-            aria-label="Compte-rendu"
-            value={edits.compteRendu}
-            onChange={(event) => set('compteRendu', event.target.value)}
-            className="text-body h-[calc(100%-2rem)] min-h-[24rem] w-full resize-none bg-transparent text-copy leading-relaxed"
-          />
+          <div className="mx-auto max-w-[68ch]">
+            <div className="mb-3 flex items-center gap-inline">
+              <SectionHeader className="mb-0 min-w-0 flex-1">Compte-rendu</SectionHeader>
+              <Segmented
+                label="Affichage du compte-rendu"
+                options={[
+                  { id: 'lecture', label: 'Lecture' },
+                  { id: 'modifier', label: 'Modifier' },
+                ]}
+                current={mode}
+                onSelect={setMode}
+              />
+            </div>
+
+            {mode === 'lecture' ? (
+              /*
+                Typeset, with every `#` and every `- ` still on screen in the
+                gutter (DEC-44). `pl-6` is the gutter they hang in.
+              */
+              <CompteRenduDocument text={edits.compteRendu} className="pl-6" />
+            ) : (
+              /*
+                Not `font-mono`. The compte-rendu is a document the rep reads and
+                edits, and the monospace read as a log dump of something the
+                machine had produced rather than as prose they own (`5.3 Revue`
+                sets it in the body face at 13/1.5).
+
+                Bordered, unlike the borderless field it replaced: this is the
+                editing half of a switch, and a box is what says the switch
+                landed. `min-h` rather than a height computed off the pane, so it
+                grows with the document instead of scrolling inside a scroller.
+              */
+              <textarea
+                aria-label="Compte-rendu"
+                value={edits.compteRendu}
+                onChange={(event) => set('compteRendu', event.target.value)}
+                rows={Math.max(20, edits.compteRendu.split('\n').length + 2)}
+                className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-3 text-copy leading-relaxed"
+              />
+            )}
+          </div>
         </main>
 
         {/*
-          440px in the design. Floor and ceiling rather than a bare `flex-[2]`,
-          for the reason the session panes carry one: this column holds every
-          editable field on the screen, and a two-word label wrapping to three
-          lines on a laptop is how a rep misses the `⚠ faible` beside it.
+          Floor and ceiling rather than a bare `flex-[2]`, for the reason the
+          session panes carry one: this column holds every editable field on the
+          screen, and a two-word label wrapping to three lines on a laptop is how
+          a rep misses the `⚠ faible` beside it.
+
+          The ceiling was 440px, chosen to leave the compte-rendu the larger
+          half. That was the wrong way round. The document is 560px of prose and
+          reads at a measure; the rail is eleven fields, a group chip list, a
+          two-paragraph mail draft and the decision — and it was the half being
+          squeezed, so every intent summary clipped mid-word and the mail body
+          scrolled inside the page's other scroller. The document keeps its
+          measure and gives the rest back.
         */}
-        <aside className="border-subtle bg-card-soft w-[38%] min-w-[360px] max-w-[440px] shrink-0 overflow-y-auto border-l px-row py-row">
+        <aside className="border-subtle bg-card-soft flex w-[42%] min-w-[380px] max-w-[560px] shrink-0 flex-col border-l">
+          {/*
+            The rail scrolls; the gate does not.
+
+            Everything a rep confirms — eleven fields, the account candidates,
+            the interlocutors, a two-paragraph mail draft — used to sit in one
+            scroller *above* « Ce qui sera créé » and the single button. At
+            1440×900 the one irreversible control in the product was some nine
+            hundred pixels below the fold, and the three lines that say what it
+            will do went with it. A rep who never scrolled saw a form and no
+            way out of it.
+
+            So the rail is a column: fields scroll, the decision is pinned. That
+            is not a second gate (DEC-4) — it is the same one button, kept where
+            it can be read together with the rows it ships.
+          */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-row py-row">
           <SectionHeader>Prêt à envoyer</SectionHeader>
 
           <List as="div" className="bg-card">
@@ -395,40 +495,44 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             onBody={(value) => set('mailBody', value)}
           />
 
-          <fieldset className="mt-5">
-            <SectionHeader as="legend" className="mb-2">
-              Ce qui sera créé
-            </SectionHeader>
-            {intents.map((intent) => (
-              <IntentRow
-                key={intent.id}
-                intent={intent}
-                checked={checked.includes(intent.id)}
-                onToggle={() => toggle(intent.id)}
-                connector={connectorFor(intent.kind, health)}
-                onRetry={retry}
-              />
-            ))}
-          </fieldset>
+          </div>
 
-          {/*
-            One button (DEC-4). It ships everything still checked, together, and
-            the rep is never asked again — `confirm` is legal from
-            `awaiting_confirmation` and nowhere else, so a second press is
-            refused by the machine rather than by a flag here.
-          */}
-          <Button
-            variant="primary"
-            block
-            className="mt-5 py-2"
-            onClick={() => void confirm()}
-            {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
-          >
-            {busy ? 'Envoi…' : 'Valider'}
-          </Button>
-          <p className="text-muted mt-1.5 text-center text-meta">
-            Rien n’est envoyé au client : la relance est créée en brouillon.
-          </p>
+          <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
+            <fieldset>
+              <SectionHeader as="legend" className="mb-2">
+                Ce qui sera créé
+              </SectionHeader>
+              {intents.map((intent) => (
+                <IntentRow
+                  key={intent.id}
+                  intent={intent}
+                  checked={checked.includes(intent.id)}
+                  onToggle={() => toggle(intent.id)}
+                  connector={connectorFor(intent.kind, health)}
+                  onRetry={retry}
+                />
+              ))}
+            </fieldset>
+
+            {/*
+              One button (DEC-4). It ships everything still checked, together, and
+              the rep is never asked again — `confirm` is legal from
+              `awaiting_confirmation` and nowhere else, so a second press is
+              refused by the machine rather than by a flag here.
+            */}
+            <Button
+              variant="primary"
+              block
+              className="mt-4 py-2"
+              onClick={() => void confirm()}
+              {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
+            >
+              {busy ? 'Envoi…' : 'Valider'}
+            </Button>
+            <p className="text-muted mt-1.5 text-center text-meta">
+              Rien n’est envoyé au client : la relance est créée en brouillon.
+            </p>
+          </div>
         </aside>
       </div>
     </div>
@@ -459,9 +563,32 @@ function FieldRow({ field, value, onChange }: FieldRowProps) {
         <label className="text-muted w-28 shrink-0 text-meta" htmlFor={`field-${field.key}`}>
           {field.label}
         </label>
+        {/*
+          The verdict, on every row (DEC-21).
+
+          `⚠ faible` used to be the only marker on the screen, so a field the
+          app had checked against the transcript and a field it had never looked
+          at rendered as the same pixel: nothing. Confidence is *measured* here —
+          showing only the failures throws the measurement away and leaves the
+          rep to assume the silence means yes.
+
+          Three states, and the data already distinguishes all three: a verified
+          quote and where in the call it was said; a citation the transcript does
+          not contain; and a value that was never interpreted at all, which is
+          the correct answer for the two deterministic rows (DEC-7) and is not a
+          weaker version of the first.
+        */}
         {field.confidence === 'faible' ? (
           <span className="text-warn shrink-0 text-meta">{FAIBLE}</span>
-        ) : null}
+        ) : field.span === null ? (
+          <span className="text-muted shrink-0 text-meta">hors transcription</span>
+        ) : (
+          <span className="text-muted shrink-0 text-meta tabular-nums">
+            {/* A batch provider reports no acoustic time (DEC-41), so a verified
+                span can legitimately have no offset. It still verified. */}
+            {field.span.startMs === null ? 'vérifié' : `vérifié · ${formatOffset(field.span.startMs)}`}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -543,10 +670,16 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         onChange={(event) => onSubject(event.target.value)}
         className="text-strong bg-inner border-subtle w-full rounded-sm border px-2 py-1 text-ui"
       />
+      {/*
+        Sized to the draft, not to a guess. `rows={8}` clipped a fourteen-line
+        follow-up inside a 215px scroller *inside* the rail's scroller, so the
+        rep approved a mail whose sign-off they had never seen — two nested
+        scrollbars on the one screen where nothing may be missed.
+      */}
       <textarea
         aria-label="Corps du brouillon"
         value={body}
-        rows={8}
+        rows={Math.max(6, body.split('\n').length + 1)}
         onChange={(event) => onBody(event.target.value)}
         className="text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed"
       />
@@ -619,12 +752,21 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
         onChange={onToggle}
         className="mt-0.5 shrink-0"
       />
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <label htmlFor={intent.id} className="block">
           {intent.label}
         </label>
-        {/* DEC-26: a disabled control always states why, inline. */}
-        <span className="text-muted block truncate text-meta">
+        {/*
+          DEC-26: a disabled control always states why, inline.
+
+          Wrapped, not truncated. This line is the last statement of what is
+          about to be written into the client's CRM, and `truncate` ended it
+          mid-word — « … — Renforcer l'équipe plateforme pour la » — with no
+          ellipsis and nowhere else on the screen to read the rest. Two lines,
+          then an ellipsis: a summary that runs to a paragraph is still bounded,
+          but the bound is no longer four words in.
+        */}
+        <span className="text-muted line-clamp-2 block text-meta">
           {intent.available ? intent.summary : intent.reason}
         </span>
         {intent.available && trouble ? (

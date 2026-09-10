@@ -388,6 +388,15 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               reason={snapshot?.reason ?? null}
               signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
+              /*
+                The header's *Ajouter au …* again, this time where the rep is
+                looking. Same component and therefore the same form, the same
+                validation and the same `onCreated` — a second copy of the
+                control, never a second way of doing it.
+              */
+              action={
+                <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
+              }
               onOpen={onOpen}
             />
           )}

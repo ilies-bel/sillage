@@ -441,6 +441,13 @@ describe('the rep’s correction is what ships', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
 
+    // The gate opens on the typeset reading of the document; the raw string is
+    // one word away and *Modifier* is the word. Both halves show every marker.
+    expect(screen.queryByLabelText('Compte-rendu')).toBeNull()
+    await act(async () => {
+      screen.getByRole('button', { name: 'Modifier' }).click()
+    })
+
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Client'), {
         target: { value: 'Acme Industries SAS' },

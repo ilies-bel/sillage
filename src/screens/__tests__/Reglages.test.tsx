@@ -214,7 +214,9 @@ const updateStatus = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
 const open = async (section: string) => {
   const rail = await screen.findByRole('navigation', { name: 'Sections des réglages' })
   await act(async () => {
-    within(rail).getByRole('button', { name: section }).click()
+    // By prefix: a rail item that has something wrong inside it carries the
+    // count in its accessible name (« Connecteurs, 3 connecteurs en défaut »).
+    within(rail).getByRole('button', { name: new RegExp(`^${section}`) }).click()
   })
 }
 
@@ -236,7 +238,9 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     mount()
     const rail = await screen.findByRole('navigation', { name: 'Sections des réglages' })
 
-    const labels = [...rail.querySelectorAll('button')].map((b) => b.textContent)
+    // The label itself, not the whole button: an item may also carry a count
+    // and the sentence that count reads as.
+    const labels = [...rail.querySelectorAll('button')].map((b) => b.firstElementChild?.textContent)
     expect(labels).toEqual([
       'Transcription',
       'Modèle de langage',
@@ -244,6 +248,11 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
       'Mise à jour',
       'Diagnostics',
     ])
+
+    // The fixture's connectors that are not `ok`, counted — the rail says so
+    // where the choice is made rather than only inside the section.
+    const connecteurs = within(rail).getByRole('button', { name: /^Connecteurs/ })
+    expect(connecteurs.textContent).toContain('2 connecteurs en défaut')
 
     // One current section, announced rather than merely tinted.
     const current = rail.querySelectorAll('[aria-current="page"]')
@@ -256,7 +265,7 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     // first section would make that one click cost a second one.
     mount()
     expect(await screen.findByText('Requis')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Connecteurs' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('button', { name: /^Connecteurs/ }).getAttribute('aria-current')).toBe(
       'page',
     )
   })

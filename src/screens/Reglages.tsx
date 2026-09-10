@@ -177,6 +177,16 @@ export function Reglages({ onBack }: ReglagesProps) {
 
   const snapshot: SettingsSnapshot = settings.state.value
 
+  /*
+   * How many connectors are not `ok` — required or optional alike.
+   *
+   * Optional ones never move the header's general status (DEC-32) and they
+   * should not: VerySwing being down is not the app being degraded. But it is
+   * still something a rep has to find, and « find it » currently means opening
+   * a section to look. The rail carries the count; the header still does not.
+   */
+  const broken = snapshot.connectors.filter((row) => row.health.state !== 'ok').length
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <header className="border-subtle flex items-baseline gap-4 border-b px-gutter pb-4 pt-7">
@@ -200,13 +210,41 @@ export function Reglages({ onBack }: ReglagesProps) {
       <div className="flex min-h-0 flex-1">
         <SectionNav
           label="Sections des réglages"
-          items={SECTIONS}
+          /*
+            The rail says where the trouble is. Only *Connecteurs* can carry a
+            count today, because it is the only section whose contents have a
+            health state — the provider tables are configuration, and a rail
+            that marked them would be marking a preference as a fault.
+          */
+          items={SECTIONS.map((item) =>
+            item.id === 'connecteurs' && broken > 0
+              ? {
+                  ...item,
+                  note: String(broken),
+                  noteLabel:
+                    broken === 1 ? '1 connecteur en défaut' : `${broken} connecteurs en défaut`,
+                }
+              : item,
+          )}
           current={section}
           onSelect={setSection}
           className="bg-card-soft border-subtle w-60 overflow-y-auto border-r py-row"
         />
 
         <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+          {/*
+            One measure for the whole pane.
+            
+            The explanatory paragraphs were capped at `max-w-prose` and the rows
+            under them were not, so a single section ran two different widths:
+            « VerySwing · indisponible » sat at x≈250 and its *Réessayer* at
+            x≈1400, a window apart, with a 470px paragraph above them. A rep
+            reading a connector's failure and reaching for its retry crossed a
+            thousand pixels of nothing. The cap is the paragraph's, applied
+            once, to everything — so a row's state, its reason and its recovery
+            are one glance wide.
+          */}
+          <div className="max-w-[46rem]">
           {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (
@@ -304,6 +342,7 @@ export function Reglages({ onBack }: ReglagesProps) {
           ) : (
             <DiagnosticsPanel retentionDays={snapshot.retention.diagnosticsDays} />
           )}
+          </div>
         </main>
       </div>
     </div>
@@ -312,7 +351,7 @@ export function Reglages({ onBack }: ReglagesProps) {
 
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */
 function Lede({ children }: { children: ReactNode }) {
-  return <p className="text-muted mb-3 max-w-prose text-ui">{children}</p>
+  return <p className="text-muted mb-3 text-ui">{children}</p>
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────
@@ -1069,8 +1108,14 @@ function ConnectorLine({ row, retrying, onRetry }: ConnectorLineProps) {
           <span className="text-muted block text-meta">{row.health.reason}</span>
         ) : null}
       </span>
+      {/*
+        `bordered`, not `link`. This is the only recovery a rep has for a broken
+        connector and it had the visual weight of a footnote — an underlined
+        grey word at the far edge of the row, indistinguishable from the four
+        captions above it. A control that fixes something looks like a control.
+      */}
       {row.health.state !== 'ok' && row.health.retryable ? (
-        <BusyButton variant="link" busy={retrying} busyReason="Vérification…" onClick={onRetry}>
+        <BusyButton busy={retrying} busyReason="Vérification…" onClick={onRetry}>
           Réessayer
         </BusyButton>
       ) : null}
@@ -1285,7 +1330,7 @@ function UpdatePanel() {
             gigabyte and the app refuses to start one during a call — a rep who
             presses this and sees nothing happen deserves to know why.
           */}
-          <p className="text-muted max-w-prose text-meta">
+          <p className="text-muted text-meta">
             Environ 550 Mo. Le téléchargement ne démarre pas pendant une réunion, pour ne pas
             gêner l’appel en cours.
           </p>
@@ -1302,7 +1347,7 @@ function UpdatePanel() {
             bar that just went back to zero. Nothing underneath resumes a broken
             transfer, so silence here reads as a bug.
           */}
-          {update.reason ? <p className="text-muted max-w-prose text-meta">{update.reason}</p> : null}
+          {update.reason ? <p className="text-muted text-meta">{update.reason}</p> : null}
         </div>
       ) : null}
 
@@ -1330,7 +1375,7 @@ function UpdatePanel() {
           >
             Installer et redémarrer
           </Button>
-          <p className="text-muted max-w-prose text-meta">
+          <p className="text-muted text-meta">
             Sillage se ferme, s’installe et se rouvre. Vos réunions, vos notes et vos clés sont
             conservées.
           </p>

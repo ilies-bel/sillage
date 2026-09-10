@@ -521,16 +521,20 @@ export function installAppBridge(config) {
     montant: 550,
     devise: 'EUR',
     mailSubject: 'Suite à notre échange — renfort data Néovia Santé',
+    /*
+      One line per paragraph, because that is what `reviewGate.ts` produces.
+      This fixture used to hard-wrap at 78 characters, which no code path in the
+      product does — and a 500px textarea then re-wrapped the wrapped lines, so
+      every screenshot of the gate showed a follow-up broken mid-sentence
+      («  : / deux data / engineers confirmés … ») that a rep will never see.
+      A fixture that lies makes the design pass lie with it.
+    */
     mailBody: [
       'Bonjour Élodie,',
       '',
-      'Merci pour cet échange. Je vous confirme ce que nous avons calé : deux data',
-      'engineers confirmés et un lead data, en régie, pour un démarrage début',
-      'septembre sur douze mois.',
+      'Merci pour cet échange. Je vous confirme ce que nous avons calé : deux data engineers confirmés et un lead data, en régie, pour un démarrage début septembre sur douze mois.',
       '',
-      'Je vous adresse trois CV d’ici vendredi avec le TJM associé à chacun, Sophie',
-      'Bertrand en copie. Nous pourrons caler un point la semaine suivante une fois',
-      'les profils lus.',
+      'Je vous adresse trois CV d’ici vendredi avec le TJM associé à chacun, Sophie Bertrand en copie. Nous pourrons caler un point la semaine suivante une fois les profils lus.',
       '',
       'Bien à vous,',
       'Julien Marchand — Synapse IT',

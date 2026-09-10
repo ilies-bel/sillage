@@ -658,7 +658,7 @@ same hue (200°), darkened, ratios measured against white.
    workhorse; `--type-label` is the uppercase letterspaced section header;
    `--type-display` is where Fraunces and the -1.5px tracking start applying.
    Times, durations and money are tabular-nums at any of these sizes. */
---type-label:     10px;
+--type-label:     11px;
 --type-meta:      11px;
 --type-ui:        12px;
 --type-copy:      14px;

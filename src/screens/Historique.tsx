@@ -2,7 +2,7 @@
  * *Historique* — every call ever captured, searchable (DEC-25).
  *
  *   ┌ Historique ──────────────── ⌕ « TJM » ─────────────────┐
- *   │ 12 mars   Acme SA        Validée   tâche · oppy · mail │
+ *   │ 12 mars   Acme SA     Validée   tâche · opportunité · mail │
  *   │ 08 mars   Nordis         Validée   tâche · mail        │
  *   │ 05 mars   Groupe Lefort  À valider ⚠ VSA indisponible  │
  *   │  └ Transcript · Mes notes · Compte-rendu · Extraction  │
@@ -46,6 +46,7 @@ import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
 import { Button, EmptyState, List, Row as UiRow, RowTitle } from '../ui/index.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
+import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 import { Matches } from './search/Matches.tsx'
 import { SearchBar } from './search/SearchBar.tsx'
 import { useHistorySearch } from './search/useHistorySearch.ts'
@@ -225,10 +226,17 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
 
       <Section title="Compte-rendu">
         {record.compteRendu ? (
-          // Muted, because the agent wrote it (DEC-5). Colour alone, no badge.
-          <p className="text-muted whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
-            {record.compteRendu}
-          </p>
+          /*
+            Typeset by `CompteRenduDocument`, with every marker still in the
+            gutter — the same reading the session pane and the review gate give
+            it, so a rep looking a call up three weeks later sees the document
+            they validated rather than its source.
+
+            It was `font-mono` at 11px, which read as a log dump of something
+            the machine had produced. That was never the point of DEC-5's
+            provenance rule: the *ink* carries the authorship, not the face.
+          */
+          <CompteRenduDocument text={record.compteRendu} className="pl-6" />
         ) : (
           <p className="text-muted text-xs">Cet appel n’a pas produit de compte-rendu.</p>
         )}

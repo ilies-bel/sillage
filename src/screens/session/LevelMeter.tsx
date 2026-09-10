@@ -32,10 +32,19 @@
  * hues, because they are the same kind of measurement and neither is a status:
  * a loud client is not a warning, so no semantic colour may be spent here.
  *
- * The direction is what identifies the channel and the colour reinforces it.
- * The `title` names them for anyone the convention does not reach; there is no
- * room in the pill for a legend, and a meter that needs a key beside it is not
- * an instrument.
+ * The direction is what identifies the channel and the colour reinforces it —
+ * and the two halves are **named on screen**, in two words, at the left of the
+ * bars.
+ *
+ * That key used to be a `title` attribute, on the argument that a meter needing
+ * a legend is not an instrument. The argument holds for a single-channel meter
+ * and stops holding the moment there are two: « up » and « down » is a
+ * convention, and a convention a rep has not been told is a coin toss on the one
+ * reading whose whole value is knowing *which side* is not being heard. A
+ * tooltip is not being told — it is hover-only, so it never reaches a keyboard,
+ * never reaches a rep mid-call with their hand off the mouse, and is invisible
+ * in every screenshot anyone reviews. Two 11px words cost 34px of a header and
+ * are true without being pointed at.
  *
  * **It owns its own subscription.** The samples arrive ten times a second, and
  * `Session` holds a live ProseMirror view with the rep's caret in it — lifting
@@ -116,8 +125,27 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
        * in it. The meter is the glance; the diagnostic is the statement.
        */
       title="En haut votre micro, en bas le client — en gris, trop faible pour être transcrit"
-      className="flex h-6 w-[128px] shrink-0 items-stretch gap-[2px]"
+      className="flex shrink-0 items-stretch gap-1.5"
     >
+      {/*
+        The key. Two words, one per half, on the same baselines the bars grow
+        from — so the label is not describing the meter, it is *on* the row it
+        names. `leading-none` and a fixed half each, or the two words drift off
+        the channels they belong to as the meter's height changes.
+      */}
+      <span className="text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
+        <span>moi</span>
+        <span>client</span>
+      </span>
+
+      {/*
+        168×28 rather than 128×24. This is the whole of DEC-38's proof of life —
+        the surface that answers « est-ce qu'il m'entend ? » — and at 2.3px per
+        bar over two 11px halves it read as a small blue icon that happened to
+        change rather than as a reading. The bar count is unchanged; the bars
+        are simply wide enough and tall enough to be a bar.
+      */}
+      <span className="flex h-7 w-[168px] shrink-0 items-stretch gap-[2px]">
       {samples.map((sample, index) => (
         /*
          * The 1px gutter between the halves is the baseline, and it is drawn by
@@ -130,6 +158,7 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
           <Bar rms={sample.far} floor={floor} channel="far" />
         </div>
       ))}
+      </span>
     </div>
   )
 }

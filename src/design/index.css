@@ -158,7 +158,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 10px;
+    /* The token, not a literal — this rule is `--type-label`'s only consumer
+       that had its own copy of the number, and the two had to be changed
+       together to move it off the 10px legibility floor. */
+    font-size: var(--type-label);
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;

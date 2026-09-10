@@ -116,8 +116,17 @@
    * Times, durations and money are `font-variant-numeric: tabular-nums` at any
    * of these sizes — a column of figures that reflows as it updates is a column
    * nobody can scan.
+   *
+   * `--type-label` and `--type-meta` are both 11px and that is not a duplicate
+   * step: they are one size worn two ways — uppercase, tracked and 600 for a
+   * section header, sentence case and regular for a meta line. The label was
+   * 10px, which is below the legibility floor for functional text, and it is
+   * the eyebrow on *every* pane in the product — the word that tells a rep
+   * which of three columns they are reading. Uppercase at 10px on a 1080p
+   * Windows laptop is the one place the design was asking a rep to squint at
+   * navigation.
    */
-  --type-label: 10px;
+  --type-label: 11px;
   --type-meta: 11px;
   --type-ui: 12px;
   --type-copy: 14px;

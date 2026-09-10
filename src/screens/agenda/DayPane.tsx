@@ -17,6 +17,7 @@
  *    never as a failure of the app (DEC-26, DEC-32). Graph being unreachable is
  *    a line in this pane, not a banner over the product.
  */
+import type { ReactNode } from 'react'
 import { formatRange, formatTime, formatDayMedium } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
 import { Button, EmptyState, List, Row, RowTitle, SectionHeader, StateDot } from '../../ui/index.ts'
@@ -31,10 +32,18 @@ interface DayPaneProps {
   signedOut: boolean
   /** Shown on a row when the range spans more than one day. */
   showDay: boolean
+  /**
+   * The way out of an empty range, drawn inside the empty panel.
+   *
+   * A node rather than a callback: scheduling is `NewMeeting`'s own form and its
+   * own state, and this pane has no business owning either — it only owes the
+   * rep somewhere to press.
+   */
+  action?: ReactNode
   onOpen: (meetingId: string) => void
 }
 
-export function DayPane({ entries, reason, signedOut, showDay, onOpen }: DayPaneProps) {
+export function DayPane({ entries, reason, signedOut, showDay, action, onOpen }: DayPaneProps) {
   const upcoming = entries.filter((entry) => !entry.past)
   // Newest first: the call a rep wants after a meeting is the one that just
   // ended, and it is at the bottom of an ascending list.
@@ -50,6 +59,7 @@ export function DayPane({ entries, reason, signedOut, showDay, onOpen }: DayPane
         </List>
       ) : (
         <EmptyState
+          action={action}
           reason={reason || undefined}
           hint={
             signedOut

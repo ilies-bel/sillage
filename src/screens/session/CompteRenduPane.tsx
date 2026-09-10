@@ -35,6 +35,7 @@
  * prose and takes no cursor.
  */
 import { SectionHeader } from '../../ui/index.ts'
+import { CompteRenduDocument } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
   /** The rendered markdown, as `renderCompteRendu` produced it. */
@@ -47,15 +48,20 @@ export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
       <SectionHeader className="shrink-0">Compte-rendu</SectionHeader>
 
       {/*
-        `whitespace-pre-wrap` and not a markdown renderer. This is the exact text
-        that lands in the CRM task description and in the gate's textarea, and a
-        pane that prettified it would show the rep something the CRM will not
-        receive — on the one surface whose job is to let them check it before it
-        goes. The headings read as headings because the recipe writes them that
-        way (DEC-13).
+        Typeset, and not a markdown renderer — `CompteRenduDocument` keeps every
+        `#` and every `- ` on screen, muted, in a gutter. This is the exact text
+        that lands in the CRM task description and in the gate's textarea, so a
+        pane that *hid* a marker would show the rep something the CRM will not
+        receive, on the one surface whose job is to let them check it before it
+        goes. Drawing it as one raw block was honest and unreadable: beside the
+        rep's own typeset notes it read as a log dump of something the machine
+        had produced rather than as the document the product exists to write.
+
+        `pl-6` is the gutter the markers hang in; without it they clip against
+        the pane's left edge.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <p className="text-body whitespace-pre-wrap text-ui leading-relaxed">{compteRendu}</p>
+      <div className="min-h-0 flex-1 overflow-y-auto pl-6">
+        <CompteRenduDocument text={compteRendu} />
       </div>
 
       {/*
