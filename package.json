@@ -28,6 +28,7 @@
     "dist:signed": "npm run app:build:signed",
     "build:native": "node scripts/build-native.js",
     "test": "node scripts/run-tests.mjs",
+    "test:e2e": "npm run build && npm run build:electron && node scripts/e2e.mjs",
     "test:ci": "npm run check && npm test",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:crm": "node scripts/check-crm-containment.mjs",
