@@ -350,7 +350,23 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           the one that vanished. Kept even though only one rail remains — the
           deficit that produced it was a sum, not a single pane.
         */}
-        <main className="bg-inner min-w-[380px] flex-1">
+        {/*
+          `min-w-[260px]`, down from 380.
+
+          At 960 — the window's own minimum — the three columns are all at their
+          floor and the arithmetic left the compte-rendu 360px, which is 42
+          characters a line and, with the read-only note and *Demander* under it,
+          **zero words of the prose**: a rep on the minimum window saw six lines
+          of deterministic header they already knew and nothing else. DEC-40 says
+          the document opens on a « ## Résumé » and it did so only in the fixture.
+
+          The notepad gives the room because it is the one of the three that is
+          not part of the judgement. The rule is that the document and the slate
+          are read *together* — « Durée — » empty beside prose that is silent
+          about it — and the notes are what the rep wrote during the call, an
+          hour ago, and are not being compared to anything.
+        */}
+        <main className="bg-inner min-w-[260px] flex-1">
           <EditorErrorBoundary resetKey={meetingId}>
             <Notepad
               meetingId={meetingId}
@@ -387,7 +403,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           gives up is space it was not using.
         */}
         {showRail && compteRendu !== null ? (
-          <aside className="border-subtle bg-card-soft w-[36%] min-w-[360px] max-w-[560px] shrink-0 border-l">
+          <aside className="border-subtle bg-card-soft w-[40%] min-w-[440px] max-w-[560px] shrink-0 border-l">
             <CompteRenduPane compteRendu={compteRendu} meetingId={meetingId} />
           </aside>
         ) : null}

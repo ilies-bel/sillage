@@ -117,10 +117,21 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
  *
  * Same rule as the gutter, one level down: nothing is hidden, so the string the
  * rep reads is the string VerySwing receives (DEC-44). The asterisks and the
- * underscores are drawn at `text-meta` in `--text-muted`, which is quiet enough
- * to read past and present enough to be checked — and the words between them
- * are bold or italic, which is what makes « **Client** : Néovia Santé » a
- * labelled line rather than a row of punctuation.
+ * underscores are drawn in `--text-muted`, which is quiet enough to read past
+ * and present enough to be checked — and the words between them are bold or
+ * italic, which is what makes « **Client** : Néovia Santé » a labelled line
+ * rather than a row of punctuation.
+ *
+ * **They are set in the document's own face and size, not in mono at
+ * `--type-meta`.** The block markers can afford a different face because they
+ * hang in a gutter, in a column of their own, with nothing beside them. These
+ * sit *inside* a line — and the first four lines of every ESN document open on
+ * one: `**Client**`, `**Date**`, `**Interlocuteurs**`, `**Commercial**`. A
+ * monospace asterisk pair at a smaller size, on its own baseline, jammed against
+ * a bold capital, four times running, reads as markup that failed to render,
+ * which is the exact impression the gutter exists to prevent. Same face, same
+ * size, muted and a shade tighter: the marks are legible, checkable, and stop
+ * being the loudest thing on the first screenful.
  *
  * `select-none` on the markers for the reason the gutter has it: the pane is
  * read-only and a rep dragging across it wants the prose. The editable copy at
@@ -133,7 +144,7 @@ function Prose({ text }: { text: string }) {
         const key = index
         if (run.kind === 'marker') {
           return (
-            <span key={key} className="text-muted select-none font-mono text-meta">
+            <span key={key} className="text-muted select-none tracking-tight">
               {run.text}
             </span>
           )

@@ -214,15 +214,26 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     if (atEnd(railRef.current)) readToEnd.current.rail = true
 
     /*
-     * « There is something above », written straight onto the element.
+     * « There is something above » and « there is something below », written
+     * straight onto the element.
      *
-     * Not React state: it is a purely visual property of the scroll position,
-     * it changes on every scroll tick, and routing it through `useState` would
-     * re-render two long columns to move a mask. `data-below` is state because
-     * the *button* depends on it; this one nothing depends on.
+     * Not React state: they are purely visual properties of the scroll
+     * position, they change on every scroll tick, and routing them through
+     * `useState` would re-render two long columns to move a mask.
+     *
+     * **`data-below` used to be the arming state, and that was the wrong fact.**
+     * It was written as `below === 'rail'` — *which column is still blocking
+     * Valider* — so the rail carried no bottom fade while the document was the
+     * one blocking, even with five hundred pixels below its own fold; and the
+     * document's fade switched off the moment the rep reached its end, because
+     * `readToEnd` sticks, leaving no cue when they scrolled back up. The mask
+     * answers « is there more in this direction », which is a question about
+     * this scroller and nothing else. The button keeps its own state.
      */
     for (const el of [docRef.current, railRef.current]) {
-      if (el) el.dataset.above = String(el.scrollTop > 8)
+      if (!el) continue
+      el.dataset.above = String(el.scrollTop > 8)
+      el.dataset.below = String(el.scrollTop + el.clientHeight < el.scrollHeight - 8)
     }
     /*
      * **Both columns, and this is the whole of the guard's honesty.**
@@ -599,7 +610,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         <main
           ref={docRef}
           onScroll={measure}
-          data-below={below === 'document'}
           className="fade-below bg-inner min-h-0 min-w-0 flex-1 overflow-y-auto px-gutter py-row"
         >
           {/*
@@ -780,7 +790,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           <div
             ref={railRef}
             onScroll={measure}
-            data-below={below === 'rail'}
             /*
               `pb-block` on top of `py-row`, and it is not decoration.
 
