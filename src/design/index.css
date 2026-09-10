@@ -274,6 +274,36 @@
     container-type: inline-size;
   }
 
+  /*
+   * **The recording pill, when the header runs out of room.**
+   *
+   * Measured at 960 — the window's own minimum — the pill took **404 of 960
+   * pixels**, and the meeting's own title group got sixty-six: the objet and the
+   * client both hit their floors, overflowed the box they were in, and the
+   * client input ended up painted over the « Modèle » label beside it. The rep
+   * was on a call with a client whose name the header could not show.
+   *
+   * What goes is the *wording*, never the instrument. « ENREGISTREMENT » is a
+   * fourteen-character uppercase label beside an orange dot and a running clock,
+   * both of which say the same thing and neither of which is prose; the meter's
+   * key (« moi », « client », « non transcrit ») is a legend for twenty bars
+   * whose two halves are already mirrored about a baseline. The bars, the dot
+   * and the clock — the three things DEC-38 calls proof of life — all stay.
+   *
+   * A container query on the header, because the pill's room is the header's
+   * room and nothing else's.
+   */
+  .session-header {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 1080px) {
+    .session-header .pill-word,
+    .session-header .meter-key {
+      display: none;
+    }
+  }
+
   @container (max-width: 430px) {
     .ask .ask-suggestions {
       display: none;

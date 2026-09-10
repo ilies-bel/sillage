@@ -63,9 +63,20 @@ export interface StateDotProps extends VariantProps<typeof dot> {
   label: string
   /** `text-muted` unless the row wants the label to carry weight. */
   className?: string
+  /**
+   * On the *word*, not on the dot.
+   *
+   * The one caller is the session header's recording pill, whose room runs out
+   * at the window's minimum width and which drops the word « ENREGISTREMENT »
+   * there — an orange dot and a running clock say the same thing beside it. The
+   * word is still in the DOM and still read aloud, because a dot whose only
+   * meaning is its colour is what this component exists to make impossible;
+   * what the class does is take it out of the *layout*.
+   */
+  labelClassName?: string
 }
 
-export function StateDot({ tone, label, className }: StateDotProps) {
+export function StateDot({ tone, label, className, labelClassName }: StateDotProps) {
   if (label.trim() === '') {
     throw new Error(
       'StateDot: `label` cannot be blank — a state dot is never the only signal (VISION.md §6).',
@@ -75,7 +86,7 @@ export function StateDot({ tone, label, className }: StateDotProps) {
   return (
     <span className={cn('text-muted inline-flex shrink-0 items-center gap-2 text-ui', className)}>
       <span aria-hidden className={dot({ tone })} />
-      {label}
+      <span className={labelClassName}>{label}</span>
     </span>
   )
 }

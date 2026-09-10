@@ -80,11 +80,22 @@ const screens = () =>
     })
   })
 
-const drive = (screen) =>
+/**
+ * Two sizes, and the smaller one is the window's own declared minimum.
+ *
+ * Every check here passed at 1280×800 while 960×600 held a text field crushed
+ * to fourteen pixels, a recording pill eating 404 of 960, and a client name
+ * painted over the label beside it. A design pass that only shoots the
+ * comfortable size has looked at half the product — `main.ts` says 960 is
+ * supported, so 960 is a size the checks have to clear.
+ */
+const SIZES = ['1280x800', '960x600']
+
+const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--viewport', '1280x800'],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''
@@ -102,10 +113,11 @@ const drive = (screen) =>
     })
   })
 
-const all = await screens()
+const screenList = await screens()
+const all = SIZES.flatMap((viewport) => screenList.map((screen) => ({ screen, viewport })))
 const failures = []
 for (let at = 0; at < all.length; at += LANES) {
-  const lane = await Promise.all(all.slice(at, at + LANES).map(drive))
+  const lane = await Promise.all(all.slice(at, at + LANES).map((j) => drive(j.screen, j.viewport)))
   failures.push(...lane.filter((entry) => entry !== null))
 }
 process.stdout.write('\n')
@@ -120,4 +132,4 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(`${all.length} mises en scène jouées.`)
+console.log(`${all.length} mises en scène jouées (${screenList.length} écrans × ${SIZES.length} tailles).`)

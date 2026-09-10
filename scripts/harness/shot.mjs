@@ -250,9 +250,18 @@ const SCREENS = {
       // main process would use, and the whole width of the meter, so the still
       // shows the widget as a rep sees it rather than flat.
       await page.evaluate(() => window.__harness.replaySession('m-neovia-cadrage'))
-      // The meter names its own channels on screen now, so the stage waits on
-      // what a rep can actually read rather than on a tooltip.
-      await page.getByText('client', { exact: true }).first().waitFor()
+      /*
+        The meter's *bars*, not its key.
+
+        The stage waited on the word « client », which the meter drops below a
+        1080px header — the pill took 404 of 960 pixels at the window's own
+        minimum and the meeting's title group got sixty-six, so the wording goes
+        and the instrument stays. Waiting on a legend that is legitimately
+        absent at one supported size is a stage that photographs one viewport
+        and hangs on another, which is exactly the class `smoke.mjs` exists for.
+      */
+      await page.locator('[aria-label="Niveau d’entrée"], .meter-key, [class*="meter"]').first().waitFor({ state: 'attached' })
+      await page.waitForTimeout(200)
     },
   },
 
@@ -276,7 +285,9 @@ const SCREENS = {
       await page.evaluate(() => window.__harness.replaySession('m-neovia-cadrage'))
       // The meter names its own channels on screen now, so the stage waits on
       // what a rep can actually read rather than on a tooltip.
-      await page.getByText('client', { exact: true }).first().waitFor()
+      // The instrument, not its legend — see the note in `session` above.
+      await page.locator('.meter-key, [class*="meter"]').first().waitFor({ state: 'attached' })
+      await page.waitForTimeout(200)
     },
   },
 
@@ -380,7 +391,19 @@ const SCREENS = {
     scenario: 'compte-rendu',
     async drive(page) {
       await SCREENS['session-compte-rendu'].drive(page)
-      await page.getByRole('button', { name: 'Qu’est-ce qui a été dit sur le TJM ?' }).click()
+      /*
+        Typed, not clicked.
+
+        It pressed a suggestion chip — and the chips are scaffolding that a
+        narrow column cannot afford: below a 430px container they are dropped, so
+        at 960, the window's own minimum, the stage had nothing to press. Typing
+        the question is what a rep does after their first one anyway, and it
+        works at every width the product supports.
+      */
+      await page
+        .getByLabel('Poser une question sur cet appel')
+        .fill('Qu’est-ce qui a été dit sur le TJM ?')
+      await page.getByRole('button', { name: 'Demander' }).click()
       /*
         The answer first, then its last citation.
 
@@ -579,7 +602,12 @@ const SCREENS = {
         .getByRole('button', { name: /Groupe Lefort.*découverte du besoin plateforme/ })
         .click()
       await page.getByText('Compte-rendu').first().waitFor()
-      await page.getByRole('button', { name: 'Qu’est-ce qui a été dit sur le TJM ?' }).click()
+      // Typed rather than clicked, for the reason `session-demander` carries:
+      // the suggestion chips are dropped in a narrow column.
+      await page
+        .getByLabel('Poser une question sur cet appel')
+        .fill('Qu’est-ce qui a été dit sur le TJM ?')
+      await page.getByRole('button', { name: 'Demander' }).click()
       const cite = page.locator('button').filter({ hasText: '«' }).first()
       await cite.waitFor()
       await cite.click()
@@ -989,9 +1017,28 @@ async function targets(page) {
     const controls = document.querySelectorAll(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="checkbox"], [role="tab"]',
     )
+    /*
+     * **A control that is not rendered is exempt; one that has been crushed to
+     * nothing is the worst target there is.**
+     *
+     * The first version skipped every zero-sized box, which is right for a
+     * `display: none` panel behind a tab and catastrophically wrong for a text
+     * field that lost a flex fight: at 960 the session header's client input
+     * compressed to *fourteen* pixels and then to zero, and this check called it
+     * fine. Not rendered is `display: none`, `visibility: hidden` or no layout
+     * box at all; anything else with a zero dimension is on screen and
+     * unhittable, and is reported as such.
+     */
+    const drawn = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      // `position: fixed` has no `offsetParent`, so it is asked about last.
+      return el.offsetParent !== null || style.position === 'fixed'
+    }
+
     for (const el of controls) {
+      if (!drawn(el)) continue
       const box = el.getBoundingClientRect()
-      if (box.width === 0 || box.height === 0) continue
       // Half a pixel of slack: a 24px box lands on 23.99 under a fractional
       // line-height, and a check that reports that is a check nobody can clear.
       const big = (v) => v >= MIN - 0.5

@@ -197,7 +197,10 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-subtle bg-card flex shrink-0 items-center gap-inline border-b px-gutter py-3">
+      {/* `.session-header` declares the container the pill measures itself
+          against; see `index.css`. Below 1080px the pill drops its wording and
+          keeps its instrument. */}
+      <header className="session-header border-subtle bg-card flex shrink-0 items-center gap-inline border-b px-gutter py-3">
         <Button variant="nav" onClick={onBack}>
           ‹ Calendrier
         </Button>
@@ -232,6 +235,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
             <StateDot
               tone="armed"
               label="Enregistrement"
+              labelClassName="pill-word"
               className="text-label font-semibold uppercase tracking-wider"
             />
             <Elapsed since={initial.meeting.startedAt} />

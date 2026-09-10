@@ -145,7 +145,10 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         names. `leading-none` and a fixed half each, or the two words drift off
         the channels they belong to as the meter's height changes.
       */}
-      <span className="text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
+      {/* `.meter-key`: dropped by `index.css` when the header runs out of room
+          at the window's minimum width. The two halves stay mirrored about a
+          baseline, which is the distinction the words name. */}
+      <span className="meter-key text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
         <span>moi</span>
         <span>client</span>
       </span>
@@ -192,7 +195,7 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         The swatch is the token the bars use, so the key cannot drift from what
         it names.
       */}
-      <span className="text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
+      <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
         <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
         non transcrit
       </span>
