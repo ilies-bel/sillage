@@ -162,6 +162,23 @@ const SCREENS = {
     },
   },
 
+  /*
+   * The empty day's second way out — the first-run sequence, replayed. A rep who
+   * installs on Tuesday with no calls until Thursday opens the app on nothing,
+   * and what this product has to show them is already true: three beats and
+   * twenty seconds of real capture (DEC-45), rather than a fabricated demo
+   * meeting that would sit in *Historique* afterwards.
+   */
+  'agenda-empty-presentation': {
+    scenario: 'agenda',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
+      await page.getByRole('button', { name: /Revoir la présentation/ }).click()
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+    },
+  },
+
   'agenda-semaine': {
     scenario: 'agenda',
     async drive(page) {

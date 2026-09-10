@@ -158,7 +158,8 @@ const signedOut = () =>
 describe('the calendar is drawn with no Microsoft account at all', () => {
   test('a signed-out rep gets the grid itself, not a panel where the grid belongs', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     // The grid, by its parts: seven weekday columns and six weeks of cells.
     const calendar = await screen.findByRole('region', { name: 'Calendrier' })
@@ -177,7 +178,8 @@ describe('the calendar is drawn with no Microsoft account at all', () => {
 
   test('the calendar is navigable while signed out — months page, days select', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     const tomorrow = addDays(today(), 1)
@@ -191,7 +193,8 @@ describe('the calendar is drawn with no Microsoft account at all', () => {
 
   test('the sign-in state never becomes an app-level failure (DEC-26, DEC-32)', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     // Graph's own words, in the pane it affects. Not a banner, and not a
     // sentence claiming the product is unavailable.
@@ -213,7 +216,8 @@ describe('the calendar is drawn on a day with nothing in it', () => {
         reason: 'aucune réunion dans la fenêtre de synchronisation',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     const calendar = await screen.findByRole('region', { name: 'Calendrier' })
     expect(within(calendar).getAllByRole('cell')).toHaveLength(42)
@@ -225,7 +229,8 @@ describe('the calendar is drawn on a day with nothing in it', () => {
 
   test('an empty day is stated in the cell itself, not left to the colour of a dot', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     expect(cell(today()).getAttribute('aria-label')).toMatch(/aucune réunion$/)
@@ -238,7 +243,8 @@ describe('the calendar is drawn on a day with nothing in it', () => {
       meeting('man-2', { scheduledStart: atParis(thursday, 9, 0) }),
     )
 
-    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     // Another day keeps its form: this is scheduling, not a call about to start,
@@ -285,7 +291,8 @@ describe('a rep can select any day and see it', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Acme — cadrage')
     expect(screen.queryByText('Nordis — suivi')).toBeNull()
 
@@ -304,7 +311,8 @@ describe('a rep can select any day and see it', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Acme — cadrage')
 
     // Colour is never the only signal (VISION.md §6): the count and the armed
@@ -325,7 +333,8 @@ describe('a rep can select any day and see it', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     expect(screen.queryByText('Nordis — suivi')).toBeNull()
 
@@ -341,7 +350,8 @@ describe('a rep can select any day and see it', () => {
 
   test('the four views are one control, and exactly one of them is on', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     const control = await screen.findByRole('group', { name: 'Période affichée' })
     const pressed = within(control)
@@ -372,7 +382,8 @@ describe('meetings already held are reachable from the calendar', () => {
         }),
       ])
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     // Not on today — it is filed under the day it was held.
@@ -398,7 +409,8 @@ describe('meetings already held are reachable from the calendar', () => {
         meeting('man-9', { title: 'Nordis — appel', scheduledStart: atParis(thursday, 9, 0) }),
       ])
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Acme — cadrage')
 
     // The mark reaches the accessible name, and each mark says a different
@@ -431,7 +443,8 @@ describe('meetings already held are reachable from the calendar', () => {
         meeting('evt-abc', { title: 'Acme — cadrage', eventId: 'e1', state: 'armed' }),
       ])
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Acme — cadrage')
 
     expect(screen.getAllByText('Acme — cadrage')).toHaveLength(1)
@@ -444,7 +457,8 @@ describe('meetings already held are reachable from the calendar', () => {
 describe('with no calendar the product still works', () => {
   test('an empty agenda states the reason and still offers a manual start', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     expect(await screen.findByText('application Entra non configurée')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Démarrer une réunion' })).toBeTruthy()
@@ -469,7 +483,8 @@ describe('with no calendar the product still works', () => {
       .when('meeting:create', () => meeting('man-1'))
       .when('session:command', () => ({ ok: true, state: 'recording' }))
 
-    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     await act(async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Démarrer une réunion' }))
@@ -505,7 +520,8 @@ describe('with no calendar the product still works', () => {
         throw new Error('canal indisponible')
       })
 
-    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
 
     await act(async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Démarrer une réunion' }))
@@ -526,7 +542,8 @@ describe('armed is an offer, never a recording (HR-7)', () => {
         reason: 'Teams émet du son',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Acme — cadrage')
 
     // The screen may read. It may not act.
@@ -544,7 +561,8 @@ describe('armed is an offer, never a recording (HR-7)', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Nordis — suivi')
 
     /*
@@ -573,7 +591,8 @@ describe('armed is an offer, never a recording (HR-7)', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer' }))
 
     expect(opened).toEqual(['evt-abc'])
@@ -586,7 +605,8 @@ describe('the agenda is pushed, not polled', () => {
       .when('auth:state', () => ({ status: 'signedOut' }))
       .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: 'rien' }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('rien')
 
     await act(async () => {
@@ -612,7 +632,8 @@ describe('the agenda is pushed, not polled', () => {
         reason: '',
       }))
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByText('Maintenue')
     expect(screen.queryByText('Annulée')).toBeNull()
   })
@@ -635,7 +656,8 @@ const typeQuery = async (value: string): Promise<void> => {
 describe('the search is the only entry into the past', () => {
   test('there is no Historique link in the header any more', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     // VISION.md §6: *Historique* is not in the navigation. It is where the
@@ -664,7 +686,8 @@ describe('the search is the only entry into the past', () => {
     })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     await typeQuery('TJM')
 
@@ -692,7 +715,8 @@ describe('the search is the only entry into the past', () => {
     searched({ rows: [] })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     await typeQuery('TJM')
 
@@ -723,7 +747,8 @@ describe('the search is the only entry into the past', () => {
     })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     expect(await screen.findByText('En attente de validation')).toBeTruthy()
@@ -754,7 +779,8 @@ describe('the search is the only entry into the past', () => {
     })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     expect(await screen.findByText('Rien n’a été envoyé depuis 14 jours')).toBeTruthy()
@@ -777,7 +803,8 @@ describe('the search is the only entry into the past', () => {
     searched({ clients: [], rows })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     // Scoped to the section: « 3 » is also a date in the grid behind it.
@@ -793,7 +820,8 @@ describe('the search is the only entry into the past', () => {
     searched({ clients: [], rows: [historyRow()] })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     expect(screen.getByText('Plus aucune réunion aujourd’hui.')).toBeTruthy()
 
@@ -827,7 +855,8 @@ describe('the search is the only entry into the past', () => {
     searched({ rows: [historyRow()] })
     signedOut()
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     expect(await screen.findByRole('group', { name: 'Période affichée' })).toBeTruthy()
 
     await typeQuery('TJM')
@@ -851,6 +880,7 @@ describe('the search is the only entry into the past', () => {
         onOpen={() => {}}
         onHistorique={(query, filter) => opened.push([query, filter])}
         onReglages={() => {}}
+      onOnboarding={() => {}}
       />,
     )
     await screen.findByRole('region', { name: 'Calendrier' })
@@ -884,6 +914,7 @@ describe('the search is the only entry into the past', () => {
         onOpen={() => {}}
         onHistorique={(query, filter) => opened.push([query, filter])}
         onReglages={() => {}}
+      onOnboarding={() => {}}
       />,
     )
     await screen.findByRole('region', { name: 'Calendrier' })
@@ -901,7 +932,8 @@ describe('the search is the only entry into the past', () => {
     signedOut()
     searched({ rows: [], clients: [] })
 
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
     await typeQuery('Acme')
 
@@ -922,7 +954,8 @@ describe('the calendar asks for the window it draws (meeting:list)', () => {
 
   test('a month grid asks for its own six weeks, not for the most recent N rows', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     const first = listCalls()[0]
@@ -933,7 +966,8 @@ describe('the calendar asks for the window it draws (meeting:list)', () => {
 
   test('paging the grid moves the range, so a month a year back still has its rows', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     const before = listCalls().at(-1)
@@ -950,7 +984,8 @@ describe('the calendar asks for the window it draws (meeting:list)', () => {
 
   test('Liste is the one view that asks for everything', async () => {
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
     await act(async () => {

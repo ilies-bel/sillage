@@ -46,6 +46,16 @@ export function App() {
   const [inReglages, setInReglages] = useState<SectionId | null>(null)
   /** The step to come back to. Kept here because Réglages *replaces* the screen. */
   const [resume, setResume] = useState<Step>('quoi')
+  /**
+   * First run, asked for again from an empty day.
+   *
+   * Separate from `seen`, and it has to be: `seen` is the record that the rep
+   * has been through it, and un-setting that to replay it would mean the next
+   * launch showed it unasked — which is the nagging the whole screen refuses.
+   * This is a request, it lives for as long as the window does, and leaving the
+   * replay clears it.
+   */
+  const [replay, setReplay] = useState(false)
 
   const open = useCallback((meetingId: string) => {
     setRoute({ screen: 'session', meetingId })
@@ -151,14 +161,17 @@ export function App() {
    * Réglages opened from first run, and the way back out of it is *back into*
    * first run — not to the calendar the rep has never reached.
    */
-  if (inReglages && onboarding.state.status === 'ready' && !onboarding.state.value.seen) {
+  if (inReglages && (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen))) {
     return <Reglages section={inReglages} onBack={() => setInReglages(null)} />
   }
 
-  if (onboarding.state.status === 'ready' && !onboarding.state.value.seen) {
+  if (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen)) {
     return (
       <Onboarding
-        onDone={() => onboarding.set({ seen: true })}
+        onDone={() => {
+          setReplay(false)
+          onboarding.set({ seen: true })
+        }}
         /*
           **Réglages is a detour, not an exit.**
 
@@ -185,7 +198,12 @@ export function App() {
     <div className="bg-canvas flex h-full flex-col">
       <div className="min-h-0 flex-1">
         {route.screen === 'agenda' ? (
-          <Agenda onOpen={open} onHistorique={historique} onReglages={reglages} />
+          <Agenda
+            onOpen={open}
+            onHistorique={historique}
+            onReglages={reglages}
+            onOnboarding={() => setReplay(true)}
+          />
         ) : route.screen === 'historique' ? (
           <Historique onBack={back} query={route.query} filter={route.filter} />
         ) : route.screen === 'reglages' ? (

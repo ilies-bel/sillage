@@ -101,9 +101,11 @@ interface AgendaProps {
    */
   onHistorique: (query: string, filter: HistoryFilter) => void
   onReglages: () => void
+  /** Replays first run, from the empty day. It is seen once and worth seeing twice. */
+  onOnboarding: () => void
 }
 
-export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
+export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: AgendaProps) {
   const agenda = useInvoke('agenda:snapshot', {})
   const auth = useInvoke('auth:state', {})
   const [busy, setBusy] = useState(false)
@@ -467,7 +469,28 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
                 control, never a second way of doing it.
               */
               action={
-                <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
+                <div className="flex flex-wrap items-center justify-center gap-inline">
+                  <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
+                  {/*
+                    **The other way out of an empty day, and it is not a demo.**
+
+                    A rep who installs on Tuesday with no calls until Thursday
+                    opens the app on nothing: a grey box and a scheduling form.
+                    The general-purpose notetakers answer that with « try a demo
+                    meeting » — a fabricated recording that proves the fixture
+                    works, and that would sit in *Historique* afterwards
+                    indistinguishable from a client call.
+
+                    What this product has instead is already true: the first-run
+                    sequence, which says what happens in three beats and offers
+                    twenty seconds of *real* capture on the rep's own machine
+                    (DEC-45). Seen once and then never again — so on the day it
+                    is worth seeing a second time, there was no way back to it.
+                  */}
+                  <Button variant="nav" onClick={onOnboarding}>
+                    Revoir la présentation ›
+                  </Button>
+                </div>
               }
               onOpen={onOpen}
             />
