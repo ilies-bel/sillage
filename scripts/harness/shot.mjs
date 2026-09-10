@@ -722,6 +722,57 @@ const SCREENS = {
 
       // And the control still says which way the unread band lies.
       await page.getByRole('button', { name: /Remonter|la suite/ }).first().waitFor()
+
+      /*
+       * **The eighth: the payload changed after it was read.**
+       *
+       * Arming honestly — both columns turned page by page — and then unchecking
+       * « Opportunité » is a rep changing *what leaves* after the guard was
+       * satisfied. Nine rows go read-only and a warn paragraph is inserted at the
+       * top of the rail saying their corrections will not travel; a rep sitting
+       * at the bottom of the rail sees neither, and the latch went on saying the
+       * column had been read. The stamp now carries the checked set, so the rail
+       * is unread again and the page turn is what shows them the sentence.
+       */
+      for (let i = 0; i < 40; i++) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+        if ((await turn.count()) === 0) break
+        await turn.click()
+        await page.waitForTimeout(380)
+      }
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
+        throw new Error('la garde ne s’arme plus après une lecture honnête des deux colonnes')
+      }
+      await page.getByLabel(/Opportunité/).first().uncheck()
+      await page.waitForTimeout(400)
+      await refuses('avoir décoché une intention après avoir tout lu')
+
+      /*
+       * **And the other half: going back to something already read is free.**
+       *
+       * Every refusal above is a page turn charged to a rep, so the guard is only
+       * honest if it charges for text they have *not* seen. Stamping one view at
+       * a time charged for the return trip too — thirteen turns to fix one word,
+       * six of them re-showing the compte-rendu they had just read — which is the
+       * behaviour the latch exists to prevent, one level down. These four assert
+       * the set: re-tick the intention, and switch to « Modifier » and back.
+       */
+      const arms = async (how) => {
+        await page.waitForTimeout(400)
+        if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
+          const turn = await page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+          throw new Error(
+            `la garde refait payer une lecture déjà faite — ${how} : « ${await turn.textContent()} »`,
+          )
+        }
+      }
+      await page.getByLabel(/Opportunité/).first().check()
+      await arms('avoir remis la coche : le contenu est identique')
+
+      await page.getByRole('button', { name: 'Modifier', exact: true }).click()
+      await arms('« Modifier » montre le compte-rendu déjà lu, dans un textarea')
+      await page.getByRole('button', { name: 'Lecture', exact: true }).click()
+      await arms('le retour à « Lecture » pour relire la correction')
     },
   },
 

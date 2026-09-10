@@ -142,6 +142,25 @@ machine) or in `core/domain/` — never in an IPC handler.
   `tailwind.config.js` — same failure as `bg-muted/30`: a name that is right, a rule that does
   not exist, an element simply unstyled. The splash's « Audio » row had a hole where the other
   two rows have a dot.
+- **The arming guard remembers *which view* was read, and never charges for it
+  twice.** Coverage is a set keyed by what the column is showing — `compte-rendu`,
+  `transcription`, and for the rail the sorted set of checked intents, which is the
+  payload — with the height it was covered at. Everything hard about this was
+  learned by being wrong in both directions. Too coarse, and a rep armed *Valider*
+  on seventeen hundred unseen pixels by opening the Transcription tab, or by
+  shrinking the window; unchecking « Opportunité » turned nine rows read-only and
+  inserted a paragraph saying so that a rep at the bottom of the rail never saw.
+  Too fine, and the guard punished the correction it exists to invite: stamping one
+  view at a time charged thirteen page turns to fix one word, six of them
+  re-showing the compte-rendu just read. **Lecture and Modifier are one view** —
+  the same string, sixty-eight pixels of textarea chrome apart — and Transcription
+  is another. Growth never invalidates (a taller box has *less* below the fold);
+  a shrink beyond `SHRINK_SLACK = 64` does, because two lines of the decision
+  footer reflowing on their own is chrome, not a resize, and treating it as one
+  made the guard oscillate. `scripts/harness`'s `review-garde` stage is the proof:
+  eight attacks that must be refused and four returns that must be free, all driven
+  against real layout — jsdom measures every box as zero, so the renderer's tests
+  can only assert that an unmeasurable column fails **open**.
 - **The gate opens on the doubt, and never draws an inert primary** (DEC-4, DEC-21). The rail
   scrolls to the first `⚠ faible` field on open — the screen was flagging a field in the header
   and hiding it six rows below the fold. *Valider* is withheld until the rail has been on

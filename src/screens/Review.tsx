@@ -27,7 +27,7 @@
  * process records them rather than inferring them from a missing row. There is
  * exactly one submit control on this screen and there is no second prompt.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   ReviewEdits,
   ReviewField,
@@ -167,6 +167,14 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const loaded = useInvoke('review:get', { meetingId })
   const [edits, setEdits] = useState<ReviewEdits | null>(null)
   const [checked, setChecked] = useState<string[] | null>(null)
+  /*
+   * What is about to be sent, as one string. The arming guard keys its coverage
+   * set on it (see `read` below) and a set of ids is compared by value rather
+   * than by array identity: `setChecked` runs on every render that recomputes
+   * the possible intents, and disarming the guard because a `useMemo` missed
+   * would be a page turn a rep is asked for and cannot explain.
+   */
+  const payload = useMemo(() => [...(checked ?? [])].sort().join(','), [checked])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   /*
@@ -269,20 +277,13 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const jumping = useRef(false)
 
   /**
-   * Which columns have been shown end to end, once and for good.
+   * **Every view of a column that has been shown end to end, and how tall it was
+   * when it was.**
    *
-   * See `read` for why this is a latch: the columns grow as a rep types, and a
-   * guard that re-armed on their own keystrokes would take the button away over
-   * the sentence they are correcting.
-   */
-  const covered = useRef<Record<Column, boolean>>({ document: false, rail: false })
-
-  /**
-   * **What was covered, and of what.**
-   *
-   * The latch above froze an answer about *pixels*: a range recorded against one
-   * content, compared to `scrollHeight` of whatever is in the column now. Two
-   * ordinary gestures walked straight through it.
+   * This started as one boolean per column — « it has been covered » — and the
+   * boolean froze an answer about *pixels*: a range recorded against one content,
+   * compared to `scrollHeight` of whatever is in the column now. Two ordinary
+   * gestures walked straight through it.
    *
    * **The Transcription tab.** A rep checking a quote — the DEC-21 gesture this
    * product is proudest of — opens the transcript, scrolls it to the end, and
@@ -291,22 +292,70 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * 2447 pixels never drawn**, the entire « EMAIL DE RELANCE » block among them
    * — the subject, the recipients and the body of the mail that goes to the
    * client. On a real call the transcript is many times the document's height,
-   * so this fires hardest on a *short* call, which is the one a rep reads
-   * fastest.
+   * so this fires hardest on a *short* call, which is the one a rep reads fastest.
    *
    * **A window that shrinks.** Opened on a display where both columns fit, the
    * guard is satisfied and correctly so. Shrink the window and the latch keeps
    * saying so, with seventeen hundred pixels below the fold.
    *
-   * So the latch is stamped with what it was a statement about: which document
-   * the column was showing, and how tall the box was. A stamp that no longer
-   * matches is not a lie to be corrected — it is a measurement of something
-   * else, and it is discarded.
+   * Stamping the boolean closed both, and **charged the rep for going back**. A
+   * single stamp remembers only the last view, so returning to one already read
+   * is indistinguishable from arriving at it for the first time. Measured at
+   * 1280×800: reading the compte-rendu takes seven page turns, and *fixing one
+   * word* — « Modifier », then « Lecture » to check the fix reads right — cost
+   * six more, all of them re-showing text the rep had just read. That is the
+   * behaviour the latch was introduced to prevent, reintroduced one level down.
+   *
+   * So coverage is a **set**, keyed by what the column was showing. A view never
+   * shown stays unread; going back to one already shown is free. The value is the
+   * height it was covered at, because a box that has since shrunk has more below
+   * the fold than the one that was read (`SHRINK_SLACK`).
    */
-  const coveredOf = useRef<Record<Column, { content: string; height: number } | null>>({
-    document: null,
-    rail: null,
+  const covered = useRef<Record<Column, Map<string, number>>>({
+    document: new Map(),
+    rail: new Map(),
   })
+
+  /**
+   * What the current `seen` range was measured over.
+   *
+   * `seen` is in scroll coordinates, so a range unioned across a content swap is
+   * a measurement of two different documents added together. This is how the
+   * swap is noticed at all — the coverage set above only says whether a view has
+   * *finished*, and the range has to be dropped the moment a different one
+   * arrives, covered or not.
+   */
+  const shownAs = useRef<Record<Column, string | null>>({ document: null, rail: null })
+
+  /**
+   * **What a column is showing, as a key.** The coverage set above is keyed by
+   * it, so two things it calls the same are read once between them.
+   *
+   * The left column has three tabs and **two** views. *Lecture* typesets the
+   * compte-rendu and *Modifier* puts the same string in a textarea — same words,
+   * same order, sixty-eight pixels of chrome between them — so a rep who read one
+   * has read the other, and charging them a second traversal to fix a typo (and a
+   * third to check the fix reads right) is the guard punishing the correction it
+   * exists to invite. *Transcription* is a different document and keeps its own
+   * key: that is the seam a rep walked through to arm the button on seventeen
+   * hundred pixels they had never seen.
+   *
+   * The rail's view is **the payload**. Unchecking « Opportunité » turns nine
+   * rows read-only and inserts a warn paragraph at the top saying their
+   * corrections will not travel; a rep sitting at the bottom sees neither. The
+   * guard is about what is about to be sent and the rep has just changed that, so
+   * that payload is unread until it has been shown — and putting the tick back
+   * returns to a payload already read, which is free.
+   */
+  const viewOf = useCallback(
+    (column: Column) =>
+      column === 'rail'
+        ? `rail:${payload}`
+        : mode === 'transcription'
+          ? 'transcription'
+          : 'compte-rendu',
+    [mode, payload],
+  )
 
   const measure = useCallback(() => {
     /*
@@ -356,18 +405,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * So the union is the measurement and this is the memory of it.
      */
     const read = (column: Column, el: HTMLElement | null): boolean => {
-      if (!el || el.clientHeight === 0) return covered.current[column] || true
+      // The unmeasurable case is the permissive one, always: see above.
+      if (!el || el.clientHeight === 0) return true
 
-      /*
-       * The stamp, checked before the latch is believed. `content` names what
-       * the column is showing — the left one swaps between the document, the
-       * editable copy and the transcript — and `height` is the box the range was
-       * measured in. A shorter box has more below the fold than the one that was
-       * covered; a taller one only ever has less, so growth is not invalidating.
-       */
-      const stamp = { content: column === 'document' ? mode : 'rail', height: el.clientHeight }
-      const was = coveredOf.current[column]
-      if (covered.current[column]) {
+      const view = viewOf(column)
+      if (shownAs.current[column] !== view) {
+        // A different view is in the column. The range belongs to the old one.
+        shownAs.current[column] = view
+        seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
+      }
+
+      const at = covered.current[column].get(view)
+      if (at !== undefined) {
         /*
          * `SHRINK_SLACK`, and it is not a fudge.
          *
@@ -379,23 +428,21 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
          * invalidate, disarm, reflow, arm — so the honest reader could never
          * finish. Sixty-four pixels is two lines of chrome and a long way from
          * the two thousand a real resize takes.
+         *
+         * A taller box only ever has *less* below the fold than the one that was
+         * read, so growth is never invalidating.
          */
-        if (was && was.content === stamp.content && stamp.height >= was.height - SHRINK_SLACK) {
-          return true
-        }
-        // Something else is in the column, or there is more of it below the fold
-        // than there was. Neither is a thing the rep has read.
-        covered.current[column] = false
-        coveredOf.current[column] = null
+        if (el.clientHeight >= at - SHRINK_SLACK) return true
+        // The window shrank under a view that had been read. There is more of it
+        // below the fold now than there was, and that part is unread.
+        covered.current[column].delete(view)
         seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
       }
+
       const range = seen.current[column]
       if (!range) return true
       const done = range.from <= 8 && range.to >= el.scrollHeight - 8
-      if (done) {
-        covered.current[column] = true
-        coveredOf.current[column] = stamp
-      }
+      if (done) covered.current[column].set(view, el.clientHeight)
       return done
     }
     const readToEnd = {
@@ -440,10 +487,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     setBelow(
       !readToEnd.current.document ? 'document' : !readToEnd.current.rail ? 'rail' : null,
     )
-    // `mode` is read by the stamp above: the left column shows a different
-    // document in each of the three, and a range measured over one of them says
-    // nothing about another.
-  }, [mode])
+    // `viewOf` is what the coverage set is keyed by, so `measure` is rebuilt
+    // when either half of it moves.
+  }, [viewOf])
 
   /*
    * Measure before paint, and again whenever the rail changes size.
