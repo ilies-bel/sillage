@@ -490,6 +490,22 @@ const SCREENS = {
   },
 
   /*
+   * The keyboard, printed (`app/shortcuts.ts`). Its own stage because it is its
+   * own pane, and because a table that drifts from the matcher is exactly the
+   * kind of thing nobody looks at again.
+   */
+  'reglages-raccourcis': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('button', { name: 'Raccourcis clavier' }).click()
+      await page.getByRole('heading', { name: 'Raccourcis clavier' }).waitFor()
+      await page.getByText('Valider, quand la revue le permet').waitFor()
+    },
+  },
+
+  /*
    * ── the first demo's own case (DEC-28) ──────────────────────────────────
    *
    * There is no Entra app registration and there will not be one for a while:

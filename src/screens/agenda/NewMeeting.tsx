@@ -38,6 +38,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
 import { invoke } from '../../app/bridge.ts'
+import { useShortcuts } from '../../app/shortcuts.ts'
 import { atParis, noonOf, parseClock, type DayKey } from '../../app/calendar.ts'
 import { formatDayMedium, upperFirst } from '../../app/format.ts'
 import { Button, unavailable } from '../../ui/index.ts'
@@ -176,6 +177,21 @@ export function NewMeeting({
    * *Ajouter au …* is the second control and appears beside it, never instead of
    * it: scheduling is a different intention and reads as one (DEC-31).
    */
+  /*
+   * `Ctrl/⌘ N`, on the control itself rather than on the screen above it.
+   *
+   * `create` is where the busy guard, the failure sentence and `onCreated`
+   * live, so the shortcut is the button — not a second path to the same IPC
+   * that would have to be kept in step with it. Only the header instance
+   * claims the key: the empty-day panel draws a second `NewMeeting`, and two
+   * handlers on one window would start two recordings from one press.
+   */
+  useShortcuts(
+    variant === 'header'
+      ? { nouvelle: () => void create({ title: '', clientName: null, scheduledStart: null }) }
+      : {},
+  )
+
   const start = (
     <Button
       variant="primary"

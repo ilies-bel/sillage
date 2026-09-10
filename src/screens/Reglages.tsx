@@ -70,6 +70,7 @@ import type { CapabilityFinding, CapabilityReport } from '../../electron/core/co
 import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { SHORTCUTS, useShortcuts } from '../app/shortcuts.ts'
 import { formatAgo } from '../app/format.ts'
 import {
   Button,
@@ -84,7 +85,13 @@ import {
 } from '../ui/index.ts'
 import type { SectionNavItem, StateDotProps } from '../ui/index.ts'
 
-export type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'maj' | 'diagnostics'
+export type SectionId =
+  | 'transcription'
+  | 'llm'
+  | 'connecteurs'
+  | 'raccourcis'
+  | 'maj'
+  | 'diagnostics'
 
 /** VISION.md §6 names them in this order: the two provider tables, then the
  *  connectors, then diagnostics. Updates sit last but one — next to
@@ -94,6 +101,14 @@ const SECTIONS: readonly SectionNavItem<SectionId>[] = [
   { id: 'transcription', label: 'Transcription' },
   { id: 'llm', label: 'Modèle de langage' },
   { id: 'connecteurs', label: 'Connecteurs' },
+  /*
+   * The keyboard has a pane because it has to be discoverable somewhere, and
+   * the alternative is the one this product refuses: a `?` sheet over the
+   * window (HR-10). It sits after the connectors — a rep looking for it is
+   * looking for a reference, not for a setting — and nothing on it is a
+   * setting, which is why it is a table and not a form.
+   */
+  { id: 'raccourcis', label: 'Raccourcis clavier' },
   { id: 'maj', label: 'Mise à jour' },
   { id: 'diagnostics', label: 'Diagnostics' },
 ]
@@ -124,6 +139,9 @@ interface ReglagesProps {
 
 export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
   const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
+  // `Échap` leaves. Every write here lands the moment it is made, so there is
+  // nothing unsaved to lose on the way out (`app/shortcuts.ts`).
+  useShortcuts({ retour: onBack })
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
   const [busy, setBusy] = useState<string | null>(null)
@@ -376,6 +394,8 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
                 })
               }}
             />
+          ) : section === 'raccourcis' ? (
+            <Raccourcis />
           ) : section === 'maj' ? (
             <UpdatePanel />
           ) : (
@@ -385,6 +405,46 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
         </main>
       </div>
     </div>
+  )
+}
+
+/**
+ * **The keyboard, printed** (`app/shortcuts.ts`).
+ *
+ * VISION.md §6 says « keyboard-first » and the app had not one global shortcut;
+ * once it had six, they were invisible. A product whose accelerators are only
+ * in the source is a product without accelerators.
+ *
+ * It reads `SHORTCUTS` rather than restating it, so a key that is added, moved
+ * or dropped cannot leave a row here claiming otherwise — the pane is a *view*
+ * of the table the matcher itself uses. Nothing on it is pressable: a shortcut
+ * drawn as a button would be a control that does with the mouse the thing it
+ * exists to do without one.
+ */
+function Raccourcis() {
+  return (
+    <section>
+      <SectionHeader>Raccourcis clavier</SectionHeader>
+      <Lede>
+        Ctrl sur Windows, ⌘ sur Mac — les deux fonctionnent partout. Ils sont ignorés pendant
+        que vous écrivez, sauf Échap et Ctrl&nbsp;Entrée.
+      </Lede>
+
+      <List as="div">
+        {SHORTCUTS.map((shortcut) => (
+          <Row as="div" key={shortcut.id} align="center">
+            <span className="text-strong min-w-0 flex-1 text-copy">{shortcut.label}</span>
+            {/*
+              `kbd`, and not a styled span: this is a key on a keyboard, and the
+              element that says so is the one a screen reader announces as one.
+            */}
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+              {shortcut.keys}
+            </kbd>
+          </Row>
+        ))}
+      </List>
+    </section>
   )
 }
 

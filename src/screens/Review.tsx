@@ -49,6 +49,7 @@ import {
   unavailable,
 } from '../ui/index.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
+import { useShortcuts } from '../app/shortcuts.ts'
 import { cn } from '../lib/utils.ts'
 import {
   CompteRenduDocument,
@@ -188,6 +189,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * about the current scroll position.
    */
   const readToEnd = useRef({ document: false, rail: false })
+
   const measure = useCallback(() => {
     /*
      * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
@@ -444,6 +446,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       setBusy(false)
     }
   }, [busy, checked, edits, meetingId, onConfirmed])
+  /*
+   * `Ctrl/⌘ Entrée`, and **only when the button is already armed**
+   * (`app/shortcuts.ts`).
+   *
+   * The guard is the same one the button carries — `below === null`, meaning
+   * nothing that is about to leave is still under a fold — and it is expressed
+   * as the absence of a handler rather than as a handler that declines. A
+   * shortcut that could confirm while *Valider* was still refusing would be a
+   * second gate (DEC-4), and one that fired while the reveal control was on
+   * screen would confirm something the rep has not been shown.
+   */
+  useShortcuts(below === null && !busy ? { valider: () => void confirm() } : {})
 
   if (loaded.state.status === 'loading') return <Centered>Chargement…</Centered>
 

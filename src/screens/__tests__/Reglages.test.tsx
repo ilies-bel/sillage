@@ -245,6 +245,7 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
       'Transcription',
       'Modèle de langage',
       'Connecteurs',
+      'Raccourcis clavier',
       'Mise à jour',
       'Diagnostics',
     ])

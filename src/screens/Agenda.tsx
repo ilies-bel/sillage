@@ -31,12 +31,13 @@
  * meeting is drawn in the same grid as one that came from Outlook, because the
  * calendar is the app's own surface and not a rendering of Exchange.
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { HistoryFilter } from '../../electron/core/contracts/history.ts'
 import type { AgendaSnapshotPayload } from '../../electron/core/contracts/ipc.ts'
 import type { AuthState } from '../../electron/core/contracts/identity.ts'
 import type { Meeting } from '../../electron/core/contracts/meeting.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { useShortcuts } from '../app/shortcuts.ts'
 import {
   dayKeyOf,
   monthMatrix,
@@ -119,6 +120,22 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   const [view, setView] = useState<View>('jour')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<HistoryFilter>(NO_FILTER)
+
+  /*
+   * The keyboard (`app/shortcuts.ts`, VISION.md §6 « keyboard-first »).
+   *
+   * The three that belong to the home screen. `Ctrl/⌘ N` is not here: it is on
+   * *Démarrer une réunion* itself, in `NewMeeting`, because that control owns
+   * both the creation and the busy state a second press has to be refused
+   * against — a shortcut wired to a copy of that logic would be a second way to
+   * start a recording, and it would drift.
+   */
+  const searchRef = useRef<HTMLInputElement>(null)
+  useShortcuts({
+    rechercher: () => searchRef.current?.focus(),
+    historique: () => onHistorique(query, filter),
+    reglages: onReglages,
+  })
 
   /**
    * The meetings this screen has to draw, scoped to the window it draws.
@@ -380,6 +397,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             filter={filter}
             onFilter={setFilter}
             clients={search.result?.clients ?? []}
+            inputRef={searchRef}
             onHistorique={() => onHistorique(query, filter)}
             /*
               The axes appear when the rep asks. On this screen the day list is

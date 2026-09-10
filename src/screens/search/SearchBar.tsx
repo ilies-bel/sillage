@@ -51,7 +51,7 @@
  * recover. So the whole line scrolls, and « Effacer » stays outside it, because
  * a reset that scrolls out of view is a reset a rep cannot find.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { HistoryFilter } from '../../../electron/core/contracts/history.ts'
 import { Button, Chip } from '../../ui/index.ts'
 import {
@@ -77,6 +77,13 @@ export interface SearchBarProps {
    * separator with a gap after it and a control that does nothing (DEC-26).
    */
   clients: readonly string[]
+  /**
+   * The field itself, so a screen can put the cursor in it — `Ctrl/⌘ K`, from
+   * `app/shortcuts.ts`. A ref rather than a `focus` prop the caller toggles:
+   * focus is an act, not a state, and a boolean that has to be set back to
+   * false is a second thing to get wrong.
+   */
+  inputRef?: Ref<HTMLInputElement>
   /**
    * Opens *Historique* on this same query and these same chips — permanently,
    * whatever the field holds and whatever came back.
@@ -112,6 +119,7 @@ export function SearchBar({
   filter,
   onFilter,
   clients,
+  inputRef,
   onHistorique,
   chipsAlways = true,
   className,
@@ -128,6 +136,7 @@ export function SearchBar({
     <div className={className}>
       <div className="flex items-center gap-inline">
         <input
+          ref={inputRef}
           type="search"
           onFocus={() => setAsked(true)}
           aria-label="Rechercher un client, un sujet, une transcription ou une note"

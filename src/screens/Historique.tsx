@@ -55,6 +55,7 @@ import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
 import { scrollToTop } from '../lib/scroll.ts'
+import { useShortcuts } from '../app/shortcuts.ts'
 import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
 import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
 import {
@@ -98,6 +99,15 @@ export function Historique({
   const search = useHistorySearch(query, filter, SEARCH_LIMIT)
   const rows: readonly HistoryRow[] | null = search.result?.rows ?? null
 
+  /*
+   * `Échap` goes back to the calendar and `Ctrl/⌘ K` puts the cursor in the
+   * field — the two the reader is for (`app/shortcuts.ts`). Nothing here
+   * writes, so leaving costs nothing and there is no confirmation to guard
+   * (DEC-25).
+   */
+  const searchRef = useRef<HTMLInputElement>(null)
+  useShortcuts({ retour: onBack, rechercher: () => searchRef.current?.focus() })
+
   const toggle = useCallback((meetingId: string) => {
     setExpanded((previous) => (previous === meetingId ? null : meetingId))
   }, [])
@@ -124,6 +134,7 @@ export function Historique({
           filter={filter}
           onFilter={setFilter}
           clients={search.result?.clients ?? []}
+          inputRef={searchRef}
           className="mt-4"
         />
       </header>
