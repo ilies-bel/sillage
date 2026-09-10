@@ -43,7 +43,15 @@ import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
 import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
-import { Button, CopyButton, EmptyState, List, Row as UiRow, RowTitle } from '../ui/index.ts'
+import {
+  Button,
+  CopyButton,
+  EmptyState,
+  List,
+  Row as UiRow,
+  RowTitle,
+  SectionHeader,
+} from '../ui/index.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
@@ -164,7 +172,14 @@ function Row({ row, expanded, onToggle }: RowProps) {
           </span>
           <RowTitle {...meetingHeading(meeting)} />
           <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
-          <IntentSummary intents={row.intents} className="w-40" />
+          {/*
+                A count, not the ledger. Three named intents ran past the row
+                at 1280 and « mail en échec » was cut against the edge — which
+                is the one state a rep is scanning for. The ledger, with each
+                intent, its state, its VerySwing id and its failure sentence, is
+                « Envois » in the expanded record two clicks below.
+              */}
+              <IntentSummary intents={row.intents} variant="compact" className="w-36" />
         </UiRow>
       </button>
 
@@ -230,9 +245,9 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
 
       <Section title="Mes notes">
         {record.notes.trim() ? (
-          <p className="text-strong whitespace-pre-wrap text-xs leading-relaxed">{record.notes}</p>
+          <p className="text-strong whitespace-pre-wrap text-copy leading-relaxed">{record.notes}</p>
         ) : (
-          <p className="text-muted text-xs">Rien n’a été saisi pendant cet appel.</p>
+          <p className="text-muted text-ui">Rien n’a été saisi pendant cet appel.</p>
         )}
       </Section>
 
@@ -253,7 +268,7 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
           */
           <CompteRenduDocument text={record.compteRendu} className="pl-6" />
         ) : (
-          <p className="text-muted text-xs">Cet appel n’a pas produit de compte-rendu.</p>
+          <p className="text-muted text-ui">Cet appel n’a pas produit de compte-rendu.</p>
         )}
       </Section>
 
@@ -286,10 +301,23 @@ function Section({
   return (
     <section className="min-w-0">
       <div className="mb-2 flex items-center gap-inline">
-        <h3 className="pane-label min-w-0 flex-1">{title}</h3>
+        {/*
+          `h2`, and through the same component every other screen's section
+          header goes through.
+
+          It was a hand-written `<h3 className="pane-label">`: the right ink,
+          the wrong level. The page's only other heading is `<h1>Historique</h1>`
+          — the calls themselves are buttons, not headings — so the four panes
+          of DEC-25 jumped h1 → h3, and a screen reader's heading list, which is
+          how the record is navigated without a mouse, reported a level that
+          nothing on the page defines.
+        */}
+        <SectionHeader className="mb-0 min-w-0 flex-1">{title}</SectionHeader>
         {copy ? <CopyButton text={copy.text} what={copy.what} className="text-meta" /> : null}
       </div>
-      <div className="max-h-72 overflow-y-auto pr-1">{children}</div>
+      {/* `.measure` — the product's one reading width, so a compte-rendu read
+          three weeks later is set the way it was set at the gate. */}
+      <div className="measure max-h-72 overflow-y-auto pr-1">{children}</div>
     </section>
   )
 }
@@ -354,11 +382,11 @@ function Extraction({ fields }: { fields: readonly ReviewField[] }) {
     <dl className="space-y-1.5">
       {fields.map((field) => (
         <div key={field.key}>
-          <dt className="text-muted flex items-baseline gap-2 text-[11px]">
+          <dt className="text-muted flex items-baseline gap-2 text-meta">
             {field.label}
             {field.confidence === 'faible' ? <span className="text-warn">⚠ faible</span> : null}
           </dt>
-          <dd className="text-body text-[11px] italic">
+          <dd className="text-body text-ui italic">
             {field.span
               ? `« ${field.span.quote} »${
                   field.span.startMs === null
@@ -379,10 +407,10 @@ function PushStatus({ intents }: { intents: readonly HistoryIntent[] }) {
 
   return (
     <div className="mt-4">
-      <h4 className="pane-label mb-2">Envois</h4>
+      <h3 className="pane-label mb-2">Envois</h3>
       <ul className="space-y-1">
         {intents.map((intent) => (
-          <li key={intent.intentId} className="text-[11px]">
+          <li key={intent.intentId} className="text-ui">
             <span className="text-body">{intent.label}</span>{' '}
             <span className={intent.state === 'failed' ? 'text-warn' : 'text-muted'}>
               {PUSH_LABEL[intent.state]}

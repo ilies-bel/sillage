@@ -244,13 +244,13 @@ export function Reglages({ onBack }: ReglagesProps) {
             once, to everything — so a row's state, its reason and its recovery
             are one glance wide.
 
-            38rem and not 46: at 46 the paragraphs ran a hundred and twenty
-            characters a line, which is unifying two measures onto the wrong
-            one. This is the width a connector row needs — a label, a state, a
-            sentence of reason and a *Réessayer* — and it is also a measure
-            prose can be read at.
+            `.measure` and not 46rem: at 46 the paragraphs ran a hundred and
+            twenty characters a line, which is unifying two measures onto the
+            wrong one. The product's one reading width is also, comfortably, the
+            width a connector row needs — a label, a state, a sentence of reason
+            and a *Réessayer*.
           */}
-          <div className="max-w-[38rem]">
+          <div className="measure">
           {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (

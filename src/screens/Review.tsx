@@ -473,7 +473,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             text then share one optical column instead of leaving a slab of
             white down the right of the pane.
           */}
-          <div className="mx-auto max-w-[68ch]">
+          <div className="measure mx-auto">
             <div className="mb-3 flex items-center gap-inline">
               <SectionHeader className="mb-0 min-w-0 flex-1">
                 {mode === 'transcription' ? 'Transcription' : 'Compte-rendu'}

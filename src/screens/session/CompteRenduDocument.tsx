@@ -12,6 +12,10 @@
  * because the heading text has to sit on the same left edge as the paragraph
  * text under it. A flex gutter would indent every line by the width of the
  * widest marker, and the document would read as if it were quoted.
+ *
+ * Set at `--type-copy`, the same size as the rep's own notepad. It was one step
+ * down, which made the document the app produced quieter than the notes it was
+ * written from — on the surfaces where the compte-rendu *is* the output.
  */
 import { parseCompteRendu } from './compteRenduLines.ts'
 
@@ -23,9 +27,9 @@ interface CompteRenduDocumentProps {
 
 /** What each line class is set in. The `#` gutter is common to all of them. */
 const HEADING_CLASS: Record<1 | 2 | 3, string> = {
-  1: 'font-display text-strong mt-block first:mt-0 text-[19px] leading-tight',
-  2: 'text-strong mt-block first:mt-0 text-[14px] font-semibold leading-snug',
-  3: 'text-strong mt-row first:mt-0 text-ui font-semibold leading-snug',
+  1: 'font-display text-strong mt-block first:mt-0 text-[20px] leading-tight',
+  2: 'text-strong mt-block first:mt-0 text-[16px] font-semibold leading-snug',
+  3: 'text-strong mt-row first:mt-0 text-copy font-semibold leading-snug',
 }
 
 export function CompteRenduDocument({ text, className }: CompteRenduDocumentProps) {
@@ -62,13 +66,13 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
-              <p className="text-body text-ui leading-relaxed">{line.text}</p>
+              <p className="text-body text-copy leading-relaxed">{line.text}</p>
             </div>
           )
         }
 
         return (
-          <p key={key} className="text-body whitespace-pre-wrap text-ui leading-relaxed">
+          <p key={key} className="text-body whitespace-pre-wrap text-copy leading-relaxed">
             {line.text}
           </p>
         )

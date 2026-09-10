@@ -293,10 +293,13 @@ describe('push status per intent', () => {
 
     await settled()
     const text = document.body.textContent ?? ''
-    // Words, not a private alphabet: « ✓ » is guessable and « ↻ » is not, and
-    // there is no glyph key anywhere in the product.
-    expect(text).toContain('tâche envoyée')
-    expect(text).toContain('mail en échec')
+    // A count on the row, and the one state a rep scans for named first. Words
+    // either way — « ✓ » is guessable and « ↻ » is not, and there is no glyph
+    // key anywhere in the product.
+    expect(text).toContain('en échec')
+    // The ledger itself — each intent, its state, its id, its reason — is
+    // « Envois » in the expanded record, and is asserted by the test below.
+    expect(screen.getByTitle(/tâche envoyée/)).toBeTruthy()
   })
 
   test('an expanded row states why a push failed (DEC-26)', async () => {

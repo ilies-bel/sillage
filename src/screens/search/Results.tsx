@@ -61,7 +61,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
             <RowTitle {...meetingHeading(row.meeting)} />
 
             <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
-            <IntentSummary intents={row.intents} className="w-28" />
+            <IntentSummary intents={row.intents} variant="compact" className="w-28" />
 
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 

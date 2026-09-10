@@ -336,11 +336,28 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
      * the control the mask was standing in for — and they are never dead
      * (DEC-26): a row that fits has neither.
      *
-     * Absolutely positioned rather than laid out inline, because a button that
-     * takes width would change how much of the row fits, which is the input to
-     * whether the button should be there at all.
+     * Two 20px gutters, always reserved, each holding a chevron only while that
+     * side is actually cut.
+     *
+     * The first cut floated the buttons *over* the row, on the argument that a
+     * control taking width changes how much of the row fits — which is the
+     * input to whether the control should be there. That argument is about
+     * oscillation and it is answered by reserving the space unconditionally:
+     * the scroller is a constant 40px narrower whether or not either chevron is
+     * drawn, so there is no feedback loop to oscillate. What floating actually
+     * bought was a button sitting on top of whichever chip happened to be at
+     * the edge — « Sodexial » was a third covered, so its right third simply
+     * could not be clicked. A chevron that eats a filter is worse than the fade
+     * it was added to explain.
+     *
+     * An empty gutter is not a dead control (DEC-26): there is nothing in it.
      */
-    <div className="relative flex min-w-0 flex-1 items-center">
+    <div className="flex min-w-0 flex-1 items-center">
+      <span className="flex w-5 shrink-0 justify-center">
+        {fade === 'start' || fade === 'both' ? (
+          <Page direction={-1} onClick={() => page(-1)} />
+        ) : null}
+      </span>
       <div
         ref={ref}
         data-fade={fade}
@@ -348,12 +365,11 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
       >
         {children}
       </div>
-      {fade === 'start' || fade === 'both' ? (
-        <Page direction={-1} onClick={() => page(-1)} />
-      ) : null}
-      {fade === 'end' || fade === 'both' ? (
-        <Page direction={1} onClick={() => page(1)} />
-      ) : null}
+      <span className="flex w-5 shrink-0 justify-center">
+        {fade === 'end' || fade === 'both' ? (
+          <Page direction={1} onClick={() => page(1)} />
+        ) : null}
+      </span>
     </div>
   )
 }
@@ -365,9 +381,7 @@ function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }
       type="button"
       onClick={onClick}
       aria-label={direction === -1 ? 'Filtres précédents' : 'Filtres suivants'}
-      className={`text-muted hover:text-body bg-canvas border-subtle absolute top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border text-meta leading-none ${
-        direction === -1 ? 'left-0' : 'right-0'
-      }`}
+      className="text-muted hover:text-body bg-canvas border-subtle flex h-5 w-5 items-center justify-center rounded-full border text-meta leading-none"
     >
       {direction === -1 ? '‹' : '›'}
     </button>

@@ -60,27 +60,70 @@ const STATE_WORD: Record<HistoryIntent['state'], string> = {
   failed: 'en échec',
 }
 
+/**
+ * How much room the caller has.
+ *
+ * `full` names every intent and its state — « tâche envoyée · opportunité en
+ * attente · mail en échec » — and is for *Historique*, whose rows run the width
+ * of the window.
+ *
+ * `compact` is for the calendar's search pane, where the same summary sits
+ * between a title and an *Ouvrir* button in about a hundred pixels. Naming
+ * three intents there overran the column and ran *under* the button. It counts
+ * instead, and it counts failures first, because that is the one state a rep is
+ * scanning for; the full ledger is one click away in Historique and rides along
+ * in the `title` in the meantime.
+ */
+export type IntentSummaryVariant = 'full' | 'compact'
+
+/** « 1 en échec · 2 envoyées », ordered by what a rep is looking for. */
+const counted = (intents: readonly HistoryIntent[]): string => {
+  const failed = intents.filter((i) => i.state === 'failed').length
+  const drained = intents.filter((i) => i.state === 'drained').length
+  const waiting = intents.length - failed - drained
+  const parts: string[] = []
+  if (failed > 0) parts.push(`${failed} en échec`)
+  if (waiting > 0) parts.push(`${waiting} en attente`)
+  if (drained > 0) parts.push(`${drained} envoyée${drained > 1 ? 's' : ''}`)
+  return parts.join(' · ')
+}
+
 export function IntentSummary({
   intents,
+  variant = 'full',
   className,
 }: {
   intents: readonly HistoryIntent[]
+  variant?: IntentSummaryVariant
   className?: string
 }) {
   if (intents.length === 0) {
     return <span className={`text-muted shrink-0 text-right text-ui ${className ?? ''}`}>—</span>
   }
 
+  if (variant === 'compact') {
+    return (
+      <span
+        title={intents
+          .map((intent) => `${INTENT_SHORT[intent.kind]} ${STATE_WORD[intent.state]}`)
+          .join(' · ')}
+        className={`shrink-0 whitespace-nowrap text-right text-ui ${
+          intents.some((intent) => intent.state === 'failed') ? 'text-warn' : 'text-muted'
+        } ${className ?? ''}`}
+      >
+        {counted(intents)}
+      </span>
+    )
+  }
+
   return (
     /* `whitespace-nowrap`: the cluster wrapped mid-list on a narrow row and
        left an orphaned « · » at the end of the line. It is three short phrases
-       and it either fits on one line or the row is too narrow for the column. */
+       and it either fits on one line or the caller wanted `compact`. */
     <span className={`shrink-0 whitespace-nowrap text-right text-ui ${className ?? ''}`}>
       {intents.map((intent, index) => (
         <span
           key={intent.intentId}
-          /* Colour is never the only signal: the glyph carries the state and
-             this spells it out for a screen reader and for a hover. */
           /* The reason, where there is one — colour is never the only signal
              and « en échec » with no cause is a dead end (DEC-26). */
           title={intent.lastError ?? undefined}
