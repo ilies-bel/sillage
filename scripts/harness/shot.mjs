@@ -508,6 +508,30 @@ const SCREENS = {
   },
 
   /*
+   * *Demander* on the reader — the screen it was written for, and the one where
+   * its citations lead somewhere: the record's own transcription is in the same
+   * box, so following a quote lights the turn it came from.
+   */
+  'historique-demander': {
+    scenario: 'historique',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Tout l’historique ›' }).click()
+      await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
+      await page
+        .getByRole('button', { name: /Groupe Lefort.*découverte du besoin plateforme/ })
+        .click()
+      await page.getByText('Compte-rendu').first().waitFor()
+      await page.getByRole('button', { name: 'Qu’est-ce qui a été dit sur le TJM ?' }).click()
+      const cite = page.locator('button').filter({ hasText: '«' }).first()
+      await cite.waitFor()
+      await cite.click()
+      // The lit turn, in the record's own transcription.
+      await page.locator('li.bg-brand-50').first().waitFor()
+    },
+  },
+
+  /*
    * The keyboard, printed (`app/shortcuts.ts`). Its own stage because it is its
    * own pane, and because a table that drifts from the matcher is exactly the
    * kind of thing nobody looks at again.

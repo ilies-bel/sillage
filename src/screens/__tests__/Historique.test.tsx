@@ -286,6 +286,91 @@ describe('a row expands into the full record (DEC-25)', () => {
   })
 })
 
+describe('« Demander » on the record (DEC-25, DEC-21)', () => {
+  /*
+   * This is the screen the panel was written for — its own docblock opens on
+   * « a rep three weeks later », and three weeks later they are here. It was on
+   * the two screens where the call is still fresh and on neither of the ones
+   * where it is not.
+   */
+  const answer = () => ({
+    question: 'Qu’est-ce qui a été dit sur le TJM ?',
+    answered: true,
+    answer: 'Le client parle d’un TJM de 520 euros.',
+    citations: [
+      {
+        span: {
+          quote: 'on est plutôt sur un TJM de 520 euros',
+          channel: 'far' as const,
+          startMs: 61_000,
+          endMs: 64_000,
+        },
+        verified: true,
+      },
+    ],
+  })
+
+  test('it is on the record, and it reads rather than writes', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+    bridge.when('meeting:ask', () => answer())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+
+    fireEvent.change(screen.getByLabelText('Poser une question sur cet appel'), {
+      target: { value: 'Quel TJM ?' },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Demander' }))
+    })
+
+    expect(await screen.findByText(/TJM de 520 euros\.$/)).toBeTruthy()
+    // A reader writes nothing (DEC-25): the only channels this screen has
+    // touched are the two reads plus the search it opened with.
+    const written = bridge.calls.filter((call) =>
+      /confirm|create|rename|snapshot|seen/.test(call.channel),
+    )
+    expect(written).toEqual([])
+  })
+
+  /*
+   * The citation has to *lead somewhere*, and here it can: the record's own
+   * transcription is in the same box. On a surface with no transcript the quote
+   * is still drawn and simply not followable, which the panel states rather than
+   * offering a control that goes nowhere (DEC-26) — but this is not that
+   * surface, and offering the degraded version here would waste the one place
+   * the evidence is already on screen.
+   */
+  test('following a citation lights the turn it came from', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+    bridge.when('meeting:ask', () => answer())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+
+    fireEvent.change(screen.getByLabelText('Poser une question sur cet appel'), {
+      target: { value: 'Quel TJM ?' },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Demander' }))
+    })
+
+    const citation = await screen.findByRole('button', { name: /TJM de 520 euros/ })
+    await act(async () => {
+      fireEvent.click(citation)
+    })
+
+    // The transcript turn, not the citation itself.
+    const turn = screen.getByText('on est plutôt sur un TJM de 520 euros').closest('li')
+    expect(turn?.className).toMatch(/bg-brand-50/)
+    // And exactly one: a phrase said twice would otherwise light the column and
+    // point at nothing.
+    expect(document.querySelectorAll('li.bg-brand-50')).toHaveLength(1)
+  })
+})
+
 describe('push status per intent', () => {
   test('the row summarises each intent and a failure is legible without expanding', async () => {
     answered()

@@ -1010,12 +1010,13 @@ export function installAppBridge(config) {
       First launch, on a machine where nothing has been set up yet — which is the
       only state the onboarding's second step exists for.
 
-      `capture` is `down` and **retryable**, because that is precisely what an
-      unanswered macOS permission is: pressing the button re-asks the OS. The
-      other two are not retryable — a model still arriving and a provider nobody
-      has chosen are not fixed by trying again — so they get the link to Réglages
-      instead. Two remedies, and offering the wrong one is the dead control
-      DEC-26 forbids.
+      `capture` is `degraded` and **retryable**: the screen-recording permission
+      has not been answered, one channel would still be captured, and pressing
+      *Autoriser* re-asks the OS — `main.ts` registers that retry, so the claim
+      survives `Orchestrator.#truthful`. `llm` is not retryable, because a
+      provider nobody has chosen is not fixed by trying again, so it gets the
+      link to Réglages instead. Two remedies, and offering the wrong one is the
+      dead control DEC-26 forbids.
     */
     premierLancement: {
       /*
@@ -1808,7 +1809,22 @@ export function installAppBridge(config) {
 
     'meeting:ask': (payload) => {
       const question = fold(payload.question || '')
-      const segments = SEGMENTS.filter((segment) => segment.isFinal)
+      /*
+        **The segments of the meeting that was asked about, not of the fixture's
+        favourite one.**
+
+        This read `SEGMENTS` — Néovia's — whatever meeting id it was handed. On
+        the session screen and at the gate that is the meeting anyway, so the lie
+        was invisible; on *Historique*, where a rep asks about a call from three
+        weeks ago, the answer quoted a different conversation and the citation
+        pointed at a turn that is not in that record. Which is the exact failure
+        `Demander` exists to prevent, staged by the harness that is supposed to
+        prove it does not happen.
+      */
+      const stored = RECORDS[payload.meetingId]
+      const segments = (stored && stored.segments.length > 0 ? stored.segments : SEGMENTS).filter(
+        (segment) => segment.isFinal !== false,
+      )
       /*
         Three letters, not four — with a stop list.
 

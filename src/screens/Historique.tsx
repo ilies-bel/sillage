@@ -54,7 +54,8 @@ import type {
 import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
-import { scrollToTop } from '../lib/scroll.ts'
+import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
+import { AskPanel } from './session/AskPanel.tsx'
 import { useShortcuts } from '../app/shortcuts.ts'
 import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
 import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
@@ -338,6 +339,8 @@ function Record({
 }) {
   const [record, setRecord] = useState<HistoryRecord | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  /** The quote *Demander* was last asked to show, lit in the transcription. */
+  const [located, setLocated] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -386,7 +389,7 @@ function Record({
             : undefined
         }
       >
-        <Transcript segments={record.segments} />
+        <Transcript segments={record.segments} quote={located} />
       </Section>
 
       <Section title="Mes notes">
@@ -426,6 +429,33 @@ function Record({
         <Extraction fields={record.fields} />
         <PushStatus intents={intents} />
       </Section>
+
+      {/*
+        **This is the screen *Demander* was written for.**
+
+        Its own docblock opens on it: « a rep three weeks later remembers that
+        the client said something about the grille achats and cannot remember
+        what ». Three weeks later they are here — this is the product's only
+        entry into the past (DEC-25) — and the panel was on the two screens
+        where the call is still fresh and on neither of the ones where it is not.
+
+        And here the citations *lead somewhere*: the record's own transcription
+        is in the same box, forty pixels up, so pressing a quote lights the turn
+        it came from. That is the whole difference from a general-purpose
+        notetaker's ask box, which answers from a document the model itself
+        wrote — a mistake in the summary becomes a mistake in the answer with
+        nothing left to check it against.
+
+        It writes nothing and confirms nothing, which is what lets it live on a
+        reader at all (DEC-4, DEC-25).
+      */}
+      <div className="col-span-2">
+        <AskPanel
+          meetingId={meetingId}
+          onLocate={(quote) => setLocated(quote)}
+          className="border-subtle border-t pt-3"
+        />
+      </div>
     </div>
   )
 }
@@ -493,27 +523,77 @@ const transcriptText = (segments: readonly TranscriptSegment[]): string =>
     )
     .join('\n')
 
-function Transcript({ segments }: { segments: readonly TranscriptSegment[] }) {
+function Transcript({
+  segments,
+  quote,
+}: {
+  segments: readonly TranscriptSegment[]
+  /**
+   * A fragment *Demander* leaned on, to be shown in the record.
+   *
+   * Matched with the same fold `locateQuote` uses — accents dropped, case
+   * folded, punctuation collapsed — because the answer's quote is the model's
+   * transcription of what it read and the stored segment is the transcriber's,
+   * and the two disagree on a comma often enough that an exact match would
+   * light nothing on a citation that is perfectly real.
+   */
+  quote?: string | null
+}) {
+  const hit = useRef<HTMLLIElement>(null)
+  const needle = quote ? foldQuote(quote) : null
+
+  useEffect(() => {
+    if (needle) scrollToCenter(hit.current)
+  }, [needle])
+
   if (segments.length === 0) {
     return <p className="text-muted text-xs">Aucune transcription pour cet appel.</p>
   }
 
+  let marked = false
   return (
     <ul className="space-y-1">
-      {segments.map((segment) => (
-        <li key={segment.id} className="flex gap-2 text-xs">
-          <span className="text-muted w-10 shrink-0 tabular-nums text-[11px]">
-            {formatOffset(segment.startMs)}
-          </span>
-          <span className="text-muted w-12 shrink-0 text-[11px]">
-            {CHANNEL_LABEL[segment.channel]}
-          </span>
-          <span className="text-body min-w-0 flex-1">{segment.text}</span>
-        </li>
-      ))}
+      {segments.map((segment) => {
+        // The first segment that contains it, and only the first: a phrase said
+        // twice would otherwise light the whole column and point at nothing.
+        const isHit = needle !== null && !marked && foldQuote(segment.text).includes(needle)
+        if (isHit) marked = true
+        return (
+          <li
+            key={segment.id}
+            ref={isHit ? hit : undefined}
+            className={`flex gap-2 rounded-sm text-xs ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
+          >
+            <span className="text-muted w-10 shrink-0 tabular-nums text-[11px]">
+              {formatOffset(segment.startMs)}
+            </span>
+            <span className="text-muted w-12 shrink-0 text-[11px]">
+              {CHANNEL_LABEL[segment.channel]}
+            </span>
+            <span className="text-body min-w-0 flex-1">{segment.text}</span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
+
+/**
+ * The comparison `locateQuote` makes, in the renderer.
+ *
+ * Not imported from `core/domain/` — `src/*` may import `core/contracts/` and
+ * nothing else — and deliberately not *exactly* that function either: this one
+ * only has to light a row, where that one decides whether a citation is
+ * verified at all. Being a shade looser here costs a highlight in the wrong
+ * place at worst; being looser there would call an invented quote verified.
+ */
+const foldQuote = (text: string): string =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
 
 /**
  * Each field with the span it was read from (DEC-21).
