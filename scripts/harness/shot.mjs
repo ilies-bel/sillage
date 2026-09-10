@@ -287,6 +287,49 @@ const SCREENS = {
    * The suggestion chip rather than typing: it is the path a rep takes on their
    * first question, and it exercises the same code.
    */
+  /**
+   * First run, all three steps (`core/contracts/onboarding.ts`).
+   *
+   * Step 2 is the one worth photographing — the required subsystems, live, with
+   * the control that fixes each one — so the stage walks to it and stops. Step 1
+   * and step 3 are prose and are shot by `onboarding` and `onboarding-essai`.
+   */
+  onboarding: {
+    scenario: 'onboarding',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+    },
+  },
+
+  'onboarding-besoins': {
+    scenario: 'onboarding',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('heading', { name: 'Ce dont Sillage a besoin' }).waitFor()
+      /*
+        Wait for a *remedy*, not for a verdict word.
+
+        This waited on « prêt », which is only one of the three verdicts and is
+        the one a fresh install does not have — so the moment the fixture started
+        telling the truth about first launch, the stage that photographs first
+        launch hung for thirty seconds. The remedy button is what step 2 is for
+        and it exists in every unhealthy state.
+      */
+      await page.getByRole('button', { name: /^(Autoriser|Réglages)/ }).first().waitFor()
+    },
+  },
+
+  'onboarding-essai': {
+    scenario: 'onboarding',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('heading', { name: 'Votre premier appel' }).waitFor()
+    },
+  },
+
   'session-demander': {
     scenario: 'compte-rendu',
     async drive(page) {

@@ -22,6 +22,7 @@ import {
   type InvokeResponse,
 } from '../../../core/contracts/ipc.ts'
 import { Store } from '../../../modules/store/index.ts'
+import { ONBOARDING_KEY } from '../../../core/contracts/onboarding.ts'
 import { Diagnostics } from '../../../modules/diagnostics/index.ts'
 import { Orchestrator } from '../../session/Orchestrator.ts'
 import type { DiagEnvironment } from '../../../core/contracts/diagnostics.ts'
@@ -876,6 +877,38 @@ test('with no Microsoft account the Outlook row says so, not that nobody is invi
   // And the two VerySwing intents are untouched by it — the CRM does not go
   // through Microsoft, and an optional connector never disables another (DEC-26).
   assert.ok(panel.intents.filter((i) => i.kind !== 'mail.draft').every((i) => i.available))
+  cleanup()
+})
+
+/**
+ * First run (`core/contracts/onboarding.ts`).
+ *
+ * Two properties, and the second is the one worth a test: a preference that
+ * cannot be read must not be able to hold the window shut. `JSON.parse` throws
+ * before any schema sees the string, so one corrupt row is the whole distance
+ * between « show the onboarding again » and « the app does not open ».
+ */
+test('onboarding is unseen on a fresh install and stays seen once recorded', async () => {
+  const { ipc, cleanup } = open()
+
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+  assert.deepEqual(await ipc.invoke('onboarding:seen', {}), { seen: true })
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: true })
+
+  cleanup()
+})
+
+test('a corrupt preference shows the onboarding again rather than throwing', async () => {
+  const { ipc, deps, cleanup } = open()
+  deps.store.appState.set(ONBOARDING_KEY, 'pas du json')
+
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+
+  // And valid JSON of the wrong shape lands in the same place, through the
+  // schema rather than through the throw.
+  deps.store.appState.set(ONBOARDING_KEY, '{"seen":"oui"}')
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+
   cleanup()
 })
 

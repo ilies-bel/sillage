@@ -23,6 +23,7 @@ import { Session } from './screens/Session.tsx'
 import { Review } from './screens/Review.tsx'
 import { Historique } from './screens/Historique.tsx'
 import { Reglages } from './screens/Reglages.tsx'
+import { Onboarding } from './screens/Onboarding.tsx'
 import { Splash } from './screens/Splash.tsx'
 
 export function App() {
@@ -32,6 +33,10 @@ export function App() {
   // shape as every other screen here.
   const boot = useInvoke('boot:state', {})
   useBroadcast('boot:changed', boot.set)
+
+  // First run. Read once — nothing broadcasts it, because the only thing that
+  // can change it is this window.
+  const onboarding = useInvoke('onboarding:state', {})
 
   const open = useCallback((meetingId: string) => {
     setRoute({ screen: 'session', meetingId })
@@ -77,6 +82,33 @@ export function App() {
   if (!bootReady) {
     const state: BootState | null = boot.state.status === 'ready' ? boot.state.value : null
     return <Splash state={state} />
+  }
+
+  /*
+   * First run, after the splash and before the calendar
+   * (`core/contracts/onboarding.ts`).
+   *
+   * **After** the splash, because the onboarding's second step reads the health
+   * of the three required subsystems and they are not answered until boot is;
+   * showing it earlier would put three « vérification… » rows in front of a rep
+   * and resolve them under their eyes.
+   *
+   * A channel that has not answered yet, or that rejects, shows the calendar.
+   * The onboarding is worth having and is not worth a blank window: `seen`
+   * failing to load says something about the store, not about whether this rep
+   * has used the app, and holding the window shut over a *preference* is the one
+   * outcome worse than showing it a second time.
+   */
+  if (onboarding.state.status === 'ready' && !onboarding.state.value.seen) {
+    return (
+      <Onboarding
+        onDone={() => onboarding.set({ seen: true })}
+        onReglages={() => {
+          onboarding.set({ seen: true })
+          setRoute(REGLAGES)
+        }}
+      />
+    )
   }
 
   return (

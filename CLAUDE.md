@@ -143,6 +143,18 @@ machine) or in `core/domain/` — never in an IPC handler.
   never a greyed copy of *Valider*: a disabled primary is a button a rep presses. That is not a
   second gate — pressing it confirms nothing — and the guard is stated as « is there something
   below the fold », so an environment that cannot lay out fails **open**.
+- **First run asks for the permissions before they are needed** (`Onboarding.tsx`). The app
+  had none, so the first time a rep pressed *Démarrer une réunion* the OS asked them for
+  microphone and screen-recording permission in its own words, over a screen that had explained
+  nothing, thirty seconds before a client joined. On macOS the screen-recording prompt is the
+  one people refuse, and refusing it silently costs the far end of every call the product
+  exists to capture — the rep is transcribed, the client is not, and nothing says so until the
+  compte-rendu describes a monologue. Three steps: what it is, what it needs, what will happen.
+  **The rows on step 2 are the real health rows and the buttons are the real `health:retry`** —
+  a hand-written checklist would be a second place where « is capture working » is decided.
+  It is **never a gate**: *Continuer* is live on a step where nothing has been granted, and
+  every exit — *Passer* and *Réglages ›* included — records `onboarding:seen`, because nagging
+  somebody who said no is how an onboarding becomes the thing people close without reading.
 - **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
   This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
   sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers

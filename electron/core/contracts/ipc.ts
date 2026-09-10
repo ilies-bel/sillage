@@ -37,6 +37,7 @@ import { EnhancementStatusSchema } from './extraction.ts'
 import { RecipeIdSchema } from './recipes.ts'
 import { UpdateStatusSchema } from './update.ts'
 import { AskAnswerSchema } from './ask.ts'
+import { OnboardingStateSchema } from './onboarding.ts'
 
 /**
  * Today's calendar and what the app is currently offering to record.
@@ -339,6 +340,27 @@ export const invokeChannels = {
    * was derived from is re-read months later, and the honest answer to that is
    * « ask again ».
    */
+  /**
+   * Whether first run has happened (`core/contracts/onboarding.ts`).
+   *
+   * Two channels rather than one flag on `settings:snapshot`, because the write
+   * has to be able to happen from a screen that never opens Réglages, and
+   * folding it into the settings payload would make dismissing an onboarding a
+   * settings change — which every provider table and every deferred enhancement
+   * listens to.
+   */
+  'onboarding:state': {
+    request: z.object({}),
+    response: OnboardingStateSchema,
+  },
+  /**
+   * Recorded on the way out, whichever way the rep left it. Nagging somebody who
+   * said no is how an onboarding becomes the thing people close without reading.
+   */
+  'onboarding:seen': {
+    request: z.object({}),
+    response: OnboardingStateSchema,
+  },
   'meeting:ask': {
     request: z.object({
       meetingId: MeetingIdSchema,

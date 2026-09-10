@@ -46,6 +46,11 @@ import {
 } from '../../core/domain/historySearch.ts'
 import { askTranscript, renderCompteRendu } from '../../modules/extract/index.ts'
 import { verifyAnswer } from '../../core/domain/askAnswer.ts'
+import {
+  ONBOARDING_KEY,
+  OnboardingStateSchema,
+  type OnboardingState,
+} from '../../core/contracts/onboarding.ts'
 import type { LlmPort } from '../../core/contracts/llm.ts'
 import type { Store } from '../../modules/store/index.ts'
 import type { Diagnostics } from '../../modules/diagnostics/index.ts'
@@ -804,6 +809,34 @@ export const handlers: Handlers = {
    * (DEC-41) is for the recipe, and a quote must be findable wherever it was
    * said (the same reasoning `review:transcript` carries).
    */
+  /*
+   * First run, read and recorded (`core/contracts/onboarding.ts`).
+   *
+   * A missing row is a fresh install, and an unparseable one is treated the same
+   * way: the worst case is showing the onboarding once more, and the alternative
+   * — throwing on a corrupt string — would hold the whole window shut over a
+   * preference.
+   */
+  'onboarding:state': (_request, { store }) => {
+    const raw = store.appState.get(ONBOARDING_KEY)
+    if (raw === null) return { seen: false }
+    try {
+      const parsed = OnboardingStateSchema.safeParse(JSON.parse(raw))
+      return parsed.success ? parsed.data : { seen: false }
+    } catch {
+      // `JSON.parse` throws before the schema ever sees the string, so the
+      // try/catch is not belt and braces — it is the only thing standing between
+      // one corrupt preference and a window that will not open.
+      return { seen: false }
+    }
+  },
+
+  'onboarding:seen': (_request, { store }) => {
+    const state: OnboardingState = { seen: true }
+    store.appState.set(ONBOARDING_KEY, JSON.stringify(state))
+    return state
+  },
+
   'meeting:ask': async ({ meetingId, question }, { store, orchestrator, llm }) => {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)

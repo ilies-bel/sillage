@@ -1006,6 +1006,41 @@ export function installAppBridge(config) {
 
   // ── health ────────────────────────────────────────────────────────────────
   const HEALTH = {
+    /*
+      First launch, on a machine where nothing has been set up yet — which is the
+      only state the onboarding's second step exists for.
+
+      `capture` is `down` and **retryable**, because that is precisely what an
+      unanswered macOS permission is: pressing the button re-asks the OS. The
+      other two are not retryable — a model still arriving and a provider nobody
+      has chosen are not fixed by trying again — so they get the link to Réglages
+      instead. Two remedies, and offering the wrong one is the dead control
+      DEC-26 forbids.
+    */
+    premierLancement: {
+      capture: {
+        state: 'down',
+        reason:
+          'macOS n’a pas encore autorisé l’enregistrement de l’écran — sans cette autorisation, seul votre micro est capté.',
+        since: now - 20 * 1000,
+        retryable: true,
+      },
+      transcribe: {
+        state: 'degraded',
+        reason: 'téléchargement du modèle Whisper — 196 Mo sur 466 Mo',
+        since: now - 40 * 1000,
+        retryable: false,
+      },
+      llm: {
+        state: 'down',
+        reason: 'aucun modèle de langage configuré',
+        since: now - 60 * 1000,
+        retryable: false,
+      },
+      calendar: { state: 'ok' },
+      crm: { state: 'ok' },
+      mail: { state: 'ok' },
+    },
     agenda: {
       capture: { state: 'ok' },
       transcribe: { state: 'ok' },
@@ -1487,7 +1522,20 @@ export function installAppBridge(config) {
       : { events: [], syncedAt: 0, armed: null, reason: 'Aucun calendrier connecté' }
 
   const healthSnapshot = () => {
-    const base = scenario === 'reglages' || scenario === 'historique' ? HEALTH.mixed : HEALTH.agenda
+    /*
+      A fresh install is not a healthy one, and the onboarding fixture used to
+      pretend otherwise — three green « prêt » rows, which is the one state the
+      screen does not exist for. What a rep actually meets on first launch is a
+      microphone that has not been authorised, a model still downloading and no
+      analysis provider chosen yet, and those are the three rows worth
+      photographing.
+    */
+    const base =
+      scenario === 'onboarding'
+        ? HEALTH.premierLancement
+        : scenario === 'reglages' || scenario === 'historique'
+          ? HEALTH.mixed
+          : HEALTH.agenda
     return entra ? base : { ...base, ...NO_ENTRA_HEALTH }
   }
 
@@ -1684,6 +1732,16 @@ export function installAppBridge(config) {
       quotes them **verbatim**, so the citations verify for the same reason real
       ones do. One deliberate exception below.
     */
+    /*
+      First run (`core/contracts/onboarding.ts`).
+
+      Only the `onboarding` scenario is a fresh install. Every other screen is a
+      rep who has been using the app, and an onboarding in front of the calendar
+      would make eighteen of the twenty-one screenshots a picture of this one.
+    */
+    'onboarding:state': () => ({ seen: scenario !== 'onboarding' }),
+    'onboarding:seen': () => ({ seen: true }),
+
     'meeting:ask': (payload) => {
       const question = fold(payload.question || '')
       const segments = SEGMENTS.filter((segment) => segment.isFinal)
