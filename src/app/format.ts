@@ -121,7 +121,9 @@ export const formatElapsed = (ms: number): string => {
 export const formatAgo = (ms: number, now: number): string => {
   if (ms <= 0) return 'jamais'
   const seconds = Math.round((now - ms) / 1000)
-  if (seconds < 60) return "à l'instant"
+  // `’`, like every other apostrophe in the product. This was the one straight
+  // one left — on the calendar's sync line, where a rep reads it every day.
+  if (seconds < 60) return 'à l’instant'
   const minutes = Math.round(seconds / 60)
   if (minutes < 60) return `il y a ${minutes} min`
   const hours = Math.round(minutes / 60)

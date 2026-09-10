@@ -58,7 +58,7 @@ Règles, dans l'ordre :
 3. Chaque affirmation de ta réponse doit s'appuyer sur un extrait de la transcription, reporté dans "quotes".
 4. Un extrait est copié **mot pour mot** depuis la transcription, hésitations et tournures orales comprises. Ne le corrige pas, ne le raccourcis pas au milieu, ne le reformule pas : un extrait retouché est introuvable dans l'enregistrement et la réponse est alors signalée comme non vérifiée.
 5. Deux à quatre extraits suffisent. Prends les plus décisifs plutôt que tous.
-6. "channel" vaut "rep" si c'est le commercial qui parle, "far" si c'est le client, null si tu ne peux pas trancher.
+6. "channel" vaut "rep" si c’est le commercial qui parle, "far" si c'est le client, null si tu ne peux pas trancher.
 7. Réponds en français, en deux ou trois phrases. Rapporte ce qui a été dit et attribue-le ("Le client indique que…", "Le commercial propose…"). N'affirme jamais en ton nom propre ce que quelqu'un a dit.
 8. Garde les approximations telles qu'elles ont été prononcées : « autour de 550 » ne devient pas « 550 ».`
 

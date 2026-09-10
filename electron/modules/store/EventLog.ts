@@ -66,7 +66,7 @@ export class EventLog {
     const found = stamped ? Number(stamped.value) : SCHEMA_VERSION
     if (found !== SCHEMA_VERSION && !UPGRADABLE_FROM.has(found)) {
       throw new Error(
-        `base de données en version ${stamped?.value}, cette version de l'application attend ${SCHEMA_VERSION} (${path})`,
+        `base de données en version ${stamped?.value}, cette version de l’application attend ${SCHEMA_VERSION} (${path})`,
       )
     }
 

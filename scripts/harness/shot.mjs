@@ -464,19 +464,22 @@ const SCREENS = {
         could not be photographed by the documented design pass, and nothing said
         so until a reviewer tried.
 
-        `/^(Lire|Voir) la suite/` is the page turn and `/^Valider/` is the
-        primary in both of its states. A copy change that breaks *these* has
-        changed what the controls are, not how they are worded, and should fail
-        here.
+        `/(la suite|Remonter)/` is the page turn in both of its directions — it
+        points *up* when the unread band is above, which is the ordinary case at
+        this gate because it opens by jumping the rail to the first `⚠ faible`
+        row. `/^Valider/` is the primary in both of its states. A copy change
+        that breaks *these* has changed what the controls are, not how they are
+        worded, and should fail here.
 
-        The loop is bounded well above the number of turns a column needs: the
-        document is about three screenfuls at 800px and grows with the recipe.
+        The loop is bounded well above the number of turns two columns need: the
+        document is about three screenfuls at 800px and nine at 960.
       */
-      for (let i = 0; i < 12; i++) {
-        const turn = page.getByRole('button', { name: /^(Lire|Voir) la suite/ })
+      await page.waitForTimeout(900)
+      for (let i = 0; i < 40; i++) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ })
         if ((await turn.count()) === 0) break
         await turn.first().click()
-        await page.waitForTimeout(500)
+        await page.waitForTimeout(380)
       }
       await page.getByRole('button', { name: /^Valider/ }).waitFor()
       await page.waitForTimeout(400)
@@ -573,6 +576,94 @@ const SCREENS = {
    * photographed, and the one where nine live textareas used to be controls
    * over a payload that would never exist.
    */
+  /*
+   * **The gesture that used to defeat the gate's own guard.**
+   *
+   * The gate opens by jumping the rail to the first `⚠ faible` row, which on
+   * this document lands it at the bottom — so « the end has been reached » was
+   * true before the rep had done anything, and reading the *document* alone
+   * armed *Valider* with seven of eleven fields never drawn, *Client* among
+   * them. The guard measures the band the rep has actually been shown now, and
+   * a jump the app performed leaves behind only where it landed.
+   *
+   * The stage performs the attack and photographs the refusal: the document read
+   * to its end, the rail still holding an unread band, and the control pointing
+   * *up* — which is where the unread part is, and which the old one could not
+   * even express.
+   */
+  'review-garde': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      // Past the 700ms window in which the gate's own jump is still settling —
+      // a measurement taken inside it records where the scroll lands, not what
+      // it animated over, and the stage is about what happens afterwards.
+      await page.waitForTimeout(900)
+      // Only the document column, to its very end.
+      for (let i = 0; i < 20; i++) {
+        const done = await page.evaluate(() => {
+          const doc = document.querySelector('main.fade-below')
+          if (!doc) return true
+          if (doc.scrollTop + doc.clientHeight >= doc.scrollHeight - 8) return true
+          doc.scrollBy({ top: doc.clientHeight - 64 })
+          doc.dispatchEvent(new Event('scroll'))
+          return false
+        })
+        await page.waitForTimeout(120)
+        if (done) break
+      }
+      // Refused, and the control says which way the unread band lies.
+      await page.getByRole('button', { name: 'Remonter dans ce qui part' }).waitFor()
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) > 0) {
+        throw new Error('le gate s’arme alors que la moitié des champs n’a jamais été affichée')
+      }
+    },
+  },
+
+  /*
+   * **The one irreversible press, driven.**
+   *
+   * `review:confirm` is the only thing in this product that writes to a client's
+   * CRM, and it had no driven proof anywhere: the packaged-app run deliberately
+   * never reaches the gate — a meeting with no transcript reaches no gate — and
+   * the renderer's own tests run in jsdom, where every box measures zero and the
+   * guard therefore fails open. The bug that shipped for a round lived exactly
+   * in that gap: real layout, real scroll arithmetic, no coverage.
+   *
+   * So this stage reads both columns the way a rep does, presses the button, and
+   * asserts the payload actually left — with the fields the rep would have
+   * corrected in it.
+   */
+  'review-valide': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+
+      // Read both columns by their own controls, which is the only way to arm.
+      for (let i = 0; i < 40; i++) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+        if ((await turn.count()) === 0) break
+        await turn.click()
+        await page.waitForTimeout(380)
+      }
+
+      const valider = page.getByRole('button', { name: /^Valider/ })
+      await valider.waitFor()
+      await valider.click()
+
+      // The stub records every call; the confirm has to be there, with the
+      // eleven-field payload and the three checked intents.
+      const sent = await page.evaluate(() =>
+        (window.__harness?.calls ?? []).find((c) => c.channel === 'review:confirm'),
+      )
+      if (!sent) throw new Error('« Valider » n’a rien envoyé')
+      if (!sent.payload?.edits?.compteRendu) throw new Error('la charge utile n’a pas de compte-rendu')
+      if ((sent.payload?.intentIds ?? []).length === 0) throw new Error('aucune intention cochée')
+      await page.getByText(/Envoi|envoyé|Calendrier/).first().waitFor()
+    },
+  },
+
   'review-sans-opportunite': {
     scenario: 'review',
     expand: true,

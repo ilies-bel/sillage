@@ -64,13 +64,13 @@ export class ExtractionError extends Error {
 export const extractionErrorMessage = (kind: ExtractionErrorKind): string => {
   switch (kind) {
     case 'llm':
-      return "Le modèle n'a pas répondu. Le compte-rendu n'a pas été généré."
+      return "Le modèle n’a pas répondu. Le compte-rendu n’a pas été généré."
     case 'reply-invalid':
-      return "La réponse du modèle n'a pas le format attendu. Aucun compte-rendu n'a été retenu."
+      return "La réponse du modèle n’a pas le format attendu. Aucun compte-rendu n’a été retenu."
     case 'deterministic-leak':
       return 'La réponse du modèle contenait des données qui ne sont pas les siennes (nom, e-mail ou référence client). Elle a été refusée.'
     case 'empty-transcript':
-      return "Rien n'a été transcrit pendant cette réunion."
+      return "Rien n’a été transcrit pendant cette réunion."
   }
 }
 

@@ -629,7 +629,15 @@ function Extraction({ fields }: { fields: readonly ReviewField[] }) {
         <div key={field.key}>
           <dt className="text-muted flex items-baseline gap-2 text-meta">
             {field.label}
-            {field.confidence === 'faible' ? <span className="text-warn">⚠ faible</span> : null}
+            {/* `font-semibold`, the same weight the rail and the document give
+                it: `--warn` and `--text-muted` differ by 0.001 in relative
+                luminance, so colour alone carries nothing in greyscale, through
+                a projector, or to a deuteranope — and this row sits beside
+                « vérifié · 1:58 » at the same size. The reader was the one
+                surface the weight fix missed. */}
+            {field.confidence === 'faible' ? (
+              <span className="text-warn font-semibold">⚠ faible</span>
+            ) : null}
           </dt>
           <dd className="text-body text-ui italic">
             {field.span

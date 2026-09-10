@@ -85,7 +85,9 @@ describe('formatAgo', () => {
   })
 
   test.each([
-    [10_000, "à l'instant"],
+    // `’`, not `'` — `check:french` holds the whole product to the typographic
+    // apostrophe, and this string was the one straight one left.
+    [10_000, 'à l’instant'],
     [3 * 60_000, 'il y a 3 min'],
     [2 * 3_600_000, 'il y a 2 h'],
   ])('%dms ago reads as %s', (delta, expected) => {

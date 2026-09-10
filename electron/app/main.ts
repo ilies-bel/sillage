@@ -1043,7 +1043,7 @@ const boot = async (): Promise<void> => {
           severity: 'warn',
           code: 'capture.channelBleed',
           module: 'app',
-          message: `${bleed.dropped} passage(s) du client repris sur le micro du commercial — enceintes ouvertes, résidu que l'annulation d'écho n'a pas absorbé ; un casque supprime le problème`,
+          message: `${bleed.dropped} passage(s) du client repris sur le micro du commercial — enceintes ouvertes, résidu que l’annulation d’écho n’a pas absorbé ; un casque supprime le problème`,
           detail: { meetingId, dropped: bleed.dropped, repSegments: bleed.repSegments },
         })
       }

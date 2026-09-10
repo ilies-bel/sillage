@@ -82,6 +82,9 @@ const FAIBLE = '⚠ faible'
  */
 const PENDING_EDITS = new Map<string, ReviewEdits>()
 
+/** The two scrolling columns the guard measures. */
+type Column = 'document' | 'rail'
+
 /**
  * How long the *Ce qui sera créé* rows lag the field being typed into.
  *
@@ -208,8 +211,54 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * content below the fold and refuse the button again — mid-keystroke, on the
    * text they are looking at. Reaching the end is a fact about the rep, not
    * about the current scroll position.
+   *
+   * ## What is actually recorded, and why it is a *range*
+   *
+   * It used to be a boolean per column, set the moment the scroller reached its
+   * end — « has the bottom been touched ». And the gate opens by scrolling the
+   * rail to the first `⚠ faible` row (DEC-21), which on the ESN fixture lands it
+   * at exactly `scrollHeight − clientHeight`. So the flag was true on the first
+   * measurement, before the rep had done anything, and scrolling the *document*
+   * alone then armed « Valider malgré 1 champ non vérifié » with **seven of the
+   * eleven fields never drawn** at 1280×800 — Objet, Client, Besoin, Profils,
+   * Mode, TJM, Démarrage — under a caption reading « Tout ce qui part doit avoir
+   * été affiché avant d'être validé ». *Client* is the field that decides which
+   * VerySwing account gets the opportunity.
+   *
+   * The guard was inverted by its own good behaviour: the jump only happens when
+   * there *is* something unverified, so it stood down exactly when there was
+   * something to check.
+   *
+   * So what is recorded is the union of the viewports the column has actually
+   * shown — one contiguous range, because scrolling is continuous and a rep
+   * cannot skip a band without passing over it. A column is read when that range
+   * covers it end to end. Contiguity is what makes one pair of numbers enough,
+   * and `extend` is where it is enforced.
    */
-  const readToEnd = useRef({ document: false, rail: false })
+  const seen = useRef<Record<Column, { from: number; to: number } | null>>({
+    document: null,
+    rail: null,
+  })
+
+  /**
+   * **A scroll the app performed, in flight.**
+   *
+   * The range above is a union of the viewports the column has shown, and a
+   * *smooth* programmatic scroll shows every intermediate one — so the gate's
+   * own jump to the first `⚠ faible` row filled the union from 0 to the target
+   * on its way past, and the guard came up satisfied for a band no human eye was
+   * over. That is the same failure as the old boolean, one layer subtler: the
+   * measurement was of the scroller, and what it has to be of is the *rep*.
+   *
+   * While this is set, a measurement replaces the range instead of extending it,
+   * so what survives an app-initiated jump is exactly where it landed — which is
+   * the honest record of what is on screen when the rep first looks.
+   *
+   * Cleared on a timer rather than on `scrollend`: that event is Chromium 114+
+   * and Electron ships it, but the fallback in a plain browser would be silence,
+   * and silence here means the range never extends again.
+   */
+  const jumping = useRef(false)
 
   const measure = useCallback(() => {
     /*
@@ -217,22 +266,42 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * sub-pixel gap that never closes, and a button that stays refused at the
      * very bottom of its own scroller is worse than no guard at all.
      *
-     * Stated as « is there something below the fold », not as « has the rep
-     * reached the end », and that direction is load-bearing. A guard whose
-     * *default* is "refuse" fails closed in every environment that cannot lay
-     * out — jsdom, where every box measures zero — so the one button in the
-     * product would be dead in the renderer's own tests for a reason that has
-     * nothing to do with the product. This way the unmeasurable case is the
-     * permissive one, and the refusal only ever comes from a real measurement.
-     *
-     * Reaching the end is a fact about the rep and it sticks: the columns grow
-     * as they type into a multiline field, and re-measuring would refuse the
-     * button again mid-keystroke over the text they are looking at.
+     * The unmeasurable case stays the permissive one. A guard whose *default* is
+     * "refuse" fails closed in every environment that cannot lay out — jsdom,
+     * where every box measures zero — so the one button in the product would be
+     * dead in the renderer's own tests for a reason that has nothing to do with
+     * the product.
      */
-    const atEnd = (el: HTMLElement | null) =>
-      el !== null && el.scrollTop + el.clientHeight >= el.scrollHeight - 8
-    if (atEnd(docRef.current)) readToEnd.current.document = true
-    if (atEnd(railRef.current)) readToEnd.current.rail = true
+    const extend = (column: Column, el: HTMLElement | null) => {
+      if (!el || el.clientHeight === 0) return
+      const from = el.scrollTop
+      const to = el.scrollTop + el.clientHeight
+      const before = seen.current[column]
+      // A jump the app made is not reading. What it leaves behind is the band it
+      // landed on, and nothing it animated past.
+      if (jumping.current || !before) {
+        seen.current[column] = { from, to }
+        return
+      }
+      // Union, and it stays contiguous: a rep cannot skip a band without
+      // scrolling over it, so a gap means something else moved the column.
+      seen.current[column] =
+        from > before.to + 8 || to < before.from - 8
+          ? before
+          : { from: Math.min(before.from, from), to: Math.max(before.to, to) }
+    }
+    extend('document', docRef.current)
+    extend('rail', railRef.current)
+
+    const read = (column: Column, el: HTMLElement | null): boolean => {
+      if (!el || el.clientHeight === 0) return true
+      const range = seen.current[column]
+      if (!range) return true
+      return range.from <= 8 && range.to >= el.scrollHeight - 8
+    }
+    const readToEnd = {
+      current: { document: read('document', docRef.current), rail: read('rail', railRef.current) },
+    }
 
     /*
      * « There is something above » and « there is something below », written
@@ -380,7 +449,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     const target = document.getElementById(`row-${firstFaible}`)
     if (!target) return
     openedOn.current = firstFaible
+    /*
+     * Marked, so the measurement records where this lands rather than
+     * everything it animates past — see `jumping`. 700ms covers Chromium's
+     * smooth scroll with room; a rep's own scroll during it is at worst counted
+     * as a landing, which under-credits them and never over-credits.
+     */
+    jumping.current = true
     scrollToTop(target)
+    window.setTimeout(() => {
+      jumping.current = false
+      measure()
+    }, 700)
   })
 
   // The form is seeded once from the server's pre-fill. Re-seeding on every
@@ -507,10 +587,41 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   useShortcuts(below === null && !busy ? { valider: () => void confirm() } : {})
 
   /** One screenful of whichever column still has something under its fold. */
-  const turn = useCallback((column: 'document' | 'rail') => {
+  /**
+   * One screenful **towards whatever has not been seen**.
+   *
+   * It always went down, which was right while « read » meant « the bottom has
+   * been touched ». It does not any more: the gate opens by jumping the rail to
+   * the first `⚠ faible` row, so the unread band is usually *above* the fold,
+   * and a control that only scrolls down could never reach it. The direction is
+   * read off the same range the guard is (`seen`), so the button and the
+   * measurement cannot disagree about which way the work is.
+   *
+   * `- 64` overlaps two lines across the turn so nothing falls into the seam,
+   * and the arming is measured from the scroll this causes — never from the
+   * click, which would make a teleport count as reading.
+   */
+  /**
+   * Which way the unread band lies, for the control's own words.
+   *
+   * « Lire la suite » is a lie when what has not been seen is *above* — which is
+   * the ordinary case at this gate, because it opens by jumping the rail to the
+   * first `⚠ faible` row. A rep told to read « la suite » and sent upwards
+   * learns that the button lies about itself, on the screen whose entire claim
+   * is that nothing is withheld.
+   */
+  const unreadIsAbove = useCallback((column: Column): boolean => {
+    const range = seen.current[column]
+    return range !== null && range.from > 8
+  }, [])
+
+  const turn = useCallback((column: Column) => {
     const el = column === 'document' ? docRef.current : railRef.current
     if (!el) return
-    el.scrollBy({ top: Math.max(el.clientHeight - 64, 120), behavior: 'smooth' })
+    const range = seen.current[column]
+    const step = Math.max(el.clientHeight - 64, 120)
+    const up = range !== null && range.from > 8
+    el.scrollBy({ top: up ? -step : step, behavior: 'smooth' })
   }, [])
 
   if (loaded.state.status === 'loading') return <Centered>Chargement…</Centered>
@@ -870,7 +981,14 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               which of them the guard is about.
             */}
             {below === 'document' && !busy ? (
-              <PageTurn what="Lire la suite du compte-rendu" onTurn={() => turn('document')} />
+              <PageTurn
+                what={
+                  unreadIsAbove('document')
+                    ? 'Remonter dans le compte-rendu'
+                    : 'Lire la suite du compte-rendu'
+                }
+                onTurn={() => turn('document')}
+              />
             ) : null}
           </div>
         </main>
@@ -1001,7 +1119,17 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           </p>
 
           {below === 'rail' && !busy ? (
-            <PageTurn what="Voir la suite de ce qui part" onTurn={() => turn('rail')} />
+            <PageTurn
+              // The rail's own ground, so the gradient ends in the colour the
+              // column is actually painted.
+              ground="var(--bg-card-soft)"
+              what={
+                unreadIsAbove('rail')
+                  ? 'Remonter dans ce qui part'
+                  : 'Voir la suite de ce qui part'
+              }
+              onTurn={() => turn('rail')}
+            />
           ) : null}
 
           </div>
@@ -1097,14 +1225,19 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */}
             <p
               className={cn(
-                'mt-1.5 text-center text-meta',
+                // `.measure`, because this line is ninety-seven characters and
+                // was the one `line-length` finding on the screen — on the
+                // sentence a rep reads under time pressure.
+                'measure mx-auto mt-1.5 text-center text-meta',
                 faible.length > 0 && below === null && !busy ? 'text-warn' : 'text-muted',
               )}
             >
               {below !== null && !busy
                 ? below === 'document'
                   ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, à gauche.'
-                  : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
+                  : unreadIsAbove('rail')
+                    ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus haut.'
+                    : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
                 : faible.length > 0 && !busy
                   ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
                   : reassurance}
@@ -1140,10 +1273,41 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
  * click), but a measurement of a single teleport measures *revealing*. `- 64`
  * overlaps two lines across the turn so nothing falls into the seam.
  */
-function PageTurn({ what, onTurn }: { what: string; onTurn: () => void }) {
+function PageTurn({
+  what,
+  onTurn,
+  ground,
+}: {
+  what: string
+  onTurn: () => void
+  /** The colour the column is painted, for the gradient the button sits on. */
+  ground?: string
+}) {
   return (
-    <div className="mt-block flex justify-center pb-2">
-      <Button variant="bordered" onClick={onTurn}>
+    /*
+      **Sticky, because a control at the end of the content is a control nobody
+      reaches.**
+
+      The first version sat after the last paragraph. Measured on the document
+      column at 1280×800 — 2508px of content in a 747px box — it was fully
+      visible for sixteen pixels of a 1761-pixel scroll: **nine-tenths of one per
+      cent**, and inside that window the scroll it performs is a no-op because
+      the column is already at its end. Wheel-scrolled from the top in 200px
+      steps it never entered the viewport once. The harness only ever clicked it
+      because Playwright scrolls a target into view first, and the keyboard only
+      because focus does — which is precisely the « a teleport measures
+      *revealing* » failure this control exists to prevent.
+
+      Pinned to the bottom of its own scroller instead: reachable at every scroll
+      position, in the column whose text it turns, and never in the decision's
+      rectangle. `pointer-events-none` on the row and `auto` on the button so the
+      band it floats over stays scrollable and selectable.
+    */
+    <div
+      className="turn-ground pointer-events-none sticky bottom-0 z-10 flex justify-center pb-2 pt-8"
+      {...(ground ? { style: { ['--turn-ground' as string]: ground } } : {})}
+    >
+      <Button variant="bordered" className="pointer-events-auto shadow-sm" onClick={onTurn}>
         {what}
       </Button>
     </div>

@@ -739,6 +739,40 @@ describe('the rep’s correction is what ships', () => {
   })
 })
 
+describe('the guard measures the rep, not the scroller', () => {
+  /*
+   * **The gate's own opening scroll used to satisfy its own guard.**
+   *
+   * It jumps the rail to the first `⚠ faible` row (DEC-21), and on the ESN
+   * document that lands it at exactly `scrollHeight − clientHeight`. The old
+   * flag was « the bottom has been touched », so it was true before the rep had
+   * done anything: scrolling the *document* alone then armed « Valider malgré 1
+   * champ non vérifié » with seven of eleven fields never drawn at 1280×800 —
+   * *Client* among them, the field that decides which VerySwing account gets the
+   * opportunity — under a caption reading « Tout ce qui part doit avoir été
+   * affiché avant d'être validé ».
+   *
+   * The guard was inverted by its own good behaviour: the jump only happens when
+   * there *is* something unverified, so it stood down exactly when there was
+   * something to check.
+   *
+   * jsdom measures every box as zero, so the guard's *permissive* default is all
+   * that can be asserted here — the arithmetic itself is held by
+   * `scripts/harness` driving a real layout. What these hold is the thing jsdom
+   * can see: that a column which cannot be measured never refuses, because a
+   * gate dead in a test environment is worse than no guard.
+   */
+  test('a column that cannot be measured never blocks the button', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Every box is 0×0 here, so nothing is measurable and nothing is withheld.
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /(la suite|Remonter)/ })).toBeNull()
+  })
+})
+
 describe('a correction is not lost by leaving the screen', () => {
   /*
    * `edits` is component state, so every way off this screen threw it away

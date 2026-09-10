@@ -244,7 +244,7 @@ export class TranscribeSession extends EventEmitter {
       severity: 'warn',
       code: 'transcribe.failover',
       module: 'transcribe',
-      message: `transcription reprise par ${fallback} après l'échec de ${from}`,
+      message: `transcription reprise par ${fallback} après l’échec de ${from}`,
       detail: { from, to: fallback, reason },
     })
 
@@ -379,7 +379,7 @@ export class TranscribeSession extends EventEmitter {
       reason:
         channel === 'rep'
           ? `transcription du micro dégradée — ${message}`
-          : `transcription de l'audio système dégradée — ${message}`,
+          : `transcription de l’audio système dégradée — ${message}`,
       since: this.#clock(),
       retryable: true,
     } satisfies ConnectorHealth)

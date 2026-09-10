@@ -246,6 +246,27 @@
    * the only question that matters: is *this pane* too narrow to set a label
    * beside a value.
    */
+  /*
+   * The page turn's own ground.
+   *
+   * It is pinned to the bottom of a scroller, so without one it floats over
+   * whatever line happens to be under it — the recipients of the Outlook draft,
+   * in the rail's case, which is the last thing on this screen that should be
+   * read through a button. A gradient rather than a fill: a hard edge two lines
+   * above the fold reads as a panel that has ended, and the column has not.
+   *
+   * `transparent` to the column's own colour, and the two columns differ, so the
+   * token is a variable the caller sets — `--turn-ground`, defaulting to the
+   * card.
+   */
+  .turn-ground {
+    background-image: linear-gradient(
+      to bottom,
+      transparent,
+      var(--turn-ground, var(--bg-card)) 40%
+    );
+  }
+
   .slate {
     container-type: inline-size;
   }
