@@ -167,7 +167,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         failed to load. `mx-auto` on the header, the body and the footer alike,
         so the three stay on one axis as the step changes height.
       */}
-      <header className="mx-auto flex w-full max-w-[66ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
+      <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
         <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
         {/*
@@ -277,7 +277,7 @@ function Promise({ title, children }: { title: string; children: string }) {
     <li>
       <h3 className="text-strong text-copy font-semibold">{title}</h3>
       {/* `.measure` on the paragraph and not inherited: `ch` resolves against
-          the element's own size, so 66ch of `--type-copy` is 97 characters once
+          the element's own size, so the step's own measure is a wider one once
           the text inside is `--type-ui`. The class goes on the prose that wears
           the size. */}
       <p className="text-muted measure text-ui leading-relaxed">{children}</p>

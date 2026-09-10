@@ -26,6 +26,11 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * It carries `--prose`, which counts the characters a line of each reading
+ * surface really holds. `.measure` was `66ch` on the reasoning that a measure is
+ * a count of characters — and `ch` is the advance of the digit zero, so it
+ * rendered eighty-one. Nothing counted, so nothing noticed, for four rounds.
+ *
  * It carries `--targets` too. Every control is measured against WCAG 2.2's
  * 24×24, with the criterion's own exceptions honoured — a control inline in a
  * sentence, and a checkbox whose label is the thing a rep actually aims at.
@@ -79,7 +84,7 @@ const drive = (screen) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--viewport', '1280x800'],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--viewport', '1280x800'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

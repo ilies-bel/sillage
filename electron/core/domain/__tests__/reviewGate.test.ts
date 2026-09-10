@@ -153,6 +153,11 @@ test('the task summary never renders a dangling separator', () => {
 /** Which `ReviewEdits` key each drawn row edits. The two deterministic rows
  *  are covered by the tests above and are not free text the rep composes. */
 const EDITS_KEY: Partial<Record<ReviewFieldKey, keyof ReviewEdits>> = {
+  // The objet is the *task's*, not the opportunity's, which is what makes it
+  // the control in the test below: it has to keep shipping when the opportunity
+  // does not. `account` is left out — it reaches the row's summary rather than a
+  // payload field, and the two tests above already hold it.
+  taskName: 'taskName',
   besoin: 'besoin',
   profils: 'profils',
   modeCollaboration: 'modeCollaboration',
@@ -163,6 +168,82 @@ const EDITS_KEY: Partial<Record<ReviewFieldKey, keyof ReviewEdits>> = {
   objections: 'objections',
   prochainesEtapes: 'prochainesEtapes',
 }
+
+/** Every drawn row, given a value nothing else in the fixture could produce. */
+const sentinelled = (over: Partial<ReviewEdits> = {}): { edits: ReviewEdits; marks: Map<string, string> } => {
+  const edits: ReviewEdits = { ...prefillEdits(sampleExtraction, DOCUMENT) }
+  const marks = new Map<string, string>()
+  for (const row of reviewFieldKeys()) {
+    const key = EDITS_KEY[row]
+    if (!key) continue
+    const sentinel = `SENTINELLE-${row.toUpperCase()}`
+    marks.set(row, sentinel)
+    Object.assign(edits, { [key]: sentinel })
+  }
+  return { edits: { ...edits, ...over }, marks }
+}
+
+const shippedFrom = (edits: ReviewEdits, checked: readonly string[]): string =>
+  JSON.stringify(
+    draftIntents({
+      meetingId: MEETING,
+      facts: sampleExtraction.facts,
+      edits,
+      mailTo: ['client@acme.fr'],
+      checked,
+    }).map((drafted) => drafted.intent),
+  )
+
+const ALL = ['crm.task', 'crm.opportunity', 'mail.draft'].map((k) => `${MEETING}:${k}`)
+
+/*
+ * **The nine typed rows go into the opportunity and into nothing else.**
+ *
+ * Which is fine while the opportunity ships and is a silent hole when it does
+ * not — an account the CRM could not match, or the rep unchecking the row. The
+ * first version of the test below asserted only the happy path and therefore
+ * proved the wrong thing: nine live textareas whose edits reached nothing, on
+ * the screen whose entire design is soliciting those edits.
+ *
+ * The fix is not in this file — the gate draws those rows read-only and says
+ * why (`Review.tsx`, DEC-26). What this holds is the *fact* the screen depends
+ * on, so it cannot change under the screen without a failure here.
+ */
+test('the typed fields ride on the opportunity, and on nothing else', () => {
+  const { marks } = sentinelled()
+  const typed = [...marks].filter(([row]) => row !== 'taskName' && row !== 'account')
+
+  const withoutOpportunity = shippedFrom(
+    sentinelled().edits,
+    ALL.filter((id) => !id.endsWith('crm.opportunity')),
+  )
+  const stillThere = typed.filter(([, value]) => withoutOpportunity.includes(value))
+  assert.deepEqual(
+    stillThere.map(([row]) => row),
+    [],
+    'un champ typé atteint une charge utile sans opportunité — le gate les dessine en lecture seule sur cette base',
+  )
+
+  // And the two deterministic rows are the task's, so they ship regardless.
+  assert.ok(withoutOpportunity.includes(marks.get('taskName') ?? '·'))
+})
+
+test('an unresolved account is the same case, and the gate has to know it', () => {
+  const { edits } = sentinelled({ accountId: null, accountName: '' })
+  const drafted = draftIntents({
+    meetingId: MEETING,
+    facts: { ...sampleExtraction.facts, account: UNRESOLVED },
+    edits,
+    mailTo: ['client@acme.fr'],
+    checked: ALL,
+  })
+  const opportunity = drafted.find((d) => d.view.kind === 'crm.opportunity')
+  // Refused *with the reason on the row* (DEC-26) — which is the string the
+  // rail prints above the nine rows it has just made read-only.
+  assert.equal(opportunity?.view.available, false)
+  assert.match(opportunity?.view.reason ?? '', /Compte non résolu/)
+  assert.equal(opportunity?.intent, null)
+})
 
 test('every field the gate lets a rep correct reaches a payload', () => {
   const rows = reviewFieldKeys()

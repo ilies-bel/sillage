@@ -500,6 +500,32 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const intents = live ?? panel.intents
 
   /*
+   * **Whether a correction typed in the rail can reach anything.**
+   *
+   * `draftIntents` composes the nine interpretive fields into the opportunity's
+   * `description` and into nothing else — the CRM task carries the compte-rendu
+   * and the mail carries its own body. So there are two ways for those nine
+   * rows to be live controls over a payload that will never exist: the account
+   * the CRM could not match (the opportunity refuses without one), and the rep
+   * unchecking it.
+   *
+   * Both were silent. The rows stayed editable, kept their `⚠ faible`, and
+   * still named themselves on the button — « Valider malgré 1 champ non
+   * vérifié » — over a field whose correction reached nothing.
+   *
+   * Null when they ship, which is the ordinary case.
+   */
+  const opportunity = intents.find((intent) => intent.kind === 'crm.opportunity')
+  const typedInert =
+    opportunity === undefined
+      ? null
+      : !opportunity.available
+        ? (opportunity.reason ?? 'L’opportunité ne peut pas être créée.')
+        : !checked.includes(opportunity.id)
+          ? 'L’opportunité n’est pas cochée.'
+          : null
+
+  /*
    * The unverified fields, in the order they are drawn — so the banner can name
    * how many there are and the jump lands on the first one a rep would meet
    * scrolling, not on whichever the extractor happened to emit first.
@@ -707,11 +733,17 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   once, where the confusion happens.
                 */}
                 {faible.length > 0 ? (
-                  <p className="text-muted mb-3 text-meta">
-                    Les corrections faites à droite vont dans l’opportunité. Ce texte-ci part
-                    dans la tâche VerySwing tel qu’il est affiché — s’il porte un{' '}
-                    <span className="text-warn">{FAIBLE}</span> que vous avez levé, corrigez-le
-                    dans « Modifier ».
+                  <p className="text-muted measure mb-3 text-meta">
+                    {/* Conditional, because the first half was a false statement
+                        on exactly the gate where it mattered: it asserted that
+                        corrections « vont dans l'opportunité » two inches above
+                        an opportunity row reading « Indisponible ». */}
+                    {typedInert === null
+                      ? 'Les corrections faites à droite vont dans l’opportunité. '
+                      : 'L’opportunité ne part pas, donc les valeurs de droite non plus. '}
+                    Ce texte-ci part dans la tâche VerySwing tel qu’il est affiché — s’il porte
+                    un <span className="text-warn">{FAIBLE}</span> que vous avez levé,
+                    corrigez-le dans « Modifier ».
                   </p>
                 ) : null}
                 <CompteRenduDocument text={edits.compteRendu} />
@@ -839,6 +871,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           >
           <SectionHeader>Prêt à envoyer</SectionHeader>
 
+          {/*
+            **The sentence, once, above the rows it applies to.**
+
+            Nine of the eleven rows are the opportunity's columns; the other two
+            — the objet and the account — are the CRM task's. So when the
+            opportunity is not shipping, nine rows on this rail lead nowhere,
+            and saying it nine times would be a wall. Said once, above them,
+            with the reason the opportunity is not shipping and the place that
+            still is.
+          */}
+          {typedInert ? (
+            <p className="text-warn mb-2 text-ui">
+              {typedInert} Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à
+              gauche, c’est lui qui part dans la tâche VerySwing.
+            </p>
+          ) : null}
+
           <List as="div" className="bg-card">
             {panel.fields.map((field) => (
               <FieldRow
@@ -847,6 +896,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 value={String(edits[EDIT_KEY[field.key]] ?? '')}
                 onChange={(value) => set(EDIT_KEY[field.key], value)}
                 onLocate={locate}
+                inert={INTERPRETIVE.has(field.key) ? typedInert : null}
               />
             ))}
           </List>
@@ -931,9 +981,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 still below the fold that control is the one that shows it; once
                 it has been seen, it is the one that ships it. Still one
                 confirmation (DEC-4) — pressing this one confirms nothing.
+
+                **And it is not the same button.** It was `primary`: same fill,
+                same width, same slot, same corner radius as *Valider*. Driven
+                with a script, a rep presses that blue block **four times at
+                1280×800 and five at 960×600** before *Valider* exists — and the
+                fifth press is the one that writes into the client's CRM. Four
+                repetitions is training, and what it trains is pressing the blue
+                block without reading it. The rule this screen already follows —
+                a control that looks like the thing to press *is* the thing a rep
+                presses — says the page turn cannot wear the ship's clothes.
+
+                `bordered`, therefore: fully live, full width, in the slot, and
+                visibly not the fill. The blue block appears exactly once on this
+                screen, at the moment pressing it creates something.
               */
               <Button
-                variant="primary"
+                variant="bordered"
                 block
                 className="mt-4 py-2"
                 onClick={() => {
@@ -1030,7 +1094,43 @@ interface FieldRowProps {
   onChange: (value: string) => void
   /** Open the transcript on this field's citation, in the other column. */
   onLocate: (focus: TranscriptFocus) => void
+  /**
+   * **Why editing this row would change nothing** — or `null`, the ordinary case.
+   *
+   * The nine interpretive fields are the *opportunity's* columns and nothing
+   * else's: the CRM task carries the compte-rendu and the mail carries its own
+   * body. So when the opportunity is not shipping — an account the CRM could
+   * not match, or the rep unchecked it — a correction typed here reaches
+   * nothing at all, and the row was pixel-identical to one that ships. Nine
+   * live textareas whose edits go nowhere is the dead control DEC-26 forbids,
+   * in its purest form: the rep corrects the objection this screen is
+   * architected around, presses *Valider*, and VerySwing gets the model's
+   * uncorrected text.
+   *
+   * Read-only and *stated*, rather than hidden: the value, its citation and its
+   * `⚠ faible` are still worth reading — checking is what this screen is for —
+   * and the sentence names the place that does still ship, which is the
+   * compte-rendu in the other column.
+   */
+  inert: string | null
 }
+
+/**
+ * The nine rows the model interpreted, and therefore the nine the opportunity
+ * carries. The other two — the objet and the account — are the CRM task's, and
+ * ship whatever the opportunity does.
+ */
+const INTERPRETIVE: ReadonlySet<ReviewField['key']> = new Set([
+  'besoin',
+  'profils',
+  'modeCollaboration',
+  'tjm',
+  'dateDemarrage',
+  'dureeMission',
+  'contexteTechnique',
+  'objections',
+  'prochainesEtapes',
+])
 
 /**
  * One editable row with its `[source ▸]`.
@@ -1040,7 +1140,7 @@ interface FieldRowProps {
  * « du calendrier, jamais de la transcription » is exactly the answer for those
  * two (DEC-7). A row that simply had no button would read as an oversight.
  */
-function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
+function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
   const [open, setOpen] = useState(false)
   const multiline = MULTILINE.has(field.key)
 
@@ -1100,13 +1200,23 @@ function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
         </button>
       </div>
 
+      {/*
+        `readOnly`, not `disabled`: the text stays selectable and readable at
+        full contrast, which is the whole reason the row is still drawn. A
+        disabled field greys its own value, and the value is the thing being
+        checked.
+      */}
       {multiline ? (
         <textarea
           id={`field-${field.key}`}
           value={value}
           rows={Math.min(6, Math.max(2, value.split('\n').length))}
           onChange={(event) => onChange(event.target.value)}
-          className="text-strong bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui"
+          readOnly={inert !== null}
+          className={cn(
+            'text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui',
+            inert === null ? 'bg-inner' : 'bg-subtle',
+          )}
         />
       ) : (
         <input
@@ -1114,7 +1224,11 @@ function FieldRow({ field, value, onChange, onLocate }: FieldRowProps) {
           value={value}
           {...(PLACEHOLDER[field.key] ? { placeholder: PLACEHOLDER[field.key] } : {})}
           onChange={(event) => onChange(event.target.value)}
-          className="text-strong placeholder:text-muted bg-inner border-subtle mt-1 w-full rounded-sm border px-2 py-1 text-ui"
+          readOnly={inert !== null}
+          className={cn(
+            'text-strong placeholder:text-muted border-subtle mt-1 w-full rounded-sm border px-2 py-1 text-ui',
+            inert === null ? 'bg-inner' : 'bg-subtle',
+          )}
         />
       )}
 

@@ -12,6 +12,7 @@
  *   --no-png         scan only
  *   --geometry       measure the hanging markers against the box they hang in
  *   --targets        measure every control against WCAG 2.2's 24×24 minimum
+ *   --prose          count the characters a line of each prose surface really holds
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -520,6 +521,26 @@ const SCREENS = {
   },
 
   /*
+   * The gate with the opportunity unchecked — the configuration nobody had
+   * photographed, and the one where nine live textareas used to be controls
+   * over a payload that would never exist.
+   */
+  'review-sans-opportunite': {
+    scenario: 'review',
+    expand: true,
+    async drive(page) {
+      await openAgenda(page)
+      await rowNamed(page, 'Néovia Santé — cadrage renfort data')
+        .getByRole('button', { name: OPEN_ROW })
+        .click()
+      await page.getByRole('button', { name: 'Relire et valider' }).click()
+      await page.getByText('Prêt à envoyer').waitFor()
+      await page.getByRole('checkbox', { name: /Opportunité/ }).click()
+      await page.getByText(/Les valeurs ci-dessous ne partiront pas/).waitFor()
+    },
+  },
+
+  /*
    * *Demander* on the reader — the screen it was written for, and the one where
    * its citations lead somewhere: the record's own transcription is in the same
    * box, so following a quote lights the turn it came from.
@@ -649,6 +670,7 @@ function parseArgs(argv) {
     entra: null,
     geometry: false,
     targets: false,
+    prose: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -666,6 +688,7 @@ function parseArgs(argv) {
     else if (arg === '--no-png') flags.png = false
     else if (arg === '--geometry') flags.geometry = true
     else if (arg === '--targets') flags.targets = true
+    else if (arg === '--prose') flags.prose = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -689,7 +712,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -769,6 +792,12 @@ async function main() {
     small = await targets(page)
   }
 
+  let long = []
+  if (flags.prose) {
+    await page.evaluate(() => document.fonts.ready)
+    long = await prose(page)
+  }
+
   /*
    * The app shell never scrolls the document: it is `h-full` with its own inner
    * `overflow-y-auto` columns, so a `fullPage` shot of it is exactly one
@@ -812,6 +841,16 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.prose) {
+    if (long.length === 0) console.log('  mesure: aucune ligne au-delà de 75 caractères')
+    else {
+      console.log(`  ✗ mesure: ${long.length} surface(s) au-delà de 75 caractères`)
+      for (const item of long.slice(0, 8)) {
+        console.log(`   ✗ ${item.chars} car./ligne — ${item.what} (${item.size}, ${item.box}px)`)
+      }
+      process.exitCode = 6
+    }
+  }
   if (flags.targets) {
     if (small.length === 0) console.log('  cibles: toutes ≥ 24 px')
     else {
@@ -843,6 +882,59 @@ async function main() {
     console.log('  console:')
     noise.forEach((p) => console.log('   ' + p))
   }
+}
+
+/**
+ * **How many characters a line of this prose really holds.**
+ *
+ * `.measure` is `66ch`, and the doctrine around it says a measure is « a count
+ * of characters, not a width ». `ch` is the advance of the digit zero, which in
+ * Inter is about 9.4px, while the average advance of French lowercase is about
+ * 7.7 — so `66ch` renders **eighty-one characters**, not sixty-six. The rule
+ * was written to end lines of ninety-eight and a hundred and thirty; it ended
+ * those, and it has been quietly fifteen over its own number ever since,
+ * because nothing counted.
+ *
+ * This counts. The width of a line is measured off the element's own resolved
+ * font through a canvas, divided by the average advance of a sample weighted the
+ * way French text actually is — `e`, `a`, `i`, `s`, `n`, `r`, `t` and the space
+ * carry most of it. Seventy-five is the ceiling: the classic band is 45–75, the
+ * detector's own threshold is 80, and a surface that lands between them is a
+ * choice rather than an accident.
+ */
+async function prose(page) {
+  return page.evaluate(() => {
+    const SAMPLE = 'abcdefghijklmnopqrstuvwxyz eeeaisnrtoluu'
+    const MAX = 75
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    const seen = new Set()
+    const out = []
+    const surfaces = document.querySelectorAll('.measure, .notepad .ProseMirror')
+    for (const el of surfaces) {
+      const style = getComputedStyle(el)
+      const box =
+        el.getBoundingClientRect().width -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight)
+      if (box < 40) continue
+      // Nothing to read: an empty wrapper is not a measure that is too long.
+      if ((el.textContent ?? '').trim().length < 40) continue
+
+      ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const advance = ctx.measureText(SAMPLE).width / SAMPLE.length
+      const chars = Math.round(box / advance)
+      if (chars <= MAX) continue
+
+      const what = `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}`
+      const key = `${what}:${chars}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ what, chars, box: Math.round(box), size: style.fontSize })
+    }
+    return out
+  })
 }
 
 /**

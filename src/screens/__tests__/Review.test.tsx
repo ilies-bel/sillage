@@ -739,6 +739,75 @@ describe('the rep’s correction is what ships', () => {
   })
 })
 
+describe('a correction that would reach nothing is not offered', () => {
+  /*
+   * The nine interpretive rows are the *opportunity's* columns and nothing
+   * else's — `draftIntents` composes them into its description, and the CRM task
+   * carries the compte-rendu instead. So an opportunity that does not ship turns
+   * nine live textareas into controls over a payload that will never exist: the
+   * rep corrects the objection this screen is architected around, presses
+   * *Valider*, and VerySwing gets the model's uncorrected text.
+   *
+   * Read-only and stated (DEC-26), never hidden: the value, its citation and its
+   * `⚠ faible` are still what the screen is for.
+   */
+  const withoutOpportunity = () =>
+    openGate({
+      intents: panel().intents.map((intent) =>
+        intent.kind === 'crm.opportunity'
+          ? { ...intent, available: false, reason: 'Compte non résolu — pas d’opportunité.' }
+          : intent,
+      ),
+    })
+
+  test('the typed rows go read-only, and the reason is stated once', async () => {
+    bridge.when('review:get', () => withoutOpportunity())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const objections = document.getElementById('field-objections') as HTMLTextAreaElement
+    expect(objections.readOnly).toBe(true)
+    // Once, above the group — nine identical sentences would be a wall.
+    expect(screen.getAllByText(/Les valeurs ci-dessous ne partiront pas/)).toHaveLength(1)
+    // And it names where a correction *does* still land.
+    expect(screen.getByText(/corrigez le compte-rendu à gauche/)).toBeTruthy()
+  })
+
+  test('the objet stays editable, because the task still ships it', async () => {
+    bridge.when('review:get', () => withoutOpportunity())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Two of the eleven rows are the task's, and the task is unaffected.
+    expect((document.getElementById('field-taskName') as HTMLInputElement).readOnly).toBe(false)
+  })
+
+  test('unchecking the opportunity is the same case', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).readOnly).toBe(
+      false,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /Opportunité/ }))
+    })
+
+    // Unchecked: the same nine rows now reach nothing, and say so.
+    await waitFor(() =>
+      expect((document.getElementById('field-objections') as HTMLTextAreaElement).readOnly).toBe(
+        true,
+      ),
+    )
+    expect(screen.getByText(/L’opportunité n’est pas cochée/)).toBeTruthy()
+  })
+})
+
 describe('the gate follows the machine', () => {
   test('a session:changed broadcast re-reads the gate', async () => {
     let state: 'extracting' | 'awaiting_confirmation' = 'extracting'

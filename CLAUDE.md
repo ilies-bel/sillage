@@ -84,7 +84,7 @@ machine) or in `core/domain/` — never in an IPC handler.
   and a DOM test asserts the pane's own text still contains every marker. The prompt's soft
   wraps are undone at *composition* time by `unwrapProse`, not at render time, so the stored
   string is the clean one.
-- **One reading measure, `.measure` in `index.css`, `66ch` — a count of characters, not a width.** The notepad, the compte-rendu on
+- **One reading measure, `.measure` in `index.css`, `58ch` — and the number is measured, not chosen.** The notepad, the compte-rendu on
   three screens, the follow-up draft and Réglages' prose all share it. Every one of them used to
   set its own width, and each was set by what fit rather than by what reads — 98 characters a
   line in the notepad, 130 at the gate. Nothing is clipped and nothing overlaps, which is
@@ -94,8 +94,14 @@ machine) or in `core/domain/` — never in an IPC handler.
   eighty-seven characters at `--type-copy` and a hundred and eleven at `--type-meta` — so
   the class written to end this problem was reintroducing it one size down, on the caption
   under the compte-rendu and on Réglages' explanations. `ch` resolves against the element's
-  own size, so prose that is not inside a `.measure` wrapper wears the class itself. The
-  detector's `line-length` finding is zero across all twenty-one screens and is the check.
+  own size, so prose that is not inside a `.measure` wrapper wears the class itself.
+  It was then `66ch` for four rounds, and `66ch` is **not sixty-six characters**: `ch` is the
+  advance of the digit zero, which in Inter is ~9.4px against ~7.7 for average French
+  lowercase, so every `.measure` surface rendered **eighty-one** — the rule written to end
+  ninety-eight-character lines had been fifteen over its own number since the day it was
+  written, because nothing counted. `shot.mjs --prose` counts, ceiling 75, and `smoke.mjs`
+  runs it on every stage; the detector's `line-length` is zero as well and is the weaker of
+  the two checks. Do not change the number without re-running the count.
 - **The harness fixture is the document the composer writes, or the design pass is
   fiction.** `bridge-stub.mjs`'s compte-rendu was four invented headings for five review
   rounds — no deterministic header, no « Éléments retenus », no list sections — roughly half

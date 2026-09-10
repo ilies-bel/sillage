@@ -196,7 +196,7 @@
    * it one size down, on the caption under the compte-rendu and on Réglages'
    * explanations.
    *
-   * `66ch` is ~554px at the body size — within a few pixels of the column
+   * `58ch` is ~487px at the body size — within a few pixels of the column
    * Granola sets a note in — and it stays sixty-six characters at 11px, at 12px
    * and at 14px, which is the whole point. Stated once here so a new pane cannot
    * quietly pick its own.
@@ -209,8 +209,25 @@
    * It is a *maximum*. A pane narrower than this keeps its own width; the class
    * never widens anything.
    */
+  /*
+   * **`58ch`, and the number was measured rather than chosen.**
+   *
+   * It was `66ch`, on the reasoning that a measure is a count of characters. It
+   * is — but `ch` is the advance of the digit *zero*, and in Inter that is about
+   * 9.4px while the average advance of French lowercase is about 7.7. So `66ch`
+   * rendered **eighty-one** characters a line, on every surface and at every
+   * size, and the rule written to end lines of ninety-eight and a hundred and
+   * thirty had been quietly fifteen over its own number since the day it was
+   * written, because nothing counted. `shot.mjs --prose` counts now, and
+   * `smoke.mjs` runs it on every stage.
+   *
+   * `58ch` lands at seventy-one — inside the classic 45–75 band rather than at
+   * the top of it. `ch` stays the unit, because it is the one that scales with
+   * the element's own size: that is what stopped the caption under the
+   * compte-rendu from being a different measure from the compte-rendu.
+   */
   .measure {
-    max-width: 66ch;
+    max-width: 58ch;
   }
 
   /*
@@ -259,7 +276,7 @@
     outline: none;
     min-height: 100%;
     /* The same measure, in the same unit. See `.measure` above. */
-    max-width: 66ch;
+    max-width: 58ch;
     /*
      * Centred in whatever column it is given.
      *
