@@ -270,8 +270,10 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     expect(screen.getAllByText('⚠ faible')).toHaveLength(1)
 
     // And leaving it that way is a valid confirmation — nothing on this screen
-    // blocks on it, and the header does not print a dangling « · ».
-    fireEvent.click(screen.getByRole('button', { name: 'Valider' }))
+    // blocks on it, and the header does not print a dangling « · ». The button
+    // says what it is shipping, though: an unverified field reaches the one
+    // control the screen has, or the `⚠` is decoration (DEC-21).
+    fireEvent.click(screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' }))
     await waitFor(() => expect(confirmCall()).toBeTruthy())
     expect(confirmCall()?.edits.accountName).toBe('')
   })
@@ -402,20 +404,33 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     expect(box.value).toBe('deux dev java senior')
     expect(screen.getByText('aucun passage')).toBeTruthy()
 
-    // The dead end ends in a tap: the words of the failed quote that the record
-    // *does* contain, longest first, and nothing shorter than four characters.
-    expect(screen.getByText(/Ces mots-là, oui/)).toBeTruthy()
-    const leads = screen.getAllByRole('button', { name: /^(senior|java|deux|dev)$/ })
-    // Longest first — the longest word is the most specific — and « dev » is
-    // absent: three characters is grammar or a token so common that a lead
-    // built on one points at half the call.
-    expect(leads.map((l) => l.textContent)).toEqual(['senior', 'deux', 'java'])
+    /*
+     * The dead end ends in a tap, and what it offers is a **moment of the call**,
+     * not a word.
+     *
+     * It used to offer content words of the failed quote as chips, which was
+     * right and useless: the rep is not looking for « senior », they are looking
+     * for the turn where the client said something close to what was cited. So
+     * the candidates are segments, scored by how much of the query they carry
+     * weighted by how rare each term is in this call, and they are labelled as
+     * candidates — the app failed to verify this quote and a ranked guess must
+     * never wear the verified treatment (DEC-21).
+     */
+    expect(screen.getByText(/Les plus proches, à vérifier/)).toBeTruthy()
+    const candidate = screen.getByRole('button', { name: /Il nous faudrait deux dev java/ })
+    // The one turn that carries four of the query's terms, and not the turn that
+    // carries none of them.
+    expect(screen.queryByRole('button', { name: /Rien de ce qui a été cité/ })).toBeNull()
 
+    // Pressing it marks that turn in the record below — with the search rule,
+    // never the citation's wash.
     await act(async () => {
-      leads[0]?.click()
+      candidate.click()
     })
-    expect(screen.getByText('1 passage')).toBeTruthy()
-    expect(screen.queryByText(/Ces mots-là, oui/)).toBeNull()
+    // The last of the two — the candidate button above carries the same string,
+    // and the one that has to change is the turn in the record itself.
+    const drawn = screen.getAllByText('Il nous faudrait deux dev java, senior de préférence.')
+    expect(drawn[drawn.length - 1]?.className).toContain('text-strong')
   })
 
   test('a verified citation does not pre-fill the search over its own hit', async () => {
@@ -453,6 +468,58 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
       screen.getAllByRole('button', { name: /^source/ })[1]?.click()
     })
     expect(screen.queryByRole('button', { name: /Voir dans la transcription/ })).toBeNull()
+  })
+})
+
+/**
+ * The measurement reaches the button.
+ *
+ * DEC-21 is the whole of what this product has over a general-purpose
+ * notetaker: it checks its own sentences against the recording and says so. The
+ * gate drew a mid-blue *Valider* whether every citation had verified or whether
+ * one had failed — same colour, same word, same place — so the `⚠` in the
+ * banner and the `⚠` on the row were counted by nothing. Two things change with
+ * the payload and nothing else does: there is still one button, it is still
+ * live, and pressing it still ships (DEC-4).
+ */
+describe('DEC-21 — the one button says what it is shipping', () => {
+  test('a clean gate says Valider, and nothing on it is amber', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const button = screen.getByRole('button', { name: 'Valider' })
+    expect(button.className).toContain('bg-brand-700')
+    expect(screen.queryByText(/malgré/)).toBeNull()
+  })
+
+  test('an unverified field is named on the button and carried in its colour', async () => {
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'besoin' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const button = screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' })
+    // Warn, not brand — and not disabled: withholding the control would be a
+    // second gate, and a greyed primary is a button a rep presses (DEC-4).
+    expect(button.className).toContain('bg-warn')
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+
+    // And the count's obvious follow-up question — *which* — is answered on the
+    // line under it rather than left to the rep to go hunting for.
+    expect(screen.getByText(/Besoin — introuvable dans la transcription/)).toBeTruthy()
+
+    await act(async () => {
+      button.click()
+    })
+    await waitFor(() => expect(confirmCall()).toBeTruthy())
   })
 })
 

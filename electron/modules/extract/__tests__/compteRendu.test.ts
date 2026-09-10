@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import type { ExtractionESN, VerificationReport } from '../../../core/contracts/extraction.ts'
 import { sampleExtraction } from '../../../core/contracts/fixtures.ts'
 import type { MeetingContext } from '../../../core/contracts/meeting.ts'
+import { COMPTE_RENDU_SECTIONS } from '../../../core/contracts/recipes.ts'
 import { FAIBLE_MARKER, renderCompteRendu, unwrapProse } from '../compteRendu.ts'
 import { UNRESOLVED_ACCOUNT, buildFacts, interlocuteursOf } from '../facts.ts'
 
@@ -44,6 +45,42 @@ const bare = (over: Partial<ExtractionESN['interpretation']> = {}): ExtractionES
   },
 })
 
+/*
+ * The composer appends its own headings after the model's narrative, and the
+ * model's headings are declared in the same repo — so the two lists can collide
+ * silently. They did: « ## Objections et points de vigilance » and
+ * « ## Prochaines étapes » were each written twice into every ESN compte-rendu,
+ * once over prose and once over a list, and the CRM received both.
+ *
+ * The assertion is on the *level*, not on the spelling, because sharing a name
+ * between a chapter and a field of the recap is fine and is what the recap is
+ * for. What is not fine is two headings of the same rank claiming to open the
+ * same section.
+ */
+test('no appended heading collides with one the model was told to write', () => {
+  const document = renderCompteRendu(sampleExtraction, allOk)
+
+  const topLevel = document
+    .split('\n')
+    .filter((line) => /^## /.test(line))
+    .map((line) => line.trim())
+
+  assert.equal(
+    new Set(topLevel).size,
+    topLevel.length,
+    `a « ## » heading is written twice: ${topLevel.join(' / ')}`,
+  )
+
+  // And the recap's sub-sections are exactly that — below the recap, not beside
+  // the chapters the recipe declares.
+  for (const section of COMPTE_RENDU_SECTIONS) {
+    assert.ok(
+      !document.includes(`\n${section} `) || topLevel.filter((h) => h === section).length <= 1,
+      `« ${section} » appears more than once`,
+    )
+  }
+})
+
 test('the document is French, top to bottom', () => {
   const document = renderCompteRendu(sampleExtraction, allOk)
 
@@ -59,9 +96,11 @@ test('the document is French, top to bottom', () => {
     '- **Démarrage** :',
     '- **Durée de mission** :',
     '- **Contexte technique** :',
-    '## Profils recherchés',
-    '## Objections et points de vigilance',
-    '## Prochaines étapes',
+    // Sub-sections of the recap, not chapters of their own — and at `##` the
+    // last two collided with the model's narrative headings of the same name.
+    '### Profils recherchés',
+    '### Objections et points de vigilance',
+    '### Prochaines étapes',
   ]) {
     assert.ok(document.includes(expected), `missing « ${expected} »`)
   }

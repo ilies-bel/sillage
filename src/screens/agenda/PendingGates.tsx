@@ -33,35 +33,75 @@
  * uses; the one confirmation stays where it has always been (DEC-4).
  */
 import type { HistoryRow } from '../../../electron/core/contracts/history.ts'
+import { meetingAnchor } from '../../../electron/core/contracts/meeting.ts'
 import { formatDayShort, meetingHeading } from '../../app/format.ts'
 import { Button, List, Row, RowTitle, SectionHeader } from '../../ui/index.ts'
 
 /** How many rows before the screen sends the rep to the full record. */
 export const PENDING_SHOWN = 4
 
+/**
+ * How many the screen asks for. Far more than it draws, because the *count* is
+ * the point: a backlog has a size, and « les 4 › » under four rows is not a
+ * size. An empty query costs no transcript folding, so this is one indexed scan
+ * and a chip filter. Past fifty the number stops being actionable and the
+ * heading says so.
+ */
+export const PENDING_LIMIT = 50
+
+/** Past this, the row says how long it has been sitting there. */
+const STALE_DAYS = 7
+const DAY_MS = 86_400_000
+
 export interface PendingGatesProps {
   /** Already narrowed to `statut: 'a-valider'` by the main process. */
   rows: readonly HistoryRow[]
+  /**
+   * The whole backlog, **before** the rows already drawn elsewhere on the screen
+   * were removed from `rows`.
+   *
+   * The two used to be the same array, and that was the defect: the day pane
+   * drops a pending call it is already showing — a sound rule, the same meeting
+   * twice on one screen reads as two meetings — so the count moved with the day
+   * the rep happened to be looking at. Ten September said one; the thirty-first
+   * of August said two; nothing had changed but the cell that was open. A
+   * backlog whose size depends on the date you clicked is not a backlog.
+   *
+   * So the *number* is the real one and never moves, and the de-duplication
+   * survives where it belongs: in what is drawn.
+   */
+  total: number
+  /** Today, from the same clock the day pane uses. */
+  now: number
   /** *Tout l'historique* with the same chip on. */
   onSeeAll: () => void
   onOpen: (meetingId: string) => void
 }
 
-export function PendingGates({ rows, onSeeAll, onOpen }: PendingGatesProps) {
+export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGatesProps) {
   // Nothing to owe is not an empty state — it is a section that does not exist.
   // A permanent « rien à valider » panel would be a congratulation the rep gets
   // every day and reads on none of them.
-  if (rows.length === 0) return null
+  if (total === 0) return null
 
   const shown = rows.slice(0, PENDING_SHOWN)
 
   return (
     <section className="mt-block">
       <div className="mb-3 flex items-baseline gap-inline">
-        <SectionHeader className="mb-0 min-w-0 flex-1">En attente de validation</SectionHeader>
-        {rows.length > shown.length ? (
+        <SectionHeader className="mb-0 shrink-0">En attente de validation</SectionHeader>
+        {/*
+          The size, beside the name. Without it the section is a sample with no
+          scale: four rows look identical whether the rep owes four gestures or
+          twenty-nine, and the one number that would make them open *Historique*
+          was the one number the screen did not print.
+        */}
+        <span className="text-warn min-w-0 flex-1 text-ui tabular-nums">
+          {total >= PENDING_LIMIT ? `${PENDING_LIMIT}+` : total}
+        </span>
+        {total > shown.length ? (
           <Button variant="text" className="shrink-0" onClick={onSeeAll}>
-            {`Les ${rows.length} ›`}
+            {total >= PENDING_LIMIT ? 'Toutes ›' : `Les ${total} ›`}
           </Button>
         ) : null}
       </div>
@@ -70,21 +110,38 @@ export function PendingGates({ rows, onSeeAll, onOpen }: PendingGatesProps) {
         {shown.map((row) => (
           <Row key={row.meeting.id} density="roomy" align="center">
             <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-              {formatDayShort(
-                row.meeting.endedAt ?? row.meeting.startedAt ?? row.meeting.createdAt,
-              )}
+              {formatDayShort(meetingAnchor(row.meeting))}
             </span>
             <RowTitle {...meetingHeading(row.meeting)} />
             {/*
-              What is still sitting there, in the words the gate uses. Not a
-              count of days — « il y a 3 jours » is a reproach, and the date is
-              already on the row.
+              What is still sitting there, in the words the gate uses — and, past
+              a week, how long it has been sitting.
+
+              The age used to be left to the date on the left, on the grounds
+              that « il y a 3 jours » is a reproach. That holds for three days
+              and stops holding at fourteen: « 27/08 » and « 09/09 » are the same
+              pixel weight, and one of them is a fortnight of a client's CRM
+              being wrong. It appears only past a week, so it is information on
+              the rows where it is information and silent everywhere else.
             */}
-            <span className="text-warn shrink-0 text-ui">Rien n’a été envoyé</span>
+            <span className="text-warn shrink-0 text-ui">
+              {staleFor(row, now) === null
+                ? 'Rien n’a été envoyé'
+                : `Rien n’a été envoyé depuis ${staleFor(row, now)} jours`}
+            </span>
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
           </Row>
         ))}
       </List>
     </section>
   )
+}
+
+/**
+ * Whole days since the call, or `null` while it is still recent enough that the
+ * date on the row says it better than a number would.
+ */
+const staleFor = (row: HistoryRow, now: number): number | null => {
+  const days = Math.floor((now - meetingAnchor(row.meeting)) / DAY_MS)
+  return days >= STALE_DAYS ? days : null
 }

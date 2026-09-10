@@ -145,6 +145,39 @@ export const meetingHeading = (meeting: {
 }): { title: string; subtitle: string | undefined } => {
   const client = meeting.clientName?.trim() ?? ''
   const objet = meeting.title.trim()
-  if (client !== '') return { title: client, subtitle: objet === '' ? undefined : objet }
-  return { title: objet === '' ? 'Sans objet' : objet, subtitle: undefined }
+  if (client === '') return { title: objet === '' ? 'Sans objet' : objet, subtitle: undefined }
+  if (objet === '') return { title: client, subtitle: undefined }
+  /*
+   * The objet a rep types almost always opens with the client's own name —
+   * « Sodexial — comité de staffing hebdomadaire », « Nordis Retail — cadrage
+   * support N2 » — because that is how a calendar invitation is written. Drawn
+   * as-is the row said « Sodexial » over « Sodexial — comité de staffing
+   * hebdomadaire », which spends the strongest line on a word repeated three
+   * pixels below it and buries the only part that distinguishes one call from
+   * the next.
+   *
+   * So the client stays on top, where the eye scans, and the objet drops the
+   * prefix it duplicates along with the dash that joined them. Nothing is
+   * invented and nothing is truncated away: if the objet does not open on the
+   * client it is drawn whole.
+   */
+  const rest = withoutClientPrefix(objet, client)
+  return { title: client, subtitle: rest === '' ? undefined : rest }
+}
+
+/**
+ * `« Sodexial — comité de staffing »` under a `Sodexial` title becomes
+ * `« comité de staffing »`. Case- and accent-insensitive on the name, and it
+ * only ever strips a *leading* occurrence followed by a separator — « point
+ * Sodexial » keeps every word it has.
+ */
+const SEPARATOR = /^\s*[—–\-:·|]\s*/
+const fold = (value: string): string =>
+  value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('fr')
+
+const withoutClientPrefix = (objet: string, client: string): string => {
+  if (!fold(objet).startsWith(fold(client))) return objet
+  // « Sodexial » as the whole objet leaves nothing for a second line to say —
+  // the title above it already is that word — so the row draws one line.
+  return objet.slice(client.length).replace(SEPARATOR, '').trim()
 }

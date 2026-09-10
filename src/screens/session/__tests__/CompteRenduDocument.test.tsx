@@ -46,6 +46,25 @@ describe('CompteRenduDocument', () => {
     expect(container.querySelector('table')).toBeNull()
   })
 
+  /*
+   * The deterministic header and the whole of « Éléments retenus » are written
+   * with inline emphasis, and the pane drew five lines of literal asterisks
+   * until the harness fixture was made to match the composer. The markers stay
+   * — VerySwing gets them — and the words between them are set.
+   */
+  it('sets inline emphasis without swallowing a single asterisk', () => {
+    const { container } = render(
+      <CompteRenduDocument text={'**Client** : Néovia Santé\n\n- **Durée** : _non évoqué_'} />,
+    )
+    const text = drawn(container)
+    expect(text).toContain('**Client** : Néovia Santé')
+    expect(text).toContain('_non évoqué_')
+
+    // And the emphasis is real, not a class name on a paragraph.
+    expect(screen.getByText('Client').tagName).toBe('STRONG')
+    expect(screen.getByText('non évoqué').tagName).toBe('EM')
+  })
+
   it('renders nothing surprising for an empty document', () => {
     const { container } = render(<CompteRenduDocument text="" />)
     expect(drawn(container)).toBe('')

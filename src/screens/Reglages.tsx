@@ -996,23 +996,22 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
       <SectionHeader>Connecteurs</SectionHeader>
 
       {/*
-        The sentence the split exists for (DEC-26, DEC-32). It states what the
-        header control means, so that a rep reading « Tout fonctionne » while
-        VerySwing is unreachable does not read it as a lie — and so that the
-        reverse never happens either.
-      */}
-      <Lede>
-        L’indicateur d’état, en haut de l’écran, ne suit que les trois connecteurs requis —
-        audio, transcription, analyse. Les connecteurs facultatifs signalent leur panne
-        ici, avec son motif ; ils ne rendent jamais l’application indisponible.
-      </Lede>
+        **One line per section, and none before the first control.**
 
-      <SectionHeader as="h3" className="mt-block">
-        Requis
-      </SectionHeader>
+        There were three paragraphs here — what the header indicator tracks, what
+        the required connectors are for, what the optional ones are not for —
+        about sixty words of rationale standing between the rep and the red row
+        they opened this screen because of. The reasoning was written for a
+        reviewer; a rep arrives here at the moment VerySwing has just broken.
+
+        What each sentence was *doing* is kept, because the split does need
+        stating (DEC-26, DEC-32): it moved onto the two headings it explains, one
+        line each, where it reads as a caption rather than as a preamble.
+      */}
+      <SectionHeader as="h3">Requis</SectionHeader>
       <Lede>
-        Sans eux, une réunion ne peut pas être enregistrée. Ce sont les seuls à faire
-        changer l’indicateur d’état.
+        Audio, transcription, analyse : sans eux une réunion ne peut pas être enregistrée,
+        et ce sont les seuls à faire changer l’indicateur d’état en haut de l’écran.
       </Lede>
       <List>
         {required.map((row) => (
@@ -1029,8 +1028,8 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
         Facultatifs
       </SectionHeader>
       <Lede>
-        Une réunion s’enregistre, se transcrit et s’analyse sans eux. Chacun garde son
-        état et son propre bouton, ici.
+        Une réunion s’enregistre, se transcrit et s’analyse sans eux : leur panne se
+        signale ici, avec son motif, et jamais dans l’indicateur d’état.
       </Lede>
 
       {/*

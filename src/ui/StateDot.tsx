@@ -37,8 +37,16 @@ const dot = cva('h-1.5 w-1.5 shrink-0 rounded-full', {
        * beside two that had one. A ring says « the slot is here and it is
        * empty », which is exactly the state, and it commits to no semantic
        * colour: a pending answer is not a green light and not a red one.
+       *
+       * The ring was `ring-card` and drew *nothing at all* for two rounds:
+       * `ringColor` was not in `tailwind.config.js`, so the class name spelled
+       * a token that `ring-*` could not reach and compiled to no rule. Same
+       * failure mode as `bg-muted/30` — a name that is right, a rule that does
+       * not exist, and an element that is simply unstyled — and the row it hit
+       * was the one this tone was written for. Both `borderColor` and
+       * `ringColor` now carry the pair.
        */
-      pending: 'bg-transparent ring-1 ring-inset ring-card',
+      pending: 'bg-transparent ring-1 ring-inset ring-muted',
       /* Present but says nothing. Keeps the row's text aligned with its neighbours. */
       none: 'bg-transparent',
     },

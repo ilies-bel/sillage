@@ -45,6 +45,21 @@ const button = cva('shrink-0 transition disabled:cursor-not-allowed', {
       primary:
         'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
       /**
+       * The primary, when what it ships carries a doubt the app measured.
+       *
+       * The confirmation gate used to draw a pixel-identical mid-blue *Valider*
+       * whether every citation had been verified or whether a field had failed —
+       * on the one screen whose entire claim over a general-purpose notetaker is
+       * that it checks its own sentences against the recording (DEC-21). A `⚠`
+       * in a header six rows above a button that looks like every other button
+       * is decoration.
+       *
+       * Same shape, same weight, same position — it is still the one control and
+       * it still ships (DEC-4). Only the colour and the label change, and they
+       * change because the payload did.
+       */
+      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
+      /**
        * The way back out of a screen — *‹ Calendrier*, and only that.
        *
        * VISION.md §6: « Brand blue marks selection and navigation ». The back

@@ -284,15 +284,26 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
 })
 
 describe('DEC-32: Requis / Facultatifs, from the contract the header aggregates over', () => {
-  test('the sentence at the top says what the header control means', async () => {
-    mount()
+  /*
+   * The rule that was broken here was not a missing sentence, it was three of
+   * them: a preamble on what the header indicator tracks, then a caption under
+   * *Requis*, then one under *Facultatifs* — about sixty words of reasoning
+   * standing between a rep who came here because VerySwing broke and the red
+   * row they came for. The facts are load-bearing and stay; the paragraph in
+   * front of the first control does not.
+   */
+  test('nothing stands between the screen and its first control', async () => {
+    const { container } = mount()
+    await screen.findByText('Requis')
 
-    const lede = await screen.findByText(/L’indicateur d’état, en haut de l’écran/)
-    const text = lede.textContent ?? ''
-    // What moves it…
-    expect(text).toContain('les trois connecteurs requis')
-    // …and, said out loud, what does not (DEC-26).
-    expect(text).toContain('ne rendent jamais l’application indisponible')
+    // The old preamble, gone…
+    expect(screen.queryByText(/L’indicateur d’état, en haut de l’écran/)).toBeNull()
+
+    // …and what is left between « Connecteurs » and the first connector row is
+    // one line, not three paragraphs.
+    const html = container.innerHTML
+    const between = html.slice(html.indexOf('Requis'), html.indexOf('Analyse'))
+    expect(between.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).length).toBeLessThan(35)
   })
 
   test('the two groups hold exactly what the contract puts in them', async () => {
@@ -324,12 +335,16 @@ describe('DEC-32: Requis / Facultatifs, from the contract the header aggregates 
 
   test('each group states, in French, what it costs when it is down', async () => {
     mount()
-    expect(
-      await screen.findByText(/Sans eux, une réunion ne peut pas être enregistrée/),
-    ).toBeTruthy()
-    expect(
-      screen.getByText(/Une réunion s’enregistre, se transcrit et s’analyse sans eux/),
-    ).toBeTruthy()
+    // One line per heading, and between them they still carry both halves of
+    // DEC-32: what moves the header indicator, and what never does (DEC-26).
+    const required = await screen.findByText(
+      /sans eux une réunion ne peut pas être enregistrée/,
+    )
+    expect(required.textContent).toContain('les seuls à faire changer l’indicateur d’état')
+    const optional = screen.getByText(
+      /Une réunion s’enregistre, se transcrit et s’analyse sans eux/,
+    )
+    expect(optional.textContent).toContain('jamais dans l’indicateur d’état')
   })
 })
 

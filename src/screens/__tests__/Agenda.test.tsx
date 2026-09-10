@@ -697,9 +697,19 @@ describe('the search is the only entry into the past', () => {
    * announce itself (DEC-26), so the home screen asks the question for them.
    */
   test('calls that were recorded and never validated are on the home screen', async () => {
+    const yesterday = Date.now() - 86_400_000
     searched({
       clients: [],
-      rows: [{ ...historyRow({ title: 'Nordis — cadrage support' }), status: 'À valider' }],
+      rows: [
+        {
+          ...historyRow({
+            title: 'Nordis — cadrage support',
+            clientName: null,
+            createdAt: yesterday,
+          }),
+          status: 'À valider',
+        },
+      ],
     })
     signedOut()
 
@@ -708,7 +718,65 @@ describe('the search is the only entry into the past', () => {
 
     expect(await screen.findByText('En attente de validation')).toBeTruthy()
     expect(screen.getByText('Nordis — cadrage support')).toBeTruthy()
+    // Yesterday: the date on the left says it better than a number would.
     expect(screen.getByText('Rien n’a été envoyé')).toBeTruthy()
+  })
+
+  /*
+   * « 27/08 » and « 09/09 » are the same pixel weight, and one of them is a
+   * fortnight of a client's CRM being wrong. Past a week the row says so; below
+   * it, it stays quiet, because « il y a 2 jours » on every row is a reproach
+   * rather than a fact.
+   */
+  test('a gate left standing for a fortnight says how long', async () => {
+    searched({
+      clients: [],
+      rows: [
+        {
+          ...historyRow({
+            title: 'Lefort — découverte',
+            clientName: null,
+            createdAt: Date.now() - 14 * 86_400_000,
+          }),
+          status: 'À valider',
+        },
+      ],
+    })
+    signedOut()
+
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+
+    expect(await screen.findByText('Rien n’a été envoyé depuis 14 jours')).toBeTruthy()
+  })
+
+  /**
+   * The count is a fact about the rep's backlog, not about the day cell they
+   * happen to have open. The day pane drops a pending call it is already
+   * showing — the same meeting twice on one screen reads as two meetings — and
+   * that de-duplication used to reach the number as well, so the backlog was
+   * « 2 » on one day of the calendar and « 1 » on another with nothing having
+   * changed.
+   */
+  test('the backlog states its own size, and the size does not move', async () => {
+    const rows = [
+      { ...historyRow({ title: 'Nordis — cadrage', clientName: null }), status: 'À valider' },
+      { ...historyRow({ title: 'Lefort — CV' }), meeting: meeting('m-2'), status: 'À valider' },
+      { ...historyRow({ title: 'Sodexial — staffing' }), meeting: meeting('m-3'), status: 'À valider' },
+    ]
+    searched({ clients: [], rows })
+    signedOut()
+
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+
+    // Scoped to the section: « 3 » is also a date in the grid behind it.
+    const heading = await screen.findByText('En attente de validation')
+    expect(heading.parentElement?.textContent).toContain('3')
+
+    // All three are drawn, and none of them was dropped by the day pane's
+    // de-duplication — these are not on the visible day.
+    expect(screen.getAllByRole('button', { name: 'Ouvrir' })).toHaveLength(3)
   })
 
   test('a chip on its own is a search, with nothing typed', async () => {

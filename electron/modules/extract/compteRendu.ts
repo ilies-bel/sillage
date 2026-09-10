@@ -238,6 +238,27 @@ export const renderCompteRendu = (
     return `${head.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
   }
 
+  /*
+   * The recap, and everything in it is a **sub**-section of it.
+   *
+   * The three list fields used to be appended at `##`, which collided head-on
+   * with the model's own narrative: `COMPTE_RENDU_SECTIONS` already contains
+   * « ## Objections et points de vigilance » and « ## Prochaines étapes », so
+   * every ESN compte-rendu this app has ever produced carried each of those two
+   * headings *twice*, several hundred words apart, once over prose and once over
+   * a list — on screen, in the CRM task, and in the exported copy.
+   *
+   * No screenshot pass caught it because the harness fixture was four invented
+   * headings rather than the document the composer writes; the fixture is now
+   * the real shape, which is how this surfaced at all.
+   *
+   * `###` is the fix rather than a rename, because the relationship is real:
+   * above « Éléments retenus » is the model's prose, below it is the extracted
+   * slate with its `⚠ faible` markers, and the profils / objections / étapes
+   * lists are three fields of that slate — not three more chapters. `###` is in
+   * the typesetter's vocabulary (`compteRenduLines.ts`), so the gutter draws it
+   * like the rest.
+   */
   const lines: string[] = [
     ...head,
     '',
@@ -289,7 +310,7 @@ export const renderCompteRendu = (
     ),
     '',
     ...listSection(
-      '## Profils recherchés',
+      '### Profils recherchés',
       interpretation.profilsRecherches,
       'profilsRecherches',
       verification,
@@ -297,7 +318,7 @@ export const renderCompteRendu = (
       '_Aucun profil précisé._',
     ),
     ...listSection(
-      '## Objections et points de vigilance',
+      '### Objections et points de vigilance',
       interpretation.objections,
       'objections',
       verification,
@@ -305,7 +326,7 @@ export const renderCompteRendu = (
       '_Aucune objection relevée._',
     ),
     ...listSection(
-      '## Prochaines étapes',
+      '### Prochaines étapes',
       interpretation.prochainesEtapes,
       'prochainesEtapes',
       verification,

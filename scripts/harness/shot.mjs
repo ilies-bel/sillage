@@ -359,7 +359,14 @@ const SCREENS = {
       await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
       // One row open, so the four sections of DEC-25 are on screen.
       await page
-        .getByRole('button', { name: /Groupe Lefort — découverte du besoin plateforme/ })
+        /*
+          Not « Groupe Lefort — découverte… »: the row's two lines no longer
+          repeat the client. The objet a rep types opens on the client's own name
+          almost every time, so `meetingHeading` strips the prefix it duplicates
+          — the title says the client once and the subtitle says what the call
+          was about.
+        */
+        .getByRole('button', { name: /Groupe Lefort.*découverte du besoin plateforme/ })
         .click()
       await page.getByText('Compte-rendu').first().waitFor()
       await page.getByText('deux ingénieurs DevOps confirmés', { exact: false }).first().waitFor()

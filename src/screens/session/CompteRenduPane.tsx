@@ -35,7 +35,7 @@
  * prose and takes no cursor.
  */
 import { SectionHeader } from '../../ui/index.ts'
-import { CompteRenduDocument } from './CompteRenduDocument.tsx'
+import { CompteRenduDocument, CompteRenduMarkersNote } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
   /** The rendered markdown, as `renderCompteRendu` produced it. */
@@ -77,9 +77,10 @@ export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
         rather than a note about it. A rule is what says the scroll ended and
         something else began.
       */}
-      <p className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
-        Lecture seule — corrigez-le à l’étape « Relire et valider ».
-      </p>
+      <div className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
+        <p>Lecture seule — corrigez-le à l’étape « Relire et valider ».</p>
+        <CompteRenduMarkersNote className="mt-0.5" />
+      </div>
     </div>
   )
 }

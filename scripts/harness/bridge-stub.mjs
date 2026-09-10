@@ -55,6 +55,29 @@ export function installAppBridge(config) {
     return d.getTime()
   }
 
+  /*
+   * The deterministic date line of the compte-rendu, formatted the way
+   * `renderCompteRendu` formats it — same locale, same zone, same en dash. It is
+   * computed rather than typed so the fixture cannot go stale against the
+   * meeting it belongs to; a hard-coded « mardi 9 septembre » beside a meeting
+   * the harness places today is the sort of lie this fixture exists not to tell.
+   */
+  const crWhen = (startsAt, endsAt) => {
+    const day = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    const clock = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    return `${day.format(startsAt)}, ${clock.format(startsAt)} – ${clock.format(endsAt)}`
+  }
+
   // ── people ────────────────────────────────────────────────────────────────
   const REP = {
     name: 'Julien Marchand',
@@ -500,33 +523,84 @@ export function installAppBridge(config) {
     accountId: 'CLI-2318',
     accountName: 'Néovia Santé',
     /*
-      One line per paragraph. `renderCompteRendu` joins with `\n` and never
-      wraps, and `unwrapProse` now undoes any wrap the model arrived with — so a
-      fixture hard-wrapped at 78 columns showed every screenshot of the document
-      a sentence cut after « et », which no rep will ever see. A fixture that
-      lies makes the design pass lie with it.
+      The compte-rendu **as `renderCompteRendu` actually composes it**, and that
+      is the whole point of this fixture.
+
+      It used to be four headings of narrative and nothing else — no deterministic
+      header, no « Éléments retenus », no list sections — which is a document about
+      half the length of the real one and missing every part a rep checks. Five
+      screenshot passes judged the three-column session layout and the two-column
+      gate against it and none of them were looking at the product. What a fixture
+      is *for* is to be the thing the code produces; a short one flatters every
+      layout it appears in.
+
+      So: the deterministic head (DEC-7 — client, date, interlocuteurs, commercial
+      come from Graph, never from the model), the model's six sections
+      (`COMPTE_RENDU_SECTIONS`, opening on « ## Résumé » per DEC-40), then the
+      recap the composer appends — one bullet per typed field, the three list
+      fields under their own `###`, and `⚠ faible` where the citation could not be
+      verified (DEC-21), which is the same field the rail flags.
+
+      One line per paragraph: `renderCompteRendu` joins with `\n` and never wraps,
+      and `unwrapProse` undoes any wrap the model arrived with — so a fixture
+      hard-wrapped at 78 columns showed every screenshot a sentence cut after
+      « et », which no rep will ever see.
     */
     compteRendu: [
       '# Néovia Santé — cadrage renfort data',
       '',
+      '**Client** : Néovia Santé',
+      `**Date** : ${crWhen(at(0, 14, 30), at(0, 15, 30))}`,
+      '**Interlocuteurs** : Élodie Vasseur (elodie.vasseur@neovia-sante.fr), Marc Pontier (marc.pontier@neovia-sante.fr)',
+      '**Commercial** : julien.marchand@synapse-it.fr',
+      '',
+      '## Résumé',
+      '',
+      'Néovia Santé a voté ce matin le budget de sa plateforme data et cherche un renfort pour sortir ses pipelines Talend avant la fin de l’année. Élodie Vasseur annonce deux data engineers confirmés et un lead pour cadrer la migration, en régie, à partir de début septembre, sur douze mois. Le TJM reste le point ouvert : la grille achats plafonne à 550 € sur un profil confirmé et les entrées en mission au-dessus passent par Sophie Bertrand. Trois CV sont attendus avant vendredi.',
+      '',
       '## Contexte',
       '',
-      'Le budget de la plateforme data a été voté ce matin en comité d’investissement. Néovia doit sortir ses pipelines Talend historiques avant la fin de l’année et généralise dbt sur les domaines métier.',
+      'Le budget de la plateforme data a été voté ce matin en comité d’investissement. Néovia doit sortir ses pipelines Talend historiques avant la fin de l’année et généralise dbt sur les domaines métier. L’équipe interne est décrite comme « trois personnes, dont deux à mi-temps sur le sujet ».',
       '',
-      '## Besoin',
+      '## Besoin exprimé',
       '',
-      'Deux data engineers confirmés et un lead data pour cadrer la migration. Stack Databricks / Airflow / dbt, pilotage quotidien côté client.',
+      'Élodie Vasseur : « il nous manque deux data engineers » sur la migration, et « un profil plus senior pour cadrer » l’architecture cible. Le pilotage reste côté client, au quotidien, ce qui écarte le forfait — « de la régie, clairement ».',
       '',
-      '## Conditions évoquées',
+      '## Échanges et points techniques',
       '',
-      '- Mode : régie',
-      '- Démarrage : début septembre 2026',
-      '- Durée : 12 mois, clause de sortie à 6 mois',
-      '- TJM : 550 € (confirmé) et 650 € (lead) — au-dessus de la grille achats 2025',
+      'La stack est Databricks et Airflow en place, dbt en cours de généralisation. Marc Pontier signale que les jobs Talend restants sont « une quarantaine, peut-être un peu plus », sans inventaire consolidé à ce stade. La reprise de l’historique n’a pas été tranchée pendant l’échange.',
+      '',
+      '## Objections et points de vigilance',
+      '',
+      'Le TJM 2025 a été jugé trop élevé par les achats. Élodie Vasseur indique que la grille interne plafonne à 550 € sur un profil confirmé ; au-delà, l’entrée en mission demande la validation de Sophie Bertrand. Aucun engagement n’a été pris sur le lead à 650 €.',
       '',
       '## Prochaines étapes',
       '',
-      'Envoi de trois CV avec les TJM associés avant vendredi, Sophie Bertrand en copie. Point de calage la semaine suivante une fois les profils lus.',
+      'Envoi de trois CV avec les TJM associés avant vendredi, Sophie Bertrand en copie. Point de calage la semaine suivante, une fois les profils lus.',
+      '',
+      '## Éléments retenus',
+      '',
+      '- **Besoin** : Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
+      '- **Mode de collaboration** : régie',
+      '- **TJM évoqué** : 550 €',
+      '- **Démarrage** : début septembre 2026',
+      '- **Durée de mission** : 12 mois, clause de sortie à 6 mois',
+      '- **Contexte technique** : Databricks et Airflow en place, dbt en cours de généralisation, sortie des pipelines Talend historiques avant fin d’année.',
+      '',
+      '### Profils recherchés',
+      '',
+      '- 2 × Data Engineer — confirmé (Databricks, Airflow, dbt)',
+      '- 1 × Lead Data — senior (architecture, cadrage, revue de code)',
+      '',
+      '### Objections et points de vigilance',
+      '',
+      '- La grille achats plafonne à 550 € sur un profil confirmé — _sans réponse apportée_ ⚠ faible',
+      '',
+      '### Prochaines étapes',
+      '',
+      '- Envoyer 3 CV avec les TJM associés — Julien Marchand — avant vendredi',
+      '- Mettre Sophie Bertrand en copie — Élodie Vasseur',
+      '- Point de calage une fois les profils lus — la semaine suivante',
     ].join('\n'),
     besoin:
       'Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
@@ -1177,16 +1251,23 @@ export function installAppBridge(config) {
     },
     connectors: [
       { id: 'capture', label: 'Audio', health: HEALTH.mixed.capture },
-      {
-        id: 'transcribe',
-        label: 'Transcription',
-        health: {
-          state: 'degraded',
-          reason: 'modèle « small » chargé — précision moindre sur les noms propres',
-          since: now - 52 * MIN,
-          retryable: false,
-        },
-      },
+      /*
+        `ok`, and the fixture used to say otherwise.
+
+        It painted this row amber with « modèle « small » chargé — précision
+        moindre sur les noms propres », on the REQUIS rail, which is a state no
+        code path in the product produces: `modules/transcribe` reports
+        `degraded` on transcription *errors* and on nothing else. So the harness
+        was inventing a health, and the health it invented broke DEC-30 — the
+        local engine is the default and is never presented as a downgrade, and
+        this drew the default engine as a fault on the one screen a rep opens to
+        find faults.
+
+        Which checkpoint is loaded is worth knowing and is already on screen,
+        neutrally, in *Modèles* below: three rows with their size, their speed
+        and their accuracy, and a mark on the selected one.
+      */
+      { id: 'transcribe', label: 'Transcription', health: { state: 'ok' } },
       { id: 'llm', label: 'Analyse', health: HEALTH.mixed.llm },
       {
         id: 'calendar',
@@ -1342,9 +1423,26 @@ export function installAppBridge(config) {
   const PERIOD_DAYS = { toute: null, '7j': 7, '30j': 30, '90j': 90 }
   const STATUS_LABEL = { tous: null, 'a-valider': 'À valider', validees: 'Validée', abandonnees: 'Abandonnée' }
 
+  /*
+   * The anchor `core/contracts/meeting.ts` exports, restated here because a stub
+   * cannot import from `electron/`. If the two ever disagree, the screenshots
+   * are of a product that does not exist.
+   */
+  const anchorOf = (meeting) => meeting.scheduledStart || meeting.startedAt || meeting.createdAt
+
   const searchRows = (query, filter, limit) => {
     const needle = fold(query)
-    let rows = HISTORY_ROWS.slice()
+    /*
+      Sorted, and it used to be declaration order.
+
+      `Projections.listMeetings` orders by the meeting's own day, newest first,
+      and the fixture was a hand-written array that happened to run 10/09, 09/09,
+      07/09, **01/09, 03/09**, 27/08. On a screen whose only organising principle
+      is recency that is the defect a rep notices in the first minute — and it
+      was in the *harness*, so the screenshots showed it while the code was
+      right. A fixture that lies makes the design pass lie with it.
+    */
+    let rows = HISTORY_ROWS.slice().sort((a, b) => anchorOf(b.meeting) - anchorOf(a.meeting))
     if (needle) rows = rows.filter((row) => blobOf(row).indexOf(needle) !== -1)
     if (filter.client) rows = rows.filter((row) => row.meeting.clientName === filter.client)
     const days = PERIOD_DAYS[filter.periode]

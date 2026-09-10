@@ -293,12 +293,17 @@ export class Projections {
   // ── Reads ────────────────────────────────────────────────────────────────
 
   /**
-   * The meetings, newest-updated first, optionally bounded by the day they
-   * belong on (DEC-31).
+   * The meetings, newest first, optionally bounded by the day they belong on
+   * (DEC-31).
    *
-   * `COALESCE(scheduled_start, started_at, created_at)` is the anchor, and it is
-   * the same order `core/domain/historySearch.ts` and the calendar's own
-   * `entries.ts` place a row by. It is computed in SQL rather than filtered in
+   * `COALESCE(scheduled_start, started_at, created_at)` is the anchor —
+   * `meetingAnchor` in `core/contracts/meeting.ts`, the same order the calendar
+   * grid and *Période* place a row by — and it now orders the list as well as
+   * bounding it. It used to `ORDER BY updated_at DESC`, which is the last time
+   * the event log touched the row and not a date: a call validated late sorted
+   * above a call held two days after it, and Historique, whose only organising
+   * principle is recency, printed its rows out of order. `id DESC` breaks the
+   * tie so a page boundary is stable. It is computed in SQL rather than filtered in
    * JavaScript for the reason the range exists at all: a month grid paged back
    * a year must not have to read — and ship — every meeting since, only to throw
    * away all but six weeks of them.
@@ -313,7 +318,7 @@ export class Projections {
       `SELECT * FROM meetings
          WHERE (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) >= ?)
            AND (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) <= ?)
-         ORDER BY updated_at DESC
+         ORDER BY COALESCE(scheduled_start, started_at, created_at) DESC, id DESC
          LIMIT ?`,
       from,
       from,

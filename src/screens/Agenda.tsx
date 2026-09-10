@@ -52,7 +52,7 @@ import { Button, Segmented, unavailable, type SegmentedOption } from '../ui/inde
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
 import { NewMeeting } from './agenda/NewMeeting.tsx'
-import { PendingGates, PENDING_SHOWN } from './agenda/PendingGates.tsx'
+import { PendingGates, PENDING_LIMIT } from './agenda/PendingGates.tsx'
 import { buildEntries, countsByDay, marksByDay } from './agenda/entries.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { Results } from './search/Results.tsx'
@@ -159,15 +159,16 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    * with no query and that one chip is the same query, and the corpus still
    * never crosses (DEC-25).
    *
-   * `PENDING_SHOWN + 1` so the section can say « les 7 › » without fetching
-   * seven rows to count them — one more than it draws is enough to know there
-   * are more, and any real backlog is sent to *Historique* anyway.
+   * `PENDING_LIMIT` and not « one more than it draws »: the section's count is
+   * the point of it, and it has to be the same number on every day of the
+   * calendar. An empty query folds no transcript, so this is one indexed scan
+   * and a chip filter.
    */
   const pendingFilter = useMemo<HistoryFilter>(
     () => ({ ...NO_FILTER, statut: 'a-valider' }),
     [],
   )
-  const pending = useHistorySearch('', pendingFilter, PENDING_SHOWN + 1)
+  const pending = useHistorySearch('', pendingFilter, PENDING_LIMIT)
 
   const snapshot: AgendaSnapshotPayload | null =
     agenda.state.status === 'ready' ? agenda.state.value : null
@@ -461,6 +462,11 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               rows={(pending.result?.rows ?? []).filter(
                 (row) => !inRange.some((entry) => entry.meetingId === row.meeting.id),
               )}
+              /* The backlog's size, before the de-duplication above — so the
+                 number is a fact about the rep's work and not about which day
+                 cell happens to be open. */
+              total={pending.result?.rows.length ?? 0}
+              now={now}
               onSeeAll={() => onHistorique('', pendingFilter)}
               onOpen={onOpen}
             />

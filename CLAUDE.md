@@ -90,6 +90,46 @@ machine) or in `core/domain/` — never in an IPC handler.
   line in the notepad, 130 at the gate. Nothing is clipped and nothing overlaps, which is
   exactly why three screenshot reviews missed it: an unreadably long line is invisible in a
   picture. A new pane that holds prose uses the class; it never picks its own number.
+- **The harness fixture is the document the composer writes, or the design pass is
+  fiction.** `bridge-stub.mjs`'s compte-rendu was four invented headings for five review
+  rounds — no deterministic header, no « Éléments retenus », no list sections — roughly half
+  the length of the real thing, and every screenshot judgement about the three-column session
+  layout and the two-column gate was made against it. Making it faithful surfaced three
+  defects in one shot: `## Objections et points de vigilance` and `## Prochaines étapes` were
+  each written **twice** into every ESN document (the model's narrative and the appended list
+  collided, so the CRM got both), and `**gras**` / `_italique_` were drawn as literal
+  asterisks because the typesetter's vocabulary stopped at the line. A fixture shorter or
+  simpler than the output flatters every layout it appears in.
+- **The measurement reaches the button** (DEC-21, DEC-4). A gate with an unverified field
+  drew a *Valider* pixel-identical to a clean one. The primary now reads « Valider malgré N
+  champ(s) non vérifié(s) » in `caution`, and the line under it names the fields — same
+  control, same gesture, nothing withheld, because a greyed primary is a button a rep presses
+  and withholding would be a second gate. The reveal control is a **page turn** and not a jump
+  to the end, for the same reason: arming is measured from the scroll position either way, but
+  one teleport measures *revealing* and a page turn measures reading.
+- **One anchor for when a meeting is** — `meetingAnchor` in `core/contracts/meeting.ts`,
+  `scheduledStart ?? startedAt ?? createdAt`. It lives in `contracts` because `src/*` may
+  import nothing else, and three screens had each written their own version: Historique
+  printed one order, the pending list another, and the store ordered by `updated_at`, which is
+  not a date but the last time the log touched the row. A call validated late sorted above a
+  call held two days after it. `endedAt` is never consulted — a recording left running
+  overnight would move to the next morning.
+- **A row names its client once.** The objet a rep types opens on the client's own name
+  almost every time (« Sodexial — comité de staffing »), so `meetingHeading` strips the prefix
+  it duplicates. Drawn raw, the strongest line on the row was a word repeated three pixels
+  below it.
+- **A `failed` push is not a missing *Réessayer*, it is a missing sentence.** `Outbox` retries
+  everything it safely can — an adapter that knows nothing was created answers
+  `{ ok: false, retryable: true }` and the row stays `pending`. `failed` is the opposite case:
+  the attempt threw, nobody knows whether the record exists, and `POST /v1/crm/tasks` has no
+  idempotency key, so a retry button is a duplicate in the client's CRM one click away. The
+  cause and the application to go look in are now on the collapsed row, where the orange count
+  is, instead of two clicks below it.
+- **Whatever `border-*` can say, `ring-*` must be able to say.** `StateDot`'s `pending` tone
+  was `ring-card` and drew *nothing at all* for two rounds because `ringColor` was not in
+  `tailwind.config.js` — same failure as `bg-muted/30`: a name that is right, a rule that does
+  not exist, an element simply unstyled. The splash's « Audio » row had a hole where the other
+  two rows have a dot.
 - **The gate opens on the doubt, and never draws an inert primary** (DEC-4, DEC-21). The rail
   scrolls to the first `⚠ faible` field on open — the screen was flagging a field in the header
   and hiding it six rows below the fold. *Valider* is withheld until the rail has been on

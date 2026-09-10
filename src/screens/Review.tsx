@@ -49,7 +49,11 @@ import {
   unavailable,
 } from '../ui/index.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
-import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
+import { cn } from '../lib/utils.ts'
+import {
+  CompteRenduDocument,
+  CompteRenduMarkersNote,
+} from './session/CompteRenduDocument.tsx'
 import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
 
 /** The one thing a rep must notice without reading (DEC-21). */
@@ -631,7 +635,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 Typeset, with every `#` and every `- ` still on screen in the
                 gutter (DEC-44). `pl-6` is the gutter they hang in.
               */
-              <CompteRenduDocument text={edits.compteRendu} className="pl-6" />
+              <>
+                <CompteRenduDocument text={edits.compteRendu} className="pl-6" />
+                {/* Why the gutter is there, once, under the document it explains. */}
+                <CompteRenduMarkersNote className="text-muted border-subtle mt-3 border-t pt-2 text-meta" />
+              </>
             ) : (
               /*
                 Not `font-mono`. The compte-rendu is a document the rep reads and
@@ -731,7 +739,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
 
           {panel.accountCandidates.length > 0 ? (
             <div className="mt-2">
-              <p className="text-muted text-meta">Autres sociétés du même groupe :</p>
+              {/*
+                The label states the *verb*, not the category.
+
+                « Autres sociétés du même groupe : » followed by two chips names
+                what they are and never what pressing one does — which is the
+                same defect as a pane toggle labelled « Volets »: a control whose
+                effect has to be guessed, on the screen where the guess writes to
+                a client's CRM. The account is a row above with a value in it, so
+                what a chip does is *replace* that value, and the sentence says
+                so.
+              */}
+              <p className="text-muted text-meta">
+                Rattacher plutôt à une autre société du groupe :
+              </p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {panel.accountCandidates.map((candidate) => (
                   <li key={candidate.accountId ?? candidate.name}>
@@ -802,31 +823,85 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 block
                 className="mt-4 py-2"
                 onClick={() => {
-                  // Whichever column is still holding something back, and the
-                  // caption above names which one it is.
+                  /*
+                    **One screenful, not the whole column.**
+
+                    This used to jump to `scrollHeight`, which meant the guard
+                    could be satisfied by two presses of a button the rep never
+                    took their eyes off — a EULA checkbox with better copy. The
+                    arming has always been measured (`atEnd` fires from the
+                    scroll this causes, never from the click), but a measurement
+                    of a single teleport measures *revealing*, not reading.
+
+                    A page turn is the honest verb. Every screenful between here
+                    and the end has to be on screen for the last one to be, which
+                    is the guard's whole sentence, and the control is now the one
+                    a rep would have used anyway. `- 64` overlaps two lines
+                    across the turn so nothing falls into the seam.
+                  */
                   const el = below === 'document' ? docRef.current : railRef.current
-                  el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+                  if (!el) return
+                  el.scrollBy({ top: Math.max(el.clientHeight - 64, 120), behavior: 'smooth' })
                 }}
               >
-                {below === 'document'
-                  ? 'Afficher la fin du compte-rendu et du brouillon'
-                  : 'Afficher le reste de ce qui part'}
+                {/*
+                  It named « le brouillon » unconditionally, on a screen that had
+                  already told the sans-Entra rep twice that no draft would be
+                  created. The column is named by what the rep is reading through,
+                  not by an inventory of what is under it.
+                */}
+                {below === 'document' ? 'Lire la suite du compte-rendu' : 'Voir la suite de ce qui part'}
               </Button>
             ) : (
               <Button
-                variant="primary"
+                /*
+                  **The one measurement this product makes about itself reaches
+                  the one button it makes** (DEC-21).
+
+                  A gate with an unverified field drew a *Valider* pixel-identical
+                  to a gate where every citation had been found: same mid-blue,
+                  same word. The `⚠` sat in a banner above and in a row below, and
+                  the control between them ignored both — so the marker degraded
+                  into decoration on the only screen where it costs anything.
+
+                  Still one button, one gesture, nothing withheld (DEC-4). It
+                  says what it is about to do, and it looks like what it is about
+                  to do.
+                */
+                variant={faible.length > 0 && !busy ? 'caution' : 'primary'}
                 block
                 className="mt-4 py-2"
                 onClick={() => void confirm()}
                 {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
               >
-                {busy ? 'Envoi…' : 'Valider'}
+                {busy
+                  ? 'Envoi…'
+                  : faible.length === 0
+                    ? 'Valider'
+                    : faible.length === 1
+                      ? 'Valider malgré 1 champ non vérifié'
+                      : `Valider malgré ${faible.length} champs non vérifiés`}
               </Button>
             )}
-            <p className="text-muted mt-1.5 text-center text-meta">
+            {/*
+              The sub-line follows the button. While something is still below the
+              fold it says why the button is a page turn; when a citation failed
+              it names the field, because « 1 champ non vérifié » on the button
+              is a count and the rep's next question is *which*; otherwise it is
+              the reassurance about Outlook, which is only worth the line when
+              there is nothing louder to say.
+            */}
+            <p
+              className={cn(
+                'mt-1.5 text-center text-meta',
+                faible.length > 0 && below === null && !busy ? 'text-warn' : 'text-muted',
+              )}
+            >
               {below !== null && !busy
                 ? 'Tout ce qui part doit avoir été affiché avant d’être validé.'
-                : reassurance}
+                : faible.length > 0 && !busy
+                  ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
+                  : reassurance}
             </p>
           </div>
         </aside>

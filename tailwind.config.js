@@ -78,6 +78,27 @@ module.exports = {
         subtle: 'var(--border-subtle)',
         card: 'var(--border-card)',
       },
+      /*
+       * The same two rules, reachable from `ring-*`.
+       *
+       * They were not, and the failure was silent in exactly the way the naming
+       * rule above describes: `StateDot`'s `pending` tone is
+       * `bg-transparent ring-1 ring-inset ring-card`, `ring-card` resolved to no
+       * colour, and the outline that *is* the dot never drew. On the splash the
+       * « Audio » row therefore had a hole where the other two rows have a dot —
+       * which is the rendering fault an empty slot was invented to avoid.
+       *
+       * `ring` and `border` are two utilities over one pair of tokens; whatever
+       * `border-x` can say, `ring-x` has to be able to say too, or the next
+       * outline is invisible for the same reason.
+       */
+      ringColor: {
+        DEFAULT: 'var(--border-subtle)',
+        subtle: 'var(--border-subtle)',
+        card: 'var(--border-card)',
+        muted: 'var(--text-muted)',
+        brand: 'var(--brand-500)',
+      },
       borderRadius: {
         sm: 'var(--radius-sm)',
         DEFAULT: 'var(--radius)',

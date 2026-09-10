@@ -33,7 +33,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
-import { Centered, Chip, CopyButton } from '../../ui/index.ts'
+import { Centered, CopyButton } from '../../ui/index.ts'
 import { scrollToCenter } from '../../lib/scroll.ts'
 
 export interface TranscriptFocus {
@@ -51,6 +51,13 @@ interface TranscriptReaderProps {
 
 /** `Moi` / `Client`, the same two words the transcript uses in Historique. */
 const SPEAKER: Record<TranscriptSegment['channel'], string> = { rep: 'Moi', far: 'Client' }
+
+/** Accents and case folded, so « Achats » and « achats » are one term. */
+const fold = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('fr')
 
 /**
  * The transcript as plain text, for the clipboard — the same three columns the
@@ -92,6 +99,7 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
    * side is the reason a rep came here rather than to the field.
    */
   const [needle, setNeedle] = useState('')
+  const [picked, setPicked] = useState<string | null>(null)
   const seeded = useRef<string | null>(null)
   useEffect(() => {
     const quote = focus?.quote ?? null
@@ -114,38 +122,91 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
   }, [segments, trimmed])
 
   /**
-   * Words of the failed query that the record does contain, longest first.
+   * **The passages a human would have accepted**, ranked, when the citation is
+   * nowhere in the record.
    *
-   * Three at most: this is a nudge, not a second search UI. Four characters is
-   * the floor — « les », « aux », « 550 » are either grammar or so common that
-   * a lead built on one points at half the call. Accents and case are folded so
-   * « Achats » finds « achats ».
+   * This offered *words* before: content tokens of the failed query that occur
+   * somewhere in the call, longest first, as chips. On the fixture it was right
+   * and useless. The quote « la grille achats plafonne à 550 » produced exactly
+   * one chip, « achats » — « 550 » was below the four-character floor even
+   * though it is the most discriminating token in the sentence — and the line a
+   * rep accepts in two seconds, « votre TJM de l'an dernier était un peu haut
+   * pour nos achats », was never surfaced at all. A word is not what the rep is
+   * looking for; a moment in the call is.
+   *
+   * So the unit is the segment, scored by how much of the query it carries:
+   *
+   *  · a term is a run of letters of three or more, or a run of digits of two
+   *    or more — which is what lets « 550 » and « 2027 » count, and they are
+   *    usually the terms that settle it;
+   *  · each term is weighted by `log(N / df)`, so a word in most of the call
+   *    contributes almost nothing and a word in one line dominates. That is an
+   *    inverse-frequency weight and not a stop-list, because the words worth
+   *    ignoring are a property of *this* call — « data » is noise in a data
+   *    meeting and a strong signal in any other;
+   *  · a term in more than a third of the segments is dropped outright.
+   *
+   * Three at most, and labelled as candidates rather than as an answer: the
+   * whole reason this panel exists is that the app could not verify the quote,
+   * and a ranked guess must not be dressed as a verification (DEC-21).
    */
-  const leads = useMemo(() => {
+  const candidates = useMemo(() => {
     if (!segments || matches.size > 0 || trimmed === '') return []
-    const haystack = segments
-      .map((segment) => segment.text.toLowerCase())
-      .join(' ')
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-    const seen = new Set<string>()
-    return trimmed
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((word) => word.length >= 4)
-      .filter((word) => {
-        const folded = word.normalize('NFD').replace(/\p{Diacritic}/gu, '')
-        if (seen.has(folded) || !haystack.includes(folded)) return false
-        seen.add(folded)
-        return true
+
+    const termsOf = (text: string): string[] =>
+      fold(text).match(/\p{L}{3,}|\d{2,}/gu) ?? []
+
+    const wanted = [...new Set(termsOf(trimmed))]
+    if (wanted.length === 0) return []
+
+    const bag = segments.map((segment) => ({ segment, terms: new Set(termsOf(segment.text)) }))
+    const total = bag.length
+
+    const weight = new Map<string, number>()
+    for (const term of wanted) {
+      const df = bag.filter((entry) => entry.terms.has(term)).length
+      /*
+       * Absent, or so common in this call that it separates nothing.
+       *
+       * `max(2, …)` and not a bare third: a term has to be in at least three
+       * turns before « common » means anything. A short record makes every term
+       * exceed a third of it — on a two-segment transcript a word in one segment
+       * is fifty per cent — and the cut then threw away the whole query and
+       * offered the rep nothing at all, which is the dead end this exists to
+       * end.
+       */
+      if (df === 0 || df > Math.max(2, total / 3)) continue
+      weight.set(term, Math.log(total / df))
+    }
+    if (weight.size === 0) return []
+
+    return bag
+      .map(({ segment, terms }) => {
+        let score = 0
+        for (const [term, w] of weight) if (terms.has(term)) score += w
+        return { segment, score }
       })
-      .sort((a, b) => b.length - a.length)
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.segment.startMs - b.segment.startMs)
       .slice(0, 3)
+      .map((entry) => entry.segment)
   }, [segments, matches, trimmed])
 
   const hitRef = useRef<HTMLLIElement>(null)
   useEffect(() => {
     scrollToCenter(hitRef.current)
   }, [hit])
+
+  /*
+   * The candidate the rep chose, if any. It is *marked*, not confirmed — the
+   * same left rule a search match wears, never the citation's wash: the app
+   * failed to verify this quote and a ranked guess that borrowed the verified
+   * treatment would be the one lie this screen exists to prevent (DEC-21).
+   */
+  const pickedRef = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    scrollToCenter(pickedRef.current)
+  }, [picked])
 
   if (loaded.state.status === 'failed') {
     return (
@@ -232,17 +293,37 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
         550 » must not offer « la » as a lead.
       */}
       {trimmed !== '' && matches.size === 0 ? (
-        <div className="mb-3">
+        <div className="border-subtle bg-inner mb-3 rounded-sm border p-2">
           <p className="text-muted text-meta">
-            {leads.length === 0
-              ? 'Aucun passage ne contient cette phrase, ni aucun de ses mots.'
-              : 'Aucun passage ne contient cette phrase. Ces mots-là, oui :'}
+            {candidates.length === 0
+              ? 'Aucun passage ne contient cette phrase, ni aucun de ses termes.'
+              : 'Aucun passage ne contient cette phrase. Les plus proches, à vérifier :'}
           </p>
-          {leads.length > 0 ? (
-            <ul className="mt-1 flex flex-wrap gap-1.5">
-              {leads.map((lead) => (
-                <li key={lead}>
-                  <Chip onClick={() => setNeedle(lead)}>{lead}</Chip>
+          {candidates.length > 0 ? (
+            <ul className="mt-1.5 space-y-1">
+              {candidates.map((segment) => (
+                <li key={segment.id}>
+                  {/*
+                    A whole row, not a chip: the rep is choosing between moments
+                    of the call, so the thing they press has to be the moment —
+                    its time, who was speaking, and enough of the sentence to
+                    recognise it. Pressing it goes there and marks it, and the
+                    mark is the *search* rule and never the citation wash, because
+                    this is a candidate and the app has not verified anything
+                    (DEC-21).
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => setPicked(segment.id)}
+                    className="hover:bg-subtle flex w-full gap-2 rounded-sm px-1 py-0.5 text-left transition"
+                  >
+                    <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
+                      {formatOffset(segment.startMs)}
+                    </span>
+                    <span className="text-body min-w-0 flex-1 text-ui leading-relaxed">
+                      {segment.text}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -253,11 +334,11 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
       <ul className="space-y-2">
         {segments.map((segment) => {
           const cited = segment === hit
-          const found = matches.has(segment.id)
+          const found = matches.has(segment.id) || segment.id === picked
           return (
             <li
               key={segment.id}
-              ref={cited ? hitRef : undefined}
+              ref={cited ? hitRef : segment.id === picked ? pickedRef : undefined}
               /*
                 Two marks, and they are different things: the wash is *the
                 citation*, the rule is *what the rep is looking for*. A search

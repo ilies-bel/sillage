@@ -152,3 +152,31 @@ export const MeetingSchema = z.object({
   updatedAt: TimestampSchema,
 })
 export type Meeting = z.infer<typeof MeetingSchema>
+
+/**
+ * **The day a meeting belongs on**, as an instant (DEC-31) — the one moment
+ * every surface sorts by, filters by and prints.
+ *
+ * The order is the calendar grid's: the day the rep put it on, else the day it
+ * ran, else the day it was created. *Période* has to agree with where the
+ * meeting is drawn, or a call filed under Thursday would drop out of « 7 jours »
+ * on Wednesday.
+ *
+ * It lives in `contracts` and not in `core/domain/historySearch.ts`, where it
+ * was, because `src/*` may import `core/contracts/` and nothing else — so every
+ * screen that needed this question answered had rolled its own answer, and the
+ * three answers disagreed. Historique printed `startedAt ?? scheduledStart ??
+ * createdAt`, the pending-gates list printed `endedAt ?? …`, and the store
+ * ordered by `updated_at`, which is not a date at all but the last time the
+ * event log touched the row. Historique therefore drew 10/09, 09/09, 07/09,
+ * **01/09, 03/09**, 27/08: a call validated late had been *edited* more recently
+ * than a call held two days after it, so it sorted above it. On a screen whose
+ * only organising principle is recency, that is the defect a rep notices in the
+ * first minute and never trusts again.
+ *
+ * `endedAt` is deliberately never consulted: a recording left running overnight
+ * would move the call to the next morning, and the rep filed it the day they
+ * held it.
+ */
+export const meetingAnchor = (meeting: Meeting): number =>
+  meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt

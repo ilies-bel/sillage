@@ -16,6 +16,7 @@
  *    whole reader would be a second Historique inside the home screen.
  */
 import type { HistoryRow } from '../../../electron/core/contracts/history.ts'
+import { meetingAnchor } from '../../../electron/core/contracts/meeting.ts'
 import { formatDayShort, meetingHeading } from '../../app/format.ts'
 import { Button, EmptyState, List, Row, RowTitle } from '../../ui/index.ts'
 import { IntentSummary } from './Intents.tsx'
@@ -55,7 +56,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
         {rows.map((row) => (
           <Row key={row.meeting.id} density="roomy" align="center" className="flex-wrap">
             <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-              {formatDayShort(row.meeting.startedAt ?? row.meeting.scheduledStart ?? row.meeting.createdAt)}
+              {formatDayShort(meetingAnchor(row.meeting))}
             </span>
 
             <RowTitle {...meetingHeading(row.meeting)} />

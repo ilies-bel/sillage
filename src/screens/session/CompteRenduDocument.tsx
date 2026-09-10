@@ -17,7 +17,7 @@
  * down, which made the document the app produced quieter than the notes it was
  * written from — on the surfaces where the compte-rendu *is* the output.
  */
-import { parseCompteRendu } from './compteRenduLines.ts'
+import { parseCompteRendu, parseInline } from './compteRenduLines.ts'
 
 interface CompteRenduDocumentProps {
   /** The rendered document, exactly as `renderCompteRendu` produced it. */
@@ -57,7 +57,9 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
-              <div className={HEADING_CLASS[line.level]}>{line.text}</div>
+              <div className={HEADING_CLASS[line.level]}>
+                <Prose text={line.text} />
+              </div>
             </div>
           )
         }
@@ -66,18 +68,67 @@ export function CompteRenduDocument({ text, className }: CompteRenduDocumentProp
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
-              <p className="text-body text-copy leading-relaxed">{line.text}</p>
+              <p className="text-body text-copy leading-relaxed">
+                <Prose text={line.text} />
+              </p>
             </div>
           )
         }
 
         return (
           <p key={key} className="text-body whitespace-pre-wrap text-copy leading-relaxed">
-            {line.text}
+            <Prose text={line.text} />
           </p>
         )
       })}
     </div>
+  )
+}
+
+/**
+ * One line's prose, with `**gras**` and `_italique_` set — and their markers
+ * still on screen.
+ *
+ * Same rule as the gutter, one level down: nothing is hidden, so the string the
+ * rep reads is the string VerySwing receives (DEC-44). The asterisks and the
+ * underscores are drawn at `text-meta` in `--text-muted`, which is quiet enough
+ * to read past and present enough to be checked — and the words between them
+ * are bold or italic, which is what makes « **Client** : Néovia Santé » a
+ * labelled line rather than a row of punctuation.
+ *
+ * `select-none` on the markers for the reason the gutter has it: the pane is
+ * read-only and a rep dragging across it wants the prose. The editable copy at
+ * the gate is where the raw string is selectable in full.
+ */
+function Prose({ text }: { text: string }) {
+  return (
+    <>
+      {parseInline(text).map((run, index) => {
+        const key = index
+        if (run.kind === 'marker') {
+          return (
+            <span key={key} className="text-muted select-none font-mono text-meta">
+              {run.text}
+            </span>
+          )
+        }
+        if (run.kind === 'strong') {
+          return (
+            <strong key={key} className="text-strong font-semibold">
+              {run.text}
+            </strong>
+          )
+        }
+        if (run.kind === 'em') {
+          return (
+            <em key={key} className="italic">
+              {run.text}
+            </em>
+          )
+        }
+        return <span key={key}>{run.text}</span>
+      })}
+    </>
   )
 }
 
@@ -95,5 +146,30 @@ function Marker({ children }: { children: string }) {
     <span className="text-muted absolute top-0 right-full mr-1.5 select-none whitespace-pre font-mono text-meta leading-relaxed">
       {children}
     </span>
+  )
+}
+
+/**
+ * **The legend.**
+ *
+ * The gutter of `#`, `##` and `- ` was drawn beside headings that are *also* set
+ * as headings, and nothing on any of the three screens said why — so the first
+ * thing the eye landed on in the compte-rendu column looked like leaked markup
+ * or a rendering bug. It is neither, and the reason it is there is worth exactly
+ * one sentence: the string a rep reads is byte-for-byte the string VerySwing
+ * receives (DEC-44), which is a promise no markdown renderer can keep and the
+ * only reason the markers survive at all.
+ *
+ * A component rather than a constant so the three footers that carry it — the
+ * session pane, the gate, the history record — cannot drift into three
+ * different explanations of the same gutter.
+ */
+export function CompteRenduMarkersNote({ className }: { className?: string }) {
+  return (
+    <p className={className}>
+      Les marques <span className="font-mono">##</span> et{' '}
+      <span className="font-mono">-</span> font partie du texte : VerySwing et le
+      brouillon reçoivent exactement ce qui est affiché.
+    </p>
   )
 }

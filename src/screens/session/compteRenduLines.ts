@@ -90,3 +90,81 @@ export function serializeCompteRendu(lines: readonly CompteRenduLine[]): string 
     })
     .join('\n')
 }
+
+/**
+ * ## The line's own vocabulary: `**gras**` and `_italique_`
+ *
+ * `renderCompteRendu` writes inline emphasis and this file did not know it. The
+ * deterministic header is four `**Client** : …` lines, every row of « Éléments
+ * retenus » is `- **Besoin** : …`, and absence is stated `_non évoqué_` — so the
+ * document opened on five lines of literal asterisks, the recap was a column of
+ * them, and the pane looked like a renderer that had failed rather than a
+ * document. No screenshot pass caught it because the harness fixture was four
+ * invented headings with no header block and no recap.
+ *
+ * The answer is the one the gutter already gives: **draw the marker**. The
+ * asterisks stay on screen, muted and small, and the words between them are set
+ * bold — which is what an editor shows and is the only treatment that keeps
+ * DEC-44's promise, because VerySwing receives the asterisks too.
+ *
+ * The vocabulary stays closed, and stays the composer's:
+ *
+ *  · `**…**` — never spanning a line, never empty, no nesting;
+ *  · `_…_` — the same, and only at a word boundary, so an `email_address` or a
+ *    `snake_case` identifier in a client's prose is left exactly alone.
+ *
+ * Anything else falls through as plain text and is drawn verbatim, which is the
+ * same rule the line classes follow and for the same reason.
+ */
+export type InlineRun =
+  /** Prose. */
+  | { kind: 'plain'; text: string }
+  /** The `**` or the `_` itself — on screen, muted, never removed. */
+  | { kind: 'marker'; text: string }
+  /** What `**…**` wrapped. */
+  | { kind: 'strong'; text: string }
+  /** What `_…_` wrapped. */
+  | { kind: 'em'; text: string }
+
+/*
+ * `\*\*(\S(?:[^*]*\S)?)\*\*` — bold may not be empty and may not open or close
+ * on a space, which is what stops « 2 * 3 * 4 » from becoming emphasis.
+ *
+ * `(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])` — italic only at a
+ * word boundary on both sides. Without the look-arounds `sillage_audio.rs` and
+ * `elodie_v@…` would each swallow half a line into an italic run.
+ */
+const INLINE = /\*\*(\S(?:[^*]*\S)?)\*\*|(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])/gu
+
+/**
+ * Split one line's prose into runs.
+ *
+ * Its property is the same as the parser's above and is proved the same way:
+ * the runs concatenate back to the exact string handed in. Nothing is dropped,
+ * which is the whole reason the markers are runs of their own rather than
+ * something the renderer throws away.
+ */
+export function parseInline(text: string): InlineRun[] {
+  const runs: InlineRun[] = []
+  let at = 0
+
+  for (const match of text.matchAll(INLINE)) {
+    const start = match.index
+    if (start > at) runs.push({ kind: 'plain', text: text.slice(at, start) })
+
+    const bold = match[1]
+    if (bold === undefined) {
+      runs.push({ kind: 'marker', text: '_' })
+      runs.push({ kind: 'em', text: match[2] as string })
+      runs.push({ kind: 'marker', text: '_' })
+    } else {
+      runs.push({ kind: 'marker', text: '**' })
+      runs.push({ kind: 'strong', text: bold })
+      runs.push({ kind: 'marker', text: '**' })
+    }
+    at = start + match[0].length
+  }
+
+  if (at < text.length) runs.push({ kind: 'plain', text: text.slice(at) })
+  return runs
+}

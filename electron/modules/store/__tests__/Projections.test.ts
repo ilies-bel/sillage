@@ -7,6 +7,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../index.ts'
 import type { PushIntent } from '../../../core/contracts/push.ts'
+import { meetingAnchor } from '../../../core/contracts/meeting.ts'
 import {
   sampleExtraction,
   sampleSegment,
@@ -238,5 +239,52 @@ test('a choice belongs to its own meeting', () => {
 
   assert.equal(store.projections.recipe('m1'), 'libre')
   assert.equal(store.projections.recipe('m2'), 'besoin-commercial')
+  store.close()
+})
+
+/**
+ * **The list is ordered by the day a meeting belongs on, newest first.**
+ *
+ * It used to be `ORDER BY updated_at DESC`, which is not a date — it is the last
+ * time the event log touched the row. A call validated late had been *edited*
+ * more recently than a call held two days after it, so it sorted above it, and
+ * *Historique*, whose only organising principle is recency, printed 10/09,
+ * 09/09, 07/09, **01/09, 03/09**, 27/08. That is the defect a rep notices in the
+ * first minute and never trusts again, and it took five screenshot reviews to
+ * find because the harness fixture was a hand-written array in its own order.
+ *
+ * The anchor is `meetingAnchor` and the SQL has to agree with it, so this test
+ * asserts against the function rather than restating the coalesce.
+ */
+test('meetings list by the day they belong on, not by when they were last touched', () => {
+  const store = new Store(':memory:', clock)
+
+  // Held first, and touched last — which is what the old ordering rewarded.
+  store.append('old', {
+    type: 'meeting.created',
+    title: 'Lefort',
+    context: null,
+    scheduledStart: 1_000_000_000_000,
+  })
+  store.append('recent', {
+    type: 'meeting.created',
+    title: 'Nordis',
+    context: null,
+    scheduledStart: 1_700_000_000_000,
+  })
+  // Any later event on the older meeting: renaming it is the cheapest one, and
+  // it is exactly what a rep does when they come back to a call to file it.
+  store.append('old', { type: 'meeting.renamed', title: 'Groupe Lefort', clientName: null })
+
+  const listed = store.projections.listMeetings()
+  assert.deepEqual(
+    listed.map((meeting) => meeting.id),
+    ['recent', 'old'],
+  )
+  // And the order is the anchor's, so the two cannot drift apart.
+  assert.deepEqual(
+    [...listed].sort((a, b) => meetingAnchor(b) - meetingAnchor(a)).map((m) => m.id),
+    listed.map((m) => m.id),
+  )
   store.close()
 })

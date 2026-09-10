@@ -169,16 +169,14 @@ const STATUS_STATES: Record<HistoryStatus, ReadonlySet<MeetingState> | null> = {
   abandonnees: new Set<MeetingState>(['aborted']),
 }
 
-/**
- * The day a meeting belongs on, as an instant (DEC-31).
- *
- * The same order the calendar grid places a row by: the day the rep put it on,
- * else the day it ran, else the day it was created. *Période* has to agree with
- * where the meeting is drawn, or a call filed under Thursday would drop out of
- * « 7 jours » on Wednesday.
+/*
+ * Re-exported, not redefined. It moved to `core/contracts/meeting.ts` when the
+ * renderer turned out to need it too — `src/*` may import `contracts` and
+ * nothing else, so three screens had each written their own version of this
+ * question and the three answers disagreed. Callers here keep the name.
  */
-export const meetingAnchor = (meeting: Meeting): number =>
-  meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt
+export { meetingAnchor } from '../contracts/meeting.ts'
+import { meetingAnchor } from '../contracts/meeting.ts'
 
 export interface FilterInput {
   meeting: Meeting

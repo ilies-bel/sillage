@@ -27,12 +27,24 @@
  * That is not an optimisation — shipping the corpus here so a filter could run
  * over it would put every client conversation in a devtools console.
  *
- * **Nothing here writes.** The one gesture in the product that reaches an
- * external system is *Valider*, on the review gate, once (DEC-4). A row that
- * failed to push shows why; retrying is the status control's job, because the
- * failure is a connector's and not this call's.
+ * **Nothing here writes, and a failed push is not an exception to that.**
+ * The one gesture in the product that reaches an external system is *Valider*,
+ * on the review gate, once (DEC-4). It is tempting to put a *Réessayer* on a
+ * row that says « 1 envoi en échec » — and it would be the wrong button.
+ * `Outbox` retries everything it *can* retry on its own: an adapter that knows
+ * nothing was created answers `{ ok: false, retryable: true }` and the row stays
+ * `pending` for the next drain. A row reaches `failed` in exactly the opposite
+ * case — the attempt threw, so nobody knows whether VerySwing created the record,
+ * and `POST /v1/crm/tasks` carries no idempotency key. A retry button there is a
+ * duplicate in the client's CRM one click away.
+ *
+ * What the rep was missing is not a button, it is the sentence. The failure used
+ * to be an orange count on a collapsed row with its cause two clicks below it,
+ * so the screen said *something went wrong* and made the rep go digging for
+ * *what*. `PushFailure` now puts the cause, and the one thing worth doing about
+ * it, on the row itself.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   HistoryFilter,
   HistoryIntent,
@@ -42,6 +54,8 @@ import type {
 import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
+import { scrollToTop } from '../lib/scroll.ts'
+import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
 import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
 import {
   Button,
@@ -54,7 +68,10 @@ import {
 } from '../ui/index.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
-import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
+import {
+  CompteRenduDocument,
+  CompteRenduMarkersNote,
+} from './session/CompteRenduDocument.tsx'
 import { Matches } from './search/Matches.tsx'
 import { SearchBar } from './search/SearchBar.tsx'
 import { useHistorySearch } from './search/useHistorySearch.ts'
@@ -157,9 +174,27 @@ interface RowProps {
 
 function Row({ row, expanded, onToggle }: RowProps) {
   const { meeting } = row
+  const self = useRef<HTMLLIElement>(null)
+
+  /*
+   * **Opening a row brings the row to the top, deliberately.**
+   *
+   * Left to the browser, clicking a row near the bottom of the list scrolled it
+   * the *minimum* distance needed to fit the record that had just appeared under
+   * it — which put the row's own heading half-off the top edge of the scroller
+   * and left « Mes notes » orphaned below a sliced title. The rep opened a call
+   * and the first thing they could no longer read was which call it was.
+   *
+   * `scroll-mt-2` on the `li` keeps a hair of space above the title so it lands
+   * as a whole row rather than flush against the cut, and `block: 'start'`
+   * honours it.
+   */
+  useEffect(() => {
+    if (expanded) scrollToTop(self.current)
+  }, [expanded])
 
   return (
-    <li className="bg-card">
+    <li ref={self} className="bg-card scroll-mt-2">
       <button
         type="button"
         onClick={onToggle}
@@ -168,7 +203,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
       >
         <UiRow as="div" density="roomy" align="center" className="bg-transparent">
           <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-            {formatDayShort(meeting.startedAt ?? meeting.scheduledStart ?? meeting.createdAt)}
+            {formatDayShort(meetingAnchor(meeting))}
           </span>
           <RowTitle {...meetingHeading(meeting)} />
           <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
@@ -184,9 +219,57 @@ function Row({ row, expanded, onToggle }: RowProps) {
       </button>
 
       <Matches matches={row.matches} className="px-5 pb-2.5" />
+      <PushFailure intents={row.intents} />
 
       {expanded ? <Record meetingId={meeting.id} intents={row.intents} /> : null}
     </li>
+  )
+}
+
+/** Which application a rep has to open to find out what really happened. */
+const WHERE_TO_LOOK: Record<HistoryIntent['kind'], string> = {
+  'crm.task': 'VerySwing',
+  'crm.opportunity': 'VerySwing',
+  'mail.draft': 'Outlook',
+}
+
+/**
+ * The cause of a failed push, on the collapsed row.
+ *
+ * « 1 envoi en échec » in orange, and nothing else, is a screen telling a rep
+ * that their compte-rendu may or may not be in the client's CRM and declining to
+ * say which — the row has the sentence, it was simply two clicks away in
+ * « Envois ». Réglages gives a broken *connector* a *Réessayer*; the row where
+ * the write actually failed gave nothing at all.
+ *
+ * There is still no button here and that is deliberate — see the note at the top
+ * of the file: `failed` is precisely the state where nobody knows whether the
+ * record was created, so the useful instruction is to look in VerySwing, not to
+ * press something. Saying so is the fix. A `pending` intent needs none of this:
+ * it is a queue that has not drained yet and it drains itself.
+ */
+function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
+  const failed = intents.filter((intent) => intent.state === 'failed')
+  if (failed.length === 0) return null
+
+  return (
+    <div className="px-5 pb-2.5">
+      {failed.map((intent) => (
+        <p key={intent.intentId} className="text-ui">
+          <span className="text-warn">{intent.label} — échec.</span>{' '}
+          {/* The adapter's own sentence. Never a rewrite of it: what a rep
+              reads here is what the CRM said, and a paraphrase would be one
+              more thing that can disagree with the log. */}
+          <span className="text-muted">{intent.lastError ?? 'Cause non enregistrée.'}</span>{' '}
+          {/*
+            Named by the system that was actually being written to. « À vérifier
+            dans VerySwing » under a failed *Outlook* draft sends the rep to the
+            wrong application, and the kind is right there on the intent.
+          */}
+          <span className="text-muted">{`À vérifier dans ${WHERE_TO_LOOK[intent.kind]} avant de refaire l’envoi.`}</span>
+        </p>
+      ))}
+    </div>
   )
 }
 
@@ -266,7 +349,11 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
             the machine had produced. That was never the point of DEC-5's
             provenance rule: the *ink* carries the authorship, not the face.
           */
-          <CompteRenduDocument text={record.compteRendu} className="pl-6" />
+          <>
+            <CompteRenduDocument text={record.compteRendu} className="pl-6" />
+            {/* Why the gutter is there, in the same words the other two screens use. */}
+            <CompteRenduMarkersNote className="text-muted mt-2 text-meta" />
+          </>
         ) : (
           <p className="text-muted text-ui">Cet appel n’a pas produit de compte-rendu.</p>
         )}

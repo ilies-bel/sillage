@@ -302,6 +302,39 @@ describe('push status per intent', () => {
     expect(screen.getByTitle(/tâche envoyée/)).toBeTruthy()
   })
 
+  /*
+   * Twice, and deliberately: on the collapsed row, where the orange count is,
+   * and again in « Envois » with the remote ids beside it.
+   *
+   * The row used to carry the count alone — « 1 envoi en échec » in orange, no
+   * cause, no action — which told a rep their compte-rendu may or may not be in
+   * the client's CRM and declined to say which. Réglages gives a broken
+   * *connector* a *Réessayer*; the row where the write actually failed gave
+   * nothing at all. The cause was two clicks below, and two clicks is exactly
+   * the distance at which a rep stops looking.
+   */
+  test('a failed push says why on the row itself, before anything is expanded', async () => {
+    answered()
+    render(<Historique onBack={() => {}} />)
+
+    // Nothing expanded — this is the list as the rep first sees it.
+    expect(await screen.findByText(/jeton Microsoft expiré/)).toBeTruthy()
+    expect(screen.getByText(/Brouillon de relance \(Outlook\) — échec/)).toBeTruthy()
+    /*
+      And the instruction names the system that was being written to. « À
+      vérifier dans VerySwing » under a failed *Outlook* draft sends the rep to
+      the wrong application, and the intent's own kind is what settles it.
+
+      No *Réessayer*: `failed` is the state the outbox uses when an attempt
+      threw, so nobody knows whether the record was created, and
+      `POST /v1/crm/tasks` has no idempotency key. Everything that *can* be
+      retried safely is retried by the outbox itself and never reaches this
+      state.
+    */
+    expect(screen.getByText(/À vérifier dans Outlook avant de refaire l’envoi/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull()
+  })
+
   test('an expanded row states why a push failed (DEC-26)', async () => {
     answered()
     bridge.when('history:record', () => record())
@@ -309,7 +342,8 @@ describe('push status per intent', () => {
     render(<Historique onBack={() => {}} />)
     await expandTheRow()
 
-    expect(await screen.findByText('jeton Microsoft expiré')).toBeTruthy()
+    // Twice now: once on the row, once in « Envois » beside the remote ids.
+    expect((await screen.findAllByText(/jeton Microsoft expiré/)).length).toBeGreaterThan(0)
     expect(screen.getByText('Tâche compte-rendu (VerySwing)')).toBeTruthy()
     // The remote id is the proof the task really landed.
     expect(screen.getByText(/TASK-77/)).toBeTruthy()
