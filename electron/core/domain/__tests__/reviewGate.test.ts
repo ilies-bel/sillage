@@ -19,7 +19,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { sampleExtraction } from '../../contracts/fixtures.ts'
 import type { AccountRef, ExtractionESN } from '../../contracts/extraction.ts'
-import { draftIntents, prefillEdits } from '../reviewGate.ts'
+import type { ReviewEdits, ReviewFieldKey } from '../../contracts/review.ts'
+import { draftIntents, prefillEdits, reviewFieldKeys } from '../reviewGate.ts'
 
 const MEETING = 'm-test'
 
@@ -129,4 +130,98 @@ test('the task summary never renders a dangling separator', () => {
 
   assert.equal(bare.view('crm.task').summary, 'Sans objet')
   assert.equal(gate(unresolved()).view('crm.task').summary, sampleExtraction.facts.taskName)
+})
+
+
+/*
+ * ── every correction reaches something ──────────────────────────────────────
+ *
+ * `draftIntents` composed five of the nine interpretive fields into the
+ * opportunity and silently dropped `objections`, `prochainesEtapes` and
+ * `dateDemarrage`. All three were live textareas at the gate; `objections` is
+ * the field the whole screen is architected around — it carries the `⚠ faible`,
+ * it turns the primary orange, it names itself on the button and again on the
+ * line beneath it. A rep corrected it, pressed *Valider*, and the correction
+ * went nowhere, with nothing on screen able to say so: the row was pixel-
+ * identical to the five that were read.
+ *
+ * So it is proved rather than remembered. Every row the gate draws is given a
+ * value nothing else could produce, and the drafted payloads have to contain
+ * it. A tenth field that is rendered and not composed fails here.
+ */
+
+/** Which `ReviewEdits` key each drawn row edits. The two deterministic rows
+ *  are covered by the tests above and are not free text the rep composes. */
+const EDITS_KEY: Partial<Record<ReviewFieldKey, keyof ReviewEdits>> = {
+  besoin: 'besoin',
+  profils: 'profils',
+  modeCollaboration: 'modeCollaboration',
+  tjm: 'tjm',
+  dateDemarrage: 'dateDemarrage',
+  dureeMission: 'dureeMission',
+  contexteTechnique: 'contexteTechnique',
+  objections: 'objections',
+  prochainesEtapes: 'prochainesEtapes',
+}
+
+test('every field the gate lets a rep correct reaches a payload', () => {
+  const rows = reviewFieldKeys()
+  const edited: ReviewEdits = { ...prefillEdits(sampleExtraction, DOCUMENT) }
+  const sentinels = new Map<string, string>()
+
+  for (const row of rows) {
+    const key = EDITS_KEY[row]
+    if (!key) continue
+    // A string nothing in the fixture, the composer or the courtesy shell could
+    // produce, so a hit is the rep's own correction and never a coincidence.
+    const sentinel = `SENTINELLE-${row.toUpperCase()}`
+    sentinels.set(row, sentinel)
+    Object.assign(edited, { [key]: sentinel })
+  }
+
+  const all = ['crm.task', 'crm.opportunity', 'mail.draft'].map((k) => `${MEETING}:${k}`)
+  const drafted = draftIntents({
+    meetingId: MEETING,
+    facts: sampleExtraction.facts,
+    edits: edited,
+    mailTo: ['client@acme.fr'],
+    checked: all,
+  })
+
+  const shipped = JSON.stringify(drafted.map((d) => d.intent))
+  const dropped = [...sentinels].filter(([, value]) => !shipped.includes(value)).map(([row]) => row)
+
+  assert.deepEqual(
+    dropped,
+    [],
+    `ces champs sont modifiables au gate et n’atteignent aucune charge utile : ${dropped.join(', ')}`,
+  )
+})
+
+test('the three that were dropped are in the opportunity, named', () => {
+  const edits = {
+    ...prefillEdits(sampleExtraction, DOCUMENT),
+    dateDemarrage: 'début septembre',
+    objections: '— le TJM 2025 est jugé trop haut',
+    prochainesEtapes: '— envoyer trois CV avant vendredi',
+  }
+  const drafted = draftIntents({
+    meetingId: MEETING,
+    facts: sampleExtraction.facts,
+    edits,
+    mailTo: ['client@acme.fr'],
+    checked: [`${MEETING}:crm.opportunity`],
+  })
+  const opportunity = drafted.find((d) => d.view.kind === 'crm.opportunity')?.intent
+  assert.ok(opportunity && opportunity.kind === 'crm.opportunity')
+
+  // Labelled, because a bench manager reading the pipeline row has not seen the
+  // gate and cannot tell an objection from a next step by its shape.
+  assert.match(opportunity.payload.description, /Démarrage : début septembre/)
+  assert.match(opportunity.payload.description, /Objections :\n— le TJM 2025 est jugé trop haut/)
+  assert.match(opportunity.payload.description, /Prochaines étapes :\n— envoyer trois CV/)
+
+  // And never turned into a date column: « début septembre » is what the client
+  // said, and DEC-7 forbids the app inventing a day from it.
+  assert.equal(opportunity.payload.startingDate, null)
 })

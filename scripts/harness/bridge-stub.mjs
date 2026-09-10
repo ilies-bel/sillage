@@ -1019,32 +1019,45 @@ export function installAppBridge(config) {
     */
     premierLancement: {
       /*
-        The sentence `CaptureSession.probe()` actually produces, and no other.
+        A first launch on a Mac where the screen-recording prompt has not been
+        answered — composed by `core/domain/capturePermission.ts`, word for word.
 
-        This fixture used to invent « macOS n’a pas encore autorisé
-        l’enregistrement de l’écran… » — a string that exists nowhere in
-        `electron/`, because the app does not check TCC: capture reports on
-        whether the native audio module loads. So the onboarding screenshot was a
-        picture of a permission flow the product does not have, and it took an
-        adversarial read of the source to notice, which is exactly what a lying
-        fixture costs.
+        This fixture has now been wrong in both directions, which is worth
+        recording. It first invented « macOS n’a pas encore autorisé
+        l’enregistrement de l’écran… », a string that existed nowhere in
+        `electron/` because the app did not look at TCC at all — so the
+        onboarding screenshot was a picture of a permission flow the product did
+        not have. It was corrected to the native-module failure, which was
+        honest and was also the *rare* case: a machine whose binary will not load
+        is a broken install, and the common first run is a machine that works and
+        has not been given permission yet. The app checks that now, so the
+        fixture is the sentence it produces.
 
-        `retryable: false` for the same reason: a module that will not load is
-        not fixed by pressing a button, and `Orchestrator.#truthful` would strip
-        the claim anyway.
+        `degraded` and `retryable: true`, both load-bearing: one channel is still
+        captured, so a meeting still happens (DEC-26), and *Autoriser* fires the
+        real prompt — `main.ts` registers the retry, so `Orchestrator.#truthful`
+        lets the claim stand.
       */
       capture: {
-        state: 'down',
-        reason: 'module audio natif indisponible — bibliothèque introuvable',
-        since: now - 20 * 1000,
-        retryable: false,
-      },
-      transcribe: {
         state: 'degraded',
-        reason: 'téléchargement du modèle Whisper — 196 Mo sur 466 Mo',
-        since: now - 40 * 1000,
-        retryable: false,
+        reason:
+          'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Autorisez-le pour que Sillage puisse l’enregistrer.',
+        since: now - 20 * 1000,
+        retryable: true,
       },
+      /*
+        `ok`, and it is the honest first launch.
+
+        This claimed « téléchargement du modèle Whisper — 196 Mo sur 466 Mo » in
+        `degraded`, which the app cannot emit and which is not even true of the
+        product: the weights ship inside the installer (`main.ts` says so where
+        it explains why the splash never waits on a download), and the only
+        transcribe failures are « aucun moteur de transcription disponible » and
+        the two language ones. It also painted a *progressing download* in
+        `--warn` beside a « Réglages › », so the screen said something was wrong
+        with the one subsystem that was working.
+      */
+      transcribe: { state: 'ok' },
       llm: {
         state: 'down',
         reason: 'aucun modèle de langage configuré',
@@ -1074,9 +1087,17 @@ export function installAppBridge(config) {
         since: now - 26 * MIN,
         retryable: true,
       },
+      /*
+        `mailHealth`'s own sentence for an expired session, and no other. This
+        said « jeton Microsoft expiré — reconnectez votre compte pour créer des
+        brouillons » in `degraded`, and the module emits neither: a token failure
+        is `down`, and the two strings it can produce are « session Microsoft
+        expirée » and « reconnexion à Microsoft nécessaire ». Every review of the
+        connectors pane was done against a row the product cannot draw.
+      */
       mail: {
-        state: 'degraded',
-        reason: 'jeton Microsoft expiré — reconnectez votre compte pour créer des brouillons',
+        state: 'down',
+        reason: 'session Microsoft expirée',
         since: now - 3 * HOUR,
         retryable: true,
       },

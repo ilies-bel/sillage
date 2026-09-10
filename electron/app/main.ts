@@ -6,7 +6,7 @@
  * sink and the orchestrator, registers IPC, and shows a window. Anything that
  * decides something belongs in `app/session/` or `core/domain/`.
  */
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
@@ -14,6 +14,12 @@ import { Store } from '../modules/store/index.ts'
 import { DB_FILENAME } from '../modules/store/schema.ts'
 import { Diagnostics } from '../modules/diagnostics/index.ts'
 import { CaptureSession } from '../modules/capture/index.ts'
+import {
+  actionFor,
+  capturePermissionHealth,
+  type AccessStatus,
+  type CaptureAccess,
+} from '../core/domain/capturePermission.ts'
 import { MeetingApps } from '../modules/capture/MeetingApps.ts'
 import { createIdentity, resolveIdentityConfig } from '../modules/identity/index.ts'
 import { GraphCalendar, calendarHealth } from '../modules/calendar/index.ts'
@@ -60,7 +66,7 @@ import type { ProviderTables } from './ipc/register.ts'
 import { buildBoostSet, termsLearnedFrom } from '../core/domain/lexicon/boost.ts'
 import { correct as correctWithLexicon } from '../core/domain/lexicon/correct.ts'
 import { VsaCrm, crmHealth, missingVsaSettings, vsaConfig } from '../modules/crm/index.ts'
-import { OutlookMail, mailHealth } from '../modules/mail/index.ts'
+import { MAIL_SCOPES, OutlookMail, mailHealth } from '../modules/mail/index.ts'
 import { Outbox } from './session/Outbox.ts'
 import { CompteRenduRecipe, ExtractionError } from '../modules/extract/index.ts'
 import { documentToText } from '../core/domain/documentText.ts'
@@ -411,6 +417,79 @@ const resolveProviders = (context: SettingsContext): ProviderTables => {
  * opened when a meeting starts, which is where a real count exists and where
  * `CaptureSession` already publishes `capture` health from opening them.
  */
+/**
+ * ── the capture permissions, and the only place they are asked for ──────────
+ *
+ * `core/domain/capturePermission.ts` decides what the statuses *mean*; this is
+ * the three Electron calls that read and change them. It lives here rather than
+ * in `modules/capture` because two of the three are about the app's own
+ * relationship with the OS — a prompt and a settings pane — and not about the
+ * audio boundary; the module opens devices and does not own consent.
+ *
+ * **Everything is capability-tested and nothing is platform-tested.** Windows
+ * is the primary platform (HR-2) and has none of these permissions to grant, so
+ * a `process.platform === 'darwin'` here would be the mac-first branch that
+ * decides behaviour on the machine it was typed on. `getMediaAccessStatus`
+ * throws where it does not exist, `askForMediaAccess` is simply absent, and the
+ * settings pane is a URL the OS either handles or does not — so all three
+ * degrade to « we did not measure it », which the domain treats as usable.
+ */
+const accessStatus = (kind: 'microphone' | 'screen'): AccessStatus => {
+  try {
+    const status = systemPreferences.getMediaAccessStatus?.(kind)
+    return typeof status === 'string' ? (status as AccessStatus) : 'unknown'
+  } catch {
+    // Linux, and any host that does not implement it. Not a refusal.
+    return 'unknown'
+  }
+}
+
+const captureAccess = (): CaptureAccess => ({
+  microphone: accessStatus('microphone'),
+  screen: accessStatus('screen'),
+})
+
+/**
+ * macOS's privacy panes, for a permission that has already been refused once.
+ *
+ * The OS will not prompt twice — it silently returns the old answer — so this
+ * is the only remedy left, and it is why `capturePermissionHealth` distinguishes
+ * *denied* from *not-determined* at all. `openExternal` on a scheme the host
+ * does not know rejects, which is the Windows case and is nothing to report:
+ * the domain never asks for this unless a permission was measured as refused,
+ * and on Windows nothing is.
+ */
+const PRIVACY_PANE: Record<'microphone' | 'screen', string> = {
+  microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+  screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+}
+
+/**
+ * What *Autoriser* does — and the reason the screen-recording half is a
+ * `desktopCapturer` call rather than an ask API.
+ *
+ * There is no `askForMediaAccess('screen')`: on macOS the TCC prompt for screen
+ * recording is fired by *attempting* a capture, and `getSources` is the cheapest
+ * attempt there is. It reads nothing we keep, opens no device on the audio path,
+ * and on Windows it is an ordinary enumeration that succeeds.
+ */
+const requestCaptureAccess = async (): Promise<void> => {
+  const before = captureAccess()
+
+  if (actionFor(before.microphone) === 'ask') {
+    await systemPreferences.askForMediaAccess?.('microphone')
+  } else if (actionFor(before.microphone) === 'open') {
+    await shell.openExternal(PRIVACY_PANE.microphone).catch(() => undefined)
+  }
+
+  if (actionFor(before.screen) === 'ask') {
+    // The prompt is the point; the sources are thrown away.
+    await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false }).catch(() => undefined)
+  } else if (actionFor(before.screen) === 'open') {
+    await shell.openExternal(PRIVACY_PANE.screen).catch(() => undefined)
+  }
+}
+
 const audioBootStep = (health: ConnectorHealth): BootStep =>
   health.state === 'ok'
     ? { state: 'ready', value: 'moteur de capture chargé' }
@@ -598,7 +677,23 @@ const boot = async (): Promise<void> => {
   // The orchestrator seeds that connector `ok` at construction, so on a machine
   // whose native binary will not load the header status control (DEC-32) reads
   // « Tout fonctionne » until the rep starts a meeting and finds out.
-  const audio = CaptureSession.probe()
+  /*
+   * The native module, **and then what the operating system will let it hear.**
+   *
+   * The probe answered only « does the binary load », which is a real question
+   * and not the one that costs a rep a meeting. On macOS the screen-recording
+   * grant is the prompt people refuse, and refusing it loses the far end of
+   * every call while the recording looks perfectly healthy — the meter moves,
+   * the transcript fills, and the compte-rendu comes back describing a
+   * monologue. `core/domain/capturePermission.ts` turns the two statuses into a
+   * sentence that names which side goes missing.
+   */
+  const audio = ((): ConnectorHealth => {
+    const loaded = CaptureSession.probe()
+    // A module that will not load is the worse fact and keeps the row.
+    if (loaded.state !== 'ok') return loaded
+    return capturePermissionHealth(captureAccess(), Date.now()) ?? loaded
+  })()
   publishBoot({ devices: audioBootStep(audio) })
 
   // ── The settings surface (DEC-34, DEC-35) ────────────────────────────────
@@ -970,6 +1065,33 @@ const boot = async (): Promise<void> => {
    */
   orchestrator.setHealth('capture', audio)
 
+  /*
+   * **`Autoriser` had nothing behind it, on the one connector that cannot be
+   * repaired after the call.**
+   *
+   * Onboarding step 2 draws its rows from `REQUIRED_CONNECTORS` — capture,
+   * transcription, analysis — and offers *Autoriser* on a row whose health is
+   * `retryable`. `#truthful` now refuses to publish that claim for a connector
+   * nobody registered a retry for, which was the right fix and closed the last
+   * door: no retry was registered for `capture`, so all three rows fell through
+   * to *Réglages ›*, and Réglages' *Requis* card draws its control on exactly
+   * the same condition. Install the app, refuse the macOS prompt, and there was
+   * no screen in the product that could ask again — while the OS quietly stopped
+   * prompting, because it had already been answered.
+   *
+   * So: ask, then re-measure. The re-measure is the whole point — the OS may
+   * have said no, may need a relaunch before it says yes (screen recording
+   * does, on macOS), or may be a managed device where nothing will ever change.
+   * All three come back as a sentence rather than as a button that appeared to
+   * do nothing.
+   */
+  orchestrator.registerRetry('capture', async () => {
+    const loaded = CaptureSession.probe()
+    if (loaded.state !== 'ok') return loaded
+    await requestCaptureAccess()
+    return capturePermissionHealth(captureAccess(), Date.now()) ?? { state: 'ok' }
+  })
+
   orchestrator.setHealth(
     'llm',
     llm() !== null
@@ -1063,7 +1185,23 @@ const boot = async (): Promise<void> => {
   if (identity) {
     orchestrator.registerRetry('mail', async () => {
       await identity.signIn()
-      return { state: 'ok' }
+      /*
+       * **Signing in is not the same as being able to draft, and this used to
+       * report `ok` for both.**
+       *
+       * `Mail.ReadWrite` is consented separately from the sign-in, and the
+       * module enumerates the 403 that follows when it is not. A retry that
+       * returned `{ state: 'ok' }` on the strength of a completed sign-in
+       * painted Outlook green and failed at *Valider* — the one moment the rep
+       * is told nothing can go wrong any more. So the thing a draft actually
+       * needs is acquired, and its failure is the connector's own sentence.
+       */
+      try {
+        await identity.token(MAIL_SCOPES)
+        return { state: 'ok' }
+      } catch (error) {
+        return mailHealth(error, Date.now())
+      }
     })
   }
 

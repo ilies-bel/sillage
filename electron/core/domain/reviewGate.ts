@@ -570,12 +570,37 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
   const mailAccount = input.mailAccount ?? true
   const mailPossible = mailAccount && mailTo.length > 0
 
+  /*
+   * **Every field the gate lets a rep correct has to reach something.**
+   *
+   * This composed five of the nine and silently dropped the other three.
+   * `objections`, `prochainesEtapes` and `dateDemarrage` were rendered as live
+   * textareas, cited, verified and — for objections — the field the whole
+   * screen is built around: it carries the `⚠ faible`, it turns the primary
+   * orange, it names itself in « Valider malgré 1 champ non vérifié », and the
+   * line under the button names it again. A rep corrected it, pressed *Valider*,
+   * and the correction went nowhere. Nothing on screen could have told them:
+   * the row looked exactly like the five that were read.
+   *
+   * They go into the opportunity's description, which is the sales narrative a
+   * bench manager reads — objections and next steps are the two most actionable
+   * things said on the call, and « démarrage souhaité » is the date the staffing
+   * decision hangs on. Not into `startingDate`: that column is a date and this
+   * field is what the client actually said (« début septembre », « dès que le
+   * budget passe »), which DEC-7 forbids the app from turning into one.
+   *
+   * `reviewGate.test.ts` asserts that every key of `ReviewEdits` a row exposes
+   * appears in some payload, so a tenth field cannot ship unread.
+   */
   const description = [
     edits.besoin,
     edits.profils,
     edits.modeCollaboration === '' ? '' : `Mode : ${edits.modeCollaboration}`,
     edits.tjm === '' ? '' : `TJM : ${edits.tjm}`,
     edits.dureeMission === '' ? '' : `Durée : ${edits.dureeMission}`,
+    edits.dateDemarrage === '' ? '' : `Démarrage : ${edits.dateDemarrage}`,
+    edits.objections === '' ? '' : `Objections :\n${edits.objections}`,
+    edits.prochainesEtapes === '' ? '' : `Prochaines étapes :\n${edits.prochainesEtapes}`,
   ]
     .filter((part) => part.trim() !== '')
     .join('\n')

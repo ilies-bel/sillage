@@ -53,7 +53,12 @@ const ALLOWED = new Map([
   [
     'electron/app/main.ts',
     'window-all-closed quits off macOS, where closing the last window ends the app; ' +
-      'and the boot diagnostic records which platform produced a report.',
+      'the boot diagnostic records which platform produced a report; ' +
+      'and the two macOS privacy panes are the only remedy for a capture permission ' +
+      'the rep has already refused — the OS will not prompt a second time. Those two ' +
+      'URLs are opened by capability, never by a platform test: `openExternal` on a ' +
+      'scheme the host does not know simply rejects, and Windows has no such ' +
+      'permission to refuse, so the branch never runs there.',
   ],
   [
     'electron/modules/capture/MeetingApps.ts',

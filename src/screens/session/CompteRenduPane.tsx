@@ -98,7 +98,17 @@ export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps
         offering a control that goes nowhere (DEC-26). The gate is where a
         citation is followable, because that is where the reader lives.
       */}
-      <AskPanel meetingId={meetingId} className="border-subtle mt-3 shrink-0 border-t pt-3" />
+      {/*
+        `pinned`, and `max-h-[45%]` is the share it may take. Unbounded, one
+        answer pushed the document down to its heading and one line of
+        « Résumé » — asking a question cost the rep the thing they were asking
+        about. The document keeps the majority of the column in every case.
+      */}
+      <AskPanel
+        meetingId={meetingId}
+        pinned
+        className="border-subtle mt-3 max-h-[45%] shrink-0 border-t pt-3"
+      />
     </div>
   )
 }

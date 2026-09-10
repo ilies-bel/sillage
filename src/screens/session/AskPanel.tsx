@@ -55,6 +55,21 @@ export interface AskPanelProps {
    * citation is worth having either way.
    */
   onLocate?: (quote: string, label: string) => void
+  /**
+   * **The panel is pinned in a fixed column, so its answers scroll inside it.**
+   *
+   * On the session screen this sits under the compte-rendu in a flex column
+   * that does not grow: an unbounded answer list pushed the document down to
+   * its heading and one line of « Résumé », so asking a question cost the rep
+   * the thing they were asking about. Bounded, the panel takes a share of the
+   * column and the answers scroll within it.
+   *
+   * At the gate the opposite is right and this stays off: the whole column
+   * already scrolls, so the answers simply extend it — a scroller inside a
+   * scroller would give a rep two wheels over one region and hide the end of an
+   * answer behind an inner edge they cannot see.
+   */
+  pinned?: boolean
   className?: string
 }
 
@@ -72,7 +87,7 @@ const SUGGESTIONS = [
   'Qui décide, et quand ?',
 ]
 
-export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
+export function AskPanel({ meetingId, onLocate, pinned = false, className }: AskPanelProps) {
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
   /** Newest first. The panel's only memory, and it never leaves the screen. */
@@ -110,9 +125,9 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
   const remaining = SUGGESTIONS.filter((suggestion) => !asked.includes(suggestion))
 
   return (
-    <section className={className}>
+    <section className={pinned ? `flex min-h-0 flex-col ${className ?? ''}` : className}>
       <form
-        className="flex items-center gap-inline"
+        className="flex shrink-0 items-center gap-inline"
         onSubmit={(event) => {
           event.preventDefault()
           void ask(question)
@@ -152,7 +167,7 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
         by what has been asked keeps the offer honest without ever repeating one.
       */}
       {failure === null && !busy && remaining.length > 0 ? (
-        <ul className="mt-2 flex flex-wrap gap-1.5">
+        <ul className="mt-2 flex shrink-0 flex-wrap gap-1.5">
           {remaining.map((suggestion) => (
             <li key={suggestion}>
               <button
@@ -176,11 +191,13 @@ export function AskPanel({ meetingId, onLocate, className }: AskPanelProps) {
         </p>
       ) : null}
 
-      {answers.map((answer, at) => (
-        // The question is the identity here — two answers to the same question
-        // would be the same row twice, and the index keeps them apart.
-        <Answer key={`${answer.question}-${at}`} answer={answer} onLocate={onLocate} />
-      ))}
+      <div className={pinned ? 'min-h-0 flex-1 overflow-y-auto' : undefined}>
+        {answers.map((answer, at) => (
+          // The question is the identity here — two answers to the same question
+          // would be the same row twice, and the index keeps them apart.
+          <Answer key={`${answer.question}-${at}`} answer={answer} onLocate={onLocate} />
+        ))}
+      </div>
     </section>
   )
 }
