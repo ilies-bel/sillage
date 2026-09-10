@@ -11,7 +11,7 @@
  *   DEC-20  an unchecked intent is absent from what *Valider* sends
  *   DEC-4   one button, one gesture, and the rep's edit is what leaves
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { ReviewPanel, ReviewSnapshot } from '../../../electron/core/contracts/review.ts'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
@@ -239,7 +239,21 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
 
     await screen.findByText('Prêt à envoyer')
-    expect(screen.getAllByText('⚠ faible')).toHaveLength(1)
+    /*
+      On the row it flags, exactly once — the marker is a measurement about that
+      field and scattering it would make it decoration (DEC-21).
+
+      Scoped to the rail rather than counted across the screen, because the
+      document column also *names* the glyph: the compte-rendu is a second
+      document that goes out on the same press and carries its own `⚠ faible`,
+      so the gate says once, where the confusion happens, that a doubt lifted in
+      the rail has not been lifted in that text.
+    */
+    const row = document.getElementById('row-account')
+    expect(row).toBeTruthy()
+    // `selector` because testing-library matches an ancestor whose whole text is
+    // the string as well as the leaf that holds it, and the row wraps the marker.
+    expect(within(row as HTMLElement).getAllByText('⚠ faible', { selector: 'span' })).toHaveLength(1)
     // DEC-18: something matched but not confidently, so the candidate is there
     // to correct rather than to re-type.
     expect((screen.getByLabelText('Client') as HTMLInputElement).value).toBe('Acme Holding')
@@ -267,7 +281,11 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     const account = screen.getByLabelText('Client') as HTMLInputElement
     expect(account.value).toBe('')
     expect(account.placeholder).toBe('Client non résolu')
-    expect(screen.getAllByText('⚠ faible')).toHaveLength(1)
+    const unresolved = document.getElementById('row-account')
+    expect(unresolved).toBeTruthy()
+    expect(
+      within(unresolved as HTMLElement).getAllByText('⚠ faible', { selector: 'span' }),
+    ).toHaveLength(1)
 
     // And leaving it that way is a valid confirmation — nothing on this screen
     // blocks on it, and the header does not print a dangling « · ». The button
