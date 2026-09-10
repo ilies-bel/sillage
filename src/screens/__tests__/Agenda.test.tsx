@@ -547,9 +547,19 @@ describe('armed is an offer, never a recording (HR-7)', () => {
     render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
     await screen.findByText('Nordis — suivi')
 
-    // An unarmed row is information, not a control — a dead button on it is
-    // exactly what DEC-26 forbids.
-    expect(screen.getAllByRole('button', { name: 'Ouvrir' })).toHaveLength(1)
+    /*
+      An unarmed row is information, not a control — a dead button on it is
+      exactly what DEC-26 forbids.
+
+      And the armed one says *Enregistrer*, not *Ouvrir*: those are two
+      different acts, and the row for the call that is starting now is the one
+      control on this screen that should carry the weight. It used to wear the
+      same outline as every other row while the filled primary in the header
+      started a *different*, unscheduled meeting.
+    */
+    expect(screen.queryByRole('button', { name: 'Ouvrir' })).toBeNull()
+    const record = screen.getByRole('button', { name: 'Enregistrer' })
+    expect(record.className).toContain('bg-brand-700')
   })
 
   test('the armed row opens the meeting the agenda already created', async () => {
@@ -564,7 +574,7 @@ describe('armed is an offer, never a recording (HR-7)', () => {
       }))
 
     render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer' }))
 
     expect(opened).toEqual(['evt-abc'])
   })

@@ -160,9 +160,14 @@ function Marker({ children }: { children: string }) {
  * receives (DEC-44), which is a promise no markdown renderer can keep and the
  * only reason the markers survive at all.
  *
- * A component rather than a constant so the three footers that carry it — the
+ * A component rather than a constant so the three surfaces that carry it — the
  * session pane, the gate, the history record — cannot drift into three
  * different explanations of the same gutter.
+ *
+ * It names four marks and not two. It said « ## et - », which are the two the
+ * *recap* uses — while the first screenful of any compte-rendu is dominated by
+ * `#` on the title and `**` on the four deterministic header lines. A legend
+ * that omits the marks the eye actually lands on explains the wrong half.
  */
 export function CompteRenduMarkersNote({ className }: { className?: string }) {
   return (
@@ -172,8 +177,9 @@ export function CompteRenduMarkersNote({ className }: { className?: string }) {
     // ran to a hundred and eleven characters — the exact failure « one reading
     // measure » exists to prevent, reintroduced one font size down.
     <p className={`measure ${className ?? ''}`}>
-      <span className="font-mono">##</span> et <span className="font-mono">-</span> font partie
-      du texte : VerySwing reçoit exactement ce qui est affiché.
+      Les marques <span className="font-mono">#</span> <span className="font-mono">##</span>{' '}
+      <span className="font-mono">-</span> <span className="font-mono">**</span> font partie du
+      texte : VerySwing reçoit exactement ce qui est affiché.
     </p>
   )
 }

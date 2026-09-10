@@ -649,9 +649,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 gutter (DEC-44). `pl-6` is the gutter they hang in.
               */
               <>
+                {/*
+                  **Above the document, not after it.**
+
+                  It was under the compte-rendu — which on the real document is
+                  about a thousand pixels below the fold, inside a scroller, after
+                  everything it exists to explain. A legend a reader reaches only
+                  once they have stopped needing it is decoration.
+
+                  The gutter is the first thing the eye lands on in this column,
+                  so the sentence that accounts for it goes where the eye already
+                  is: one muted line between the toolbar and the first heading.
+                */}
+                <CompteRenduMarkersNote className="text-muted border-subtle mb-3 border-b pb-2 text-meta" />
                 <CompteRenduDocument text={edits.compteRendu} className="pl-6" />
-                {/* Why the gutter is there, once, under the document it explains. */}
-                <CompteRenduMarkersNote className="text-muted border-subtle mt-3 border-t pt-2 text-meta" />
               </>
             ) : (
               /*

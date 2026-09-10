@@ -155,7 +155,27 @@ function EntryRow({ entry, showDay, onOpen }: EntryRowProps) {
         <span className="text-muted shrink-0 text-ui">{STATE_LABEL[entry.state]}</span>
       ) : null}
 
-      {meetingId ? <Button onClick={() => onOpen(meetingId)}>Ouvrir</Button> : null}
+      {/*
+        **The armed row gets the weight, and its own verb.**
+
+        The call happening right now wore the same outline *Ouvrir* as the four
+        rows around it, while the filled blue primary in the header —
+        « Démarrer une réunion » — starts a *different*, unscheduled meeting.
+        So the strongest control on the home screen pointed away from the one
+        thing the rep was there to do, and the one thing they were there to do
+        looked like a row of history.
+
+        HR-7's whole case is that row. `primary` on it, and *Enregistrer* rather
+        than *Ouvrir*, because those are two different acts: one opens a meeting
+        that already exists, the other starts capturing a call that is beginning
+        now. There is at most one armed meeting at a time (`core/domain/arming.ts`
+        picks the earliest), so this stays one primary per view.
+      */}
+      {meetingId ? (
+        <Button variant={entry.armed ? 'primary' : 'bordered'} onClick={() => onOpen(meetingId)}>
+          {entry.armed ? 'Enregistrer' : 'Ouvrir'}
+        </Button>
+      ) : null}
     </Row>
   )
 }
