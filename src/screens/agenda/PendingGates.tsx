@@ -96,7 +96,12 @@ export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGate
           twenty-nine, and the one number that would make them open *Historique*
           was the one number the screen did not print.
         */}
-        <span className="text-warn min-w-0 flex-1 text-ui tabular-nums">
+        <span
+          /* A bare numeral beside a heading reads as « En attente de validation
+             trois » and could be anything. The label says what it counts. */
+          aria-label={`${total} réunion${total > 1 ? 's' : ''} en attente de validation`}
+          className="text-warn min-w-0 flex-1 text-ui tabular-nums"
+        >
           {total >= PENDING_LIMIT ? `${PENDING_LIMIT}+` : total}
         </span>
         {total > shown.length ? (
