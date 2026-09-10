@@ -341,6 +341,14 @@ machine) or in `core/domain/` — never in an IPC handler.
   product that navigates without the rep having pressed something inside it. It never starts a
   recording, and a notification that will not show is not a meeting that will not record.
 
+- **Nothing Electron composes reaches a rep's eyes.** `ipcRenderer.invoke` rejects with
+  `Error invoking remote method '<channel>': Error: <ours>`, and the renderer prints
+  `error.message` into an alert — so every DEC-26 refusal wore an English stack-shaped prefix
+  naming an internal channel. `preload.ts` strips it, anchored on the channel and taking one
+  leading `<Name>: ` so a sentence containing « Error » or a colon survives. No test in the
+  repo could see it: the renderer's tests inject a fake bridge and the harness stubs
+  `window.app`. That is what `scripts/e2e.mjs` is for, and it found this on its third day.
+
 - **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
