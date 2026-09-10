@@ -261,6 +261,33 @@ try {
     await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
   })
 
+  await step('a clean first run logs no unexplained error', async () => {
+    /*
+     * The app's own diagnostic log, read back over the real channel.
+     *
+     * A first run on a machine with no Microsoft account, no VerySwing and no
+     * language model *should* produce warnings — those are the optional
+     * subsystems saying they are not configured (DEC-26), and a run that
+     * produced none would mean the probes never ran. What it must not produce
+     * is an `error`: that severity is reserved for something that went wrong
+     * inside the app rather than outside it, and one appearing on the path a
+     * rep takes in their first ten minutes is a defect nobody would otherwise
+     * see — the log is behind two clicks in Réglages and nobody reads it.
+     */
+    const events = await page.evaluate(() => window.app.invoke('diagnostics:recent', { limit: 200 }))
+    const errors = events.filter((event) => event.severity === 'error')
+    if (errors.length > 0) {
+      throw new Error(
+        errors
+          .slice(0, 3)
+          .map((event) => `${event.code}: ${event.message}`)
+          .join(' · '),
+      )
+    }
+    // And it did run: a log with nothing in it is a log that was never written.
+    if (events.length === 0) throw new Error('journal vide — les sondes n’ont rien écrit')
+  })
+
   await step('nothing threw in the renderer', async () => {
     const real = noise.filter(
       (line) =>

@@ -21,6 +21,7 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { MeetingContext, MeetingId, MeetingState } from '../../core/contracts/meeting.ts'
 import type { RecipeId } from '../../core/contracts/recipes.ts'
+import { ExtractionError } from '../../modules/extract/errors.ts'
 import type { TranscriptSegment } from '../../core/contracts/transcript.ts'
 import type {
   EnhancementStatus,
@@ -388,7 +389,29 @@ export class Enhancement {
       this.#deps.dispatch(meetingId, 'extractionFailed', reason)
       this.#lastFailure.set(meetingId, reason)
       this.#report(error)
-      this.#record('error', 'enhancement.failed', reason, meetingId, { attempt })
+      /*
+       * **A meeting nobody spoke on is an outcome, not a fault.**
+       *
+       * `empty-transcript` is the recipe saying there was nothing to summarise —
+       * a call that was cancelled after thirty seconds, a session started by
+       * mistake, the twenty-second trial of a rep who said nothing. The app did
+       * everything right, and logging it at `error` put a red line in the
+       * diagnostics bundle beside « le module audio natif ne se charge pas ». A
+       * bundle where the two look the same is the evidence nobody can read on a
+       * support call, which is DEC-27's cost with none of its benefit.
+       *
+       * Every other kind stays `error`: a model that would not answer, a reply
+       * that would not parse, a leak that was refused — those are the app or its
+       * provider failing, and they are what the severity is for.
+       */
+      const expected = error instanceof ExtractionError && error.kind === 'empty-transcript'
+      this.#record(
+        expected ? 'warn' : 'error',
+        'enhancement.failed',
+        reason,
+        meetingId,
+        { attempt },
+      )
     } finally {
       this.#running.delete(meetingId)
       this.#startedAt.delete(meetingId)

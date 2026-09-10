@@ -27,6 +27,7 @@ import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
 import type { BootState } from '../../core/contracts/boot.ts'
+import { isRefusal, refuse } from '../../core/contracts/refusal.ts'
 import type { EssaiResult } from '../../core/contracts/essai.ts'
 import type { EnhancementStatus } from '../../core/contracts/extraction.ts'
 import {
@@ -433,7 +434,7 @@ export const handlers: Handlers = {
       scheduledStart: scheduledStart ?? null,
     })
     const meeting = store.projections.getMeeting(id)
-    if (!meeting) throw new Error('la réunion n’a pas pu être créée')
+    if (!meeting) throw refuse('la réunion n’a pas pu être créée')
     return meeting
   },
 
@@ -446,16 +447,16 @@ export const handlers: Handlers = {
    */
   'meeting:rename': ({ meetingId, title, clientName }, { store, orchestrator }) => {
     const session = orchestrator.session(meetingId)
-    if (!session) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!session) throw refuse(`réunion inconnue: ${meetingId}`)
     session.emit({ type: 'meeting.renamed', title, clientName: clientName ?? null })
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
     return meeting
   },
 
   'meeting:get': ({ meetingId }, { store }) => {
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
     return {
       meeting,
       segments: store.projections.segments(meetingId),
@@ -487,7 +488,7 @@ export const handlers: Handlers = {
    */
   'meeting:recipe': ({ meetingId, recipe }, { store, orchestrator, runEnhancement }) => {
     const session = orchestrator.session(meetingId)
-    if (!session) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!session) throw refuse(`réunion inconnue: ${meetingId}`)
 
     session.emit({ type: 'meeting.recipe.chosen', recipe })
 
@@ -537,7 +538,7 @@ export const handlers: Handlers = {
    */
   'capture:essai': async (_request, { essai }) => {
     if (!essai) {
-      throw new Error('L’essai audio n’est pas disponible dans cette configuration.')
+      throw refuse('L’essai audio n’est pas disponible dans cette configuration.')
     }
     return essai()
   },
@@ -553,7 +554,7 @@ export const handlers: Handlers = {
     // Unreachable from the product — Réglages disables the control and states
     // `AuthState.reason` beside it. Kept because the channel is public and a
     // rejection is better than a sign-in that silently does nothing.
-    if (!identity) throw new Error(NO_REGISTRATION)
+    if (!identity) throw refuse(NO_REGISTRATION)
     await identity.signIn()
     // A calendar that only appears on the next five-minute tick reads as a
     // sign-in that did not work.
@@ -587,7 +588,7 @@ export const handlers: Handlers = {
    */
   'review:get': ({ meetingId }, { store, orchestrator, identity }) => {
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
 
     const state = orchestrator.stateOf(meetingId)
     const availability = reviewAvailability(state)
@@ -700,7 +701,7 @@ export const handlers: Handlers = {
 
   'review:confirm': ({ meetingId, edits, intentIds }, { store, orchestrator, clock, drain }) => {
     const session = orchestrator.session(meetingId)
-    if (!session) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!session) throw refuse(`réunion inconnue: ${meetingId}`)
 
     const stored = store.projections.extraction(meetingId)
     if (!stored) {
@@ -805,7 +806,7 @@ export const handlers: Handlers = {
    */
   'review:transcript': ({ meetingId }, { store }) => {
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
     return { segments: store.projections.segments(meetingId) }
   },
 
@@ -858,21 +859,21 @@ export const handlers: Handlers = {
 
   'meeting:ask': async ({ meetingId, question }, { store, orchestrator, llm }) => {
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
 
     const state = orchestrator.stateOf(meetingId) ?? meeting.state
     if (state === 'recording' || state === 'armed') {
-      throw new Error('La réunion est en cours — les questions attendent la fin de l’appel.')
+      throw refuse('La réunion est en cours — les questions attendent la fin de l’appel.')
     }
 
     const segments = store.projections.segments(meetingId).filter((segment) => segment.isFinal)
     if (segments.length === 0) {
-      throw new Error('Aucune transcription n’a été enregistrée pour cet appel.')
+      throw refuse('Aucune transcription n’a été enregistrée pour cet appel.')
     }
 
     const resolved = llm?.() ?? null
     if (!resolved) {
-      throw new Error(
+      throw refuse(
         'Aucun modèle de langage n’est configuré — ajoutez-en un dans Réglages, « Modèle de langage ».',
       )
     }
@@ -883,7 +884,7 @@ export const handlers: Handlers = {
 
   'history:record': ({ meetingId }, { store }) => {
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) throw new Error(`réunion inconnue: ${meetingId}`)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
 
     const stored = store.projections.extraction(meetingId)
 
@@ -923,21 +924,21 @@ export const handlers: Handlers = {
       // Reached when a field held only whitespace, which the schema's `min(1)`
       // cannot catch. Refused rather than stored, because a stored blank is a
       // provider that reports itself configured and then 401s on the call.
-      throw new Error('la clé est vide')
+      throw refuse('la clé est vide')
     }
-    if (!deps.credentials) throw new Error('le coffre-fort n’est pas disponible sur cette machine')
+    if (!deps.credentials) throw refuse('le coffre-fort n’est pas disponible sur cette machine')
     await deps.credentials.set(providerId, trimmed)
     return saved(deps)
   },
 
   'settings:clearCredential': async ({ providerId }, deps) => {
-    if (!deps.credentials) throw new Error('le coffre-fort n’est pas disponible sur cette machine')
+    if (!deps.credentials) throw refuse('le coffre-fort n’est pas disponible sur cette machine')
     await deps.credentials.clear(providerId)
     return saved(deps)
   },
 
   'settings:selectProvider': async ({ capability, providerId }, deps) => {
-    if (!deps.preferences) throw new Error('les préférences ne sont pas disponibles')
+    if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
     await deps.preferences.selectProvider(capability, providerId)
     return saved(deps)
   },
@@ -951,14 +952,14 @@ export const handlers: Handlers = {
    * which is the whole failure DEC-34 exists to end.
    */
   'settings:setProviderField': async ({ providerId, key, value }, deps) => {
-    if (!deps.preferences) throw new Error('les préférences ne sont pas disponibles')
+    if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
     const tables = tablesOf(deps)
     const row = [...tables.stt.rows, ...tables.llm.rows].find(
       (candidate) => candidate.id === providerId,
     )
-    if (!row) throw new Error('fournisseur inconnu')
+    if (!row) throw refuse('fournisseur inconnu')
     if (!row.fields.some((field) => field.key === key)) {
-      throw new Error(`${row.label} n’a pas de réglage « ${key} »`)
+      throw refuse(`${row.label} n’a pas de réglage « ${key} »`)
     }
     await deps.preferences.setField(providerId, key, value)
     return saved(deps)
@@ -973,22 +974,22 @@ export const handlers: Handlers = {
    * preference is written rather than after the recording has started.
    */
   'settings:selectModel': async ({ modelId }, deps) => {
-    if (!deps.preferences) throw new Error('les préférences ne sont pas disponibles')
+    if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
     const row = tablesOf(deps).models.rows.find((candidate) => candidate.id === modelId)
-    if (!row) throw new Error('modèle inconnu')
-    if (row.status !== 'ready') throw new Error(`${row.label} n’est pas encore installé`)
+    if (!row) throw refuse('modèle inconnu')
+    if (row.status !== 'ready') throw refuse(`${row.label} n’est pas encore installé`)
     await deps.preferences.selectModel(modelId)
     return saved(deps)
   },
 
   'models:download': async ({ modelId }, deps) => {
-    if (!deps.models) throw new Error('le gestionnaire de modèles n’est pas disponible')
+    if (!deps.models) throw refuse('le gestionnaire de modèles n’est pas disponible')
     await deps.models.start(modelId)
     return deps.models.section()
   },
 
   'models:cancel': async ({ modelId }, deps) => {
-    if (!deps.models) throw new Error('le gestionnaire de modèles n’est pas disponible')
+    if (!deps.models) throw refuse('le gestionnaire de modèles n’est pas disponible')
     await deps.models.cancel(modelId)
     return deps.models.section()
   },
@@ -1125,11 +1126,28 @@ export const registerIpc = (ipcMain: IpcMainLike, deps: IpcDeps): void => {
         const response = await handler(request as InvokeRequest<InvokeChannel>, deps)
         return spec.response.parse(response)
       } catch (err) {
-        // Every rejection is a logged event, not just a rejected promise —
-        // an IPC failure the renderer swallows is invisible otherwise (DEC-27).
+        /*
+         * Every rejection is a logged event, not just a rejected promise — an
+         * IPC failure the renderer swallows is invisible otherwise (DEC-27).
+         *
+         * **But a refusal is not a failure.** DEC-26 fills this app with
+         * sentences composed on purpose for a rep to read — « la réunion est en
+         * cours », « aucune transcription n'a été enregistrée » — and each of
+         * them crosses this boundary as a thrown `Error`, because that is how a
+         * promise says no. Logged at `error` they wrote red lines into the
+         * diagnostics bundle beside the ones that mean the native module would
+         * not load, and a bundle where the product working and the product
+         * broken look identical is the evidence nobody can read on a support
+         * call. `scripts/e2e.mjs` found two on a clean first launch, both of
+         * them the app behaving exactly as designed.
+         *
+         * Still recorded, at `info`: « the rep asked and was told no » is worth
+         * having in the log, and it is the *severity* that carries the meaning.
+         */
+        const stated = isRefusal(err)
         deps.recorder.record({
-          severity: 'error',
-          code: 'ipc.handler.failed',
+          severity: stated ? 'info' : 'error',
+          code: stated ? 'ipc.handler.refused' : 'ipc.handler.failed',
           module: 'ipc',
           message: err instanceof Error ? err.message : String(err),
           detail: { channel },

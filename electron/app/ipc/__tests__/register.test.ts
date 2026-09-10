@@ -143,12 +143,38 @@ test('a request is parsed at the boundary, defaults and all', async () => {
   cleanup()
 })
 
-test('a handler failure is recorded before it is rethrown', async () => {
+/*
+ * ── a refusal is not a failure ──────────────────────────────────────────────
+ *
+ * Every rejection is logged (DEC-27), and every *stated reason* is a rejection:
+ * DEC-26 fills this app with sentences composed on purpose for a rep to read,
+ * and each crosses the boundary as a thrown `Error` because that is how a
+ * promise says no. Logged at `error` they wrote red lines into the diagnostics
+ * bundle beside « le module audio natif ne se charge pas », and a bundle where
+ * the product working and the product broken look the same is the evidence
+ * nobody can read on a support call. The end-to-end run found two on a clean
+ * first launch, both of them the app behaving exactly as designed.
+ */
+test('a stated reason is recorded as one, and still rejects', async () => {
   const { ipc, deps, cleanup } = open()
   await assert.rejects(() => Promise.resolve(ipc.invoke('meeting:get', { meetingId: 'inconnu' })))
   const recent = deps.diagnostics.recent()
-  assert.equal(recent[0]?.code, 'ipc.handler.failed')
+  assert.equal(recent[0]?.code, 'ipc.handler.refused')
+  assert.equal(recent[0]?.severity, 'info')
   assert.equal(recent[0]?.detail.channel, 'meeting:get')
+  cleanup()
+})
+
+test('a fault the app did not compose stays an error', async () => {
+  const { ipc, deps, cleanup } = open()
+  // A payload the contract refuses: nothing in the app wrote this sentence, so
+  // it is not a sentence for a rep and the severity has to say so.
+  await assert.rejects(() =>
+    Promise.resolve(ipc.invoke('meeting:get', { meetingId: 42 } as never)),
+  )
+  const recent = deps.diagnostics.recent()
+  assert.equal(recent[0]?.code, 'ipc.handler.failed')
+  assert.equal(recent[0]?.severity, 'error')
   cleanup()
 })
 
