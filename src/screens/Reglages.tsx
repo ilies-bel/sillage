@@ -218,7 +218,21 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
         is `--bg-card`, the rail one step back on `--bg-card-soft`, which is the
         same pairing the calendar uses one screen over.
       */}
-      <div className="flex min-h-0 flex-1">
+      {/*
+        **The sheet is bounded and centred; the two panes inside it are not.**
+
+        Unbounded, the pane ran the window: at 1280 the content stopped at 857px
+        and left six hundred and sixty pixels of empty `--bg-card` to the right
+        of it, and at 1920 it left thirteen hundred. Centring the *content*
+        inside the pane is the wrong repair and was tried — it opens a
+        two-hundred-pixel gutter between the rail and the first heading, so the
+        pane reads as starting nowhere near the thing that opened it. Bounding
+        the pair keeps the rail against its content, keeps `px-gutter` as the
+        only space between them, and puts the slack where slack belongs: outside
+        the sheet, evenly, where it reads as a margin rather than as a column
+        that ran out.
+      */}
+      <div className="border-subtle mx-auto flex min-h-0 w-full max-w-[62rem] flex-1 border-x">
         <SectionNav
           label="Sections des réglages"
           /*

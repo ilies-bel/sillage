@@ -188,7 +188,17 @@ function Row({ row, expanded, onToggle }: RowProps) {
    * `scroll-mt-2` on the `li` keeps a hair of space above the title so it lands
    * as a whole row rather than flush against the cut, and `block: 'start'`
    * honours it.
+   *
+   * **And again when the record lands.** The record is fetched, so the row that
+   * is scrolled on the click is the collapsed one — a hundred pixels tall — and
+   * it grows by six hundred a moment later, while a smooth scroll is still
+   * running. Chromium settles the animation against the layout it started with,
+   * so the last row in the list opened *below the window's bottom edge*: the rep
+   * pressed a call and the four sections DEC-25 promises were off screen with
+   * nothing to say they had appeared. Scrolling once more on arrival costs
+   * nothing when the row was already at the top.
    */
+  const settle = useCallback(() => scrollToTop(self.current), [])
   useEffect(() => {
     if (expanded) scrollToTop(self.current)
   }, [expanded])
@@ -221,7 +231,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
       <Matches matches={row.matches} className="px-5 pb-2.5" />
       <PushFailure intents={row.intents} />
 
-      {expanded ? <Record meetingId={meeting.id} intents={row.intents} /> : null}
+      {expanded ? <Record meetingId={meeting.id} intents={row.intents} onReady={settle} /> : null}
     </li>
   )
 }
@@ -305,7 +315,16 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
  * search — which is the same mistake as filtering in the renderer, made one
  * layer later.
  */
-function Record({ meetingId, intents }: { meetingId: string; intents: readonly HistoryIntent[] }) {
+function Record({
+  meetingId,
+  intents,
+  onReady,
+}: {
+  meetingId: string
+  intents: readonly HistoryIntent[]
+  /** Told once the row has its real height, so the caller can settle the scroll. */
+  onReady: () => void
+}) {
   const [record, setRecord] = useState<HistoryRecord | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
 
@@ -322,6 +341,15 @@ function Record({ meetingId, intents }: { meetingId: string; intents: readonly H
       live = false
     }
   }, [meetingId])
+
+  /*
+   * After paint, not in the `then`: the row is still the old height until React
+   * has committed this render, and scrolling to a box that no longer exists is
+   * how the first attempt at this landed on the wrong row.
+   */
+  useEffect(() => {
+    if (record || failure) onReady()
+  }, [record, failure, onReady])
 
   if (failure) {
     return (
