@@ -888,7 +888,24 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         </p>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
+      {/*
+        **The two columns are bounded, because the pair is the point.**
+
+        The rail is capped at 560px and the document column took whatever was
+        left, with the prose centred inside it at its own measure. Measured: at
+        1920 that put **424px of nothing** between the last word of the
+        compte-rendu and the field it is being checked against, and at 2560, 744.
+        The whole argument of this layout is that the document and the eleven
+        typed values are read *together* — « Objections ⚠ faible » beside the
+        sentence it came from — and a rep whose eye travels seven hundred pixels
+        between them is reading them one after the other.
+
+        Capped at 1440, which is the size this screen was designed against, so a
+        wider window gets the 1440 reading with the slack outside the pair rather
+        than driven between its halves. `mx-auto`, so it is a margin and not a
+        column that ran out.
+      */}
+      <div className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-1">
         <main
           ref={docRef}
           onScroll={measure}
