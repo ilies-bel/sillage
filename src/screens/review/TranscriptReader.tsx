@@ -95,12 +95,15 @@ export function TranscriptReader({ meetingId, focus }: TranscriptReaderProps) {
   const seeded = useRef<string | null>(null)
   useEffect(() => {
     const quote = focus?.quote ?? null
-    if (quote === null || seeded.current === quote) return
+    // `segments` first: until the record has arrived, *every* citation looks
+    // unmatched, and seeding on that would put the quote in the box even for
+    // the ones that verify.
+    if (quote === null || segments === null || seeded.current === quote) return
     seeded.current = quote
     // Only when the citation failed — a verified one is already pointed at, and
     // a search box that pre-filled itself over a hit would be noise.
     setNeedle(hit === null ? quote : '')
-  }, [focus, hit])
+  }, [focus, hit, segments])
 
   const trimmed = needle.trim().toLowerCase()
   const matches = useMemo(() => {

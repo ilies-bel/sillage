@@ -372,6 +372,67 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
   })
 
   /*
+   * Saying « introuvable » is the honest half. Leaving the rep at 0:04 of a
+   * twenty-minute call is the other half, and the search is what closes it:
+   * the claim is usually in the record, paraphrased or split across two turns.
+   */
+  test('the transcript search opens carrying the quote that did not verify', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      segments: [
+        segment('s1', 'far', 0, 'Rien de ce qui a été cité.'),
+        segment('s2', 'far', 61_000, 'Il nous faudrait deux dev java, senior de préférence.'),
+      ],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    const box = (await screen.findByLabelText(
+      'Rechercher dans la transcription',
+    )) as HTMLInputElement
+    // Seeded with the fragment the verification looked for and did not find,
+    // and saying so rather than silently listing the whole call.
+    expect(box.value).toBe('deux dev java senior')
+    expect(screen.getByText('aucun passage')).toBeTruthy()
+    expect(screen.getByText(/essayez un mot seul/)).toBeTruthy()
+
+    // One word finds the paraphrase.
+    await act(async () => {
+      fireEvent.change(box, { target: { value: 'java' } })
+    })
+    expect(screen.getByText('1 passage')).toBeTruthy()
+    expect(screen.queryByText(/essayez un mot seul/)).toBeNull()
+  })
+
+  test('a verified citation does not pre-fill the search over its own hit', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      segments: [segment('s1', 'far', 61_000, 'Il nous faut deux dev java senior.')],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    expect(
+      (screen.getByLabelText('Rechercher dans la transcription') as HTMLInputElement).value,
+    ).toBe('')
+    expect(screen.getByText(/Citation du champ/)).toBeTruthy()
+  })
+
+  /*
    * The two rows that were never interpreted (DEC-7) have no citation to
    * follow, and offering one would be a control that lands nowhere (DEC-26).
    */
