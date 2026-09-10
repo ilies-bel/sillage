@@ -739,6 +739,80 @@ describe('the rep’s correction is what ships', () => {
   })
 })
 
+describe('a correction is not lost by leaving the screen', () => {
+  /*
+   * `edits` is component state, so every way off this screen threw it away
+   * silently — `Échap` (one of exactly two shortcuts deliberately allowed while
+   * typing, on the one screen with a fifty-six-line textarea), `Ctrl/⌘ H`,
+   * `Ctrl/⌘ ,` and the back link. A rep who corrected the objection, glanced at
+   * the calendar and came back found the model's sentence again, with nothing
+   * having said the correction was gone.
+   */
+  test('what was typed is still there after leaving and coming back', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-draft" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'le TJM a été accepté après relecture' },
+    })
+
+    // Leaving is anything at all — the map is keyed by meeting, not by route.
+    first.unmount()
+
+    render(<Review meetingId="m-draft" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      'le TJM a été accepté après relecture',
+    )
+  })
+
+  test('another meeting’s gate is not another meeting’s draft', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-un" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'correction du premier appel' },
+    })
+    first.unmount()
+
+    render(<Review meetingId="m-deux" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    // The server's pre-fill, not the other call's correction.
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).not.toBe(
+      'correction du premier appel',
+    )
+  })
+
+  test('a confirmed gate keeps no draft', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-confirme" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    const objections = document.getElementById('field-objections') as HTMLTextAreaElement
+    const original = objections.value
+    fireEvent.change(objections, { target: { value: 'une correction envoyée' } })
+
+    // Read to the end, then ship.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Valider/ }))
+    })
+    await waitFor(() => expect(confirmCall()).toBeTruthy())
+    first.unmount()
+
+    render(<Review meetingId="m-confirme" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    /*
+     * Nothing to restore: it was confirmed, the gate refuses this meeting from
+     * here on, and a leftover draft would outlive the screen that could show it.
+     */
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      original,
+    )
+  })
+})
+
 describe('a correction that would reach nothing is not offered', () => {
   /*
    * The nine interpretive rows are the *opportunity's* columns and nothing

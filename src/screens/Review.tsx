@@ -62,6 +62,27 @@ import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReade
 const FAIBLE = '⚠ faible'
 
 /**
+ * **What the rep has typed at the gate, held across a navigation.**
+ *
+ * `edits` is component state, so every way off this screen threw it away
+ * silently: `Échap` — which is one of exactly two shortcuts deliberately allowed
+ * while typing, on the one screen in the product with a fifty-six-line textarea
+ * — `Ctrl/⌘ H`, `Ctrl/⌘ ,`, and the « ‹ Calendrier » link. A rep who corrected
+ * the objection, glanced at the calendar and came back found the model's
+ * sentence again, with nothing having said the correction was gone. There is no
+ * warning to add here that is better than not losing it.
+ *
+ * A module-level map rather than a store write, deliberately: these are *drafts*
+ * of a payload, not a confirmed anything (DEC-4), and persisting them would mean
+ * a correction typed on Tuesday reappearing on Thursday over a compte-rendu that
+ * has since been regenerated. It lives as long as the window, which is exactly
+ * as long as the rep's train of thought, and `confirm` clears it — the gate is
+ * refused after a confirmation anyway, so a leftover draft would outlive the
+ * screen that could show it.
+ */
+const PENDING_EDITS = new Map<string, ReviewEdits>()
+
+/**
  * How long the *Ce qui sera créé* rows lag the field being typed into.
  *
  * Short enough that the rep never sees the old account name while looking at
@@ -367,7 +388,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   // typing the first time a broadcast lands.
   useEffect(() => {
     if (!panel) return
-    setEdits((previous) => previous ?? panel.edits)
+    // What the rep had typed, if they left and came back; otherwise the
+    // server's pre-fill. See `PENDING_EDITS`.
+    setEdits((previous) => previous ?? PENDING_EDITS.get(meetingId) ?? panel.edits)
     setChecked((previous) =>
       previous ?? panel.intents.filter((i) => i.available).map((i) => i.id),
     )
@@ -429,9 +452,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     )
   }, [live])
 
-  const set = useCallback((key: keyof ReviewEdits, value: string | number | null) => {
-    setEdits((previous) => (previous ? { ...previous, [key]: value } : previous))
-  }, [])
+  const set = useCallback(
+    (key: keyof ReviewEdits, value: string | number | null) => {
+      setEdits((previous) => {
+        if (!previous) return previous
+        const next = { ...previous, [key]: value }
+        // Held across a navigation, see `PENDING_EDITS`.
+        PENDING_EDITS.set(meetingId, next)
+        return next
+      })
+    },
+    [meetingId],
+  )
 
   const toggle = useCallback((id: string) => {
     setChecked((previous) =>
@@ -449,8 +481,12 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     setFailure(null)
     try {
       const outcome = await invoke('review:confirm', { meetingId, edits, intentIds: checked })
-      if (outcome.ok) onConfirmed?.()
-      else setFailure(outcome.reason)
+      if (outcome.ok) {
+        // Confirmed: there is no draft left to restore, and the gate refuses
+        // this meeting from here on.
+        PENDING_EDITS.delete(meetingId)
+        onConfirmed?.()
+      } else setFailure(outcome.reason)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : 'validation impossible')
     } finally {
@@ -469,6 +505,13 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * screen would confirm something the rep has not been shown.
    */
   useShortcuts(below === null && !busy ? { valider: () => void confirm() } : {})
+
+  /** One screenful of whichever column still has something under its fold. */
+  const turn = useCallback((column: 'document' | 'rail') => {
+    const el = column === 'document' ? docRef.current : railRef.current
+    if (!el) return
+    el.scrollBy({ top: Math.max(el.clientHeight - 64, 120), behavior: 'smooth' })
+  }, [])
 
   if (loaded.state.status === 'loading') return <Centered>Chargement…</Centered>
 
@@ -819,6 +862,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               onLocate={(quote, label) => locate({ quote, label, from: 'answer' })}
               className="border-subtle mt-block border-t pt-row"
             />
+
+            {/*
+              The turn for *this* column, at the end of it. Only when this column
+              is the one still holding something under its fold — the other one
+              carries its own, and two would be a screen asking a rep to guess
+              which of them the guard is about.
+            */}
+            {below === 'document' && !busy ? (
+              <PageTurn what="Lire la suite du compte-rendu" onTurn={() => turn('document')} />
+            ) : null}
           </div>
         </main>
 
@@ -947,6 +1000,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               : panel.interlocuteurs.map((a) => a.name || a.email).join(', ')}
           </p>
 
+          {below === 'rail' && !busy ? (
+            <PageTurn what="Voir la suite de ce qui part" onTurn={() => turn('rail')} />
+          ) : null}
+
           </div>
 
           <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
@@ -972,70 +1029,30 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               `awaiting_confirmation` and nowhere else, so a second press is
               refused by the machine rather than by a flag here.
             */}
-            {below !== null && !busy ? (
-              /*
-                Never an inert primary.
-                
-                *Valider* used to sit here disabled while the rail had not been
-                read: a mid-blue pill where the primary action goes, white text
-                on it, and the thing the rep actually had to do — scroll — in a
-                12px underlined link *below* it. A rep presses the big button,
-                nothing happens, and the explanation is smaller than the mistake.
-                
-                So the slot always holds the live control. While the payload is
-                still below the fold that control is the one that shows it; once
-                it has been seen, it is the one that ships it. Still one
-                confirmation (DEC-4) — pressing this one confirms nothing.
+            {/*
+              **The confirmation is never in the rectangle the rep just pressed.**
 
-                **And it is not the same button.** It was `primary`: same fill,
-                same width, same slot, same corner radius as *Valider*. Driven
-                with a script, a rep presses that blue block **four times at
-                1280×800 and five at 960×600** before *Valider* exists — and the
-                fifth press is the one that writes into the client's CRM. Four
-                repetitions is training, and what it trains is pressing the blue
-                block without reading it. The rule this screen already follows —
-                a control that looks like the thing to press *is* the thing a rep
-                presses — says the page turn cannot wear the ship's clothes.
+              The page turn used to live here, in this exact slot, and swap to
+              *Valider* the instant the last screenful landed. Colour was not the
+              problem: React reused the same `<button>` at the same tree position,
+              so the two were **the same DOM node in the same 505×37 rectangle**,
+              and the swap took sixty-three milliseconds. Three ways in, all of
+              them reproduced: a double-click on the fourth turn shipped to the
+              CRM without the rep ever seeing the word *Valider*; a keyboard rep
+              pressing Enter five times on the retained focus shipped on the
+              fifth; and the first frame of every gate painted the ship's fill
+              under the page turn's label, because the base `transition` animated
+              one into the other. `POST /v1/crm/tasks` has no idempotency key —
+              there is no undo for any of them.
 
-                `bordered`, therefore: fully live, full width, in the slot, and
-                visibly not the fill. The blue block appears exactly once on this
-                screen, at the moment pressing it creates something.
-              */
-              <Button
-                variant="bordered"
-                block
-                className="mt-4 py-2"
-                onClick={() => {
-                  /*
-                    **One screenful, not the whole column.**
-
-                    This used to jump to `scrollHeight`, which meant the guard
-                    could be satisfied by two presses of a button the rep never
-                    took their eyes off — a EULA checkbox with better copy. The
-                    arming has always been measured (`atEnd` fires from the
-                    scroll this causes, never from the click), but a measurement
-                    of a single teleport measures *revealing*, not reading.
-
-                    A page turn is the honest verb. Every screenful between here
-                    and the end has to be on screen for the last one to be, which
-                    is the guard's whole sentence, and the control is now the one
-                    a rep would have used anyway. `- 64` overlaps two lines
-                    across the turn so nothing falls into the seam.
-                  */
-                  const el = below === 'document' ? docRef.current : railRef.current
-                  if (!el) return
-                  el.scrollBy({ top: Math.max(el.clientHeight - 64, 120), behavior: 'smooth' })
-                }}
-              >
-                {/*
-                  It named « le brouillon » unconditionally, on a screen that had
-                  already told the sans-Entra rep twice that no draft would be
-                  created. The column is named by what the rep is reading through,
-                  not by an inventory of what is under it.
-                */}
-                {below === 'document' ? 'Lire la suite du compte-rendu' : 'Voir la suite de ce qui part'}
-              </Button>
-            ) : (
+              So the page turn is not here any more. It is at the foot of the
+              column it turns (`PageTurn`, below), which is where a rep who has
+              just finished a screenful is already looking — and this slot holds
+              the decision, or nothing. Nothing is not a greyed *Valider*: the
+              sub-line under it says what is left to read, and the control that
+              does it is at the end of the text being read.
+            */}
+            {below === null ? (
               <Button
                 /*
                   **The one measurement this product makes about itself reaches
@@ -1065,14 +1082,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                       ? 'Valider malgré 1 champ non vérifié'
                       : `Valider malgré ${faible.length} champs non vérifiés`}
               </Button>
-            )}
+            ) : null}
             {/*
-              The sub-line follows the button. While something is still below the
-              fold it says why the button is a page turn; when a citation failed
-              it names the field, because « 1 champ non vérifié » on the button
-              is a count and the rep's next question is *which*; otherwise it is
-              the reassurance about Outlook, which is only worth the line when
-              there is nothing louder to say.
+              The sub-line, and while there is no button above it, it is the
+              whole of the slot.
+
+              That is not a greyed *Valider*, which is what this screen refuses:
+              it names what is left and where the control that does it is — at
+              the foot of the column being read, which is where the rep's eyes
+              already are. When a citation failed it names the field, because
+              « 1 champ non vérifié » on the button is a count and the rep's next
+              question is *which*; otherwise it is the reassurance about Outlook,
+              which is only worth the line when there is nothing louder to say.
             */}
             <p
               className={cn(
@@ -1081,7 +1102,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               )}
             >
               {below !== null && !busy
-                ? 'Tout ce qui part doit avoir été affiché avant d’être validé.'
+                ? below === 'document'
+                  ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, à gauche.'
+                  : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
                 : faible.length > 0 && !busy
                   ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
                   : reassurance}
@@ -1089,6 +1112,40 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           </div>
         </aside>
       </div>
+    </div>
+  )
+}
+
+/**
+ * **The page turn, at the foot of the column it turns.**
+ *
+ * It used to live in the pinned decision slot and swap to *Valider* the instant
+ * the last screenful landed — the same DOM node, the same rectangle, sixty-three
+ * milliseconds apart. A double-click on the fourth turn shipped to the CRM
+ * without the rep ever seeing the word; five Enters on the retained focus did
+ * the same; and the first frame of every gate painted the ship's fill under the
+ * turn's label, because the shared `transition` animated one into the other.
+ * `POST /v1/crm/tasks` has no idempotency key, so none of the three has an undo.
+ *
+ * Here it is in the flow instead, after the last thing to read, which is where a
+ * rep who has just finished a screenful is already looking. It is not the
+ * decision's slot, it is not the decision's shape, and the two never occupy one
+ * rectangle — which is the property that makes the gesture a decision rather
+ * than a repetition.
+ *
+ * **One screenful, not the whole column.** The scroll used to jump to
+ * `scrollHeight`, so the guard could be satisfied by two presses of a button the
+ * rep never took their eyes off — a EULA checkbox with better copy. Arming is
+ * measured from the scroll either way (`atEnd` fires from this, never from the
+ * click), but a measurement of a single teleport measures *revealing*. `- 64`
+ * overlaps two lines across the turn so nothing falls into the seam.
+ */
+function PageTurn({ what, onTurn }: { what: string; onTurn: () => void }) {
+  return (
+    <div className="mt-block flex justify-center pb-2">
+      <Button variant="bordered" onClick={onTurn}>
+        {what}
+      </Button>
     </div>
   )
 }

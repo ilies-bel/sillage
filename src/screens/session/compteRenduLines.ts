@@ -111,7 +111,8 @@ export function serializeCompteRendu(lines: readonly CompteRenduLine[]): string 
  *
  *  · `**…**` — never spanning a line, never empty, no nesting;
  *  · `_…_` — the same, and only at a word boundary, so an `email_address` or a
- *    `snake_case` identifier in a client's prose is left exactly alone.
+ *    `snake_case` identifier in a client's prose is left exactly alone;
+ *  · `⚠ faible` — the one token this product has of its own (DEC-21).
  *
  * Anything else falls through as plain text and is drawn verbatim, which is the
  * same rule the line classes follow and for the same reason.
@@ -125,6 +126,24 @@ export type InlineRun =
   | { kind: 'strong'; text: string }
   /** What `_…_` wrapped. */
   | { kind: 'em'; text: string }
+  /**
+   * **`⚠ faible`, the one mark this product invented, drawn as a mark.**
+   *
+   * `renderCompteRendu` writes it into the document on purpose: DEC-21's whole
+   * argument is that a rep skimming the prose — rather than opening the form —
+   * still sees which sentence the app could not stand behind. The typesetter
+   * learned `**gras**` and `_italique_` and never learned this one, so the
+   * marker rendered in `--text-body` at `--type-copy`, **pixel-identical to the
+   * prose around it**, while the same eight characters were orange in the rail
+   * and orange in the header banner. Three renderings of one measurement on one
+   * screen, and the only one inside the artefact that leaves the machine was the
+   * invisible one.
+   *
+   * It is a run and not a substitution: the string is untouched and VerySwing
+   * still receives the same bytes (DEC-44). Only the ink changes, which is what
+   * a typesetter is for.
+   */
+  | { kind: 'faible'; text: string }
 
 /*
  * `\*\*(\S(?:[^*]*\S)?)\*\*` — bold may not be empty and may not open or close
@@ -134,7 +153,8 @@ export type InlineRun =
  * word boundary on both sides. Without the look-arounds `sillage_audio.rs` and
  * `elodie_v@…` would each swallow half a line into an italic run.
  */
-const INLINE = /\*\*(\S(?:[^*]*\S)?)\*\*|(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])/gu
+const INLINE =
+  /(⚠\u00a0?\sfaible)|\*\*(\S(?:[^*]*\S)?)\*\*|(?<![\p{L}\p{N}_])_(\S(?:[^_]*\S)?)_(?![\p{L}\p{N}_])/gu
 
 /**
  * Split one line's prose into runs.
@@ -152,10 +172,15 @@ export function parseInline(text: string): InlineRun[] {
     const start = match.index
     if (start > at) runs.push({ kind: 'plain', text: text.slice(at, start) })
 
-    const bold = match[1]
-    if (bold === undefined) {
+    const faible = match[1]
+    const bold = match[2]
+    if (faible !== undefined) {
+      // Whole, including its space — it is one mark, and splitting it would let
+      // a line break fall between the glyph and the word.
+      runs.push({ kind: 'faible', text: faible })
+    } else if (bold === undefined) {
       runs.push({ kind: 'marker', text: '_' })
-      runs.push({ kind: 'em', text: match[2] as string })
+      runs.push({ kind: 'em', text: match[3] as string })
       runs.push({ kind: 'marker', text: '_' })
     } else {
       runs.push({ kind: 'marker', text: '**' })

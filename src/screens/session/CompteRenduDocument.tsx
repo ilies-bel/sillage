@@ -156,6 +156,20 @@ function Prose({ text }: { text: string }) {
             </strong>
           )
         }
+        if (run.kind === 'faible') {
+          /*
+            The same ink the rail and the banner give it — `--warn`, and
+            `whitespace-nowrap` so the glyph and the word cannot be split across
+            a line. `font-semibold` because at `--type-copy` the orange alone is
+            a hue difference and nothing else, and a hue difference is what a
+            deuteranope, a greyscale print and a projector all lose.
+          */
+          return (
+            <span key={key} className="text-warn whitespace-nowrap font-semibold">
+              {run.text}
+            </span>
+          )
+        }
         if (run.kind === 'em') {
           return (
             <em key={key} className="italic">

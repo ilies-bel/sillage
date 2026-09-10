@@ -380,6 +380,10 @@ function Record({
         the review gate's own tab already says the first, and two screens naming
         the same artefact differently is two things for a rep to learn.
       */}
+      {/* One grid cell holding the record and the question about it, so the
+          panel sits *under* the section's capped scroller rather than inside
+          it — an answer clipped at 288px is an answer nobody can read. */}
+      <div className="min-w-0">
       <Section
         title="Transcription"
         copy={
@@ -396,7 +400,35 @@ function Record({
           quote={located}
           interlocuteurs={record.interlocuteurs}
         />
+
       </Section>
+
+      {/*
+        **This is the screen *Demander* was written for, and this is the
+        column.**
+
+        Its own docblock opens on « a rep three weeks later remembers that the
+        client said something about the grille achats and cannot remember
+        what ». Three weeks later they are here — this is the product's only
+        entry into the past (DEC-25).
+
+        It sat at the foot of the record, which measured **1503 of a 1604-pixel
+        scroller**: ninety-four per cent down, two and a half screenfuls past
+        the fold, on a screen whose own screenshot did not contain it. Under
+        the transcription instead, because that is what its citations point at:
+        press a quote and the turn it came from lights forty pixels above,
+        without the rep leaving the box they are reading.
+
+        It writes nothing and confirms nothing, which is what lets it live on a
+        reader at all (DEC-4, DEC-25).
+      */}
+      <AskPanel
+        meetingId={meetingId}
+        onLocate={(quote) => setLocated(quote)}
+        interlocuteurs={record.interlocuteurs}
+        className="border-subtle mt-3 border-t pt-3"
+      />
+      </div>
 
       <Section title="Mes notes">
         {record.notes.trim() ? (
@@ -436,33 +468,6 @@ function Record({
         <PushStatus intents={intents} />
       </Section>
 
-      {/*
-        **This is the screen *Demander* was written for.**
-
-        Its own docblock opens on it: « a rep three weeks later remembers that
-        the client said something about the grille achats and cannot remember
-        what ». Three weeks later they are here — this is the product's only
-        entry into the past (DEC-25) — and the panel was on the two screens
-        where the call is still fresh and on neither of the ones where it is not.
-
-        And here the citations *lead somewhere*: the record's own transcription
-        is in the same box, forty pixels up, so pressing a quote lights the turn
-        it came from. That is the whole difference from a general-purpose
-        notetaker's ask box, which answers from a document the model itself
-        wrote — a mistake in the summary becomes a mistake in the answer with
-        nothing left to check it against.
-
-        It writes nothing and confirms nothing, which is what lets it live on a
-        reader at all (DEC-4, DEC-25).
-      */}
-      <div className="col-span-2">
-        <AskPanel
-          meetingId={meetingId}
-          onLocate={(quote) => setLocated(quote)}
-          interlocuteurs={record.interlocuteurs}
-          className="border-subtle border-t pt-3"
-        />
-      </div>
     </div>
   )
 }
