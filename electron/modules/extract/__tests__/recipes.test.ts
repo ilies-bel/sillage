@@ -125,7 +125,7 @@ test('a free document keeps the model’s own headings and grows no field list',
   assert.match(compteRendu, /## Décisions/)
   // The deterministic header is still rendered — the client, the date and the
   // attendees are facts about the meeting, not about the recipe (DEC-7).
-  assert.match(compteRendu, /\*\*Client\*\*/)
+  assert.match(compteRendu, /^Client : /m)
   // What is absent is the typed slate. « Éléments retenus » followed by six
   // « _non évoqué_ » lines is exactly the document this recipe exists to avoid.
   assert.doesNotMatch(compteRendu, /Éléments retenus/)

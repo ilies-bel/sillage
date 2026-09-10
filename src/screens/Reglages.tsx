@@ -71,6 +71,7 @@ import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { SHORTCUTS } from '../app/shortcuts.ts'
+import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { formatAgo } from '../app/format.ts'
 import {
   Button,
@@ -1115,6 +1116,26 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
           />
         ))}
       </List>
+
+      {/*
+        **The trial belongs beside the rows it disagrees with.**
+
+        « Audio · connecté » is a device that opened. It is not a sound that
+        arrived, and the difference is the whole reason `capture:essai` exists
+        (DEC-45): the permission can be granted and the loopback still produce
+        nothing, and the rep finds out from a compte-rendu that describes a
+        monologue.
+
+        It could only be reached from first run, and from there only through
+        « Revoir la présentation › » in the *empty-day* panel — so a rep whose
+        headset changed, whose Bluetooth output moved or whose grant a Windows
+        update revoked had three calls on the day they needed it and no way in.
+        The placement was keyed on « the day is empty » when the need is
+        « capture is suspect », and this is the screen a rep opens when they
+        suspect it: the row above says « connecté » and this is the control that
+        can disagree.
+      */}
+      <EssaiAudio />
 
       <SectionHeader as="h3" className="mt-block">
         Facultatifs

@@ -828,6 +828,22 @@ const SCREENS = {
   },
 
   /*
+   * The dry run where a rep in trouble will actually look for it: under the
+   * *Requis* rows, the one of which says « Audio · connecté » — a device that
+   * opened, which is not a sound that arrived (DEC-45).
+   */
+  'reglages-essai': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('heading', { name: 'Requis' }).waitFor()
+      await page.getByRole('button', { name: /^Essai de/ }).click()
+      await page.getByText(/c’est la moitié qui compte le plus/).waitFor()
+    },
+  },
+
+  /*
    * The keyboard, printed (`app/shortcuts.ts`). Its own stage because it is its
    * own pane, and because a table that drifts from the matcher is exactly the
    * kind of thing nobody looks at again.

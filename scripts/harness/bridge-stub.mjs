@@ -549,10 +549,12 @@ export function installAppBridge(config) {
     compteRendu: [
       '# Néovia Santé — cadrage renfort data',
       '',
-      '**Client** : Néovia Santé',
-      `**Date** : ${crWhen(at(0, 14, 30), at(0, 15, 30))}`,
-      '**Interlocuteurs** : Élodie Vasseur (elodie.vasseur@neovia-sante.fr), Marc Pontier (marc.pontier@neovia-sante.fr)',
-      '**Commercial** : julien.marchand@synapse-it.fr',
+      // No `**`: the four deterministic lines are composed in code and carry no
+      // emphasis — `compteRendu.ts` says why. The fixture follows the composer.
+      'Client : Néovia Santé',
+      `Date : ${crWhen(at(0, 14, 30), at(0, 15, 30))}`,
+      'Interlocuteurs : Élodie Vasseur (elodie.vasseur@neovia-sante.fr), Marc Pontier (marc.pontier@neovia-sante.fr)',
+      'Commercial : julien.marchand@synapse-it.fr',
       '',
       '## Résumé',
       '',

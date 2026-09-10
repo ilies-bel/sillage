@@ -85,10 +85,15 @@ test('the document is French, top to bottom', () => {
   const document = renderCompteRendu(sampleExtraction, allOk)
 
   for (const expected of [
-    '**Client** :',
-    '**Date** :',
-    '**Interlocuteurs** :',
-    '**Commercial** :',
+    // No `**`: these four lines are composed in code from Graph and the CRM,
+    // and `**` cannot hang in the gutter the way `#` and `- ` do — so eight
+    // literal asterisks opened every document and landed in the VerySwing task
+    // body. The emphasis stays where the *model* wrote it, in « Éléments
+    // retenus ».
+    'Client :',
+    'Date :',
+    'Interlocuteurs :',
+    'Commercial :',
     '## Éléments retenus',
     '- **Besoin** :',
     '- **Mode de collaboration** :',
@@ -126,7 +131,7 @@ test('the date is written in French, in Europe/Paris', () => {
   facts.endsAt = Date.UTC(2026, 2, 12, 9, 30)
   const document = renderCompteRendu({ ...sampleExtraction, facts })
 
-  assert.match(document, /\*\*Date\*\* : jeudi 12 mars 2026, 09:00 – 10:30/)
+  assert.match(document, /^Date : jeudi 12 mars 2026, 09:00 – 10:30$/m)
 })
 
 test('the header is the deterministic half, rendered by code', () => {
@@ -134,8 +139,8 @@ test('the header is the deterministic half, rendered by code', () => {
   const { facts } = sampleExtraction
 
   assert.ok(document.startsWith(`# ${facts.taskName}\n`))
-  assert.ok(document.includes(`**Client** : ${facts.account.name}`))
-  assert.ok(document.includes(`**Commercial** : ${facts.repEmail}`))
+  assert.ok(document.includes(`Client : ${facts.account.name}`))
+  assert.ok(document.includes(`Commercial : ${facts.repEmail}`))
   for (const attendee of facts.interlocuteurs) {
     assert.ok(document.includes(`${attendee.name} (${attendee.email})`))
   }
@@ -174,7 +179,7 @@ test('an unresolved account is marked on the client row and names nobody (DEC-18
   const facts = { ...sampleExtraction.facts, account: UNRESOLVED_ACCOUNT }
   const document = renderCompteRendu({ ...sampleExtraction, facts })
 
-  assert.ok(document.includes(`**Client** : _non résolu_ ${FAIBLE_MARKER}`))
+  assert.ok(document.includes(`Client : _non résolu_ ${FAIBLE_MARKER}`))
   assert.ok(!document.includes('Client à confirmer'))
 })
 

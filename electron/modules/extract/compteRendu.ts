@@ -217,16 +217,41 @@ export const renderCompteRendu = (
   const taskName = facts.taskName.trim()
   const accountName = facts.account.name.trim()
 
+  /*
+   * **The four deterministic lines carry no `**`, and that is a decision about
+   * two surfaces at once.**
+   *
+   * They used to: `**Client** : Néovia Santé`, `**Date** : …`,
+   * `**Interlocuteurs** : …`, `**Commercial** : …` — four consecutive lines,
+   * each with two literal asterisk pairs, at the very top of every document.
+   * The block markers (`#`, `##`, `- `) hang in a gutter outside the measure,
+   * which is what makes them readable; `**` cannot, because it sits inside a
+   * line. So the first thing the eye landed on, on the flagship screen, was a
+   * row of punctuation — and the same eight asterisks landed in the VerySwing
+   * task body, where a delivery manager reads them as noise the app forgot to
+   * remove.
+   *
+   * The emphasis was never load-bearing here. These are the *only* four lines
+   * in the document composed in code, from Graph and the CRM (DEC-7): a label,
+   * a colon and a fact, in a fixed order, already set apart by sitting under the
+   * title and above the prose. Where `**` *does* earn its place is where the
+   * model wrote it — inside « Éléments retenus », where it distinguishes a
+   * field's name from its value in a list the model produced — and there it
+   * stays, hangs nowhere, and is drawn muted (`CompteRenduDocument`).
+   *
+   * DEC-44 is untouched: nothing is *hidden*. The characters are not emitted at
+   * all, so VerySwing still receives the string the rep read, byte for byte.
+   */
   const head: string[] = [
     taskName === '' ? '# _Réunion sans objet_' : `# ${taskName}`,
     '',
-    `**Client** : ${accountName === '' ? '_non résolu_' : accountName}${accountMark}`,
-    `**Date** : ${formatWhen(facts.startsAt, facts.endsAt)}`,
-    `**Interlocuteurs** : ${interlocuteurs}`,
+    `Client : ${accountName === '' ? '_non résolu_' : accountName}${accountMark}`,
+    `Date : ${formatWhen(facts.startsAt, facts.endsAt)}`,
+    `Interlocuteurs : ${interlocuteurs}`,
     // Omitted rather than rendered empty when nobody is signed into Microsoft.
-    // « **Commercial** :  » followed by nothing reads as a value the app failed
-    // to find, and the rep reading it is the person it would have named.
-    ...(facts.repEmail === null ? [] : [`**Commercial** : ${facts.repEmail}`]),
+    // « Commercial :  » followed by nothing reads as a value the app failed to
+    // find, and the rep reading it is the person it would have named.
+    ...(facts.repEmail === null ? [] : [`Commercial : ${facts.repEmail}`]),
     '',
     unwrapProse(interpretation.compteRendu.trim()),
   ]
