@@ -172,6 +172,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    */
   const [below, setBelow] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
+  /*
+   * Once, and then it stays read.
+   *
+   * The rail grows as the rep types into a multiline field, so a measurement
+   * taken again after they had already reached the bottom would find fresh
+   * content below the fold and refuse the button again — mid-keystroke, on the
+   * text they are looking at. Reaching the end is a fact about the rep, not
+   * about the current scroll position.
+   */
+  const readToEnd = useRef(false)
   const measureRail = useCallback(() => {
     const el = railRef.current
     if (!el) return
@@ -188,7 +198,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * nothing to do with the product. This way the unmeasurable case is the
      * permissive one, and the refusal only ever comes from a real measurement.
      */
-    setBelow(el.scrollTop + el.clientHeight < el.scrollHeight - 8)
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) readToEnd.current = true
+    setBelow(!readToEnd.current)
   }, [])
 
   /*
