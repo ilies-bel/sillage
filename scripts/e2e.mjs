@@ -174,6 +174,23 @@ try {
       .waitFor({ timeout: 45_000 })
   })
 
+  await step('there is no route into the gate for a meeting that never reached it', async () => {
+    /*
+     * DEC-23, end to end. The meeting just ended produced no transcript and
+     * therefore no extraction, so the gate refuses it — and the session screen
+     * must offer no way in. « Relire et valider » appearing here would be a
+     * route to a screen that would immediately refuse, which is the dead
+     * control DEC-26 forbids one layer up.
+     *
+     * This is as close as a headless run gets to the confirmation screen: the
+     * gate itself needs a model, and the one thing worth asserting about it
+     * from out here is that the door is not there when it should not be.
+     */
+    if ((await page.getByRole('button', { name: 'Relire et valider' }).count()) > 0) {
+      throw new Error('la porte du gate est ouverte sur une réunion sans extraction')
+    }
+  })
+
   await step('the meeting is in the store, and the calendar shows it', async () => {
     await page.getByRole('button', { name: '‹ Calendrier' }).click()
     await page.getByRole('region', { name: 'Calendrier' }).waitFor()

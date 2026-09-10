@@ -168,11 +168,17 @@ export function AskPanel({
           had done anything. An empty submit is not a refusal, it is a no-op, and
           `ask` already returns on a blank string.
         */}
-        <Button
-          type="submit"
-          variant="primary"
-          {...unavailable(busy, 'Question en cours')}
-        >
+        {/*
+          `bordered`, not `primary`.
+
+          This is a *read* (DEC-25) and it shares two screens with the controls
+          that are not: at the review gate it sat beside *Valider* in the same
+          filled blue, and on the session screen beside *Relire et valider* —
+          two identical fills on one screen, one of which writes to a client's
+          CRM and one of which asks a question. « One primary per view » is the
+          rule VISION.md §6 states, and asking is never the one.
+        */}
+        <Button type="submit" {...unavailable(busy, 'Question en cours')}>
           {busy ? 'Recherche…' : 'Demander'}
         </Button>
       </form>

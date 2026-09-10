@@ -1235,7 +1235,20 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           weaker version of the first.
         */}
         {field.confidence === 'faible' ? (
-          <span className="text-warn shrink-0 text-meta">{FAIBLE}</span>
+          /*
+            **`font-semibold`, because the colour is not a difference.**
+
+            `--warn` and `--text-muted` have relative luminances of 0.158 and
+            0.157: measured, the contrast between « ⚠ faible » and « vérifié ·
+            6:36 » — same size, same weight, adjacent columns — is **1.0 to 1**.
+            On a greyscale print, through a projector, or to a deuteranope, the
+            one measurement this product makes about itself was invisible, and
+            the 11px `⚠` glyph was carrying it alone.
+
+            Weight is the cheapest non-chromatic difference there is, and it is
+            the one the document already uses for the same token.
+          */
+          <span className="text-warn shrink-0 text-meta font-semibold">{FAIBLE}</span>
         ) : field.span === null ? (
           <span className="text-muted shrink-0 text-meta">hors transcription</span>
         ) : (

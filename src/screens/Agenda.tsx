@@ -338,6 +338,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             today={today}
             onCreated={created}
             showSchedule={searching || inRange.some((entry) => !entry.past)}
+            armedElsewhere={inRange.some((entry) => entry.armed)}
           />
         </div>
       </header>

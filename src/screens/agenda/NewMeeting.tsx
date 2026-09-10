@@ -56,6 +56,14 @@ interface NewMeetingProps {
    */
   onCreated: (meeting: Meeting) => void | Promise<void>
   /**
+   * True when the day list is drawing an armed row — the call starting now.
+   *
+   * The screen's one filled control is then that row, and this one steps down
+   * to an outline. Passed in rather than derived here: which rows are armed is
+   * the calendar's question and this component has no business asking it.
+   */
+  armedElsewhere?: boolean
+  /**
    * Where this instance is drawn.
    *
    * `header` is the permanent control described above — *Démarrer une réunion*
@@ -94,6 +102,7 @@ export function NewMeeting({
   onCreated,
   variant = 'header',
   showSchedule = true,
+  armedElsewhere = false,
 }: NewMeetingProps) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -194,7 +203,19 @@ export function NewMeeting({
 
   const start = (
     <Button
-      variant="primary"
+      /*
+        **Never the second filled blue on the screen.**
+
+        Measured at 1280×800: « Démarrer une réunion » at x=1099 and the armed
+        row's « Enregistrer » at x=1140, both `--brand-700`, 172px apart and
+        horizontally overlapping. « One primary per view » (VISION.md §6) was two
+        — and the wrong one was louder: the top one creates an *untitled* meeting
+        for right now, the bottom one records the client call that has already
+        started. When the calendar is offering that row, this steps down; it is
+        still the way in on every other day, and on a day with nothing armed it
+        is the only fill on screen.
+      */
+      variant={armedElsewhere ? 'bordered' : 'primary'}
       onClick={() => void create({ title: '', clientName: null, scheduledStart: null })}
       {...unavailable(busy, 'Démarrage de la réunion…')}
     >
