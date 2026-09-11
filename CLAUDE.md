@@ -95,6 +95,14 @@ machine) or in `core/domain/` — never in an IPC handler.
   the class written to end this problem was reintroducing it one size down, on the caption
   under the compte-rendu and on Réglages' explanations. `ch` resolves against the element's
   own size, so prose that is not inside a `.measure` wrapper wears the class itself.
+  **The class goes on the element that holds the prose, never only on a wrapper**:
+  `ch` resolves against the *element's own* font size, so a wrapper wearing it at
+  `--type-copy` leaves a `--type-ui` child completely unconstrained — which is how
+  the follow-up draft rendered **eighty** characters a line, and the gate's eleven
+  field boxes seventy-eight, while `--prose` reported the screen green. The check
+  now measures **every element owning ninety characters of its own text**, not
+  just the ones wearing the class, because a surface that forgot it is precisely
+  the failure the rule exists to prevent and the old selector could never see it.
   It was then `66ch` for four rounds, and `66ch` is **not sixty-six characters**: `ch` is the
   advance of the digit zero, which in Inter is ~9.4px against ~7.7 for average French
   lowercase, so every `.measure` surface rendered **eighty-one** — the rule written to end
@@ -527,6 +535,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   once above them and the place a correction *does* still land. `reviewGate.test.ts` holds
   where the fields ride; a stage photographs the configuration.
 
+- **A declared port that nothing calls is not a feature, and `npm test` cannot
+  tell.** Four verbs on `CrmPort` — `resolveAccount`, `listSiblings`,
+  `createContact`, `attachTranscript` — were declared, implemented in `VsaCrm`
+  and unit-tested, and a grep for them outside `modules/crm` returned **the
+  declarations and nothing else**. So `facts.account` was `UNRESOLVED_ACCOUNT` on
+  every meeting this product has ever produced, which is not cosmetic:
+  `reviewGate.ts`'s `opportunityPossible` reads `edits.accountId !== null`, so the
+  opportunity was *structurally impossible*, and `VsaCrm.link()` fell through
+  OPPY → COMPANY → FREE to its last branch and created every compte-rendu task as
+  an orphan with no `linkType`. `pushSettled` was the same shape: an enum entry,
+  the only *guarded* rule in the transition table, and no caller — so no meeting
+  ever reached `done`. The suites were green throughout, `IMPLEMENTATION.md`
+  marked the step `[x]`, and the screenshot harness photographed a gate whose
+  button promised three things of which one could happen. **When a step is marked
+  done, grep for a call site outside the module that declares it.**
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a

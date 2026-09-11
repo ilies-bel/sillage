@@ -948,6 +948,25 @@ const boot = async (): Promise<void> => {
       return model ? new CompteRenduRecipe({ llm: model.port, diagnostics }) : null
     },
     repEmail: () => identity?.account()?.username ?? null,
+    /*
+     * **Which VerySwing account this call belongs to.**
+     *
+     * `CrmPort.resolveAccount` was declared, implemented and tested and called
+     * by nobody, so `facts.account` was `UNRESOLVED_ACCOUNT` on every meeting
+     * this product has ever produced — which made the opportunity structurally
+     * impossible (`reviewGate.ts` reads `edits.accountId !== null`) and shipped
+     * every compte-rendu task as an orphan with no `linkType`.
+     *
+     * A closure rather than the port, for the reason every other dependency here
+     * is one: `crm` is `null` until VerySwing is configured and a rep can
+     * configure it from Réglages mid-session (DEC-34), so a value captured here
+     * would pin the answer to whatever existed at boot. It is read at the end of
+     * a meeting, long after `crm` is initialised.
+     */
+    resolveAccount: (query) => {
+      const port = crm
+      return port ? port.resolveAccount(query) : Promise.resolve([])
+    },
     // The id only — `enhancementStatus` below composes the answer, and it is
     // the same function the `enhancement:status` read uses.
     onStatus: (meetingId) => {
@@ -1804,6 +1823,9 @@ const boot = async (): Promise<void> => {
     exportDirectory: app.getPath('downloads'),
     identity,
     agenda,
+    // For the gate's *Client* picker only — one read, never a write, and never
+    // fatal: see `accountCandidates` in register.ts.
+    crm,
     // A function, not the value resolved above: a key stored from Réglages has
     // to change the very next read (DEC-34), and the boot-time table would have
     // shown the rep their own save doing nothing.

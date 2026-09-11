@@ -46,6 +46,7 @@ import {
   passesFilter,
   withFilterDefaults,
 } from '../../core/domain/historySearch.ts'
+import type { AccountCandidate, CrmPort } from '../../core/contracts/crm.ts'
 import { askTranscript, compteRenduSources, renderCompteRendu } from '../../modules/extract/index.ts'
 import { verifyAnswer } from '../../core/domain/askAnswer.ts'
 import {
@@ -108,6 +109,25 @@ export interface IpcDeps {
    */
   identity?: IdentityPort | null
   agenda?: Agenda | null
+  /**
+   * VerySwing, for the one read the gate does: **which accounts this call could
+   * belong to**.
+   *
+   * `accountCandidates` was the literal `[]` with a comment saying step 8 would
+   * fill it, so `Review.tsx` never drew the picker and `set('accountId', …)` was
+   * unreachable — a rep whose account could not be resolved had no way to say
+   * which one it is, on the screen built to let them correct exactly that.
+   * That is DEC-18's mitigation *a*, and it was missing on the case that needs
+   * it most: `Enhancement` now declines to guess between two close candidates,
+   * which is right, and leaves the rep to choose.
+   *
+   * Read at panel time and never stored: candidates are a fact about the CRM
+   * *now*, and one frozen at extraction would go stale the moment somebody
+   * creates the account the rep was looking for. Optional and never fatal —
+   * VerySwing is an optional connector (DEC-26) and a gate that refuses to open
+   * because a lookup failed is worse than one that opens with no suggestions.
+   */
+  crm?: CrmPort | null
   /** Injected so `confirmation.recorded.at` is reproducible in a test. */
   clock?: () => number
   /**
@@ -262,6 +282,53 @@ const authState = (identity: IdentityPort | null | undefined): AuthState => {
 }
 
 const EMPTY_AGENDA = { events: [], syncedAt: 0, armed: null, reason: 'Aucun calendrier connecté' }
+
+/**
+ * Which accounts this call could belong to, for the picker under *Client*.
+   *
+ * Never throws and never blocks the gate: VerySwing is optional (DEC-26), and
+ * a confirmation screen that will not open because a lookup timed out is worse
+ * than one that opens with no suggestions — the *Client* row already says the
+ * account is unresolved and the opportunity already states why it cannot ship.
+   *
+ * Two different questions, depending on what is already known. **Unresolved**
+ * and the question is « which company is this » — `resolveAccount`, the same
+ * verb `Enhancement` used and declined to act on when two candidates were too
+ * close, which is precisely the case the rep is here to settle.
+ * **Resolved** and the question is DEC-18's: « is this the right one of
+ * several in the same group » — `listSiblings` under the shared parent, so a
+ * compte-rendu meant for *Néovia Santé — Pôle Ouest* does not land in
+ * *Néovia Hospitalisation* with nothing on screen having said a choice existed.
+ */
+const accountCandidates = async (
+  crm: CrmPort | null | undefined,
+  accountId: string | null,
+  attendees: readonly { email: string }[],
+  hint: string,
+): Promise<AccountCandidate[]> => {
+  if (!crm) return []
+  const attendeeEmails = attendees.map((a) => a.email).filter((email) => email.trim() !== '')
+  if (attendeeEmails.length === 0) return []
+  try {
+    const candidates = await crm.resolveAccount({ attendeeEmails, hint })
+    if (accountId === null) return candidates
+
+    /*
+     * Resolved, so the remaining question is DEC-18's: is this the right one of
+     * several in the same group. Both customers and prospects carry a parent
+     * link, so listing siblings is a group-by rather than a heuristic — and it
+     * is the case `resolveAccount` alone can miss, because a sibling the scorer
+     * found no signal for is exactly the one nobody would think to look for.
+     */
+    const parent = candidates.find((c) => c.accountId === accountId)?.parentAccountId
+    if (!parent) return candidates
+    const siblings = await crm.listSiblings(parent)
+    const seen = new Set(candidates.map((c) => c.accountId))
+    return [...candidates, ...siblings.filter((s) => !seen.has(s.accountId))]
+  } catch {
+    return []
+  }
+}
 
 type Handler<C extends InvokeChannel> = (
   request: InvokeRequest<C>,
@@ -586,7 +653,7 @@ export const handlers: Handlers = {
    * `panel` field to fill in. There is no code path from here to a partially
    * rendered gate during a call.
    */
-  'review:get': ({ meetingId }, { store, orchestrator, identity }) => {
+  'review:get': async ({ meetingId }, { store, orchestrator, identity, crm }) => {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
 
@@ -644,8 +711,21 @@ export const handlers: Handlers = {
         meeting,
         edits,
         fields: reviewFields(extraction, verification),
-        // Populated by `modules/crm` in step 8 (DEC-18, mitigation *a*).
-        accountCandidates: [],
+        /*
+         * DEC-18, mitigation *a* — and this was the literal `[]` with a comment
+         * promising step 8 would fill it. `Review.tsx` draws the picker only when
+         * the list is non-empty, so `set('accountId', …)` was unreachable: a rep
+         * whose account could not be resolved had no way at all to say which one
+         * it is, on the screen built to let them correct exactly that. With
+         * `Enhancement` now declining to guess between two close candidates, this
+         * is the case that needs it most.
+         */
+        accountCandidates: await accountCandidates(
+          crm,
+          extraction.facts.account.accountId,
+          extraction.facts.interlocuteurs,
+          meeting.title,
+        ),
         interlocuteurs: extraction.facts.interlocuteurs,
         mailTo,
         overall: verification.overall,

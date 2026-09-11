@@ -1289,7 +1289,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             still is.
           */}
           {typedInert ? (
-            <p className="text-warn mb-2 text-ui">
+            <p className="measure text-warn mb-2 text-ui">
               {typedInert} Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à
               gauche, c’est lui qui part dans la tâche VerySwing.
             </p>
@@ -1639,7 +1639,10 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           onChange={(event) => onChange(event.target.value)}
           readOnly={inert !== null}
           className={cn(
-            'text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui [field-sizing:content]',
+            // `.measure` here rather than on a wrapper: `ch` resolves at the
+            // element's own size, and these are `--type-ui` inside a rail sized
+            // for `--type-copy` — 78 characters a line at 1440 and above.
+            'measure text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui [field-sizing:content]',
             inert === null ? 'bg-inner' : 'bg-subtle',
           )}
         />
@@ -1772,7 +1775,16 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         */
         rows={Math.max(6, body.split('\n').length + 1)}
         onChange={(event) => onBody(event.target.value)}
-        className="text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
+        /*
+          `.measure` **on the textarea itself**, and that is the whole of the
+          fix. The class caps at `58ch` and `ch` resolves against the *element's*
+          own font size — so a wrapper wearing it at `--type-copy` leaves a child
+          at `--type-ui` completely unconstrained, which is how the follow-up
+          draft rendered **eighty** characters a line while `--prose` reported
+          the screen green. CLAUDE.md's own invariant names this draft as one of
+          the surfaces sharing the measure. It never has.
+        */
+        className="measure text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
       />
     </section>
   )
@@ -1873,7 +1885,7 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
           already names — `bg-muted/30`, `ring-card` — and the shape is always
           the same: a class that is spelled correctly and silently inert.
         */}
-        <span className="text-muted line-clamp-2 text-meta">
+        <span className="measure text-muted line-clamp-2 text-meta">
           {intent.available ? intent.summary : intent.reason}
         </span>
         {intent.available && trouble ? (

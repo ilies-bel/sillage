@@ -20,6 +20,8 @@
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { MeetingContext, MeetingId, MeetingState } from '../../core/contracts/meeting.ts'
+import type { AccountCandidate, AccountQuery } from '../../core/contracts/crm.ts'
+import type { AccountRef } from '../../core/contracts/extraction.ts'
 import type { RecipeId } from '../../core/contracts/recipes.ts'
 import { ExtractionError } from '../../modules/extract/errors.ts'
 import type { TranscriptSegment } from '../../core/contracts/transcript.ts'
@@ -66,6 +68,33 @@ export interface EnhancementDeps {
   recipe: () => ExtractionRunner | null
   /** The signed-in rep's address, or null when Microsoft is not connected. */
   repEmail: () => string | null
+  /**
+   * **Which VerySwing account this call belongs to, asked once, before the
+   * recipe runs.**
+   *
+   * `CrmPort.resolveAccount` was declared, implemented in `VsaCrm`, tested — and
+   * called by nothing at all. A grep for it outside `modules/crm` returned the
+   * declaration and nothing else, so `facts.account` was `UNRESOLVED_ACCOUNT` on
+   * every meeting the product has ever produced. That is not a cosmetic gap:
+   * `reviewGate.ts`'s `opportunityPossible` reads `edits.accountId !== null`, so
+   * **the opportunity was structurally impossible**, and `VsaCrm.link()` fell
+   * through OPPY → COMPANY → FREE to its last branch and created every
+   * compte-rendu task as an orphan with no `linkType` and no client on it. Two
+   * of the three things the one button promises could not happen, on the
+   * deliverable DEC-28 calls first.
+   *
+   * A function and optional, for the two reasons every port here is: VerySwing
+   * is optional (DEC-26), and a rep can connect it from Réglages mid-session, so
+   * a value captured at boot would pin the answer to whatever was configured at
+   * launch.
+   *
+   * It never throws outward and never blocks the compte-rendu. An unreachable
+   * CRM leaves the account unresolved, which is the state the whole gate is
+   * already built to render — the row says so and the opportunity states why it
+   * cannot ship. Losing the compte-rendu because a CRM was down would invert
+   * DEC-26 exactly.
+   */
+  resolveAccount?: (query: AccountQuery) => Promise<AccountCandidate[]>
   /**
    * The orchestrator's `dispatch`, **not** `MeetingSession.dispatch`.
    *
@@ -355,10 +384,12 @@ export class Enhancement {
     this.#announce(meetingId)
 
     try {
+      const account = await this.#resolveAccount(meetingId, input.context)
       const result = await recipe.run({
         context: input.context,
         transcript: input.transcript,
         repEmail,
+        ...(account === null ? {} : { account }),
         ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
         ...(input.notes ? { notes: input.notes } : {}),
       })
@@ -445,6 +476,60 @@ export class Enhancement {
    * failure would turn a degraded model into a lost compte-rendu, and the
    * extraction has already succeeded or failed by the time this is called.
    */
+  /**
+   * The account this call belongs to, or `null` when nobody could say.
+   *
+   * **Never throws and never blocks.** VerySwing is optional (DEC-26) and the
+   * compte-rendu is the thing the product exists to produce: a CRM that is
+   * unreachable, slow or not configured leaves the account unresolved, which is
+   * a state every surface downstream already renders — the gate's *Client* row
+   * says so, and the opportunity states why it cannot ship. Losing the document
+   * because a lookup failed would invert DEC-26 exactly.
+   *
+   * **Only an unambiguous answer is taken.** `resolveAccount` returns scored
+   * candidates and the top one is used only when it stands clear of the second:
+   * DEC-18's whole argument is that picking the wrong company is the expensive
+   * mistake — the compte-rendu lands in a stranger's file — and a tie is the
+   * case where the app has no basis to choose. Unresolved is honest and the rep
+   * is shown the alternatives at the gate (`accountCandidates`); a confident
+   * wrong answer is not, and it is `⚠ faible` on the row rather than a silent
+   * pick.
+   */
+  async #resolveAccount(meetingId: MeetingId, context: MeetingContext): Promise<AccountRef | null> {
+    const resolve = this.#deps.resolveAccount
+    if (!resolve) return null
+    try {
+      const attendeeEmails = context.attendees.map((a) => a.email).filter((e) => e.trim() !== '')
+      if (attendeeEmails.length === 0) return null
+      const candidates = await resolve({ attendeeEmails, hint: context.subject })
+      const [best, next] = candidates
+      if (!best) return null
+      // A margin, not a threshold: what matters is whether one candidate stands
+      // out, not how sure the scorer claims to be about it in the abstract.
+      const clear = next === undefined || best.score - next.score >= 0.2
+      if (!clear) {
+        this.#record(
+          'info',
+          'extraction.account.ambiguous',
+          'plusieurs comptes VerySwing correspondent',
+          meetingId,
+          { candidates: candidates.slice(0, 4).map((c) => `${c.name} (${c.score})`) },
+        )
+        return null
+      }
+      return { accountId: best.accountId, name: best.name, confidence: best.confidence }
+    } catch (error) {
+      // A diagnostic, never a failure: see above.
+      this.#record(
+        'warn',
+        'extraction.account.failed',
+        error instanceof Error ? error.message : 'compte VerySwing non résolu',
+        meetingId,
+      )
+      return null
+    }
+  }
+
   #report(error: unknown | null): void {
     try {
       this.#deps.onOutcome?.(error)

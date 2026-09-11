@@ -8,7 +8,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../../../modules/store/index.ts'
 import { Orchestrator } from '../Orchestrator.ts'
-import { Enhancement, type ExtractionRunner } from '../Enhancement.ts'
+import { Enhancement, type EnhancementDeps, type ExtractionRunner } from '../Enhancement.ts'
 import { Diagnostics } from '../../../modules/diagnostics/index.ts'
 import {
   sampleContext,
@@ -52,7 +52,11 @@ const runner = (
   return stub
 }
 
-const open = (recipe: ExtractionRunner | null, repEmail: string | null = 'moi@esn.fr') => {
+const open = (
+  recipe: ExtractionRunner | null,
+  repEmail: string | null = 'moi@esn.fr',
+  resolveAccount?: EnhancementDeps['resolveAccount'],
+) => {
   const store = new Store(':memory:')
   const diagnostics = new Diagnostics(store, { environment })
   const states: string[] = []
@@ -65,6 +69,7 @@ const open = (recipe: ExtractionRunner | null, repEmail: string | null = 'moi@es
   const enhancement = new Enhancement({
     recipe: () => current,
     repEmail: () => repEmail,
+    ...(resolveAccount ? { resolveAccount } : {}),
     diagnostics,
     onOutcome: (error) => outcomes.push(error),
     onStatus: (meetingId) => statuses.push(meetingId),
@@ -611,4 +616,110 @@ test('the status says « en cours » from the end of the meeting, not from the m
   await settle()
   assert.equal(next.stateOf(id), 'awaiting_confirmation')
   store.close()
+})
+
+/*
+ * ── the account, which nothing had ever asked for ───────────────────────────
+ *
+ * `CrmPort.resolveAccount` was declared, implemented in `VsaCrm` and tested —
+ * and called by nothing at all: a grep outside `modules/crm` returned the
+ * declaration and nothing else. So `facts.account` was `UNRESOLVED_ACCOUNT` on
+ * every meeting this product has ever produced, which is not cosmetic:
+ * `reviewGate.ts`'s `opportunityPossible` reads `edits.accountId !== null`, so
+ * **the opportunity was structurally impossible**, and `VsaCrm.link()` fell
+ * through to its last branch and created every compte-rendu task as an orphan
+ * with no `linkType` and no client on it. Two of the three things the one button
+ * promises could not happen.
+ *
+ * Asserted on what the recipe was **handed**, because that is the seam: the stub
+ * above returns a fixture and never runs `buildFacts`, and the real one puts
+ * `input.account` straight into `facts.account`.
+ */
+const watcher = (): ExtractionRunner & { seen: Array<{ accountId: string | null } | undefined> } => {
+  const stub = {
+    seen: [] as Array<{ accountId: string | null } | undefined>,
+    async run(input: { account?: { accountId: string | null } }) {
+      stub.seen.push(input.account)
+      return {
+        extraction: sampleExtraction,
+        verification: sampleVerification,
+        compteRendu: '# Compte-rendu',
+      }
+    },
+  }
+  return stub as unknown as ExtractionRunner & {
+    seen: Array<{ accountId: string | null } | undefined>
+  }
+}
+
+const candidate = (accountId: string, name: string, score: number) => ({
+  accountId,
+  name,
+  parentAccountId: null,
+  score,
+  confidence: 'ok' as const,
+  signals: [],
+})
+
+test('a clear match becomes the meeting’s account, and the opportunity can exist', async () => {
+  const recipe = watcher()
+  const h = open(recipe, 'moi@esn.fr', async () => [
+    candidate('ACC-1042', 'Acme Industries', 0.92),
+    candidate('ACC-77', 'Acme Logistique', 0.31),
+  ])
+
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+
+  assert.equal(recipe.seen[0]?.accountId, 'ACC-1042')
+  h.cleanup()
+})
+
+test('two candidates too close together resolve to nothing, and say so', async () => {
+  /*
+   * DEC-18's whole argument: picking the wrong company is the expensive
+   * mistake — the compte-rendu lands in a stranger's file. A margin, not a
+   * threshold: what matters is whether one stands out, not how sure the scorer
+   * claims to be in the abstract. The rep is shown the alternatives at the gate.
+   */
+  const recipe = watcher()
+  const h = open(recipe, 'moi@esn.fr', async () => [
+    candidate('ACC-1042', 'Néovia Santé — Pôle Ouest', 0.61),
+    candidate('ACC-1043', 'Néovia Hospitalisation', 0.55),
+  ])
+
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+
+  assert.equal(recipe.seen[0], undefined)
+  h.cleanup()
+})
+
+test('a CRM that throws costs the account and never the compte-rendu (DEC-26)', async () => {
+  // VerySwing is optional and the document is the thing the product exists to
+  // produce. Losing it because a lookup failed would invert DEC-26 exactly.
+  const recipe = watcher()
+  const h = open(recipe, 'moi@esn.fr', async () => {
+    throw new Error('VSA injoignable')
+  })
+
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+
+  assert.equal(recipe.seen[0], undefined)
+  assert.ok(h.store.projections.extraction(h.id), 'le compte-rendu doit exister quand même')
+  assert.equal(h.orchestrator.stateOf(h.id), 'awaiting_confirmation')
+  h.cleanup()
+})
+
+test('no CRM configured at all is simply no account, with no lookup attempted', async () => {
+  const recipe = watcher()
+  const h = open(recipe)
+
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+
+  assert.equal(recipe.seen[0], undefined)
+  assert.ok(h.store.projections.extraction(h.id))
+  h.cleanup()
 })
