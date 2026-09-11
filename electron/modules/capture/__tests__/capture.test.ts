@@ -463,3 +463,57 @@ test('a channel that is producing audio says nothing at all', async () => {
   assert.deepEqual(health.filter((h) => h.state !== 'ok'), [])
   await session.stop()
 })
+
+/** `ConnectorHealth` carries no reason when it is `ok`, so narrow before reading one. */
+const reasonOf = (health: ConnectorHealth | undefined): string =>
+  health && health.state !== 'ok' ? health.reason : ''
+const routeChanged = (health: ConnectorHealth): boolean => /sortie audio/.test(reasonOf(health))
+
+/**
+ * **The default output route changed while the tap was open.**
+ *
+ * `getDefaultOutputDeviceId` existed for months with a docblock saying « polled
+ * during a meeting: when it changes, the system capture has to be rebuilt or the
+ * tap keeps recording the old device — which is silence, not an error », and
+ * nothing polled it. Plugging in a headset mid-call, or Teams moving itself to
+ * the communications device, silences the far channel for the rest of the
+ * meeting. The watchdog notices the silence four seconds later; only this can
+ * say why, and « rien n'arrive » and « la sortie a changé » lead a rep to two
+ * different actions.
+ */
+test('a change of output route during the call is reported once, and named', async () => {
+  let route = 'speakers'
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, defaultOutputDeviceId: () => route })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+
+  route = 'casque-bluetooth'
+  await new Promise((resolve) => setTimeout(resolve, 40))
+
+  const changed = health.filter(routeChanged)
+  assert.equal(changed.length, 1, 'dit une fois, pas à chaque tick')
+  assert.equal(changed[0]?.state, 'degraded')
+  // Never `down`: the microphone is still arriving and the meeting is still
+  // being recorded (DEC-32).
+  assert.ok(/le son du client/.test(reasonOf(changed[0])))
+
+  // And back again is not a second sentence — it says nothing the first did not.
+  route = 'speakers'
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(health.filter(routeChanged).length, 1)
+
+  await session.stop()
+})
+
+test('a binary that cannot answer is never reported as a change', async () => {
+  // `null` is « we cannot tell », which DEC-45 says is not a finding. An older
+  // native module answers that way for the whole meeting.
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, defaultOutputDeviceId: () => null })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(health.filter(routeChanged).length, 0)
+  await session.stop()
+})

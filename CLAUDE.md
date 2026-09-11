@@ -788,6 +788,20 @@ machine) or in `core/domain/` — never in an IPC handler.
   **This module existed, tested, for months with no caller**: it was a `.mjs`
   inside `electron/`, therefore outside `tsc` entirely, so nothing could notice.
   A module here carries `.ts` for that reason and not only for the build.
+- **A change of output route during the call is said out loud**
+  (`modules/capture/index.ts`, `AudioDevices.getDefaultOutputDeviceId`). That function existed
+  for months carrying a docblock — « polled during a meeting: when it changes, the system
+  capture has to be rebuilt or the tap keeps recording the old device — which is silence, not an
+  error » — and **nothing polled it**. Plugging in a headset mid-call, or Teams moving itself to
+  the communications device, silences the far channel for the rest of the meeting. The watchdog
+  above notices the silence four seconds later; what it cannot do is say *why*, and « rien
+  n'arrive de l'audio de votre ordinateur » and « la sortie audio a changé pendant l'appel »
+  lead a rep to two different actions. So the route is read when the tap opens and on every
+  tick, and a change is **reported, not repaired**: restarting a live capture is a bigger
+  promise than can be kept on a platform this cannot be tested on from here. Said once per
+  meeting — switching to headphones and back would otherwise say it twice, and the second says
+  nothing new — `degraded` and never `down` (DEC-32), and `null` from an older binary means « we
+  cannot tell », which is never reported as a change (DEC-45).
 - **The local engine is pooled and outlives the meeting, so its prompt must be set
   unconditionally.** `prewarmLocalEngine()` holds a reference that is never released, and
   `setPrompt` is last-writer-wins — so `if (this.#prompt) engine.setPrompt(…)` meant a

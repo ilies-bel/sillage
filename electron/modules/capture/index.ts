@@ -19,6 +19,7 @@ import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import { InputLevelWatch, rmsOfInt16, type InputLevel } from '../../core/domain/inputLevel.ts'
+import { getDefaultOutputDeviceId } from './AudioDevices.ts'
 import { MicrophoneCapture } from './MicrophoneCapture.ts'
 import { SystemAudioCapture } from './SystemAudioCapture.ts'
 import { loadNativeModule } from './nativeModule.ts'
@@ -51,6 +52,14 @@ export interface CaptureOptions {
    * real seconds, and a check nobody runs is a check that does not exist.
    */
   tickMs?: number
+  /**
+   * The default output route, injected so a test can move it.
+   *
+   * Defaults to the real `AudioDevices` reader, which answers null on a binary
+   * that predates the function — and null means « we cannot tell », which is
+   * never reported as a change.
+   */
+  defaultOutputDeviceId?: () => string | null
 }
 
 export interface CaptureSessionEvents {
@@ -156,6 +165,9 @@ export class CaptureSession extends EventEmitter {
   #health = new Map<Channel, SystemAudioHealthClassifier>()
   /** Feeds `watchdog-tick`, which is how a channel that produced *nothing* is noticed. */
   #tick: ReturnType<typeof setInterval> | null = null
+  /** The default output route when the tap was opened, or null if unknowable. */
+  #routeAtStart: string | null = null
+  #routeChangeReported = false
   #reported = new Map<Channel, InputLevel>()
 
   /**
@@ -288,8 +300,31 @@ export class CaptureSession extends EventEmitter {
      * outlive a meeting).
      */
     this.#health.clear()
+    /*
+     * The route the system tap was opened on, so a change can be noticed.
+     *
+     * `getDefaultOutputDeviceId` has existed, with a docblock saying « polled
+     * during a meeting: when it changes, the system capture has to be rebuilt or
+     * the tap keeps recording the old device — which is silence, not an error »,
+     * and **nothing polled it**. Plugging in a headset mid-call, or Teams moving
+     * itself to the communications device, silences the far channel for the rest
+     * of the meeting.
+     *
+     * What this does is *say so*, not rebuild the tap. The watchdog below
+     * already notices the silence four seconds later and reports it; what it
+     * cannot do is say why, and « rien n'arrive de l'audio de votre ordinateur »
+     * and « la sortie audio a changé pendant l'appel » lead a rep to two very
+     * different actions. Restarting a live capture is a bigger promise than
+     * this can keep on a platform it cannot be tested on from here.
+     *
+     * `null` where the binary predates the function, and the whole check is
+     * then skipped — « we cannot tell » is not « it changed » (DEC-45).
+     */
+    this.#routeAtStart = this.#defaultOutputDeviceId()
+    this.#routeChangeReported = false
     this.#tick = setInterval(() => {
       const nowMs = this.#clock()
+      this.#checkOutputRoute()
       for (const channel of ['rep', 'far'] as const) this.#watch(channel, { kind: 'watchdog-tick', nowMs })
     }, this.#options.tickMs ?? 4_000)
     this.#tick.unref?.()
@@ -410,6 +445,50 @@ export class CaptureSession extends EventEmitter {
    * arriving. DEC-32 reserves an app-level status change for a subsystem that
    * stops a meeting, and this one has not.
    */
+  /**
+   * Injected so a test can move the route without an audio device, and so the
+   * native call is made lazily — `AudioDevices` documents why nothing in this
+   * module may touch the native host at import time.
+   */
+  #defaultOutputDeviceId(): string | null {
+    const read = this.#options.defaultOutputDeviceId ?? getDefaultOutputDeviceId
+    try {
+      return read()
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * The default output route changed while the tap was open.
+   *
+   * Said once per meeting: a rep who switches to headphones and back would
+   * otherwise get the sentence twice, and the second one says nothing the first
+   * did not. `degraded`, never `down` — the microphone is still arriving and the
+   * meeting is still being recorded (DEC-32) — and it names the side, because
+   * this one is only ever the system tap (DEC-45).
+   */
+  #checkOutputRoute(): void {
+    if (this.#routeAtStart === null || this.#routeChangeReported) return
+    const now = this.#defaultOutputDeviceId()
+    if (now === null || now === this.#routeAtStart) return
+    this.#routeChangeReported = true
+    this.#diagnostics.record({
+      severity: 'warn',
+      code: 'capture.far.routeChanged',
+      module: 'capture',
+      message: 'default output route changed while the system tap was open',
+      detail: {},
+    })
+    this.emit('health', {
+      state: 'degraded',
+      reason:
+        'La sortie audio de l’ordinateur a changé pendant l’appel — le son du client peut ne plus être capté. Terminez et redémarrez l’enregistrement pour le reprendre.',
+      since: this.#clock(),
+      retryable: true,
+    } satisfies ConnectorHealth)
+  }
+
   #watch(channel: Channel, event: HealthEvent): void {
     let classifier = this.#health.get(channel)
     if (!classifier) {
