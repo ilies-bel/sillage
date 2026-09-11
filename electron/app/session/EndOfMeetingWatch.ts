@@ -76,11 +76,17 @@ export class EndOfMeetingWatch {
     this.#evaluate()
   }
 
-  /** The rep pressed *Terminer*. Short-circuits the grace window entirely. */
-  manual(): void {
-    if (this.#stopped) return
-    this.#end(decideEndOfMeeting({ now: this.#clock(), silentSince: null, scheduledEnd: null, manual: true }))
-  }
+  /*
+   * **`manual()` is gone, and it was never callable.**
+   *
+   * « The rep pressed *Terminer*. Short-circuits the grace window entirely. »
+   * — except pressing *Terminer* goes through the state machine, and
+   * `Orchestrator.stopRecording` calls `stop()` on this watch as its second
+   * line. Calling `manual()` from there would have fired `onEnd` on a meeting
+   * the orchestrator was already ending. Declared, documented, unit-tested,
+   * with no caller and no correct place for one: the shape `check:surfaces`
+   * exists to catch, one layer below where it was looking.
+   */
 
   /** The meeting ended by another route. Nothing may fire afterwards. */
   stop(): void {

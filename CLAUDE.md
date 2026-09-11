@@ -728,6 +728,19 @@ machine) or in `core/domain/` — never in an IPC handler.
   today: `attachTranscript` and `createContact` both *write into the client's
   systems* and belong in the gate's intent list as a decision, not as a side
   effect of extraction.
+- **And the fourth boundary is a class method in `app/session/`, where it costs most.**
+  The nineteenth round said the check below asks the right question at three places and
+  `check:ports` at a fourth, and that **none of them asks it of a method on a class in
+  `electron/app/session/`** — which is where the state machine, the outbox and the enhancement
+  runner live. Three were found there at once, all the same shape, all green in every suite.
+  `Outbox.isDraining` answered « is a push in flight » and the quit path that needed exactly
+  that question asked a different one, so « press *Valider*, close the window » abandoned a
+  POST. `Enhancement.isRunning` answered the same question about extraction, which nothing
+  asks. And `EndOfMeetingWatch.manual` — « the rep pressed *Terminer* » — had no *correct*
+  caller either: `stopRecording` already calls `stop()` on that watch, so `manual()` would
+  have fired `onEnd` on a meeting the orchestrator was ending. A public method here is an
+  offer, and **a test is not a caller**. The scope stays narrow deliberately: this is the layer
+  where « nobody calls it » is a behaviour that silently does not happen.
 - **And the same question, asked at every boundary where « declared » and « reached » are
   different files** (`npm run check:surfaces`). The fifteenth round said the check above was
   right and its *scope* was the problem, and named the general form: the repo's prose is being

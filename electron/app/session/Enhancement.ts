@@ -214,10 +214,15 @@ export class Enhancement {
     this.#clock = deps.clock ?? Date.now
   }
 
-  /** True while this meeting's extraction is in flight. */
-  isRunning(meetingId: MeetingId): boolean {
-    return this.#running.has(meetingId)
-  }
+  /*
+   * **`isRunning` is gone for the reason `Outbox.isDraining` is.**
+   *
+   * It answered « is this meeting's extraction in flight », which nothing asks:
+   * `before-quit` deliberately does *not* wait for enhancement — it can take
+   * minutes and a rep who pressed close is owed a window that goes away — and
+   * `reconcile` reads `#running` directly, from inside. Declared, documented,
+   * unit-tested, unreached.
+   */
 
   /**
    * The end-of-meeting path has started on this meeting — say so now, rather

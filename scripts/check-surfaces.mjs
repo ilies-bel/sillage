@@ -210,11 +210,74 @@ for (const file of rust) {
   }
 }
 
+/*
+ * **The fourth boundary, and the one the nineteenth round found by hand.**
+ *
+ * The three above ask « declared where, reached where » of an IPC invoke
+ * channel, an IPC broadcast and a Rust `mod`; `check:ports` asks it of a method
+ * on a port declared in `core/contracts/`. **Neither asks it of a method on a
+ * class in `electron/app/session/`** — which is where the state machine, the
+ * outbox and the enhancement runner live, and therefore where a method nobody
+ * calls costs the most.
+ *
+ * Three were found there at once, all the same shape and all green in every
+ * suite: `Outbox.isDraining` (declared, documented, unit-tested, and the quit
+ * path that needed exactly that question asked a different one, so a push in
+ * flight was abandoned); `Enhancement.isRunning` (the same question about
+ * extraction, which nothing asks); and `EndOfMeetingWatch.manual` — « the rep
+ * pressed *Terminer* » — for which there was no *correct* caller either, since
+ * `stopRecording` already calls `stop()` on that watch and `manual()` would have
+ * fired `onEnd` on a meeting the orchestrator was ending.
+ *
+ * A public method on a class here is an offer; a test is not a caller. The scope
+ * is deliberately narrow — this is the layer where « nobody calls it » is a
+ * behaviour that silently does not happen, and a repo-wide version of this rule
+ * would be noise.
+ */
+const SESSION = 'electron/app/session/'
+const CALLERS = files.filter((file) => !isTest(file))
+const RESERVED = new Set(['constructor', 'if', 'for', 'while', 'switch', 'catch', 'return'])
+let methods = 0
+
+for (const file of files.filter((f) => f.startsWith(SESSION) && !isTest(f))) {
+  const body = bodies.get(file)
+  // The class body only: an `interface` in the same file declares members that
+  // are implemented elsewhere and called through the interface, not on a class.
+  const opened = /export class (\w+)[^{]*\{/.exec(body)
+  if (!opened) continue
+  const className = opened[1]
+  const declared = new Set(
+    [...body.slice(opened.index).matchAll(/^ {2}(?:static )?(?:async )?(\w+)\s*(?:<[^>]*>)?\(/gm)].map(
+      (m) => m[1],
+    ),
+  )
+  for (const name of declared) {
+    if (RESERVED.has(name)) continue
+    methods += 1
+    const called = CALLERS.some(
+      (other) => other !== file && new RegExp(`\\.${name}\\s*\\(`).test(bodies.get(other) ?? ''),
+    )
+    if (called) continue
+    if (UNREACHED.some((entry) => entry.subject === `${className}.${name}`)) continue
+    problems.push(
+      `${file} déclare \`${className}.${name}\` et rien ne l’appelle — ` +
+        'un test n’est pas un appelant.',
+    )
+  }
+}
+
 for (const entry of UNREACHED) {
   const known =
     invokeChannels.includes(entry.subject) ||
     broadcastChannels.includes(entry.subject) ||
-    files.includes(entry.subject)
+    files.includes(entry.subject) ||
+    // `Class.method`, for the session rule above: still declared somewhere.
+    (entry.subject.includes('.') &&
+      files.some((file) =>
+        new RegExp(`^ {2}(?:static )?(?:async )?${entry.subject.split('.')[1]}\\s*\\(`, 'm').test(
+          text.get(file) ?? '',
+        ),
+      ))
   if (!known) {
     problems.push(
       `UNREACHED mentionne « ${entry.subject} », qui n’existe plus — ` +
@@ -232,5 +295,6 @@ if (problems.length > 0) {
 
 console.log(
   `surfaces ok — ${invokeChannels.length} canal(aux), ${broadcastChannels.length} diffusion(s), ` +
-    `${rust.length} fichier(s) Rust, ${UNREACHED.length} dispense(s) déclarée(s)`,
+    `${rust.length} fichier(s) Rust, ${methods} méthode(s) de session, ` +
+    `${UNREACHED.length} dispense(s) déclarée(s)`,
 )
