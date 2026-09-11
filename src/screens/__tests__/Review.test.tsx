@@ -352,6 +352,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
   test('a citation can be followed into the transcript it was verified against', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({
+      marks: [],
       segments: [
         segment('s1', 'far', 0, 'Bonjour, merci pour le point.'),
         segment('s2', 'far', 61_000, 'Il nous faut deux dev java senior sur le sujet.'),
@@ -382,6 +383,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
   test('a citation the transcript does not contain says so, and does not pretend', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({
+      marks: [],
       segments: [segment('s1', 'far', 0, 'Rien de ce qui a été cité.')],
     }))
 
@@ -410,6 +412,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
   test('the transcript search opens carrying the quote that did not verify', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({
+      marks: [],
       segments: [
         segment('s1', 'far', 0, 'Rien de ce qui a été cité.'),
         segment('s2', 'far', 61_000, 'Il nous faudrait deux dev java, senior de préférence.'),
@@ -465,6 +468,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
   test('a verified citation does not pre-fill the search over its own hit', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({
+      marks: [],
       segments: [segment('s1', 'far', 61_000, 'Il nous faut deux dev java senior.')],
     }))
 
@@ -1187,6 +1191,7 @@ describe('the bullets are checkable, the way the fields are (DEC-21)', () => {
   test('a bullet written from a cited item opens the record on it', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({
+      marks: [],
       segments: [segment('s1', 'far', 61_000, 'On vous envoie deux CV vendredi, promis.')],
     }))
     render(<Review meetingId="m1" onBack={() => {}} />)

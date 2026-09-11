@@ -92,6 +92,21 @@ const button = cva(
        * links.
        */
       nav: 'text-brand-700 hover:text-brand-900 disabled:text-muted text-ui',
+      /**
+       * An irreversible stop, confirmed.
+       *
+       * One caller: the widget's second press, the one that ends a recording
+       * (`src/widget/Widget.tsx`). It is not a general « destructive » tone and
+       * must not become one — `--danger` carries « something is wrong » on every
+       * other surface in this product, and a palette that also spends it on
+       * ordinary controls teaches a rep to read it as decoration.
+       *
+       * `--danger` is 5.47:1 on white, so `text-inner` on it clears AA both
+       * ways round. The filled shape is the point: the confirmation has to be a
+       * different rectangle from the label the rep just pressed, and a bordered
+       * copy of it would not be.
+       */
+      danger: 'bg-danger text-inner rounded-sm px-3 py-1.5 text-ui font-medium',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
       text: 'text-muted hover:text-body disabled:opacity-60 text-ui',
       /** The same, when it needs to read as a link rather than a control. */

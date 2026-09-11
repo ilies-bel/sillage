@@ -18,6 +18,7 @@ import {
   UserCommandSchema,
 } from './meeting.ts'
 import { TranscriptSegmentSchema, TranscriptViewSchema } from './transcript.ts'
+import { MARK_NOTE_MAX, MomentMarkSchema } from './marks.ts'
 import { SignalSchema } from './signals.ts'
 import { OutboxEntrySchema } from './push.ts'
 import { ConnectorHealthSchema, ConnectorIdSchema, HealthSnapshotSchema } from './health.ts'
@@ -359,6 +360,98 @@ export const invokeChannels = {
     request: z.object({ meetingId: MeetingIdSchema }),
     response: TranscriptViewSchema,
   },
+
+  /**
+   * **The rep marking a moment of their own call** (`core/contracts/marks.ts`).
+   *
+   * Refused unless the meeting is recording, and the refusal is the honest one:
+   * « ce moment » has no referent once the call is over, and a mark stamped
+   * after the fact would sit in the reader among turns it has nothing to do
+   * with. The gate is the place to say something about a call that has ended.
+   *
+   * The id is minted in the main process, not in the renderer: two windows can
+   * press this — the session screen and the widget floating over Teams — and an
+   * id generated on either side would be two sources for one identity.
+   */
+  'meeting:mark': {
+    request: z.object({
+      meetingId: MeetingIdSchema,
+      note: z.string().trim().max(MARK_NOTE_MAX).default(''),
+      /** The turn the rep pressed on, or null for the pill's own button. */
+      segmentId: z.string().min(1).nullable().default(null),
+    }),
+    response: MomentMarkSchema,
+  },
+
+  /**
+   * **What the widget draws** (`app/windows/Overlay.ts`).
+   *
+   * One read on open, then kept current by `session:changed`, `audio:level`,
+   * `health:changed` and `moment:marked` — the broadcasts that already exist,
+   * reaching this window because a broadcast goes to every window and not to
+   * the one that asked.
+   *
+   * `null` means « no call is being recorded ». The widget is destroyed in that
+   * state rather than drawn empty, so this answers null only in the frame
+   * between the meeting ending and the window closing, and on the first read of
+   * a window that opened on a race.
+   */
+  'widget:state': {
+    request: z.object({}),
+    response: z.object({
+      meeting: z
+        .object({
+          meetingId: MeetingIdSchema,
+          /** The objet as the rep typed it, or empty until they do (DEC-31). */
+          title: z.string(),
+          clientName: z.string().nullable(),
+          startedAt: TimestampSchema,
+          marks: z.array(MomentMarkSchema),
+        })
+        .nullable(),
+    }),
+  },
+
+  /**
+   * The widget telling the main process how big it has become.
+   *
+   * The window is frameless and transparent, so every pixel of it that is not
+   * the pill is a pixel of Teams the rep cannot click. Sizing it from the
+   * content is what keeps that area zero — and the content is the only thing
+   * that knows, because it is the collapsed pill or the expanded card depending
+   * on a press that happened in the renderer.
+   *
+   * It moves one window, the overlay, whichever window sends it. That is not an
+   * oversight: there is one overlay, `IpcDeps.widget` is absent when there is
+   * none, and the alternative — routing on `event.sender` — would put the
+   * window registry inside the routing layer to defend against a renderer that
+   * is this product's own and is served under `connect-src 'self'`.
+   */
+  'widget:resize': {
+    request: z.object({
+      width: z.number().int().positive().max(1000),
+      height: z.number().int().positive().max(1000),
+    }),
+    response: z.object({ ok: z.boolean() }),
+  },
+
+  /**
+   * **Bring the main window back**, and put it on this meeting.
+   *
+   * The widget's way out of itself: the rep is in Teams, they want the notepad,
+   * and the Sillage window is behind three others — on Windows it may be
+   * minimised, where `focus()` alone does nothing. This restores, shows and
+   * focuses it, then broadcasts `session:open` so the window lands on the call
+   * rather than on whatever screen it was left on.
+   *
+   * It is the second thing in the product that navigates without the rep having
+   * pressed something inside the main window, and like the first — the 14:30
+   * notification (DEC-46) — it happens only on a press the rep made.
+   */
+  'window:focus': {
+    request: z.object({ meetingId: MeetingIdSchema.nullable().default(null) }),
+    response: z.object({ ok: z.boolean() }),
+  },
   /**
    * *Demander* — one question about one call, answered from that call's record
    * (`core/contracts/ask.ts`).
@@ -673,6 +766,15 @@ export const broadcastChannels = {
     segment: TranscriptSegmentSchema,
   }),
   'signal:appended': z.object({ meetingId: MeetingIdSchema, signal: SignalSchema }),
+  /**
+   * A mark the rep just made, to every window (`core/contracts/marks.ts`).
+   *
+   * Both windows that can make one also draw the list, and the one that did not
+   * press is the one that would otherwise be wrong: a rep who marks from the
+   * widget and then opens the session screen must not find a list that is one
+   * short.
+   */
+  'moment:marked': z.object({ meetingId: MeetingIdSchema, mark: MomentMarkSchema }),
   /**
    * The input meter, ten times a second while a meeting records.
    *

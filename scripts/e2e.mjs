@@ -70,7 +70,36 @@ const step = async (name, body) => {
 
 let app = null
 let page = null
+/** The in-meeting widget's window, while a meeting is recording. */
+let widget = null
 let noise = []
+
+/**
+ * The widget's window, or null.
+ *
+ * Found by its URL rather than by index: there is no ordering guarantee between
+ * windows, and `app.windows()[1]` would be a test that passes for the wrong
+ * reason the first time a devtools window opens. `?window=widget` is what
+ * `src/main.tsx` reads to decide which renderer it is, so it is also the honest
+ * thing to look for.
+ */
+const findWidget = async () => {
+  for (const window of app.windows()) {
+    if (window.isClosed()) continue
+    if (window.url().includes('window=widget')) return window
+  }
+  return null
+}
+
+/** Poll until a condition holds, or give up. Used for windows appearing and going. */
+const waitFor = async (predicate, timeoutMs) => {
+  const until = Date.now() + timeoutMs
+  while (Date.now() < until) {
+    if (await predicate()) return true
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return false
+}
 /** The meeting the gate steps below seed, drive and confirm. */
 let gated = null
 
@@ -188,6 +217,34 @@ try {
     await page.getByRole('button', { name: 'Terminer' }).waitFor({ timeout: 30_000 })
   })
 
+  await step('the widget opens over the call, in its own window', async () => {
+    /*
+     * The in-meeting widget (`app/windows/Overlay.ts`), which nothing but a
+     * real Electron run can see: it is a second `BrowserWindow`, created by the
+     * main process when a meeting starts recording, loading the same bundle
+     * under `?window=widget`. The screenshot harness drives its renderer
+     * against a stubbed bridge and jsdom cannot have a window at all — so the
+     * query string, the preload on a second window and the `widget:state`
+     * channel are exercised by this and by nothing else.
+     */
+    await waitFor(async () => (await findWidget()) !== null, 20_000)
+    widget = await findWidget()
+    if (!widget) throw new Error('aucune fenêtre widget pendant l’enregistrement')
+    widget.setDefaultTimeout(20_000)
+    await widget.getByLabel('Durée d’enregistrement').waitFor({ timeout: 15_000 })
+  })
+
+  await step('a moment marked from the widget is written to the real store', async () => {
+    await widget.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+    const note = widget.getByPlaceholder('Noter ce moment…')
+    await note.click()
+    await note.type('à vérifier avec les achats')
+    await note.press('Enter')
+    // Drawn back from the *broadcast*, not from local state: the row appears
+    // because the main process appended the event and told every window.
+    await widget.getByText('à vérifier avec les achats').waitFor({ timeout: 15_000 })
+  })
+
   await step('the rep’s notepad takes what they type (DEC-5)', async () => {
     // The one surface in the product that is the rep's own. Typing into the real
     // ProseMirror instance is also what proves the editor mounted at all — it is
@@ -211,6 +268,18 @@ try {
       .getByText(/modèle de langage|sera généré|compte-rendu/i)
       .first()
       .waitFor({ timeout: 45_000 })
+  })
+
+  await step('the widget goes when the recording does', async () => {
+    /*
+     * A pill floating over every other application is chrome the rep has to
+     * close; one that outlived the call would also be saying « enregistrement
+     * en cours » about a meeting that has ended. `syncOverlay` is driven from
+     * the same transition broadcast the renderer is, so this is the assertion
+     * that the two cannot drift.
+     */
+    const gone = await waitFor(async () => (await findWidget()) === null, 15_000)
+    if (!gone) throw new Error('le widget est resté ouvert après la fin de l’enregistrement')
   })
 
   await step('there is no route into the gate for a meeting that never reached it', async () => {
@@ -275,6 +344,23 @@ try {
     if (!/^[A-ZÀÂÉÈÊÎÔÙÜÇ]/.test(text.trim())) {
       throw new Error(`refus qui ne commence pas par une phrase : ${text}`)
     }
+  })
+
+  await step('the moment marked from the widget is in the record afterwards', async () => {
+    /*
+     * The other half of the mark, and the half that gives it a point: it was
+     * made in one window during the call and is read in another after it, out
+     * of the log, through `history:record`. The reader and the widget place it
+     * with the same helper (`core/contracts/marks.ts`), which is what stops two
+     * screens from disagreeing about one call.
+     *
+     * On the record *Demander* just opened, so this walks no UI of its own —
+     * and the call it reads has **no transcript at all**, which is the case
+     * worth asserting: a headless run records no audio, and a reader that drew
+     * marks only when there were segments to interleave them with would have
+     * swallowed every one of them on exactly the meeting a rep marks most.
+     */
+    await page.getByText('à vérifier avec les achats').first().waitFor({ timeout: 20_000 })
   })
 
   await step('the empty day can replay first run', async () => {

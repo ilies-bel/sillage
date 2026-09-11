@@ -13,6 +13,7 @@ import { z } from 'zod'
 import { MeetingContextSchema, MeetingStateSchema, TimestampSchema } from './meeting.ts'
 import { RecipeIdSchema } from './recipes.ts'
 import { TranscriptSegmentSchema } from './transcript.ts'
+import { MomentMarkSchema } from './marks.ts'
 import { SignalSchema } from './signals.ts'
 import { ExtractionESNSchema, VerificationReportSchema } from './extraction.ts'
 import { PushIntentSchema, PushResultSchema } from './push.ts'
@@ -127,6 +128,18 @@ export const MeetingEventSchema = z.discriminatedUnion('type', [
 
   /** Read-only, rail only. Never enters the document (DEC-14). */
   z.object({ type: z.literal('signal.appended'), signal: SignalSchema }),
+
+  /**
+   * The rep's own bookmark, made during the call (`core/contracts/marks.ts`).
+   *
+   * The opposite direction through the same screen as `signal.appended`: that
+   * one is what the model heard and is read-only to the rep, this one is the
+   * rep pressing a button on the widget floating over Teams. Recorded as an
+   * event rather than as a projection column because there is no ceiling on how
+   * many a rep may make and because `at` is the whole of it — a mark is a
+   * moment, and the log is already a list of moments.
+   */
+  z.object({ type: z.literal('moment.marked'), mark: MomentMarkSchema }),
 
   z.object({ type: z.literal('extraction.started'), attempt: z.number().int().positive() }),
   z.object({

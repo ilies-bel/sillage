@@ -194,6 +194,17 @@ what `serve.mjs` drops the meta for.
 | `review-valide` | the one irreversible press, driven: read both columns, correct a field, press *Valider*, and assert the payload actually left with the correction in it |
 | `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
+| `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
+| `widget-ouvert` | the same window opened: the live transcript, the rep's own marks in place, the note field and the two ways out. The only surface in the product that draws an **interim** transcription — muted, with an ellipsis, and never the record |
+| `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
+
+A stage carrying `query` is loaded on that query string. There is exactly one today and it
+is the widget: the app has one window with no routes in its URL, and the second window is
+told which renderer it is by `?window=widget` (`src/main.tsx`). The three widget stages are
+photographed over the app's own canvas rather than over a video call — the six checks measure
+the pill against paper, and the contrast a rep actually sees is against whatever Teams is
+painting. The shadow is what carries that separation, and it is the one thing a screenshot
+cannot verify.
 
 ## `--sans-entra` — the configuration the first demo ships in
 

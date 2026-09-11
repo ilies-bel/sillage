@@ -101,9 +101,34 @@ const SILENT: Sample[] = new Array(HISTORY).fill({ rep: 0, far: 0 })
 
 interface LevelMeterProps {
   meetingId: string
+  /**
+   * **The same instrument, at the size the surface has** — never a second one.
+   *
+   * `pill` is the in-meeting widget's collapsed state (`src/widget/Widget.tsx`),
+   * which is two hundred and twenty pixels wide in total and floats over the
+   * call. It drops the key and halves the window, for the reason `index.css`
+   * already drops `.meter-key` at the app's minimum width: two 11px words are
+   * worth thirty-four pixels of a header and are not worth a sixth of a pill.
+   * Everything that carries the *reading* is untouched — the same scale, the
+   * same floor, the same two tones, the same mirroring about a baseline — so a
+   * rep reads grey on the pill exactly as they read it in the header.
+   *
+   * Ten bars rather than twenty, at seven pixels each rather than three and a
+   * half. The comment on `HISTORY` is the rule being applied and not broken: a
+   * bar has to be a bar, so when the width halves it is the *history* that
+   * gives way, never the bar.
+   */
+  variant?: 'header' | 'pill'
 }
 
-export function LevelMeter({ meetingId }: LevelMeterProps) {
+/** Bars on screen, and how wide the strip they sit in is, per variant. */
+const SHAPE = {
+  header: { bars: HISTORY, width: 148, height: 'h-7' },
+  pill: { bars: 10, width: 76, height: 'h-6' },
+} as const
+
+export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
+  const shape = SHAPE[variant]
   const [samples, setSamples] = useState<Sample[]>(SILENT)
   const [floor, setFloor] = useState(0)
 
@@ -144,14 +169,17 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         from — so the label is not describing the meter, it is *on* the row it
         names. `leading-none` and a fixed half each, or the two words drift off
         the channels they belong to as the meter's height changes.
+
+        `.meter-key`: dropped by `index.css` when the header runs out of room at
+        the window's minimum width, and dropped here for the same reason on the
+        widget's pill, which is narrower than the key and the bars together.
       */}
-      {/* `.meter-key`: dropped by `index.css` when the header runs out of room
-          at the window's minimum width. The two halves stay mirrored about a
-          baseline, which is the distinction the words name. */}
-      <span className="meter-key text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
-        <span>moi</span>
-        <span>client</span>
-      </span>
+      {variant === 'pill' ? null : (
+        <span className="meter-key text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
+          <span>moi</span>
+          <span>client</span>
+        </span>
+      )}
 
       {/*
         148×28 rather than 128×24. This is the whole of DEC-38's proof of life —
@@ -160,8 +188,11 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         change rather than as a reading. The bar count is unchanged; the bars
         are simply wide enough and tall enough to be a bar.
       */}
-      <span className="flex h-7 w-[148px] shrink-0 items-stretch gap-[2px]">
-      {samples.map((sample, index) => (
+      <span
+        className={`flex ${shape.height} shrink-0 items-stretch gap-[2px]`}
+        style={{ width: `${shape.width}px` }}
+      >
+      {samples.slice(samples.length - shape.bars).map((sample, index) => (
         /*
          * The 1px gutter between the halves is the baseline, and it is drawn by
          * absence rather than by a rule: a 1px line across a 24px strip in a
@@ -195,10 +226,12 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
         The swatch is the token the bars use, so the key cannot drift from what
         it names.
       */}
-      <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
-        <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
-        non transcrit
-      </span>
+      {variant === 'pill' ? null : (
+        <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
+          <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
+          non transcrit
+        </span>
+      )}
     </div>
   )
 }

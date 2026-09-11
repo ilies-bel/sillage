@@ -408,6 +408,35 @@ export function installAppBridge(config) {
   })
 
   /**
+   * The rep's own marks (`core/contracts/marks.ts`).
+   *
+   * Two, and they are the two kinds: one made on a line — the price sentence,
+   * which is the turn a rep would point at — and one made on the pill with a
+   * note typed into it, which is what the widget's field produces. A fixture
+   * with only the first would never draw the second's rendering, and the two
+   * are laid out differently on every surface that shows them.
+   */
+  const MARKS = [
+    {
+      id: 'mark-1',
+      // Derived from the record rather than written beside it: a mark pinned to
+      // a hand-typed segment id is a fixture that stops pointing at anything
+      // the first time a line is added to the transcript above it, and it fails
+      // *silently* — the mark simply falls back to its timestamp and the
+      // pinned rendering is never photographed again.
+      at: SEGMENTS[SEGMENTS.length - 3].receivedAt + 2_000,
+      note: '',
+      segmentId: SEGMENTS[SEGMENTS.length - 3].id,
+    },
+    {
+      id: 'mark-2',
+      at: SEGMENTS[SEGMENTS.length - 2].receivedAt - 1_000,
+      note: 'revenir sur le plafond achats avant de proposer',
+      segmentId: null,
+    },
+  ]
+
+  /**
    * A speech-shaped level history for the header meter — 20 samples, which is
    * exactly the meter's window, so replaying them fills the strip in one go and
    * a still screenshot shows the widget as a rep sees it rather than flat.
@@ -2116,7 +2145,7 @@ export function installAppBridge(config) {
       in the product they are the same rows — one projection, read by two
       screens.
     */
-    'review:transcript': () => ({ segments: SEGMENTS }),
+    'review:transcript': () => ({ segments: SEGMENTS, marks: MARKS }),
 
     /*
       **A confirmation that changes nothing is a fixture showing the product
@@ -2204,6 +2233,39 @@ export function installAppBridge(config) {
       return SETTINGS.models
     },
     'models:state': () => SETTINGS.models,
+
+    /*
+      The in-meeting widget (`src/widget/Widget.tsx`).
+
+      The meeting it reports is the one the session scenario records, at the
+      same objet and the same start, so the pill floating over a call and the
+      header of the window behind it cannot disagree about which call it is.
+    */
+    'widget:state': () => ({
+      meeting: {
+        meetingId: 'm-neovia-cadrage',
+        title: 'Néovia Santé — cadrage renfort data',
+        clientName: 'Néovia Santé',
+        startedAt: now - 22 * MIN,
+        marks: MARKS,
+      },
+    }),
+    'meeting:mark': (payload) => {
+      const mark = {
+        id: 'mark-' + (MARKS.length + 1),
+        at: now,
+        note: payload.note || '',
+        segmentId: payload.segmentId ?? null,
+      }
+      MARKS.push(mark)
+      harness.emit('moment:marked', { meetingId: payload.meetingId, mark })
+      return mark
+    },
+    // The two window gestures. They move a window and answer a boolean; there
+    // is no window here, and `false` would be a lie about a request that was
+    // made and honoured everywhere it is real.
+    'widget:resize': () => ({ ok: true }),
+    'window:focus': () => ({ ok: true }),
   }
 
   // ── plumbing ──────────────────────────────────────────────────────────────
@@ -2227,6 +2289,34 @@ export function installAppBridge(config) {
      * surface now that the transcript pane is gone. Emitted synchronously and
      * in full so a single screenshot catches a meter with a history in it.
      */
+    /**
+     * What the widget's panel draws: the meter, then the last turns of the
+     * call arriving on the broadcast, then one interim line.
+     *
+     * The interim is the half of this surface no other screen in the product
+     * has ever drawn — it is the only rendering of text that is *not* the
+     * record — so a fixture without one photographs the easy half.
+     */
+    replayWidget(meetingId) {
+      const id = meetingId || 'm-neovia-cadrage'
+      harness.replaySession(id)
+      for (const segment of SEGMENTS.slice(-5)) {
+        harness.emit('transcript:appended', { meetingId: id, segment })
+      }
+      harness.emit('transcript:appended', {
+        meetingId: id,
+        segment: {
+          id: 'seg-interim-far',
+          channel: 'far',
+          text: 'Sur le plafond, il faudrait qu’on revienne vers les achats',
+          startMs: 0,
+          endMs: 0,
+          isFinal: false,
+          provider: 'local-whisper',
+          receivedAt: now,
+        },
+      })
+    },
     replaySession(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'
       LEVEL_HISTORY.forEach((rep, index) => {

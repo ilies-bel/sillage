@@ -58,7 +58,8 @@ import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { AskPanel } from './session/AskPanel.tsx'
 import { useShortcuts } from '../app/shortcuts.ts'
 import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
-import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
+import { formatDayShort, formatOffset, formatTime, meetingHeading } from '../app/format.ts'
+import { interleaveMarks, type MomentMark } from '../../electron/core/contracts/marks.ts'
 import {
   Button,
   CopyButton,
@@ -397,6 +398,7 @@ function Record({
       >
         <Transcript
           segments={record.segments}
+          marks={record.marks}
           quote={located}
           interlocuteurs={record.interlocuteurs}
         />
@@ -543,10 +545,22 @@ const transcriptText = (
 
 function Transcript({
   segments,
+  marks,
   quote,
   interlocuteurs,
 }: {
   segments: readonly TranscriptSegment[]
+  /**
+   * The rep's own marks, made from the widget during the call
+   * (`core/contracts/marks.ts`).
+   *
+   * The same helper as the gate's reader and the widget's live list, so one
+   * call read on three screens puts a mark in the same place on all three —
+   * which is the rule `speakerLabel` and `meetingAnchor` already follow, for
+   * the reason they follow it: two screens disagreeing about one record is two
+   * things for a rep to reconcile.
+   */
+  marks: readonly MomentMark[]
   /** From the calendar, so the far channel can be named when there is one of
    *  them (`speakerLabel`, DEC-7). */
   interlocuteurs: readonly { name: string; email: string }[]
@@ -568,21 +582,51 @@ function Transcript({
     if (needle) scrollToCenter(hit.current)
   }, [needle])
 
-  if (segments.length === 0) {
+  /*
+   * **A call with no transcript still has the rep's marks in it.**
+   *
+   * This returned here on `segments.length === 0` and swallowed them, on the
+   * meetings that need them most: a call whose far channel never opened, a
+   * machine with no weights, a recording that failed — every one of those is a
+   * call where the only record of what mattered is what the rep pressed during
+   * it. The sentence is still said, because « no transcript » is a fact worth
+   * stating, and the marks are drawn under it.
+   */
+  if (segments.length === 0 && marks.length === 0) {
     return <p className="text-muted text-xs">Aucune transcription pour cet appel.</p>
   }
 
   let marked = false
   return (
+    <>
+    {segments.length === 0 ? (
+      <p className="text-muted mb-1.5 text-xs">
+        Aucune transcription pour cet appel — seuls vos moments marqués sont ci-dessous.
+      </p>
+    ) : null}
     <ul className="space-y-1">
-      {segments.map((segment) => {
+      {interleaveMarks(segments, marks).map((row) => {
+        if (row.kind === 'mark') {
+          return (
+            <li key={row.key} className="flex gap-2 text-xs">
+              <span className="text-brand-700 w-10 shrink-0 tabular-nums text-[11px] font-semibold">
+                {formatTime(row.mark.at)}
+              </span>
+              <span className="text-brand-700 w-12 shrink-0 text-[11px] font-semibold">marqué</span>
+              <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2">
+                {row.mark.note === '' ? 'Marqué pendant l’appel.' : row.mark.note}
+              </span>
+            </li>
+          )
+        }
+        const segment = row.segment
         // The first segment that contains it, and only the first: a phrase said
         // twice would otherwise light the whole column and point at nothing.
         const isHit = needle !== null && !marked && foldQuote(segment.text).includes(needle)
         if (isHit) marked = true
         return (
           <li
-            key={segment.id}
+            key={row.key}
             ref={isHit ? hit : undefined}
             className={`flex gap-2 rounded-sm text-xs ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
           >
@@ -597,6 +641,7 @@ function Transcript({
         )
       })}
     </ul>
+    </>
   )
 }
 

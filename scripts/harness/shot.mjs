@@ -1181,6 +1181,63 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The in-meeting widget, collapsed** (`src/widget/Widget.tsx`).
+   *
+   * Its own window (`?window=widget`), which is why the stage carries a query
+   * rather than a gesture: there is no route to it from inside the app, and
+   * there must not be — it is created by the main process when a meeting starts
+   * recording and destroyed when it stops.
+   *
+   * Photographed over the page's own canvas rather than over a video call. That
+   * is a limitation worth stating: the six checks measure the pill against the
+   * app's paper, and the contrast the *rep* sees is against whatever Teams is
+   * painting. The shadow is what carries that separation, and a screenshot is
+   * the one thing that cannot verify it.
+   */
+  widget: {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.waitForTimeout(120)
+    },
+  },
+
+  /*
+   * The same window, opened: the live transcript, the rep's own marks in place,
+   * the note field and the two ways out. This is the state the widget spends
+   * most of a call in once a rep has opened it, and it is the only surface in
+   * the product that draws an *interim* transcription.
+   */
+  'widget-ouvert': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await page.waitForTimeout(120)
+    },
+  },
+
+  /*
+   * The second press. Ending a recording cannot be undone, so the widget asks
+   * again — and the confirmation is a different rectangle from the label that
+   * summoned it (DEC-4).
+   */
+  'widget-arret': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: 'Terminer' }).click()
+      await page.getByRole('button', { name: 'Arrêter l’enregistrement' }).waitFor()
+    },
+  },
+
   'reglages-sans-entra': {
     scenario: 'reglages',
     entra: false,
@@ -1296,7 +1353,13 @@ async function main() {
   const entra = flags.entra ?? plan.entra ?? true
   await page.addInitScript(installAppBridge, { scenario: plan.scenario, now, entra })
 
-  await page.goto(URL_BASE, { waitUntil: 'domcontentloaded' })
+  /*
+   * The widget is a second *window*, not a second route: `?window=widget` is
+   * what `src/main.tsx` reads to decide which of the two renderers it is.
+   */
+  await page.goto(plan.query ? `${URL_BASE}?${plan.query}` : URL_BASE, {
+    waitUntil: 'domcontentloaded',
+  })
   await page.waitForSelector('#root > *', { timeout: 15_000 })
 
   try {

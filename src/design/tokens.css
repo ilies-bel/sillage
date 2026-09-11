@@ -138,6 +138,18 @@
   --radius-lg: 14px;
   --border-width: 1px;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
+  /*
+   * The one surface that is not on the app's own paper: the in-meeting widget,
+   * floating over somebody else's window (`src/widget/Widget.tsx`).
+   *
+   * `--shadow-card` is 8 % of one pixel, which is a card lying on `--bg-canvas`
+   * and is invisible against a video call — the pill would read as a white
+   * rectangle *cut into* the call rather than as something above it. This is
+   * the same shadow one order of elevation up, and it is the only reason the
+   * widget can wear the product's own light palette instead of growing a second
+   * dark one: separation comes from the shadow, not from a second theme.
+   */
+  --shadow-overlay: 0 8px 28px rgb(0 0 0 / 32%);
 
   /* type faces */
   --font-display: "Fraunces", ui-serif, Georgia, serif;

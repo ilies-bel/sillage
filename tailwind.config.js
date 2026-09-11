@@ -122,6 +122,8 @@ module.exports = {
       },
       boxShadow: {
         card: 'var(--shadow-card)',
+        /* The in-meeting widget, which floats over another application. */
+        overlay: 'var(--shadow-overlay)',
       },
       /*
        * Five steps, added alongside Tailwind's numeric scale rather than

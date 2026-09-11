@@ -68,6 +68,7 @@ const row = (over: Partial<HistoryRow> = {}): HistoryRow => ({
 
 const record = (over: Partial<HistoryRecord> = {}): HistoryRecord => ({
   meeting: meeting(),
+  marks: [],
   /*
    * Two of them, deliberately: with two people on the client's side the app
    * cannot say which one spoke, so the reader says « Client » and means it. The

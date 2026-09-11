@@ -20,6 +20,7 @@ import type { PushIntent } from '../../core/contracts/push.ts'
 import type { CapabilityReport } from '../../core/contracts/crm.ts'
 import type { ConnectorId } from '../../core/contracts/health.ts'
 import type { Meeting, MeetingState } from '../../core/contracts/meeting.ts'
+import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { UpdatePort, UpdateStatus } from '../../core/contracts/update.ts'
 import { updatesUnavailable } from '../../core/contracts/update.ts'
 import { updateReadiness } from '../../core/domain/updateGate.ts'
@@ -229,6 +230,27 @@ export interface IpcDeps {
   /** `app.getVersion()`, so the update panel can name the running build even
    *  when there is no updater to ask. */
   appVersion?: string
+  /**
+   * The in-meeting widget's two window gestures (`app/windows/Overlay.ts`).
+   *
+   * Absent in every test and in any run with no overlay — the channels then
+   * answer `{ ok: false }` rather than throwing, which is what lets a renderer
+   * treat « the window would not move » as a fact rather than as an exception
+   * (DEC-26). Both return a boolean for the same reason: a widget that asked to
+   * be resized and was not is drawing at the wrong size, and it is the only
+   * thing that can notice.
+   */
+  widget?: {
+    resize(width: number, height: number): boolean
+    focusMain(meetingId: string | null): boolean
+  } | null
+  /**
+   * A mark the rep just made, to every window.
+   *
+   * Injected rather than reached for, because broadcasting is `main.ts`'s job
+   * and this file has no `BrowserWindow` in it — the same shape `drain` has.
+   */
+  broadcastMark?: (meetingId: string, mark: MomentMark) => void
 }
 
 /** What a build with no updater reports, in one place so the French matches. */
@@ -919,8 +941,78 @@ export const handlers: Handlers = {
   'review:transcript': ({ meetingId }, { store }) => {
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
-    return { segments: store.projections.segments(meetingId) }
+    return {
+      segments: store.projections.segments(meetingId),
+      marks: store.projections.marks(meetingId),
+    }
   },
+
+  /**
+   * **The rep marking a moment** (`core/contracts/marks.ts`).
+   *
+   * Refused unless the call is actually recording, and read from the
+   * orchestrator rather than from the projection: the projection is the folded
+   * log and the orchestrator is what is happening now, and between the two the
+   * second is the one « ce moment » is about.
+   *
+   * The id and the instant are minted here. Two windows can press this — the
+   * session screen and the widget floating over Teams — and a renderer-side id
+   * would be two sources for one identity, while a renderer-side clock would
+   * put a mark before the turn it followed on a machine whose windows disagree
+   * by a second.
+   */
+  'meeting:mark': ({ meetingId, note, segmentId }, deps) => {
+    const { store, orchestrator } = deps
+    const meeting = store.projections.getMeeting(meetingId)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
+    const state = orchestrator.stateOf(meetingId) ?? meeting.state
+    if (state !== 'recording') {
+      throw refuse('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+    }
+    const mark: MomentMark = {
+      id: randomUUID(),
+      at: (deps.clock ?? Date.now)(),
+      note: note ?? '',
+      segmentId: segmentId ?? null,
+    }
+    store.append(meetingId, { type: 'moment.marked', mark })
+    deps.broadcastMark?.(meetingId, mark)
+    return mark
+  },
+
+  /**
+   * What the widget draws, in one read (`app/windows/Overlay.ts`).
+   *
+   * `liveIds()` and not the projection: the widget exists for the duration of a
+   * recording, and a meeting the projection still calls `recording` after a
+   * crash is exactly the stranded row `main.ts`'s boot sweep ends — drawing a
+   * widget over it would be a floating pill saying a call is being recorded
+   * when no device is open.
+   */
+  'widget:state': (_request, { store, orchestrator }) => {
+    const meetingId =
+      orchestrator.liveIds().find((id) => orchestrator.stateOf(id) === 'recording') ?? null
+    if (meetingId === null) return { meeting: null }
+    const meeting = store.projections.getMeeting(meetingId)
+    if (!meeting) return { meeting: null }
+    return {
+      meeting: {
+        meetingId,
+        title: meeting.title,
+        clientName: meeting.clientName,
+        startedAt: meeting.startedAt ?? meeting.createdAt,
+        marks: store.projections.marks(meetingId),
+      },
+    }
+  },
+
+  'widget:resize': ({ width, height }, { widget }) => ({
+    ok: widget?.resize(width, height) ?? false,
+  }),
+
+  'window:focus': ({ meetingId }, { widget }) => ({
+    ok: widget?.focusMain(meetingId ?? null) ?? false,
+  }),
 
   /**
    * *Demander* — one question about one call (`core/contracts/ask.ts`).
@@ -1011,6 +1103,7 @@ export const handlers: Handlers = {
       fields: stored ? reviewFields(stored.extraction, stored.verification) : [],
       overall: stored?.verification.overall ?? 'ok',
       intents: historyIntents(store, meetingId),
+      marks: store.projections.marks(meetingId),
     }
   },
 

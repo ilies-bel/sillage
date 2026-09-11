@@ -64,6 +64,39 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **The rep's document is never written by AI during a call** (DEC-5, DEC-14). The signal
   rail is a read-only side surface. Gray AI text enters the document exactly once, at
   meeting end.
+- **There is a second window, and it is the widget over the call** (DEC-49,
+  `app/windows/Overlay.ts`, `src/widget/Widget.tsx`). Frameless, always on top at the
+  `screen-saver` level, absent from the taskbar, shown with `showInactive()` and created
+  exactly while a meeting is `recording`. One bundle and one HTML file: `?window=widget` is
+  what `src/main.tsx` reads to decide which of the two renderers it is. Three things are
+  load-bearing. **A saved position is a request, never an instruction** — this window has no
+  title bar, no taskbar entry and nothing to alt-tab to, so an origin on a monitor that has
+  since been unplugged is *unrecoverable*; `overlayPlacement.ts` honours a saved origin only
+  if the window would land on a real display by at least a quarter of its own area, and
+  clamps it inside. **The window is the size of its own content** (`widget:resize`): every
+  pixel of a transparent always-on-top window that is not the pill is a pixel of Teams the
+  rep cannot click. And **the widget is not an open app** — `second-instance`, `activate` and
+  the teardown all name `mainWindow` rather than `getAllWindows()[0]`, and the pill is closed
+  with the main window so `window-all-closed` still fires and `before-quit` still ends the
+  live meeting properly instead of leaving a process with no way back into it.
+- **The widget may draw the transcript; the session screen still may not** (DEC-49, DEC-38).
+  The clause DEC-38 wrote is « do not reintroduce a live transcript *to prove the tool is
+  working* », and that job now belongs to an instrument. The meter is on the pill whether the
+  panel is open or not; the transcript is behind a press, names the side (DEC-47), and draws
+  an **interim** result muted, with an ellipsis, replaced in place — the only rendering in
+  this product of text that is not the record. `transcript:appended` had been broadcast for
+  every segment of every meeting since the orchestrator was written and subscribed to by
+  nobody; this is the surface that keeps that promise.
+- **A mark is the rep's, and it is never inferred onto a sentence** (`core/contracts/marks.ts`).
+  A turn is written down *after* it is spoken — `modules/transcribe` stamps a segment with its
+  arrival and says a batch provider cannot report acoustic time — so « the turn nearest the
+  timestamp » is a guess, and this product does not guess about evidence (DEC-21). Pressed on
+  a *line*, the mark carries that line's id and is drawn on it, because the rep pointed at it;
+  pressed on the pill, it is a moment in time and claims nothing about the turns either side.
+  `interleaveMarks` is in `contracts` for the reason `speakerLabel` and `meetingAnchor` are:
+  three surfaces draw it — the widget's live list, the gate's reader, *Historique*'s — and
+  `src/*` may import nothing else. A mark survives a call with **no transcript at all**, which
+  is the case that needs it most and the one both readers used to swallow.
 - **Proof of life is the input meter, not a live transcript** (DEC-38). The transcript pane
   was removed: it was seconds late, blank through every pause, and looked identical whether
   the room was quiet or the microphone was too quiet to transcribe — which is a meeting that
@@ -481,7 +514,7 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
-  renamed on one side of the bridge would ship. **Twenty-eight** steps under Playwright's
+  renamed on one side of the bridge would ship. **Thirty-four** steps under Playwright's
   Electron driver on a throwaway `--user-data-dir`, which is also the only way first run is
   reachable — and five of them are the review gate, seeded through the product's own `Store`
   with the app closed, because `review:confirm` is the one thing here that writes into a

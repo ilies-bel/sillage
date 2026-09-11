@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { TimestampSchema } from './meeting.ts'
+import { MomentMarkSchema } from './marks.ts'
 
 export const ChannelSchema = z.enum(['rep', 'far'])
 export type Channel = z.infer<typeof ChannelSchema>
@@ -83,5 +84,15 @@ export type TranscriptSpan = z.infer<typeof TranscriptSpanSchema>
 
 export const TranscriptViewSchema = z.object({
   segments: z.array(TranscriptSegmentSchema),
+  /**
+   * The rep's own bookmarks, made during the call (`core/contracts/marks.ts`).
+   *
+   * Shipped with the record rather than asked for separately: there are a
+   * handful of them, they are read on exactly the screens that read the
+   * transcript, and a second round trip would let a reader render a call
+   * without the marks in it for one frame — which is the reader appearing to
+   * have lost them.
+   */
+  marks: z.array(MomentMarkSchema).default([]),
 })
 export type TranscriptView = z.infer<typeof TranscriptViewSchema>

@@ -1679,3 +1679,115 @@ test('a model download is refused while a meeting is recording, with the reason'
   assert.equal(started, 1)
   h.cleanup()
 })
+
+/**
+ * The rep marking a moment of their own call (`core/contracts/marks.ts`).
+ *
+ * Two windows can press this — the session screen and the widget floating over
+ * Teams — so the id and the instant are minted here rather than in either of
+ * them. The refusal is the interesting half: « ce moment » has no referent once
+ * the call is over.
+ */
+test('meeting:mark records a moment, and refuses one outside a recording', async () => {
+  const { ipc, deps, broadcasts, cleanup } = open()
+  const marked: Array<{ meetingId: string; mark: unknown }> = []
+  deps.broadcastMark = (meetingId, mark) => marked.push({ meetingId, mark })
+  deps.orchestrator.create({ id: 'm1', title: 'Acme', context: sampleContext })
+
+  // Before the recording starts there is no moment to mark, and the answer is a
+  // sentence rather than an exception nobody composed (DEC-26).
+  await assert.rejects(
+    () => ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'trop tôt', segmentId: null }),
+    /Aucun enregistrement en cours/,
+  )
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
+  const mark = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'plafond achats',
+    segmentId: null,
+  })
+  assert.equal(mark.note, 'plafond achats')
+  assert.equal(mark.segmentId, null)
+  assert.ok(mark.id.length > 0)
+
+  // In the log, and therefore in every reader that folds it.
+  assert.deepEqual(deps.store.projections.marks('m1'), [mark])
+  // And on its way to the other window: a rep who marks from the widget and
+  // then opens the app must not find a list one short.
+  assert.deepEqual(marked, [{ meetingId: 'm1', mark }])
+
+  // A mark made *on a turn* keeps the turn, because the rep pointed at it.
+  const pinned = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: '',
+    segmentId: 'far-3',
+  })
+  assert.equal(pinned.segmentId, 'far-3')
+
+  // The transcript view carries them, which is what the two readers draw.
+  const view = await ipc.invoke('review:transcript', { meetingId: 'm1' })
+  assert.deepEqual(view.marks.map((m) => m.id), [mark.id, pinned.id])
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
+  await assert.rejects(
+    () => ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'trop tard', segmentId: null }),
+    /Aucun enregistrement en cours/,
+  )
+  assert.ok(broadcasts.length > 0)
+  cleanup()
+})
+
+/**
+ * What the widget reads on open.
+ *
+ * The live orchestrator and not the projection, and that distinction is the
+ * whole test: a meeting the projection still calls `recording` after a crash is
+ * the stranded row `main.ts`'s boot sweep ends, and a widget drawn over one
+ * would be a pill floating over somebody's screen announcing a recording that
+ * no device is behind.
+ */
+test('widget:state answers the meeting that is really recording, or null', async () => {
+  const { ipc, deps, cleanup } = open()
+  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+
+  deps.orchestrator.create({ id: 'm1', title: 'Néovia Santé — cadrage', context: sampleContext })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
+  await ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'noté', segmentId: null })
+  const live = await ipc.invoke('widget:state', {})
+  assert.equal(live.meeting?.meetingId, 'm1')
+  assert.equal(live.meeting?.title, 'Néovia Santé — cadrage')
+  assert.equal(live.meeting?.marks.length, 1)
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+  cleanup()
+})
+
+/**
+ * The two window gestures, with no window.
+ *
+ * `IpcDeps.widget` is absent in every test and in any run without an overlay,
+ * and the channels answer `{ ok: false }` rather than throwing — which is what
+ * lets the widget treat « the window would not move » as a fact it can say out
+ * loud instead of an exception it has to swallow (DEC-26).
+ */
+test('widget:resize and window:focus answer false when there is no window', async () => {
+  const { ipc, deps, cleanup } = open()
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), { ok: false })
+  assert.deepEqual(await ipc.invoke('window:focus', { meetingId: null }), { ok: false })
+
+  const asked: Array<[number, number]> = []
+  deps.widget = {
+    resize: (width, height) => {
+      asked.push([width, height])
+      return true
+    },
+    focusMain: () => true,
+  }
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), { ok: true })
+  assert.deepEqual(asked, [[340, 300]])
+  cleanup()
+})

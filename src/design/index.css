@@ -138,6 +138,30 @@
 
 @layer components {
   /*
+   * **The frameless window's titlebar, which is the whole window.**
+   *
+   * The in-meeting widget has no frame — it is a pill floating over a video
+   * call — so `-webkit-app-region` is the only thing that lets a rep move it.
+   * Two rules and they are a pair: the surface drags, and every control on it
+   * opts back out. A region Electron has claimed for dragging never delivers a
+   * click, so a control that forgets `.no-drag` is not a control at all, and
+   * one that looks pressable and is not is the worst kind of dead control
+   * (DEC-26) — the rep cannot tell it is broken, only that the app is.
+   *
+   * `user-select: none` with it: dragging a window by a rectangle that is also
+   * selectable text leaves the pointer highlighting the elapsed time.
+   */
+  .drag-region {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+    user-select: auto;
+  }
+
+  /*
    * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
    * muted label. Used by every pane header, which is why it is a component
    * rather than eight copies of the same six utilities.

@@ -12,12 +12,14 @@ import {
   desktopCapturer,
   ipcMain,
   Notification,
+  screen,
   shell,
   systemPreferences,
 } from 'electron'
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
+import { Overlay, type OverlayWindowOptions } from './windows/Overlay.ts'
 import { Store } from '../modules/store/index.ts'
 import { DB_FILENAME } from '../modules/store/schema.ts'
 import { Diagnostics } from '../modules/diagnostics/index.ts'
@@ -208,6 +210,31 @@ const environment = (): DiagEnvironment => ({
  */
 app.setAppUserModelId('fr.ilies-bel.sillage')
 
+/**
+ * **The main window**, held so the rest of the file can say *which* window.
+ *
+ * There used to be exactly one, so « the window » and `getAllWindows()[0]` were
+ * the same thing and three places said the second. They stopped being the same
+ * thing the moment the in-meeting widget existed (`app/windows/Overlay.ts`):
+ * `second-instance` could raise a 232-pixel pill instead of the app, `activate`
+ * would refuse to reopen the window because a widget was still floating, and
+ * the 14:30 notification's click focused every window there was — which on
+ * Windows pulls the call out of full screen to show a pill that was already on
+ * top of it.
+ */
+let mainWindow: BrowserWindow | null = null
+
+/**
+ * What to tear down when the main window goes.
+ *
+ * Set by `boot()`, because the thing it closes — the widget — is constructed
+ * there with the store behind it, and read here, because `createWindow` is
+ * module-level and runs before any of that on a macOS `activate`. Null until
+ * boot has finished, which is the only moment where there is nothing to tear
+ * down.
+ */
+let closeSecondaryWindows: (() => void) | null = null
+
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1280,
@@ -232,12 +259,103 @@ const createWindow = (): BrowserWindow => {
 
   window.once('ready-to-show', () => window.show())
 
+  mainWindow = window
+  window.on('closed', () => {
+    if (mainWindow !== window) return
+    mainWindow = null
+    // The widget goes with it. Without this, `window-all-closed` never fires
+    // on Windows, `before-quit` never runs, and the meeting the pill is
+    // reporting on is left recording in a process the rep cannot reach.
+    closeSecondaryWindows?.()
+  })
+
   if (isDev) {
     void window.loadURL(DEV_SERVER)
   } else {
     void window.loadFile(join(app.getAppPath(), 'dist', 'index.html'))
   }
 
+  return window
+}
+
+/**
+ * Restore, show and focus the main window, and optionally send it to a meeting.
+ *
+ * Two callers, and both are the app navigating on a press the rep made
+ * elsewhere: the 14:30 notification (DEC-46) and the widget's « Ouvrir »
+ * (`window:focus`). `show()` before `focus()` and both before the broadcast —
+ * a renderer told to navigate while its window is still minimised navigates
+ * somewhere nobody can see, and on Windows a minimised window ignores `focus()`
+ * until it is shown.
+ *
+ * False when there is no main window to raise. That is a real state — on macOS
+ * the rep can close the window and leave the app running — and the caller is
+ * told rather than left to assume, so the widget's button can say so instead of
+ * appearing to do nothing (DEC-26).
+ */
+const focusMainWindow = (
+  meetingId: string | null,
+  broadcast: (channel: 'session:open', payload: { meetingId: string }) => void,
+): boolean => {
+  const window = mainWindow
+  if (!window || window.isDestroyed()) return false
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+  if (meetingId !== null) broadcast('session:open', { meetingId })
+  return true
+}
+
+/**
+ * The widget's window, created here because this is where Electron lives.
+ *
+ * Every flag on it is load-bearing and none of them is a style:
+ *
+ *  · **`frame: false`, `transparent: true`** — the pill has rounded ends and
+ *    floats over somebody's face. A titlebar would be the largest thing on it.
+ *  · **`alwaysOnTop` at the `screen-saver` level** — `'floating'` is not above a
+ *    full-screen video call, which is where every call this product records
+ *    actually happens.
+ *  · **`setVisibleOnAllWorkspaces(…, { visibleOnFullScreen: true })`** —
+ *    the macOS half of the same sentence. A full-screen app is its own Space,
+ *    and a window that is not marked for them is simply not there.
+ *  · **`skipTaskbar`** — it is not an application, it is a control panel for the
+ *    one that is. A second Sillage entry in the taskbar is a second thing to
+ *    close.
+ *  · **`resizable: false`, `minimizable: false`, `maximizable: false`** — it
+ *    sizes itself from its own content (`widget:resize`), and the two other
+ *    verbs have no meaning for a pill.
+ *  · **`focusable: true`** — it has a text field in it. A non-focusable window
+ *    cannot be typed into, which would make the note a control that draws a
+ *    caret and accepts nothing. It is never *given* focus by the app
+ *    (`showInactive`); the rep clicking it is the only way it takes any.
+ */
+const createOverlayWindow = (options: OverlayWindowOptions): BrowserWindow => {
+  const window = new BrowserWindow({
+    ...options,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    // The renderer paints the pill; anything painted here is a rectangle around
+    // it. `transparent: true` needs this to be `#00000000` on Windows, where a
+    // named colour is composited opaque.
+    backgroundColor: '#00000000',
+    title: 'Sillage — enregistrement',
+    webPreferences: {
+      preload: join(__dirname, '..', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  window.setAlwaysOnTop(true, 'screen-saver')
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   return window
 }
 
@@ -708,14 +826,66 @@ const boot = async (): Promise<void> => {
    */
   const announceArmed = (meetingId: string, subject: string): void => {
     announceMeeting(meetingId, subject, (id) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (window.isDestroyed()) continue
-        if (window.isMinimized()) window.restore()
-        window.show()
-        window.focus()
-      }
-      broadcast('session:open', { meetingId: id })
+      focusMainWindow(id, broadcast)
     })
+  }
+
+  /**
+   * The in-meeting widget (`app/windows/Overlay.ts`).
+   *
+   * Constructed here and shown by nothing but `syncOverlay` below, so « when is
+   * there a pill on screen » has exactly one answer: while a meeting is
+   * recording.
+   */
+  const overlay = new Overlay(
+    {
+      create: createOverlayWindow,
+      // Primary first, which is what `placeWindow` falls back to when a saved
+      // position names a display that has been unplugged.
+      areas: () => [
+        screen.getPrimaryDisplay().workArea,
+        ...screen
+          .getAllDisplays()
+          .filter((display) => display.id !== screen.getPrimaryDisplay().id)
+          .map((display) => display.workArea),
+      ],
+      load: (window) => {
+        /*
+         * The same bundle and the same preload as the main window, told which
+         * of the two it is by a query string (`src/main.tsx`).
+         *
+         * A second HTML entry would mean a second Vite input, a second build
+         * output and a second place for the design tokens to be imported from —
+         * for a renderer that shares every contract, every token and the whole
+         * bridge with the first one. `loadFile`'s `search` is the packaged half
+         * of the same thing, and it has to be spelled separately because a
+         * `file://` URL with a query is not what `loadFile` takes.
+         */
+        if (isDev) void window.loadURL(`${DEV_SERVER}?window=widget`)
+        else
+          void window.loadFile(join(app.getAppPath(), 'dist', 'index.html'), {
+            search: 'window=widget',
+          })
+      },
+      focusMain: (meetingId) => focusMainWindow(meetingId, broadcast),
+    },
+    store.appState,
+  )
+
+  /**
+   * There is a pill on screen exactly while a meeting is recording.
+   *
+   * Driven from the same broadcast the renderer is, rather than from the
+   * commands: `armed`, a crash sweep, a deferred quit and a rep pressing
+   * *Terminer* all reach the state machine by different routes and all of them
+   * end in a transition, so this is the one place that cannot be forgotten.
+   */
+  closeSecondaryWindows = () => overlay.hide()
+
+  const syncOverlay = (): void => {
+    const recording = orchestrator.liveIds().some((id) => orchestrator.stateOf(id) === 'recording')
+    if (recording) overlay.show()
+    else overlay.hide()
   }
 
   // ── Screen 0 (DEC-30) ────────────────────────────────────────────────────
@@ -997,7 +1167,10 @@ const boot = async (): Promise<void> => {
      */
     broadcast: (channel, payload) => {
       broadcast(channel, payload)
-      if (channel === 'session:changed') publishUpdateStatus()
+      if (channel === 'session:changed') {
+        publishUpdateStatus()
+        syncOverlay()
+      }
     },
     // Asked once per meeting, at the moment it starts — so a key added between
     // two meetings takes effect on the second one rather than at the next
@@ -1899,6 +2072,14 @@ const boot = async (): Promise<void> => {
     bootState: () => bootState,
     updates,
     appVersion: app.getVersion(),
+    // The two window gestures the widget has, and nothing else: it cannot
+    // create a window, cannot close one, and cannot move itself anywhere it
+    // was not dragged.
+    widget: {
+      resize: (width, height) => overlay.resize(width, height),
+      focusMain: (meetingId) => overlay.focusMain(meetingId),
+    },
+    broadcastMark: (meetingId, mark) => broadcast('moment:marked', { meetingId, mark }),
   })
 
   diagnostics.record({
@@ -1966,6 +2147,10 @@ const boot = async (): Promise<void> => {
 
     agenda?.stop()
     stopUpdateChecks()
+    // Before `store.close()`: the widget's own `moved` handler writes the saved
+    // origin through the store, and a pill destroyed after the database is shut
+    // would throw on the way out.
+    overlay.hide()
     store.close()
   })
 
@@ -2010,10 +2195,16 @@ const boot = async (): Promise<void> => {
 }
 
 app.on('second-instance', () => {
-  const [existing] = BrowserWindow.getAllWindows()
-  if (existing) {
+  // The *main* window, never « the first window there is ». With a meeting
+  // recording, the first window there is may be a 232-pixel pill, and a rep who
+  // launched the app a second time because they could not find it would be
+  // handed the thing that was already on top of everything.
+  const existing = mainWindow
+  if (existing && !existing.isDestroyed()) {
     if (existing.isMinimized()) existing.restore()
     existing.focus()
+  } else {
+    createWindow()
   }
 })
 
@@ -2022,8 +2213,24 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+/**
+ * **The widget does not count as a window, for either of these.**
+ *
+ * `window-all-closed` does not fire while any window is open, and the widget is
+ * a window — so a rep on Windows who closes the app during a call would leave a
+ * process with no way back into it: no taskbar entry (`skipTaskbar`), no tray,
+ * and a pill whose largest control ends the recording. The recording would
+ * survive the gesture, which is tempting, and then the compte-rendu would run
+ * in a process the rep believes they closed and can never reach the gate.
+ *
+ * So the widget is closed with the main window, and the deferred quit in
+ * `before-quit` does what it already did: end the live meeting properly rather
+ * than abandon it. `mainWindow.on('closed')` is what makes the event fire at
+ * all — `overlay.hide()` there, before Electron counts.
+ */
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  // Same reasoning as `second-instance`: an open widget is not an open app.
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
 })
 
 void app.whenReady().then(async () => {

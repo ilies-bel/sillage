@@ -19,6 +19,7 @@
 import { z } from 'zod'
 import { AttendeeSchema, MeetingSchema } from './meeting.ts'
 import { TranscriptSegmentSchema } from './transcript.ts'
+import { MomentMarkSchema } from './marks.ts'
 import { ConfidenceSchema } from './extraction.ts'
 import { OutboxStateSchema, PushIntentKindSchema } from './push.ts'
 import { ReviewFieldSchema } from './review.ts'
@@ -182,5 +183,11 @@ export const HistoryRecordSchema = z.object({
   fields: z.array(ReviewFieldSchema),
   overall: ConfidenceSchema,
   intents: z.array(HistoryIntentSchema),
+  /**
+   * The rep's own bookmarks (`core/contracts/marks.ts`). The reader here and
+   * the reader at the gate draw the same record, so they draw the same marks —
+   * two screens showing one call differently is two things to reconcile.
+   */
+  marks: z.array(MomentMarkSchema).default([]),
 })
 export type HistoryRecord = z.infer<typeof HistoryRecordSchema>

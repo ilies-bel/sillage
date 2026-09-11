@@ -32,7 +32,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { speakerLabel, type TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
-import { formatOffset } from '../../app/format.ts'
+import { formatOffset, formatTime } from '../../app/format.ts'
+import { interleaveMarks } from '../../../electron/core/contracts/marks.ts'
 import { Centered, CopyButton } from '../../ui/index.ts'
 import { scrollToCenter } from '../../lib/scroll.ts'
 
@@ -88,6 +89,7 @@ const transcriptText = (
 export function TranscriptReader({ meetingId, focus, interlocuteurs }: TranscriptReaderProps) {
   const loaded = useInvoke('review:transcript', { meetingId })
   const segments = loaded.state.status === 'ready' ? loaded.state.value.segments : null
+  const marks = loaded.state.status === 'ready' ? loaded.state.value.marks : []
 
   /*
    * Which segment the citation lands in.
@@ -233,7 +235,10 @@ export function TranscriptReader({ meetingId, focus, interlocuteurs }: Transcrip
   }
   if (!segments) return <Centered>Chargement…</Centered>
 
-  if (segments.length === 0) {
+  // The rep's own marks survive a call that produced no transcript — see the
+  // same rule in *Historique*'s reader. The sentence is still said; it is just
+  // no longer the only thing on the screen.
+  if (segments.length === 0 && marks.length === 0) {
     return (
       <Centered>
         <p className="text-ui">Aucune transcription n’a été enregistrée pour cet appel.</p>
@@ -260,7 +265,14 @@ export function TranscriptReader({ meetingId, focus, interlocuteurs }: Transcrip
           the rep is looking at a row called *Objections*, not at a noun.
         */}
         {focus === null ? (
-          `${segments.length} prises de parole · ${formatOffset(segments[segments.length - 1]!.endMs)}`
+          // Zero is reachable now that a call with marks and no transcript
+          // opens this reader at all: the last segment's end is the length of
+          // the call, and there is no last segment.
+          segments.length === 0 ? (
+            'Aucune transcription — seuls vos moments marqués sont ci-dessous.'
+          ) : (
+            `${segments.length} prises de parole · ${formatOffset(segments[segments.length - 1]!.endMs)}`
+          )
         ) : hit ? (
           <>
             {focus.from === 'answer' ? (
@@ -378,13 +390,51 @@ export function TranscriptReader({ meetingId, focus, interlocuteurs }: Transcrip
         </div>
       ) : null}
 
+      {/*
+        **The rep's own marks, in place** (`core/contracts/marks.ts`).
+
+        Made during the call, from the widget floating over it, and read here —
+        which is the point of making them at all. `interleaveMarks` is shared
+        with the widget's own live list, so the moment a rep marked at 14:32 is
+        in the same place on both surfaces.
+
+        Interleaved rather than listed above: a mark is a *position in the
+        conversation*, and a list of them at the top of the reader would be five
+        bookmarks with nothing to point at — the rep would have to find the turn
+        again, which is the work the mark was made to save.
+      */}
       <ul className="space-y-2">
-        {segments.map((segment) => {
+        {interleaveMarks(segments, marks).map((row) => {
+          if (row.kind === 'mark') {
+            return (
+              <li key={row.key} className="flex gap-3 px-2">
+                <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold leading-relaxed">
+                  {formatTime(row.mark.at)}
+                </span>
+                <span className="text-brand-700 w-12 shrink-0 text-meta font-semibold leading-relaxed">
+                  marqué
+                </span>
+                <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2 text-ui leading-relaxed">
+                  {row.mark.note === ''
+                    ? /*
+                        A mark with no note is not an empty mark — the rep pressed
+                        a button during a call, which is a statement about this
+                        moment and nothing else. Saying so is better than drawing
+                        a blank line, and better than inventing a summary of what
+                        they might have meant.
+                      */
+                      'Marqué pendant l’appel.'
+                    : row.mark.note}
+                </span>
+              </li>
+            )
+          }
+          const segment = row.segment
           const cited = segment === hit
           const found = matches.has(segment.id) || segment.id === picked
           return (
             <li
-              key={segment.id}
+              key={row.key}
               ref={cited ? hitRef : segment.id === picked ? pickedRef : undefined}
               /*
                 Two marks, and they are different things: the wash is *the

@@ -11,6 +11,7 @@ import type { EventLog } from './EventLog.ts'
 import type { Meeting, MeetingContext, MeetingState } from '../../core/contracts/meeting.ts'
 import type { OutboxEntry, PushIntent } from '../../core/contracts/push.ts'
 import type { Signal } from '../../core/contracts/signals.ts'
+import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { TranscriptSegment } from '../../core/contracts/transcript.ts'
 import type { ExtractionESN, VerificationReport } from '../../core/contracts/extraction.ts'
 import { DEFAULT_RECIPE, type RecipeId } from '../../core/contracts/recipes.ts'
@@ -375,6 +376,23 @@ export class Projections {
       if (event.type === 'transcript.segment') out.push(event.segment)
     }
     return out
+  }
+
+  /**
+   * The rep's own bookmarks (`core/contracts/marks.ts`), oldest first.
+   *
+   * A fold over the log and not a table, for the reason `intents` and
+   * `signals` are: a handful per meeting, read only when a screen that draws
+   * this call is open, and `at` is the whole of the ordering — there is no
+   * query here that SQL would answer better, and a projection table would be a
+   * schema version and a refold bought for nothing.
+   */
+  marks(meetingId: string): MomentMark[] {
+    const out: MomentMark[] = []
+    for (const { event } of this.#log.read(meetingId)) {
+      if (event.type === 'moment.marked') out.push(event.mark)
+    }
+    return out.sort((a, b) => a.at - b.at)
   }
 
   signals(meetingId: string): Signal[] {
