@@ -55,3 +55,32 @@ export const getDefaultOutputDeviceId = (): string | null => {
     return null
   }
 }
+
+/**
+ * **The route a call application renders to, which on Windows is a different
+ * setting from the one above.**
+ *
+ * The WASAPI loopback tap binds `eConsole` — `wasapi`'s `get_default_device`
+ * hardcodes the role, and `getDefaultOutputDeviceId` reads the same one — while
+ * Teams, Zoom and Meet render to `eCommunications`, which Windows lets a rep set
+ * separately in one checkbox. When the two differ the tap records an endpoint
+ * nothing is playing to and `SystemAudioCapture` emits no chunks at all.
+ *
+ * `speaker/windows.rs` has documented that hole since it was written and the
+ * lookup that measures it has existed just as long, `#[napi]`-less, with its one
+ * caller appending a label to a row in the device picker.
+ *
+ * Null is « we did not measure it » — an older binary, a lookup that failed, or
+ * macOS, which has no such role — and is never reported as a finding (DEC-45).
+ */
+export const getDefaultCommunicationsDeviceId = (): string | null => {
+  const result = loadNativeModule()
+  if (!result.ok || typeof result.module.getDefaultCommunicationsDeviceId !== 'function') {
+    return null
+  }
+  try {
+    return result.module.getDefaultCommunicationsDeviceId() || null
+  } catch {
+    return null
+  }
+}

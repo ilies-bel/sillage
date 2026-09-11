@@ -46,6 +46,7 @@ export interface NativeAudioModule {
   getOutputDevices(): AudioDeviceInfo[]
   /** Drives the route-change watcher during a meeting. Optional: needs a rebuild. */
   getDefaultOutputDeviceId?: () => string
+  getDefaultCommunicationsDeviceId?: () => string
   /** Pure, HAL-free ABI probe. See `smokeTest` below for why it has to exist. */
   abiProbe?: () => string
   SystemAudioCapture: new (deviceId?: string | null) => NativeCapture

@@ -65,6 +65,15 @@ export interface AudioDeviceInfo {
  */
 export declare function getDefaultOutputDeviceId(): string
 
+/**
+ * The default render device on the `eCommunications` role, or `''` where the
+ * platform has no such role (macOS) or the lookup fails. Windows only in
+ * practice, and it is the one measurement that explains the most common way
+ * capture fails there: the loopback tap binds `eConsole` and Teams renders to
+ * this one.
+ */
+export declare function getDefaultCommunicationsDeviceId(): string
+
 export declare function getInputDevices(): Array<AudioDeviceInfo>
 
 export declare function getOutputDevices(): Array<AudioDeviceInfo>

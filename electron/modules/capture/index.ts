@@ -19,7 +19,7 @@ import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import { InputLevelWatch, rmsOfInt16, type InputLevel } from '../../core/domain/inputLevel.ts'
-import { getDefaultOutputDeviceId } from './AudioDevices.ts'
+import { getDefaultCommunicationsDeviceId, getDefaultOutputDeviceId } from './AudioDevices.ts'
 import { MicrophoneCapture } from './MicrophoneCapture.ts'
 import { SystemAudioCapture } from './SystemAudioCapture.ts'
 import { loadNativeModule } from './nativeModule.ts'
@@ -60,6 +60,7 @@ export interface CaptureOptions {
    * never reported as a change.
    */
   defaultOutputDeviceId?: () => string | null
+  defaultCommunicationsDeviceId?: () => string | null
 }
 
 export interface CaptureSessionEvents {
@@ -460,6 +461,32 @@ export class CaptureSession extends EventEmitter {
   }
 
   /**
+   * **Why the system tap is hearing nothing, when it is this.**
+   *
+   * The loopback binds the *console* default and a call application renders to
+   * the *communications* default, which Windows lets a rep set separately in one
+   * checkbox. When they differ the tap records an endpoint nothing is playing to
+   * and produces no chunks at all — which the watchdog already reports as « rien
+   * n'arrive ». That sentence sends a rep to look at their microphone. This one
+   * sends them to the checkbox that fixes it.
+   *
+   * Only ever *added* to a silence already being reported, and only when the two
+   * ids are both known and differ: « we did not measure it » is never a finding
+   * (DEC-45), and on macOS — which has no such role — the answer is always null.
+   */
+  #routeSplit(): boolean {
+    const read = this.#options.defaultCommunicationsDeviceId ?? getDefaultCommunicationsDeviceId
+    let communications: string | null
+    try {
+      communications = read()
+    } catch {
+      return false
+    }
+    const console_ = this.#defaultOutputDeviceId()
+    return communications !== null && console_ !== null && communications !== console_
+  }
+
+  /**
    * The default output route changed while the tap was open.
    *
    * Said once per meeting: a rep who switches to headphones and back would
@@ -542,7 +569,11 @@ export class CaptureSession extends EventEmitter {
           state: 'degraded',
           reason:
             outcome.reason === 'initial-silence-no-chunks'
-              ? `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.`
+              ? `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.${
+                  channel === 'far' && this.#routeSplit()
+                    ? ' Votre application d’appel utilise un autre périphérique de sortie que Windows : alignez les deux dans les paramètres de son.'
+                    : ''
+                }`
               : outcome.reason === 'sustained-zero-valued-silence'
                 ? `${sideCap} est coupé : le signal est à zéro depuis le début de l’appel. Vérifiez le bouton « muet ».`
                 : `${sideCap} s’est interrompu pendant l’appel — plus rien n’arrive. Vérifiez le périphérique audio.`,

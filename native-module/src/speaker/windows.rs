@@ -102,9 +102,23 @@ pub fn default_output_device_uid() -> String {
     }
 }
 
+/// **Exposed to JS, which is the whole point of it.** It was written, it
+/// compiled, and its single caller appended " (Default Communications)" to a
+/// label in the device picker — while the loopback tap binds `eConsole`
+/// (`wasapi`'s `get_default_device` hardcodes the role) and Teams renders to
+/// this one. That is the hole this file's own header documents: when the two
+/// differ, `SystemAudioCapture` emits no chunks at all, the watchdog says
+/// « Rien n'arrive depuis l'audio de votre ordinateur » at twelve seconds, and
+/// the product could not say *why* — `get_default_output_device_id` is
+/// `eConsole` as well, so even the route-change sentence was unreachable in the
+/// one case that needs it.
+pub fn default_communications_device_uid_or_empty() -> String {
+    default_communications_device_uid().unwrap_or_default()
+}
+
 /// Returns the WASAPI device id of the current default render device on the
-/// eCommunications role, or None on failure. This is often different from eConsole
-/// and is used by VoIP apps like Zoom, Teams, Meet.
+/// eCommunications role, or None on failure. This is often different from
+/// eConsole and is used by VoIP apps like Zoom, Teams, Meet.
 pub fn default_communications_device_uid() -> Option<String> {
     unsafe {
         use windows::Win32::Media::Audio::{eCommunications, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};

@@ -470,6 +470,32 @@ const reasonOf = (health: ConnectorHealth | undefined): string =>
 const routeChanged = (health: ConnectorHealth): boolean => /sortie audio/.test(reasonOf(health))
 
 /**
+ * Runs a meeting in which the far channel produces nothing at all, and returns
+ * the sentence the rep is given. The clock is injected past the classifier's
+ * twelve-second window rather than waited out — a check nobody runs is a check
+ * that does not exist.
+ */
+const silentFarChannel = async (options: {
+  defaultOutputDeviceId: () => string | null
+  defaultCommunicationsDeviceId: () => string | null
+}): Promise<string> => {
+  let now = 0
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 2, clock: () => (now += 900), ...options })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await session.stop()
+  // The far channel's, specifically: `rep` is the microphone and this sentence
+  // is only ever about the system tap (DEC-45).
+  return (
+    health
+      .map(reasonOf)
+      .find((reason) => /Rien n’arrive depuis l’audio de votre ordinateur/.test(reason)) ?? ''
+  )
+}
+
+/**
  * **The default output route changed while the tap was open.**
  *
  * `getDefaultOutputDeviceId` existed for months with a docblock saying « polled
@@ -504,6 +530,42 @@ test('a change of output route during the call is reported once, and named', asy
   assert.equal(health.filter(routeChanged).length, 1)
 
   await session.stop()
+})
+
+test('a call app on the other Windows output route is named, and only when it is', async () => {
+  /*
+   * **The hole `speaker/windows.rs` has documented since it was written.**
+   *
+   * The loopback binds `eConsole`; Teams, Zoom and Meet render to
+   * `eCommunications`, which Windows lets a rep set separately in one checkbox.
+   * When the two differ the tap records an endpoint nothing is playing to and
+   * `SystemAudioCapture` produces no chunks at all — which the watchdog reports
+   * as « rien n'arrive », a sentence that sends a rep to look at their
+   * microphone. `default_communications_device_uid` has existed all along,
+   * measured this exactly, and had no `#[napi]`: its one caller appended a label
+   * to a row in the device picker.
+   */
+  const split = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => 'casque-usb',
+  })
+  assert.match(split, /un autre périphérique de sortie/)
+
+  // Same route: the silence has some other cause and this sentence would send
+  // the rep to a checkbox that is already right.
+  const same = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => 'haut-parleurs',
+  })
+  assert.doesNotMatch(same, /un autre périphérique de sortie/)
+
+  // macOS has no such role, and an older binary cannot answer. « We did not
+  // measure it » is never a finding (DEC-45).
+  const unknown = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => null,
+  })
+  assert.doesNotMatch(unknown, /un autre périphérique de sortie/)
 })
 
 test('a binary that cannot answer is never reported as a change', async () => {
