@@ -38,7 +38,16 @@ export class Store {
     // tables so the DDL could recreate them, and they are empty until the log
     // is folded back in. Doing it here rather than in `EventLog` keeps the fold
     // in the one class that owns it.
-    if (this.log.refolded) this.projections.rebuild()
+    /*
+     * The stamp is the *receipt* for this fold and is written after it, never
+     * before — see `EventLog.stampVersion`. A crash between the two used to
+     * leave a new version over empty projections, which the next boot read as
+     * « already upgraded » and never retried.
+     */
+    if (this.log.refolded) {
+      this.projections.rebuild()
+      this.log.stampVersion()
+    }
   }
 
   append(meetingId: string, event: MeetingEvent, ts?: number): StoredEvent {

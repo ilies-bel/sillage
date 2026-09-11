@@ -117,3 +117,55 @@ test('redaction is pure — the input event is not mutated', () => {
   buildDiagBundle('redacted', [leaky], environment, 2000)
   assert.equal(serialised(leaky), before)
 })
+
+test('the allowlist refuses the shapes it exists to catch', () => {
+  /*
+   * **The file above claims this « cannot be wrong by omission », and at
+   * `{1,64}` it passed, verbatim, exactly what it was written to stop.**
+   *
+   * A key, a bearer token, a URL and a home directory are all « identifier-
+   * shaped with no spaces », and every one went straight into the bundle whose
+   * own button reads « Sans contenu de conversation. Peut être envoyé au
+   * support. » Nothing leaked — no shipped `detail:` payload carries a secret —
+   * but the stated property was false, and it failed *toward* shipping one.
+   */
+  const out = redactDetail({
+    apiKey: 'sk-proj-AbCdEf0123456789AbCdEf0123456789',
+    bearer: 'Bearer_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+    url: 'https://vsa.client.fr/v1/crm/tasks/7f3a-secret-token',
+    posix: '/Users/jean.dupont/sillage.db',
+    windows: 'C:\\Users\\jean.dupont\\sillage.db',
+    home: '~/Library/Sillage/sillage.db',
+  })
+  for (const [key, value] of Object.entries(out)) {
+    assert.match(String(value), /^\[string:\d+\]$/, `${key} est passé en clair`)
+  }
+})
+
+test('and still admits everything a diagnostic actually carries', () => {
+  // The cap is thirty-two because that is comfortably above every identifier
+  // this product puts in `detail:` and comfortably below a token. Loosening it
+  // is how the previous version became useless.
+  assert.deepEqual(
+    redactDetail({
+      meetingId: 'evt-606ec6e9bd8a8ff2',
+      model: 'Xenova/whisper-small',
+      provider: 'local-whisper',
+      channel: 'far',
+      at: '2026-09-11T08:15:00.000Z',
+      version: '0.1.4',
+      retryable: true,
+      attempts: 3,
+    }),
+    {
+      meetingId: 'evt-606ec6e9bd8a8ff2',
+      model: 'Xenova/whisper-small',
+      provider: 'local-whisper',
+      channel: 'far',
+      at: '2026-09-11T08:15:00.000Z',
+      version: '0.1.4',
+      retryable: true,
+      attempts: 3,
+    },
+  )
+})

@@ -330,3 +330,62 @@ test('Store.append folds into the projection in the same transaction', () => {
   assert.equal(meeting?.createdAt, 1234)
   store.close()
 })
+
+test('a crash between the drop and the fold does not lose the projections for good', () => {
+  /*
+   * **The stamp used to be the first thing written, not the last.**
+   *
+   * This constructor dropped the projection tables, ran the DDL and wrote
+   * `version = SCHEMA_VERSION` — all outside a transaction — and the refold
+   * lives in a *different class* and runs later (`Store`:
+   * `if (this.log.refolded) this.projections.rebuild()`). Anything in between —
+   * a crash, a power loss, one unparseable row — left a new stamp over **empty**
+   * projections, and the next boot computed `refolded = false` and never tried
+   * again. `PROJECTION_TABLES` is `meetings` and `outbox`, and
+   * `POST /v1/crm/tasks` has no idempotency key, so a lost outbox is a lost
+   * record of what has already been sent.
+   *
+   * Simulated the way it actually happens: open the log **without** the `Store`
+   * that would fold it, which is exactly the window the crash falls in.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'refold-'))
+  const file = join(dir, 'sillage.db')
+
+  const fresh = new Store(file)
+  fresh.append('m1', {
+    type: 'meeting.created',
+    title: 'Point Aura',
+    context: null,
+    clientName: null,
+  })
+  assert.equal(fresh.projections.listMeetings(10).length, 1)
+  // Back to a version that demands a refold, as an older build would have left.
+  fresh.log.db.exec("UPDATE schema_meta SET value = '1' WHERE key = 'version'")
+  fresh.log.db.close()
+
+  // The crash: the log opens, drops and runs the DDL — and the process dies
+  // before `Store` can fold. Nothing may stamp the new version.
+  const interrupted = new EventLog(file)
+  assert.equal(interrupted.refolded, true)
+  const stamp = interrupted.get<{ value: string }>(
+    'SELECT value FROM schema_meta WHERE key = ?',
+    'version',
+  )
+  assert.equal(stamp?.value, '1', 'la version ne doit pas être tamponnée avant le repli')
+  interrupted.db.close()
+
+  // The next boot tries again, and this one finishes.
+  const recovered = new Store(file)
+  assert.equal(recovered.log.refolded, true, 'le repli doit être retenté')
+  assert.equal(recovered.projections.listMeetings(10).length, 1, 'la projection est revenue')
+  assert.equal(
+    recovered.log.get<{ value: string }>(
+      'SELECT value FROM schema_meta WHERE key = ?',
+      'version',
+    )?.value,
+    String(SCHEMA_VERSION),
+    'et la version est tamponnée une fois le repli fait',
+  )
+  recovered.log.db.close()
+  rmSync(dir, { recursive: true, force: true })
+})

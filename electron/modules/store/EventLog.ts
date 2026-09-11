@@ -80,7 +80,45 @@ export class EventLog {
     }
 
     this.db.exec(DDL)
-    this.run('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)', 'version', String(SCHEMA_VERSION))
+    /*
+     * **Stamped last, and only once the fold that earns it has happened.**
+     *
+     * This wrote the new version here, in the constructor, outside any
+     * transaction — and the refold lives in a *different class* and runs later
+     * (`Store`: `if (this.log.refolded) this.projections.rebuild()`). Anything in
+     * between — a crash, a power loss, one unparseable row — left a new stamp
+     * over **empty** projections, and the next boot then computed
+     * `refolded = false` and never tried again. Reproduced:
+     *
+     *     fresh      : meetings = 1 | events = 1
+     *     crash boot : refolded = true | meetings = 0 | stamp = 4
+     *     NEXT BOOT  : refolded = false | meetings = 0 | events still there = 1
+     *
+     * `PROJECTION_TABLES` is `meetings` and `outbox`, and
+     * `POST /v1/crm/tasks` has no idempotency key — so a lost outbox is a lost
+     * record of what was already sent. `schema.ts` claims « nothing is lost,
+     * including the outbox's remote ids », which is true only if the refold
+     * completes.
+     *
+     * Latent today: `SCHEMA_VERSION` has been 4 in the only commit that ever
+     * touched `schema.ts`, so no database in the wild is v1–3. It bites the
+     * first time the schema moves, by which point the databases hold real
+     * meeting history.
+     */
+    if (!this.refolded) this.stampVersion()
+  }
+
+  /**
+   * Write the schema version. Called by the constructor for an upgrade the DDL
+   * completes on its own, and by `Store` **after** a refold — never before one.
+   * Idempotent, so a caller that is not sure costs nothing.
+   */
+  stampVersion(): void {
+    this.run(
+      'INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)',
+      'version',
+      String(SCHEMA_VERSION),
+    )
   }
 
   /**

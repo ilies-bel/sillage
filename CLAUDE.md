@@ -578,6 +578,28 @@ machine) or in `core/domain/` — never in an IPC handler.
   Teams join blob.
 - **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
 - **Raw audio is never retained** (DEC-12). Transcribed and discarded.
+- **The diagnostics allowlist is an allowlist, and thirty-two is the number.**
+  `redactDiagnostics.ts` says of itself that it « cannot be wrong by omission », and at
+  `{1,64}` it passed, verbatim, exactly the shapes it exists to catch — a key
+  (`sk-proj-…`, 40), a bearer token (44), a URL, a home directory. All four are
+  « identifier-shaped with no spaces », and all four went into the bundle whose own button
+  reads « Sans contenu de conversation. Peut être envoyé au support. » Nothing leaked,
+  because no shipped `detail:` carries a secret — but the stated property was false and it
+  failed *toward* shipping one. Thirty-two still admits every identifier this product
+  actually puts in `detail:` (a meeting id is 20, a model id 20, an ISO timestamp 24), and
+  a URL or a path is rejected outright: `redactMessage` always stripped both from the
+  *message* and `redactDetail` never applied it, so the two halves disagreed about the
+  same URL.
+- **The schema stamp is the receipt for the fold, written after it.** `EventLog`'s
+  constructor dropped the projection tables, ran the DDL and stamped the new version — all
+  outside a transaction — while the refold lives in `Store` and runs later. A crash, a
+  power loss or one unparseable row in between left a new stamp over **empty** projections,
+  and the next boot read that as « already upgraded » and never retried.
+  `PROJECTION_TABLES` is `meetings` and `outbox`, and `POST /v1/crm/tasks` has no
+  idempotency key, so a lost outbox is a lost record of what was already sent — against
+  `schema.ts`'s claim that « nothing is lost, including the outbox's remote ids », which
+  was true only if the refold completed. Latent until the schema moves, by which point the
+  databases hold real meeting history.
 - **A window closing does not get to abandon a recording, and a crash does not get to
   strand one.** `before-quit` stopped the agenda, stopped update checks and closed the
   store — and never ended a live meeting. On Windows, the primary platform,

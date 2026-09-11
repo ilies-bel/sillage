@@ -23,8 +23,34 @@ import type {
 /**
  * Identifier-shaped: provider ids, error codes, device names, enum values,
  * ISO timestamps, semver. No spaces, so no sentence survives it.
+ *
+ * **Thirty-two, not sixty-four.** The file above claims this « cannot be wrong
+ * by omission », and at sixty-four the allowlist passed, verbatim, exactly the
+ * shapes it exists to catch — measured against `redactDetail`:
+ *
+ *     apiKey: 'sk-proj-AbCdEf0123456789AbCdEf0123456789'   (40)
+ *     bearer: 'Bearer_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' (44)
+ *
+ * A key, a bearer token, a URL and a home directory are all « identifier-shaped
+ * with no spaces », and every one of them went straight into the bundle whose
+ * own button says « Sans contenu de conversation. Peut être envoyé au support. »
+ * Nothing leaked *today* — no shipped `detail:` payload carries a secret — but
+ * the property was false and it failed toward shipping one.
+ *
+ * Thirty-two still admits everything this actually carries: a meeting id
+ * (`evt-606ec6e9bd8a8ff2`, 20), a provider id, a model id
+ * (`Xenova/whisper-small`, 20), an ISO timestamp (24), semver, an error code, a
+ * channel name. Above it, `describe` says « a 44-character string was here »,
+ * which the docblock above already argues is usually as diagnostic as the value.
  */
-const SAFE_STRING = /^[A-Za-z0-9_.:/+@-]{1,64}$/
+const SAFE_STRING = /^[A-Za-z0-9_.:/+@-]{1,32}$/
+/**
+ * A URL or a filesystem path is content even when it is short and has no spaces:
+ * one names a client's host and the payload on it, the other names a person.
+ * `redactMessage` has always stripped both from the *message*; `redactDetail`
+ * never applied it, so the two halves of this file disagreed about the same URL.
+ */
+const LOCATOR = /:\/\/|^[/~]|^[A-Za-z]:[\\/]/
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/g
 const URL_WITH_PAYLOAD = /\bhttps?:\/\/\S+/g
 /** Quoted runs are how transcript excerpts end up inside an error message. */
@@ -33,7 +59,8 @@ const QUOTED = /["“”«»'`]{1}[^"“”«»'`]{8,}["“”«»'`]{1}/g
 const MAX_MESSAGE = 240
 
 /** Even inside SAFE_STRING an address is content — it identifies a person. */
-const isSafeString = (v: string): boolean => SAFE_STRING.test(v) && !v.includes('@')
+const isSafeString = (v: string): boolean =>
+  SAFE_STRING.test(v) && !v.includes('@') && !LOCATOR.test(v)
 
 export const redactMessage = (message: string): string =>
   message
