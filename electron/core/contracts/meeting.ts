@@ -123,6 +123,34 @@ export const UserCommandSchema = z.enum(['start', 'end', 'abort', 'extract', 'co
 export type UserCommand = z.infer<typeof UserCommandSchema>
 
 /**
+ * **What a meeting is doing, in one French line each.**
+ *
+ * Two surfaces read it and both put it in front of a rep. `reviewAvailability`
+ * uses it to say why the gate is closed, and `MeetingSession.dispatch` uses it
+ * to say why a command was refused — which used to be
+ * « confirm is not legal from pushing », rendered verbatim in a `role="alert"`
+ * banner at the gate on the likeliest gesture at the most consequential screen,
+ * a second press of *Valider*. The transition identifier is still what the
+ * diagnostic records: it is precise, it is what a support reader needs, and it
+ * is not a sentence.
+ *
+ * One table rather than two, because two screens naming the same state
+ * differently is two things for a rep to reconcile — the reason `meetingAnchor`
+ * and `speakerLabel` live here as well.
+ */
+export const STATE_REASON: Record<MeetingState, string> = {
+  idle: 'La réunion n’a pas encore démarré.',
+  armed: 'La réunion n’a pas encore démarré.',
+  recording: 'Réunion en cours.',
+  ended: 'Compte-rendu en attente d’analyse.',
+  extracting: 'Analyse en cours…',
+  awaiting_confirmation: 'En attente de votre validation.',
+  pushing: 'Envoi en cours…',
+  done: 'Déjà validée.',
+  aborted: 'Réunion abandonnée.',
+}
+
+/**
  * A projection row, not a source of truth. Rebuildable by folding the event
  * log (ARCHITECTURE.md §5.C). Never written to directly.
  */

@@ -11,6 +11,7 @@
  * never in an IPC handler.
  */
 import {
+  STATE_REASON,
   type MeetingContext,
   type MeetingId,
   type MeetingState,
@@ -217,7 +218,10 @@ export class MeetingSession {
         detail: { from, command },
         meetingId: this.id,
       })
-      return { ok: false, state: from, reason: message }
+      // The log gets the transition identifier; the rep gets a sentence.
+      // `session:command`'s and `review:confirm`'s refusals are both rendered
+      // verbatim, the second in a `role="alert"` at the confirmation gate.
+      return { ok: false, state: from, reason: STATE_REASON[from] }
     }
 
     this.#store.append(

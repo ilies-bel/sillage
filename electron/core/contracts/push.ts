@@ -86,6 +86,22 @@ export const PushResultSchema = z.discriminatedUnion('ok', [
     reason: z.string(),
     /** False for a 4xx we caused — retrying it forever is how a queue jams. */
     retryable: z.boolean(),
+    /**
+     * **How long the server said to wait, when it said.**
+     *
+     * `429` is the one status that states the request was *not processed*, and
+     * it is the only one that returns a row to `pending`. Both adapters parsed
+     * `Retry-After` — `VsaError.retryAfterMs`, `GraphError.retryAfterMs` — and
+     * both dropped it at this boundary, so the outbox answered « wait 120
+     * seconds » with a re-POST after one, three times a pass and again on every
+     * launch. Against Graph's mailbox throttling that is the pattern that
+     * *extends* a throttle rather than clearing it.
+     *
+     * Optional rather than required: every `push.settled` written before this
+     * existed must still replay (the `LlmInterpretation.recipe` rule), and most
+     * failures carry no `Retry-After` at all.
+     */
+    retryAfterMs: z.number().int().nonnegative().nullable().optional(),
   }),
 ])
 export type PushResult = z.infer<typeof PushResultSchema>

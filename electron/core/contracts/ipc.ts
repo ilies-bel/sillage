@@ -15,7 +15,6 @@ import {
   MeetingSchema,
   MeetingStateSchema,
   TimestampSchema,
-  UserCommandSchema,
 } from './meeting.ts'
 import { TranscriptSegmentSchema, TranscriptViewSchema } from './transcript.ts'
 import { MARK_NOTE_MAX, MomentMarkSchema } from './marks.ts'
@@ -228,7 +227,25 @@ export const invokeChannels = {
   'session:command': {
     request: z.object({
       meetingId: MeetingIdSchema,
-      command: UserCommandSchema,
+      /*
+       * **Not `UserCommandSchema`, which is wider than this channel may be.**
+       *
+       * This handler dispatches the state machine and does nothing else, and
+       * `extract` already has its own channel for exactly that reason (see
+       * below): a renderer that moved a meeting to `extracting` with no run
+       * behind it would leave the rep watching a state that never resolves.
+       *
+       * **`confirm` is the same hazard with no recovery.** Driven over the
+       * bridge it answered `{"ok":true,"state":"pushing"}` with zero intents
+       * created, zero rows in the outbox and no `confirmation.recorded` — and
+       * `pushSettled`'s guard requires at least one intent, so it self-loops,
+       * `abort` is illegal from `pushing`, and the gate reads « Envoi en cours… »
+       * for the life of the database about a compte-rendu that was never sent.
+       * It is also a second path past the one confirmation (DEC-4, HR-7): the
+       * write into a client's CRM belongs to `review:confirm`, which drafts the
+       * intents, records what the rep confirmed, and dispatches this itself.
+       */
+      command: z.enum(['start', 'end', 'abort']),
       /** Free text, recorded on the transition event. */
       reason: z.string().nullable().default(null),
     }),

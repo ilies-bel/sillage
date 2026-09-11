@@ -83,18 +83,29 @@ const idFrom = (body: unknown): string => {
   return ''
 }
 
-const failed = (reason: string, retryable: boolean): PushResult => ({
+const failed = (reason: string, retryable: boolean, retryAfterMs: number | null = null): PushResult => ({
   ok: false,
   // Stamped by `app/session/Outbox.ts`, which owns the intent — the adapter is
   // handed a payload, not a row. Same shape as `MailPort`, for the same reason.
   intentId: '',
   reason,
   retryable,
+  retryAfterMs,
 })
 
-const errorOf = (error: unknown): { reason: string; retryable: boolean } => {
-  if (error instanceof VsaError) return { reason: error.message, retryable: error.retryable }
-  return { reason: error instanceof Error ? error.message : 'VerySwing indisponible', retryable: false }
+const errorOf = (
+  error: unknown,
+): { reason: string; retryable: boolean; retryAfterMs: number | null } => {
+  // `Retry-After` is carried, not dropped: it is the whole of what a 429 tells
+  // us, and the outbox used to answer « wait two minutes » after one second.
+  if (error instanceof VsaError) {
+    return { reason: error.message, retryable: error.retryable, retryAfterMs: error.retryAfterMs }
+  }
+  return {
+    reason: error instanceof Error ? error.message : 'VerySwing indisponible',
+    retryable: false,
+    retryAfterMs: null,
+  }
 }
 
 export class VsaCrm implements CrmPort {
@@ -273,7 +284,7 @@ export class VsaCrm implements CrmPort {
       })
       return { ok: true, intentId: '', remoteId: id }
     } catch (error) {
-      const { reason, retryable } = errorOf(error)
+      const { reason, retryable, retryAfterMs } = errorOf(error)
       this.diagnostics.record({
         severity: 'error',
         code: 'crm.task.failed',
@@ -281,7 +292,7 @@ export class VsaCrm implements CrmPort {
         message: reason,
         detail: { retryable },
       })
-      return failed(reason, retryable)
+      return failed(reason, retryable, retryAfterMs)
     }
   }
 
@@ -311,7 +322,7 @@ export class VsaCrm implements CrmPort {
       })
       return { ok: true, intentId: '', remoteId: id }
     } catch (error) {
-      const { reason, retryable } = errorOf(error)
+      const { reason, retryable, retryAfterMs } = errorOf(error)
       this.diagnostics.record({
         severity: 'error',
         code: 'crm.opportunity.failed',
@@ -319,7 +330,7 @@ export class VsaCrm implements CrmPort {
         message: reason,
         detail: { retryable },
       })
-      return failed(reason, retryable)
+      return failed(reason, retryable, retryAfterMs)
     }
   }
 
@@ -400,8 +411,8 @@ export class VsaCrm implements CrmPort {
       })
       return { ok: true, intentId: '', remoteId: fileId }
     } catch (error) {
-      const { reason, retryable } = errorOf(error)
-      return failed(reason, retryable)
+      const { reason, retryable, retryAfterMs } = errorOf(error)
+      return failed(reason, retryable, retryAfterMs)
     }
   }
 

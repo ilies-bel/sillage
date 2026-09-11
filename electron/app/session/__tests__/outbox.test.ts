@@ -408,6 +408,81 @@ test('a push interrupted mid-POST is reclaimed by the next launch', async () => 
 
 // ── retries and resume ─────────────────────────────────────────────────────
 
+test('a 429 is answered when the server said to, not one second later', async () => {
+  /*
+   * `429` is the one status that states the request was **not processed**, which
+   * is why it is the only one that returns a row to `pending` — and the only one
+   * that comes with an instruction. Both adapters parsed `Retry-After` and both
+   * dropped it at `PushResult`, so the outbox answered « wait two minutes » with
+   * a re-POST after one, three times a pass and again on every launch. Against
+   * Graph's mailbox throttling that is the pattern that extends a throttle.
+   */
+  const store = seed([OPP_INTENT])
+  const waits: number[] = []
+  const crm = crmStub({
+    opportunity: async () => ({
+      ok: false as const,
+      intentId: '',
+      reason: 'quota VerySwing atteint',
+      retryable: true,
+      retryAfterMs: 30_000,
+    }),
+  })
+  const outbox = new Outbox({
+    journal: store,
+    crm: crm.port,
+    mail: null,
+    backoffMs: 1_000,
+    sleep: async (ms) => {
+      waits.push(ms)
+    },
+  })
+
+  await outbox.drain(MEETING)
+
+  assert.ok(
+    waits.every((ms) => ms >= 30_000),
+    `the server's own instruction is the floor — waited ${JSON.stringify(waits)}`,
+  )
+  // Still pending, never failed: nothing was written, so the next launch is
+  // entitled to try again.
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'pending')
+  store.close()
+})
+
+test('a Retry-After longer than a minute ends the pass instead of holding a timer', async () => {
+  // DEC-26: nothing here outlives a meeting. A server entitled to say « an hour »
+  // is not entitled to a background timer that lives that long — the row stays
+  // pending and the next launch is the retry.
+  const store = seed([OPP_INTENT])
+  const waits: number[] = []
+  const crm = crmStub({
+    opportunity: async () => ({
+      ok: false as const,
+      intentId: '',
+      reason: 'quota VerySwing atteint',
+      retryable: true,
+      retryAfterMs: 3_600_000,
+    }),
+  })
+  const outbox = new Outbox({
+    journal: store,
+    crm: crm.port,
+    mail: null,
+    backoffMs: 1_000,
+    sleep: async (ms) => {
+      waits.push(ms)
+    },
+  })
+
+  await outbox.drain(MEETING)
+
+  assert.deepEqual(waits, [60_000], 'one capped wait, then the pass ends')
+  assert.deepEqual(crm.calls, ['opportunity'], 'and exactly one POST went out')
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'pending')
+  store.close()
+})
+
 test('retries are bounded and backed off', async () => {
   const store = seed([OPP_INTENT])
   const waits: number[] = []

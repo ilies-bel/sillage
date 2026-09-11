@@ -151,6 +151,7 @@ export class OutlookMail implements MailPort {
       return { ok: true, intentId: '', remoteId: id }
     } catch (error) {
       const retryable = error instanceof GraphError ? error.retryable : false
+      const retryAfterMs = error instanceof GraphError ? error.retryAfterMs : null
       const reason = error instanceof Error ? error.message : 'brouillon Outlook impossible'
       this.#diagnostics.record({
         severity: 'error',
@@ -159,7 +160,7 @@ export class OutlookMail implements MailPort {
         message: reason,
         detail: { retryable },
       })
-      return { ok: false, intentId: '', reason, retryable }
+      return { ok: false, intentId: '', reason, retryable, retryAfterMs }
     }
   }
 

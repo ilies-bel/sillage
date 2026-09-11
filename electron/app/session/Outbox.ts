@@ -103,6 +103,17 @@ const errorReason = (error: unknown): string =>
  */
 const SETTLE_TIMEOUT_MS = 8_000
 
+/**
+ * The longest a pass will wait on a `Retry-After` before leaving the row for the
+ * next launch. A server entitled to say « an hour » is not entitled to a
+ * background timer that lives that long (DEC-26: nothing here outlives a
+ * meeting).
+ */
+const MAX_BACKOFF_MS = 60_000
+
+const THROTTLED_REASON =
+  'le service distant demande d’attendre — l’envoi reprendra au prochain démarrage'
+
 export class Outbox {
   #journal: OutboxJournal
   #crm: CrmPort | null
@@ -185,9 +196,22 @@ export class Outbox {
 
     /** Intents this pass will not touch again: terminally failed, or unroutable. */
     const abandoned = new Set<string>()
+    /**
+     * The longest `Retry-After` this round was told to wait, in ms.
+     *
+     * A `429` is the one status that says the request was **not processed** —
+     * which is why it is the only one that returns a row to `pending` — and it
+     * is the one status that comes with an instruction. Both adapters parsed it
+     * and the value died at `PushResult`, so the outbox answered « wait two
+     * minutes » with a re-POST after one, three times a pass and again on every
+     * launch. Against Graph's mailbox throttling that is the pattern that
+     * *extends* the throttle.
+     */
+    let told = 0
 
     for (let round = 0; round < this.#maxAttempts; round++) {
       const tried = new Set<string>()
+      told = 0
 
       // Re-read after every attempt rather than iterating a snapshot: a
       // succeeded opportunity unblocks its task *inside* this loop, and the
@@ -195,12 +219,26 @@ export class Outbox {
       let next = this.#ready(meetingId, abandoned, tried)
       while (next) {
         tried.add(next.intentId)
-        await this.#attempt(meetingId, next, abandoned)
+        told = Math.max(told, await this.#attempt(meetingId, next, abandoned))
         next = this.#ready(meetingId, abandoned, tried)
       }
 
       if (this.#ready(meetingId, abandoned, new Set()) === null) break
-      if (round + 1 < this.#maxAttempts) await this.#sleep(this.#backoffMs * 2 ** round)
+      if (round + 1 >= this.#maxAttempts) continue
+      /*
+       * The server's instruction wins over our curve, but it does not get to
+       * hold a pass open: past the ceiling the round ends and the row stays
+       * `pending`, which is what makes the next launch the retry. A rep never
+       * waits on any of this — `review:confirm` fires the drain without
+       * awaiting it.
+       */
+      const waited = Math.min(Math.max(this.#backoffMs * 2 ** round, told), MAX_BACKOFF_MS)
+      if (told > MAX_BACKOFF_MS) {
+        this.#record('warn', 'outbox.throttled', THROTTLED_REASON, meetingId, { retryAfterMs: told })
+        await this.#sleep(waited)
+        break
+      }
+      await this.#sleep(waited)
     }
 
     return this.#journal.projections.outboxFor(meetingId)
@@ -228,14 +266,15 @@ export class Outbox {
     return null
   }
 
-  async #attempt(meetingId: MeetingId, entry: OutboxEntry, abandoned: Set<string>): Promise<void> {
+  /** Returns what the server said to wait, in ms — 0 when it said nothing. */
+  async #attempt(meetingId: MeetingId, entry: OutboxEntry, abandoned: Set<string>): Promise<number> {
     const entries = this.#entries(meetingId)
     const fresh = entries.get(entry.intentId)
     const intent = this.#intents(meetingId).get(entry.intentId)
 
     // Guard 2 (see the file header). Reached only if something changed the row
     // between selection and here; cheap enough to keep for the day it does.
-    if (!fresh || !intent || fresh.state === 'drained') return
+    if (!fresh || !intent || fresh.state === 'drained') return 0
 
     const port = this.#portFor(intent)
     if (!port) {
@@ -246,7 +285,7 @@ export class Outbox {
         intentId: intent.id,
         kind: intent.kind,
       })
-      return
+      return 0
     }
 
     const attempt = fresh.attempts + 1
@@ -266,7 +305,13 @@ export class Outbox {
     // payload and has no idea which row it belongs to.
     const settled: PushResult = result.ok
       ? { ok: true, intentId: intent.id, remoteId: result.remoteId }
-      : { ok: false, intentId: intent.id, reason: result.reason, retryable: result.retryable }
+      : {
+          ok: false,
+          intentId: intent.id,
+          reason: result.reason,
+          retryable: result.retryable,
+          ...(result.retryAfterMs == null ? {} : { retryAfterMs: result.retryAfterMs }),
+        }
 
     this.#journal.append(meetingId, { type: 'push.settled', result: settled })
 
@@ -276,7 +321,7 @@ export class Outbox {
         kind: intent.kind,
         attempt,
       })
-      return
+      return 0
     }
 
     if (settled.retryable) {
@@ -285,7 +330,7 @@ export class Outbox {
         kind: intent.kind,
         attempt,
       })
-      return
+      return settled.retryAfterMs ?? 0
     }
 
     // Terminal. The projection leaves the dependants blocked and touches
@@ -296,6 +341,7 @@ export class Outbox {
       kind: intent.kind,
       attempt,
     })
+    return 0
   }
 
   /**

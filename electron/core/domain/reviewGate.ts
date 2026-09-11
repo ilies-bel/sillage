@@ -21,7 +21,7 @@
  * thing this screen exists to guarantee is that what the rep read is what the
  * CRM receives.
  */
-import type { MeetingState } from '../contracts/meeting.ts'
+import { STATE_REASON, type MeetingState } from '../contracts/meeting.ts'
 import type { Attendee } from '../contracts/meeting.ts'
 import type {
   Confidence,
@@ -60,20 +60,8 @@ export type ReviewAvailability = { open: true } | { open: false; reason: string 
  * `recording` is the one that matters and it is deliberately bland: the rep is
  * on a call and the string exists for a screen they should not be looking at.
  */
-const CLOSED_REASON: Record<MeetingState, string> = {
-  idle: 'La réunion n’a pas encore démarré.',
-  armed: 'La réunion n’a pas encore démarré.',
-  recording: 'Réunion en cours.',
-  ended: 'Compte-rendu en attente d’analyse.',
-  extracting: 'Analyse en cours…',
-  awaiting_confirmation: '',
-  pushing: 'Envoi en cours…',
-  done: 'Déjà validée.',
-  aborted: 'Réunion abandonnée.',
-}
-
 export const reviewAvailability = (state: MeetingState): ReviewAvailability =>
-  state === REVIEW_STATE ? { open: true } : { open: false, reason: CLOSED_REASON[state] }
+  state === REVIEW_STATE ? { open: true } : { open: false, reason: STATE_REASON[state] }
 
 // ── DEC-21: the measured markers ────────────────────────────────────────────
 

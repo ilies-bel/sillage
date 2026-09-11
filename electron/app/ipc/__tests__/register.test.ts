@@ -190,10 +190,26 @@ test('session:command drives the machine and broadcasts the new state', async ()
   })
 
   // A rejected transition is a response, not an exception — the renderer needs
-  // to render it, not catch it.
-  const illegal = await ipc.invoke('session:command', { meetingId: 'm1', command: 'confirm' })
+  // to render it, not catch it. And the response is a *sentence*: it is drawn
+  // verbatim, and « confirm is not legal from pushing » was what a second press
+  // of *Valider* put in a role="alert" at the confirmation gate.
+  const illegal = await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
   assert.equal(illegal.ok, false)
   assert.equal(illegal.state, 'recording')
+  assert.equal(illegal.ok === false && illegal.reason, 'Réunion en cours.')
+
+  /*
+   * **And `confirm` is not on this channel at all.** It dispatched the state
+   * machine with nothing behind it: `{ok:true,state:'pushing'}` with zero
+   * intents, and `pushSettled`'s guard needs one, so the meeting could never
+   * leave `pushing` and `abort` is illegal from there. It is also a second path
+   * past the one confirmation (DEC-4) — the write belongs to `review:confirm`.
+   */
+  await assert.rejects(() =>
+    Promise.resolve(
+      ipc.invoke('session:command', { meetingId: 'm1', command: 'confirm' } as never),
+    ),
+  )
 
   // The renderer cannot fabricate a command only a module may report.
   await assert.rejects(() =>
