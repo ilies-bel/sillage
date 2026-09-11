@@ -158,6 +158,7 @@ export class FileCapture extends EventEmitter {
         severity: 'info',
         code: 'capture.file.opened',
         module: 'capture',
+        origin: 'foreign',
         message: `${source.path} — ${(pcm.length / 2 / wav.sampleRate).toFixed(1)} s à ${wav.sampleRate} Hz`,
         detail: { channel: source.channel, frames: total },
       })

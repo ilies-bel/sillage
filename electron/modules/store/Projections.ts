@@ -80,6 +80,17 @@ const toOutbox = (r: OutboxRow): OutboxEntry => ({
   updatedAt: r.updated_at,
 })
 
+/**
+ * The prefix `core/domain/adHoc.ts` mints an unscheduled call's id with.
+ *
+ * Restated here rather than imported because `adHocMeetingId` builds a whole id
+ * and this needs the stem — and held to that function by a unit test, the way
+ * `preloadUnwrap.test.ts` holds a shape it cannot import: the day the convention
+ * moves, the test fails instead of this quietly matching nothing and the residue
+ * coming back.
+ */
+export const AD_HOC_ID_PREFIX = 'adhoc-'
+
 export class Projections {
   #log: EventLog
 
@@ -343,6 +354,49 @@ export class Projections {
    * A null bound is unbounded on that side, so `listMeetings(500)` still means
    * what it always meant.
    *
+   * **An unscheduled call that was offered and never accepted is not a meeting
+   * the rep had, and it is the one thing this list leaves out.** The detector
+   * calls `orchestrator.create()` at the moment it makes an *offer* (DEC-46) —
+   * it has to, because arming needs a session — so every false positive wrote a
+   * permanent row into the rep's own record: measured, one 90-second browser
+   * microphone hold with the offer ignored left « Appel non planifié —
+   * Navigateur » in `idle`, drawn in the day grid with an *Ouvrir* button onto an
+   * empty meeting, indexed by `searchableRecord`, and with no delete verb
+   * anywhere in the product (DEC-27). The false positives are not exotic: Loom or
+   * Vidyard in a browser tab, a Slack clip — any of them holds the microphone
+   * past the dwell.
+   *
+   * It is excluded **here**, in the projection, and not at the four call sites
+   * (`entries.ts`, *Historique*, `searchableRecord`, `PendingGates`) so there is
+   * one rule rather than four that drift. The `meeting.created` stays in the log:
+   * that is genuine history and DEC-27 leaves exactly one delete in this
+   * codebase. The projection is the *view*, and this view should not carry a
+   * meeting that never started.
+   *
+   * **Three things the predicate deliberately does not say**, each measured
+   * against the real store rather than reasoned about:
+   *
+   *  · Not « no `event_id` and no `started_at` and `idle` », which is what the
+   *    residue looks like structurally — because that is *also* exactly what
+   *    « Ajouter au jeudi » looks like (DEC-31: a rep can create and record a
+   *    meeting on any day) and what « Démarrer une réunion » looks like between
+   *    `meeting:create` and a `start` that was refused. Measured, that predicate
+   *    hid three rows and only one of them was residue: a call the rep had
+   *    deliberately placed on Thursday would have vanished from the calendar,
+   *    and a meeting whose immediate start failed would have vanished from under
+   *    the rep while they were looking at its session screen, with no row
+   *    anywhere to reach it by again.
+   *  · So the test is *provenance*, and provenance is in the id. `adhoc-`,
+   *    `man-` and `evt-` exist precisely so that « where did this session come
+   *    from » is answerable from the id alone months later in a diagnostics
+   *    bundle; `AD_HOC_ID_PREFIX` names the one this needs and a test holds it to
+   *    `adHocMeetingId` so the two cannot drift apart silently.
+   *  · Not `state != 'idle'`. An offer still standing is `armed` and stays
+   *    listed — that one genuinely wants attention — and an accepted call has a
+   *    `started_at`, which is the second half of the test and what makes a call
+   *    that was recorded, abandoned mid-recording, or crashed out of `recording`
+   *    at boot impossible to hide.
+   *
    * **A null `limit` is unbounded too**, and it is what `history:search` asks
    * for. DEC-25's promise is every call ever captured, and a search that reads
    * the five hundred most recent meetings cannot keep it: the five hundred and
@@ -356,7 +410,8 @@ export class Projections {
     const to = range?.to ?? null
     const rows = this.#log.all<MeetingRow>(
       `SELECT * FROM meetings
-         WHERE (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) >= ?)
+         WHERE NOT (id LIKE '${AD_HOC_ID_PREFIX}%' AND state = 'idle' AND started_at IS NULL)
+           AND (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) >= ?)
            AND (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) <= ?)
          ORDER BY COALESCE(scheduled_start, started_at, created_at) DESC, id DESC
          LIMIT ?`,
@@ -523,6 +578,33 @@ export class Projections {
     let latest: { revision: number; doc: unknown } | null = null
     for (const { event } of this.#log.read(meetingId)) {
       if (event.type === 'document.snapshot') latest = { revision: event.revision, doc: event.doc }
+    }
+    return latest
+  }
+
+  /**
+   * The compte-rendu as the rep validated it, or null if nobody ever did.
+   *
+   * Folded on demand and not a column, for the reason `recipe()` is not one:
+   * it is read one meeting at a time, by the screen showing that meeting.
+   *
+   * The last confirmation wins, which is the same rule `extraction()` applies
+   * to the last extraction — a meeting can only be confirmed once today, but
+   * the fold must not depend on that staying true.
+   *
+   * **`''` is a value and `null` is an absence**, and the two say opposite
+   * things: the first is a rep who deleted the document and validated anyway
+   * (`reviewGate.ts` allows exactly that), the second is a confirmation
+   * written before the field existed — or no confirmation at all — where the
+   * caller falls back to rendering the stored extraction. Testing the key for
+   * `!= null` rather than for truthiness is the whole of that distinction.
+   */
+  confirmedCompteRendu(meetingId: string): string | null {
+    let latest: string | null = null
+    for (const { event } of this.#log.read(meetingId)) {
+      if (event.type === 'confirmation.recorded' && event.compteRendu != null) {
+        latest = event.compteRendu
+      }
     }
     return latest
   }

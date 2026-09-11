@@ -1785,12 +1785,14 @@ test('widget:state answers the meeting that is really recording, or null', async
 })
 
 /**
- * The two window gestures, with no window.
+ * The window gestures, with no window.
  *
  * `IpcDeps.widget` is absent in every test and in any run without an overlay,
  * and the channels answer `{ ok: false }` rather than throwing — which is what
- * lets the widget treat « the window would not move » as a fact it can say out
- * loud instead of an exception it has to swallow (DEC-26).
+ * lets the widget treat « la fenêtre n'a pas bougé » as a fact it can say out
+ * loud instead of an exception it has to swallow (DEC-26). `widget:left` is the
+ * one that matters here: the reply crosses a process boundary, so it can
+ * legitimately arrive after the window it was about has already gone.
  */
 test('the widget’s window gestures answer false when there is no window', async () => {
   const { ipc, deps, cleanup } = open()
@@ -1800,9 +1802,11 @@ test('the widget’s window gestures answer false when there is no window', asyn
   })
   assert.deepEqual(await ipc.invoke('window:focus', { meetingId: null }), { ok: false })
   assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: false })
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 150 }), { ok: false })
 
   const asked: unknown[] = []
   const focused: Array<string | null> = []
+  const after: number[] = []
   let through: boolean | null = null
   deps.widget = {
     resize: (box) => {
@@ -1815,6 +1819,10 @@ test('the widget’s window gestures answer false when there is no window', asyn
     },
     focusMain: (meetingId) => {
       focused.push(meetingId)
+      return true
+    },
+    left: (ms) => {
+      after.push(ms)
       return true
     },
   }
@@ -1832,6 +1840,17 @@ test('the widget’s window gestures answer false when there is no window', asyn
 
   assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: true })
   assert.equal(through, true)
+
+  /*
+   * The duration the renderer resolved for its own exit, which is what lets the
+   * main process destroy the window *after* the fade instead of during it. Zero
+   * is the `prefers-reduced-motion` answer and has to survive the schema, which
+   * is why it is asserted rather than assumed: a `.positive()` there would have
+   * turned « go now » into a validation error on the way out of the call.
+   */
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 150 }), { ok: true })
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 0 }), { ok: true })
+  assert.deepEqual(after, [150, 0])
   cleanup()
 })
 
@@ -2086,5 +2105,123 @@ test('the apostrophe a Windows keyboard types finds what the app stored (HR-2)',
     const result = await ipc.invoke('history:search', { query })
     assert.equal(result.rows.length, 1, `« ${query} » ne trouve rien`)
   }
+  cleanup()
+})
+
+/*
+ * ── the compte-rendu the rep validated is the one the archive keeps ──────────
+ *
+ * `edits.compteRendu` reached `draftIntents` and nothing else, so the archive and
+ * the CRM held two different documents from the moment a rep corrected a
+ * sentence at the gate. Driven end to end on the real gate, the real store and
+ * the real outbox, because that is the only place the two can be compared:
+ * confirm with a correction, then read the record back through the handlers the
+ * two screens call.
+ */
+test('a correction made at the gate is what Historique draws and what search finds', async () => {
+  const { ipc, deps, cleanup } = open()
+  signIn(deps)
+  atGate(deps, 'm1')
+  const panel = await editsFor(ipc, 'm1')
+
+  // What the gate opened on, and the one line the rep strikes out of it.
+  const deleted = panel.edits.compteRendu
+    .split('\n')
+    .find((line) => line.startsWith('- **Besoin**'))
+  assert.ok(deleted, 'la ligne à supprimer doit être dans le document du modèle')
+
+  const corrected = `${panel.edits.compteRendu
+    .split('\n')
+    .filter((line) => line !== deleted)
+    .join('\n')}\n\nLe client a insisté sur le mot ZORGLUB pendant la réunion.`
+
+  await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: { ...panel.edits, compteRendu: corrected },
+    intentIds: panel.intents.filter((intent) => intent.available).map((intent) => intent.id),
+  })
+
+  // 1. VerySwing gets the string the rep read — the invariant that already held.
+  const task = createdIntents(deps, 'm1').find((intent) => intent.kind === 'crm.task')
+  assert.ok(JSON.stringify(task).includes('ZORGLUB'))
+
+  // 2. And so does the archive, which is the converse and did not hold.
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+  assert.equal(record.compteRendu, corrected)
+  assert.ok((record.compteRendu ?? '').includes('ZORGLUB'))
+  assert.equal((record.compteRendu ?? '').includes(deleted), false)
+
+  // 3. The search searches it, so the call is findable by the phrase the rep is
+  //    certain of — and *not* by the sentence they specifically struck out, which
+  //    the row used to offer as the reason it was in the list.
+  const found = await ipc.invoke('history:search', { query: 'ZORGLUB' })
+  assert.deepEqual(
+    found.rows.map((row) => row.meeting.id),
+    ['m1'],
+  )
+  assert.deepEqual(
+    (await ipc.invoke('history:search', { query: deleted })).rows,
+    [],
+    'la ligne supprimée avant validation ne doit plus être une preuve',
+  )
+
+  // 4. And `meeting:get`, which is the session screen's own read of the same
+  //    document, agrees with both — one function answers all three.
+  assert.equal((await ipc.invoke('meeting:get', { meetingId: 'm1' })).compteRendu, corrected)
+  cleanup()
+})
+
+test('a meeting confirmed before the correction was recorded still reads the model’s document', async () => {
+  /*
+   * The compatibility case, and it is not hypothetical: every meeting in every
+   * install confirmed before `confirmation.recorded` carried this field has no
+   * key at all. `nullish` is what lets those events replay, and « absent » has to
+   * mean « render the extraction » rather than « the document is empty » — which
+   * is the whole reason `confirmedCompteRendu` tests for `!= null` instead of for
+   * truthiness. Written the way the log holds it, not through the handler.
+   */
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+  deps.orchestrator.dispatch('m1', 'confirm', null)
+  deps.store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: [],
+    at: 5_000,
+  })
+
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+  assert.match(record.compteRendu ?? '', /Renfort/)
+  assert.match(record.compteRendu ?? '', /## Éléments retenus/)
+  // Findable by the model's own words, exactly as it has always been.
+  assert.equal((await ipc.invoke('history:search', { query: 'Renfort' })).rows.length, 1)
+  cleanup()
+})
+
+test('a row names its client once in its excerpt too', async () => {
+  /*
+   * `meetingHeading` strips the client's name off the front of the objet — the
+   * objet a rep types opens on it almost every time — and `searchableRecord` was
+   * joining the two *raw*, so the evidence line under the row read « Sodexial —
+   * comité de staffing hebdomadaire Sodexial » three pixels under a title that
+   * had just printed the name once. One function, one answer: it moved into
+   * `core/contracts/meeting.ts` so the main process can reach it.
+   */
+  const { ipc, deps, cleanup } = open()
+  deps.orchestrator.create({
+    id: 'man-1',
+    title: 'Sodexial — comité de staffing hebdomadaire',
+    context: null,
+    clientName: 'Sodexial',
+  })
+
+  const excerptFor = async (query: string) =>
+    (await ipc.invoke('history:search', { query })).rows[0]?.matches.find(
+      (match) => match.where === 'meeting',
+    )?.excerpt
+
+  assert.equal(await excerptFor('staffing'), 'Sodexial comité de staffing hebdomadaire')
+  // And the call is still findable by the client's own name, which is the one
+  // thing that must not be lost to a de-duplication.
+  assert.equal(await excerptFor('Sodexial'), 'Sodexial comité de staffing hebdomadaire')
   cleanup()
 })

@@ -344,3 +344,97 @@ mod platform {
         Vec::new()
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use cidre::core_audio as ca;
+
+    /// `kAudioDevicePropertyDeviceIsRunningSomewhere` on the default input —
+    /// the state the menu-bar microphone indicator follows.
+    fn indicator() -> Option<bool> {
+        let device = ca::System::default_input_device().ok()?;
+        device
+            .bool_prop(&ca::PropSelector::DEVICE_IS_RUNNING_SOMEWHERE.global_addr())
+            .ok()
+    }
+
+    /// **Reading the process list must not register us as using the microphone.**
+    ///
+    /// This is the measurement the twenty-fourth review round could not
+    /// independently reproduce, and it said so rather than claiming it verified.
+    /// It is worth having as a test rather than as a number in a docblock,
+    /// because the hazard is real and documented one file over: `abi_probe`
+    /// exists as a *string allocation* precisely because cpal's device
+    /// enumeration registers the process with the CoreAudio HAL and lights the
+    /// orange indicator — at app launch, with no meeting running. This function
+    /// is called on a timer with no meeting running, so the same hazard applies
+    /// and assuming it does not would be the whole defect.
+    ///
+    /// **What is asserted is that the reading does not *change* the state, not
+    /// that the state is zero.** A developer with Zoom open has a genuinely lit
+    /// indicator, and a test that demanded zero would fail for a reason that has
+    /// nothing to do with this code — the shape this repo calls a fixture that
+    /// cannot exercise its own property, in reverse.
+    ///
+    /// **And the instrument was proved to observe a change**, because a test
+    /// that cannot fail measures nothing. Reading the same property from a
+    /// separate process while `ffmpeg` held the default input:
+    ///
+    ///     idle                          34 objects | RunningSomewhere: 0
+    ///     while a real stream is open   35 objects | RunningSomewhere: 1
+    ///
+    /// So the property does move, and fifty polls of the process list do not
+    /// move it. Note what that separates: our own pid is in the object list
+    /// either way — asking the question registers this process as a HAL
+    /// *client* — and being a client is not using the device.
+    ///
+    /// One thing measured and deliberately not concluded: injecting
+    /// `microphone::list_input_devices()` into the loop below did **not** light
+    /// the indicator here either, which does not contradict `abi_probe`'s
+    /// docblock — that is about `cpal::default_host()` on Electron's main thread
+    /// at launch, which is not what this test runs — and is not enough evidence
+    /// to relax anything over there.
+    #[test]
+    fn reading_the_process_list_does_not_light_the_microphone_indicator() {
+        let Some(before) = indicator() else {
+            // No default input device, or the HAL refused. Nothing to measure —
+            // and this file already treats « we could not ask » as a non-finding.
+            return;
+        };
+
+        // Fifty polls is what a twenty-second arming poll does over roughly
+        // seventeen minutes.
+        for _ in 0..50 {
+            let _ = super::platform::mic_holding_apps();
+        }
+
+        let after = indicator().expect("the indicator was readable a moment ago");
+        assert_eq!(
+            before, after,
+            "polling the process object list changed the microphone indicator \
+             ({before} -> {after}); it must be a property read, never a stream"
+        );
+    }
+
+    /// The same read must not leak HAL objects either — a process object list
+    /// that grows on every poll is a process that will be holding thousands of
+    /// them by the end of a working day.
+    #[test]
+    fn polling_does_not_accumulate_process_objects() {
+        let Ok(first) = ca::System::processes() else {
+            return; // macOS before 14.4: the property does not exist.
+        };
+        let before = first.len();
+        for _ in 0..50 {
+            let _ = super::platform::mic_holding_apps();
+        }
+        let after = ca::System::processes().expect("readable a moment ago").len();
+        // Other applications legitimately come and go during a test run, so the
+        // assertion is about growth on the scale a leak would produce, not
+        // exact equality.
+        assert!(
+            after < before + 10,
+            "process objects grew {before} -> {after} across 50 polls"
+        );
+    }
+}

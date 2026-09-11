@@ -55,6 +55,22 @@ const CONTEXT = 40
  * The ligatures for the same reason: `Cœur` and `coeur` are one word to a rep
  * and NFD leaves `œ` alone. They are also the one step of this fold that
  * **changes the length of the text**, which is why `foldMapped` exists.
+ *
+ * **And the no-break spaces, which is the apostrophe's failure one character
+ * further out.** French typography puts U+00A0 before `: ; ! ?` and U+202F
+ * inside « … »; Word and Outlook insert them by autocorrect, and a note pasted
+ * out of a mail thread is full of both. A keyboard emits U+0020 and nothing
+ * else. So « bloque a 550 : » typed into the box answered « Aucun appel ne
+ * correspond. » about a note sitting in the store — and **undiagnosably**,
+ * because `ellipsise` collapses every run of whitespace, so the excerpt the rep
+ * would have seen had they found the call renders with ordinary spaces. There
+ * was nothing on any screen to notice.
+ *
+ * The Unicode space separators and only those. Every one of them folds one
+ * character to one character, so the map below is untouched. The zero-width
+ * characters are deliberately left alone: removing one would make this a fold
+ * that *deletes*, and no French input method puts one between two words a rep
+ * means to search for.
  */
 export const fold = (text: string): string => foldRun(text)
 
@@ -65,6 +81,7 @@ const foldRun = (part: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[\u2018\u2019\u02bc\u00b4`]/g, "'")
+    .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, ' ')
     .replace(/œ/g, 'oe')
     .replace(/æ/g, 'ae')
 
@@ -216,9 +233,26 @@ const excerptFor = (text: string, needle: string): string | null => {
   const after = source[at + needle.length] ?? text.length
   const to = Math.max(after, last + 1)
 
-  const start = Math.max(0, from - CONTEXT)
-  const end = Math.min(text.length, to + CONTEXT)
+  // `CONTEXT` is counted in UTF-16 units, and a slice is taken in them, so a
+  // window boundary can land *between the halves of one character* — an emoji
+  // in a rep's note, a rare CJK ideograph in a client's name. What ships then is
+  // a lone surrogate, which no font can draw: the row's evidence opens on `<?>`.
+  // Both edges are nudged outward onto a code-point boundary, which keeps the
+  // whole character rather than dropping half of it. Guarded on the *matching*
+  // half, so a text that already holds an unpaired surrogate is left as it is
+  // rather than silently shifted by one.
+  const start = onCodePointBoundary(text, Math.max(0, from - CONTEXT))
+  const end = onCodePointBoundary(text, Math.min(text.length, to + CONTEXT))
   return ellipsise(text.slice(start, end), start > 0, end < text.length)
+}
+
+/** The same index, moved back by one when it would cut a surrogate pair. */
+const onCodePointBoundary = (text: string, index: number): number => {
+  if (index <= 0 || index >= text.length) return index
+  const low = text.charCodeAt(index)
+  const high = text.charCodeAt(index - 1)
+  const splits = high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff
+  return splits ? index - 1 : index
 }
 
 const ellipsise = (body: string, before: boolean, after: boolean): string =>

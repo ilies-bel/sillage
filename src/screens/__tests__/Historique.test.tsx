@@ -19,6 +19,7 @@ import type {
 import type { InvokeRequest } from '../../../electron/core/contracts/ipc.ts'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
+import { NO_FILTER } from '../search/filters.ts'
 import { Historique } from '../Historique.tsx'
 
 let bridge: FakeBridge
@@ -208,12 +209,18 @@ describe('search runs in the main process', () => {
    * could have said the corpus had been cut short travelled unread.
    */
   test('the truncation names the corpus it is fifty of, and is silent when nothing is hidden', async () => {
+    /*
+     * **Opened on a question**, which is what this test was missing. `capped` is
+     * set for the plain listing too, so rendering with an empty box and asserting
+     * « affinez la recherche » was asserting the defect below: the remedy has to
+     * be available for the sentence to be allowed to name it.
+     */
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: true })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} query="TJM" />)
     await settled()
 
     const said = await screen.findByText(/Affinez la recherche/)
-    expect(said.textContent).toMatch(/Les 50 appels les plus récents/)
+    expect(said.textContent).toMatch(/Les 50 appels les plus récents qui correspondent/)
     expect(said.textContent).toMatch(/sur 812 appels parcourus/)
 
     cleanup()
@@ -221,9 +228,55 @@ describe('search runs in the main process', () => {
     // rep to narrow a search that is already complete is worse than saying
     // nothing, and `capped` was `rows.length >= limit` for as long as it existed.
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: false })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} query="TJM" />)
     await settled()
     expect(screen.queryByText(/Affinez la recherche/)).toBeNull()
+  })
+
+  /**
+   * **The truncation must not name a remedy that is not there.**
+   *
+   * `capped` is shipped for the listing as well as for a search — the loop stops
+   * one row past `limit` either way — and the sentence was gated on it alone. So
+   * with an empty box and sixty calls in the store the screen drew « Les 50
+   * appels les plus récents **qui correspondent** … **affinez la recherche** »
+   * over an empty search field: two clauses about a question nobody asked, and a
+   * remedy pointing at a control the rep has not touched. DEC-26's rule about
+   * dead controls in prose.
+   *
+   * Both halves are asserted, because the fix that draws nothing at all would
+   * pass half of this: fifty of sixty *is* a truncation and the rep is owed it.
+   */
+  test('the listing says what it is fifty of and points at something that exists', async () => {
+    answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 60, capped: true })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    const said = await screen.findByText(/Les 50 appels les plus récents/)
+    expect(said.textContent).toMatch(/sur 60 appels enregistrés/)
+    // The remedy is the box above, which is a thing the rep can do next.
+    expect(said.textContent).toMatch(/Cherchez un client, un sujet ou un mot prononcé/)
+    // And neither clause that belongs to a search nobody ran.
+    expect(said.textContent).not.toMatch(/correspondent/)
+    expect(said.textContent).not.toMatch(/Affinez la recherche/)
+  })
+
+  /**
+   * A chip is a question too, so the search sentence is the right one — the
+   * discriminator is « did the rep ask something », not « is the box non-empty ».
+   */
+  test('a chip on with an empty box still reads as a search', async () => {
+    answered({
+      rows: Array.from({ length: 50 }, () => row()),
+      scanned: 60,
+      capped: true,
+    })
+    render(<Historique onBack={() => {}} filter={{ ...NO_FILTER, statut: 'a-valider' }} />)
+    await settled()
+
+    const said = await screen.findByText(/Les 50 appels les plus récents/)
+    expect(said.textContent).toMatch(/qui correspondent/)
+    expect(said.textContent).toMatch(/Affinez la recherche/)
   })
 
   test('the matched excerpt is shown under the row, with the surface it came from', async () => {

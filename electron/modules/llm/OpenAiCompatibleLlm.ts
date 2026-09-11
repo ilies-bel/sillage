@@ -183,6 +183,7 @@ export class OpenAiCompatibleLlm implements LlmPort {
         severity: 'error',
         code: 'llm.schema.rejected',
         module: 'llm',
+        origin: 'foreign',
         message: `réponse du modèle non conforme au format attendu — ${issues.slice(0, 5).join(' | ')}`,
         detail: { provider: this.providerId, issues: issues.length },
       })

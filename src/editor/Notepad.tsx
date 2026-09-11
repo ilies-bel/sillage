@@ -159,6 +159,15 @@ export function Notepad({
        * a heading or a list item, which is the case where the browser's own
        * answer (continue the list) is not what a rep clicking into white space
        * asked for.
+       *
+       * It needs no horizontal case of its own, and that was checked rather
+       * than assumed. Its guard is `event.target !== view.dom`, so it fires for
+       * exactly the region the CSS gives the editable — which is now the whole
+       * pane, where before a click in the white space beside the text hit the
+       * mount element and the plugin never saw it. To the left or the right of
+       * a line the browser's own answer is the right one and was measured to
+       * be: the caret lands at offset 0 and at the end of that line
+       * respectively, never nowhere.
        */
       plugins: [
         buildInputRules(),
@@ -266,29 +275,46 @@ export function Notepad({
       className="notepad relative h-full min-h-0 overflow-y-auto text-[15px] leading-[1.7]"
     >
       {empty && placeholder ? (
+        // `notepad-placeholder` carries the position, because it has to be the
+        // editable's own page margin and that is an expression now, not a
+        // number: it was `left-8 top-6` while the text was centred, so the
+        // prompt sat at x=32 and the caret it invited appeared at x=225.
         <span
           aria-hidden
-          className="text-muted pointer-events-none absolute left-8 top-6 select-none"
+          className="notepad-placeholder text-muted pointer-events-none absolute select-none"
         >
           {placeholder}
         </span>
       ) : null}
       {/*
-        `flex h-full flex-col`, and the page margin moved onto the editable in
-        `index.css`.
+        `flex h-full flex-col`, and the page margin — and the reading measure
+        with it — moved onto the editable in `index.css`.
 
-        Both are about one thing: every pixel under « Vos notes… » has to take a
-        click. `.ProseMirror`'s `min-height: 100%` was inert for as long as it
-        existed, because a percentage min-height resolves against *this* element
-        and this element's specified height was `auto` (CSS 2.1 §10.7 reads that
-        as `auto`). Measured on an empty notepad at 1280×800: the editable was
-        **26px** tall inside a 676px wrapper in a 724px pane — 96% of the pane was
-        not the editor. A rep looks at Teams, clicks back onto their own notes and
+        All of it is about one thing: every pixel under « Vos notes… » has to
+        take a click. A rep looks at Teams, clicks back onto their own notes and
         gets no caret; nothing on screen says why, because a `contenteditable`
         that is not under the pointer looks exactly like one that is.
 
-        A column flex container with a definite height is what makes the
-        percentage resolvable, and it is the editable that grows into it.
+        It has been wrong on each axis in turn, and the second was the first's
+        fix. `.ProseMirror`'s `min-height: 100%` was inert for as long as it
+        existed, because a percentage min-height resolves against *this* element
+        and this element's specified height was `auto` (CSS 2.1 §10.7 reads that
+        as `auto`): measured on an empty notepad at 1280×800, the editable was
+        **26px** tall inside a 676px wrapper in a 724px pane — 96% of the pane
+        was not the editor. A column flex container with a definite height is
+        what makes the percentage resolvable, and it is the editable that grows
+        into it. That left the *width*: the same rule centred the editable with
+        `margin-inline: auto`, an auto cross-axis margin cancels
+        `align-items: stretch`, and a fit-content editable over an empty
+        document is **64px wide in a 998px pane** — 5 of 125 grid clicks landed.
+        The measure is cut out of the padding now (see `index.css`), so the box
+        is the pane and the text is still 58ch: **125 of 125, at both smoke
+        sizes, empty and full.**
+
+        Measure it the way it was measured — a grid of real clicks on the real
+        editor, with the document **empty**, which is the state every call
+        starts in and the only one where a fit-content box has no width at all.
+        A fixture with notes in it hides four fifths of this.
       */}
       <div ref={mount} className="text-ink-rep flex h-full flex-col" />
     </div>

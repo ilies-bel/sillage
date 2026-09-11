@@ -131,7 +131,38 @@ const historyRow = (over: Partial<Meeting> = {}): HistoryRow => ({
   matches: [{ where: 'transcript', excerpt: '…plutôt sur un TJM de 520 euros…' }],
 })
 
+/**
+ * **Today, at a fixed hour — and the hour is the point.**
+ *
+ * `at()` is relative to the machine's clock on purpose: `dayKeyOf` selects the
+ * Paris day, so a fixed *date* would make this suite pass only in the month it
+ * was written. What was relative and should never have been is the **time of
+ * day**, because `isPast` compares a fixture's end against `now`: every
+ * assertion in this file about which rows carry a control was an assertion about
+ * when the suite happened to run.
+ *
+ * Caught at 00:07, and it had been latent since the upcoming half of the list
+ * grew its own *Enregistrer*. « only the armed row offers a way in » stages a
+ * 14:00 invite as the unarmed row, so it passed in the afternoon — one
+ * *Enregistrer*, the armed row's — and failed every morning, because at 00:07 a
+ * 14:00 call is fourteen hours away and correctly carries the bordered
+ * *Enregistrer* the upcoming list is supposed to have. A CI run before lunch
+ * would have reported a defect that was not there, and, worse, the suite has
+ * never once exercised the upcoming branch on a row it stages as past.
+ *
+ * 16:00 rather than a round midday: it is after the last fixture hour in the
+ * file plus `OVERRUN_GRACE_MS`, which is the window these tests have in fact
+ * been passing in. The two sides of `isPast` each have their own tests now,
+ * driven at chosen instants (`agenda/__tests__/entries.test.ts`), which is where
+ * a time-of-day question belongs.
+ */
+const SUITE_HOUR = 16
+
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const pinned = new Date()
+  pinned.setHours(SUITE_HOUR, 0, 0, 0)
+  vi.setSystemTime(pinned)
   bridge = fakeBridge()
   uninstall = installBridge(bridge)
   bridge.when('meeting:list', () => [])
@@ -141,6 +172,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   uninstall()
+  vi.useRealTimers()
 })
 
 const signedOut = () =>
@@ -1005,6 +1037,106 @@ describe('the calendar asks for the window it draws (meeting:list)', () => {
     })
 
     expect(listCalls().at(-1)).toEqual({ limit: 500, from: null, to: null })
+  })
+})
+
+/*
+ * ── the cap is the main process's answer, never the screen's arithmetic ───────
+ *
+ * `capped` has shipped on every reply since the channel existed and one screen
+ * read it. These two counted their own rows against their own limit, which is
+ * one *more* than the question: `rows.length >= limit` is true when a pane asked
+ * for eight and was given eight with nothing behind them. Round 23 fixed the
+ * same off-by-one in the handler; its regression test pins the copy on
+ * *Historique* and by construction could not see either of these.
+ *
+ * Both directions, because a fix that simply never draws the sentence would pass
+ * half of each of these — and the half it dropped is the one the rep is owed.
+ */
+describe('what is hidden is reported, and only when something is', () => {
+  /** Answers the search with `rows`, and the pending question with `pending`. */
+  const answering = (over: {
+    rows?: readonly HistoryRow[]
+    pending?: readonly HistoryRow[]
+    capped?: boolean
+    pendingCapped?: boolean
+  }) =>
+    bridge.when('history:search', (payload) => {
+      const asking = payload.filter?.statut === 'a-valider'
+      return {
+        query: payload.query ?? '',
+        filter: {
+          client: payload.filter?.client ?? null,
+          periode: payload.filter?.periode ?? 'toute',
+          statut: payload.filter?.statut ?? 'tous',
+          intention: payload.filter?.intention ?? 'toutes',
+        },
+        scanned: 99,
+        clients: [],
+        rows: [...(asking ? (over.pending ?? []) : (over.rows ?? []))],
+        capped: asking ? (over.pendingCapped ?? false) : (over.capped ?? false),
+      }
+    })
+
+  const rows = (count: number, prefix: string): HistoryRow[] =>
+    Array.from({ length: count }, (_, i) => ({
+      ...historyRow(),
+      meeting: meeting(`${prefix}${i}`, { title: 'Acme — restitution' }),
+    }))
+
+  test('exactly RESULT_LIMIT matches with nothing hidden says nothing', async () => {
+    // Eight matches, eight rows, `capped: false`. The pane used to draw « Les
+    // premiers résultats — l'historique les porte tous », which sends a rep to a
+    // second screen to look for results that are not there.
+    answering({ rows: rows(8, 'm') })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    await typeQuery('TJM')
+
+    await screen.findByRole('list', { name: 'Résultats' })
+    expect(screen.queryByText(/Les premiers résultats/)).toBeNull()
+  })
+
+  test('and a ninth behind the pane is said out loud', async () => {
+    answering({ rows: rows(8, 'm'), capped: true })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    await typeQuery('TJM')
+
+    expect(await screen.findByText(/Les premiers résultats/)).toBeTruthy()
+  })
+
+  test('exactly PENDING_LIMIT owed is a number, not a number with a plus', async () => {
+    // Fifty calls owed and nothing hidden: « 50 » and « Les 50 › ». It drew
+    // « 50+ » and « Toutes › » — a backlog rounded up, and a link that stopped
+    // naming its own count, on the section whose whole point is the size.
+    answering({ pending: rows(50, 'p') })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    expect(screen.getByLabelText('50 réunions en attente de validation').textContent).toBe('50')
+    expect(screen.getByRole('button', { name: 'Les 50 ›' })).toBeTruthy()
+  })
+
+  test('and a fifty-first says so, to the eye and to a reader', async () => {
+    answering({ pending: rows(50, 'p'), pendingCapped: true })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    // The `+` is on the screen and in the accessible name: a reader told « 50 »
+    // where the screen shows « 50+ » has been given a certainty nobody claimed.
+    expect(
+      screen.getByLabelText('au moins 50 réunions en attente de validation').textContent,
+    ).toBe('50+')
+    expect(screen.getByRole('button', { name: 'Toutes ›' })).toBeTruthy()
   })
 })
 

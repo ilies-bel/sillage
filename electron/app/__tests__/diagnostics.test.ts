@@ -131,6 +131,57 @@ test('the redacted bundle is the one the default button writes', () => {
 })
 
 /**
+ * **`origin` has to survive the store, or the declaration is decoration.**
+ *
+ * The redactor reads `DiagEvent.origin`; the call sites set `DiagInput.origin`;
+ * between them are `Diagnostics.record`, `DiagEventSchema` on the way into the
+ * log, and `readDiagnostics` on the way out. Every one of those is a place the
+ * field could be dropped with `npm run check:diag` still green and
+ * `redactDiagnostics.test.ts` still green — the check reads source and the unit
+ * test builds its own `DiagEvent`, so neither of them goes through the sink. That
+ * is the `check:ports` shape one layer down: declared, implemented, tested, and
+ * reached by nothing.
+ *
+ * So this drives the whole path a bundle actually takes — record, append, read
+ * back, write NDJSON — with a real VerySwing error body, the kind
+ * `crm/vsa/http.ts`'s `messageOf` returns verbatim and that no rule in
+ * `redactDiagnostics.ts` touches: a client's name in a French sentence with no
+ * delimiter, no address and no locator.
+ */
+test('a foreign message does not reach the redacted bundle, through the real sink', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'diag-'))
+  try {
+    const { store, diagnostics } = open()
+    const body = 'Le tiers Néovia Santé est inconnu du référentiel'
+    diagnostics.record({
+      severity: 'error',
+      code: 'crm.task.failed',
+      module: 'crm',
+      message: body,
+      origin: 'foreign',
+      detail: { retryable: false },
+    })
+
+    // Read back out of the log, not out of the object `record` returned.
+    const stored = diagnostics.recent()[0]
+    assert.equal(stored?.origin, 'foreign', 'le champ a été perdu entre le sink et le journal')
+    assert.equal(stored?.message, body, 'le journal garde tout — c’est l’export qui retient')
+
+    const redacted = readFileSync(diagnostics.writeBundle('redacted', directory).path, 'utf8')
+    assert.ok(!redacted.includes('Néovia Santé'), 'le nom du client est parti dans le bundle')
+    assert.ok(redacted.includes(`[message:${body.length}]`))
+    assert.ok(redacted.includes('crm.task.failed'), 'le code reste — c’est le diagnostic')
+    assert.ok(redacted.includes('"retryable":false'))
+
+    // `full` says it carries client content and carries it.
+    assert.ok(readFileSync(diagnostics.writeBundle('full', directory).path, 'utf8').includes(body))
+    store.close()
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+/**
  * **Every event, as it is written**, so the *Diagnostics* pane can be live.
  *
  * `diag:appended` was in the IPC contract and subscribed to by Réglages, and

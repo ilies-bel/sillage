@@ -1899,11 +1899,86 @@ async function main() {
   }
 
   /*
+   * **`--fade`'s own self-test, and it is the check that most needed one.**
+   *
+   * The twenty-fourth round executed `fades()` against the product's own CSS and
+   * found it could not read **half of it**. The reader required the transparent
+   * stop to carry a pixel offset, and `.fade-below[data-above="true"]` is
+   * `linear-gradient(to bottom, transparent, black var(--fade-reading))`, whose
+   * implicit `0` Chromium drops from the computed value — so on `review-valider`
+   * both masked elements came back with no distance at all and were *silently*
+   * skipped, under a line reading « aucun ne couvre une ligne entière ». A 40px
+   * ramp forced over a 25px line box passed, exit 0. That is the shape recorded
+   * three times over in CLAUDE.md: a check that measures nothing reports the same
+   * green as a check that measured everything.
+   *
+   * So the attack stages **one element per gradient form the product can
+   * actually produce**, at a ramp deliberately longer than the line box inside
+   * it, and two controls that must stay quiet. The three `.fade-below` divs carry
+   * no inline gradient: they wear the shipped class and the shipped
+   * `--fade-reading` custom property, so what is being attacked is
+   * `src/design/index.css` itself and not a copy of it in this file.
+   *
+   *   SILLAGE_FADE_ATTACK=1 node scripts/harness/shot.mjs review-valider /dev/null \
+   *     --no-png --fade
+   *
+   * must print **seven** ramps over a line — the top ramp, the bottom ramp,
+   * *both* ramps of the four-stop rule, the widget's explicit-`0` form, the
+   * vertical layer riding behind a horizontal one, and a `to top` ramp reported
+   * at the « bas » edge because that is the end of the box its offset counts from
+   * — plus **one** unreadable mask, and exit 11. The census must show three
+   * layers exempted for running along the other axis and one ramp in percent.
+   * A harness-only development override, which is what `process.env` is for
+   * here: DEC-34 is about the *app* requiring none, and nothing in `electron/` or
+   * `src/` reads this.
+   */
+  if (process.env.SILLAGE_FADE_ATTACK) {
+    await page.evaluate(() => {
+      const root = document.querySelector('#root')
+      const add = (style, className = '', attrs = {}) => {
+        const el = document.createElement('div')
+        if (className) el.className = className
+        for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value)
+        if (style) el.setAttribute('style', style)
+        // An explicit line box, so the attack asserts the same numbers whatever
+        // stage it is run on.
+        el.innerHTML = '<p style="line-height:25px;font-size:16px">Attaque du fondu</p>'
+        root.appendChild(el)
+      }
+      // The product's own three rules, at a ramp longer than the line box.
+      add('--fade-reading: 40px', 'fade-below', { 'data-above': 'true' })
+      add('--fade-reading: 40px', 'fade-below', { 'data-below': 'true' })
+      add('--fade-reading: 40px', 'fade-below', { 'data-above': 'true', 'data-below': 'true' })
+      // The widget's form: an explicit `0` and `currentColor` rather than `black`.
+      add('mask-image: linear-gradient(to bottom, transparent 0, currentColor 40px)')
+      // A vertical ramp riding behind a horizontal layer, which is how a fade
+      // over a line disguises itself as a fade over the end of a row.
+      add(
+        'mask-image: linear-gradient(to right, transparent, black 28px),' +
+          ' linear-gradient(to bottom, transparent, black 40px)',
+      )
+      // The other vertical direction, whose ramp is measured from the *bottom*
+      // of the box even though its offset is the first one in the gradient.
+      add('mask-image: linear-gradient(to top, transparent, black 40px)')
+      // A mask this reader cannot measure, which must be said rather than skipped.
+      add('mask-image: radial-gradient(circle, black 40%, transparent 70%)')
+      // And the three that must stay silent: the horizontal exemption, a
+      // vertical ramp comfortably under its line box, and a ramp expressed as a
+      // share of the box, which is a different design and is counted rather than
+      // guessed at.
+      add('-webkit-mask-image: linear-gradient(to right, transparent, black 40px)')
+      add('mask-image: linear-gradient(to bottom, transparent, black 4px)')
+      add('mask-image: linear-gradient(to bottom, transparent, black 20%)')
+    })
+    await page.waitForTimeout(120)
+  }
+
+  /*
    * After `document.fonts.ready` for the reason the check itself is about: the
    * thing it compares a fade against is a *line box*, and a line box is a
    * different number before the webfont lands.
    */
-  let faded = []
+  let faded = { items: [], seen: 0, measured: 0, horizontal: 0, textless: 0, shares: 0, unreadable: [] }
   if (flags.fade) {
     await page.evaluate(() => document.fonts.ready)
     faded = await fades(page)
@@ -2020,14 +2095,51 @@ async function main() {
     }
   }
   if (flags.fade) {
-    if (faded.length === 0) console.log('  fondus: aucun ne couvre une ligne entière')
-    else {
-      console.log(`  ✗ fondus: ${faded.length} masque(s) peuvent effacer une ligne entière`)
-      for (const item of faded.slice(0, 8)) {
+    /*
+     * **The census, and why a check prints one.**
+     *
+     * `--fade` used to print « fondus: aucun ne couvre une ligne entière » and
+     * nothing else, so a run that visited **zero** masks — or one that visited
+     * two and could parse neither — read exactly like a run that measured every
+     * ramp in the product. That is the third instance of the shape CLAUDE.md
+     * records for `--scrollers` (scoped to landmarks *Historique* does not have,
+     * so it visited nothing and said « rien de caché ») and for `--contrast`
+     * (reusing `drawn()`, so it measured nothing and reported green). `--motion`
+     * had already learned it: it prints `${seen} élément(s) animé(s)`, and a
+     * silent zero there cannot pass for evidence.
+     *
+     * So: how many masks were visited, how many vertical ramps were actually
+     * measured, how many layers were exempted for running along the other axis,
+     * and how many ramps were left unmeasured because they are a share of the
+     * box rather than a distance. An unreadable mask is not in that list — it is
+     * a finding below, because it is exactly where a defect would hide.
+     */
+    const census =
+      `${faded.seen} masque(s) vus, ${faded.measured} rampe(s) verticale(s) mesurée(s), ` +
+      `${faded.horizontal} couche(s) sur l'autre axe exemptée(s)` +
+      (faded.textless > 0 ? `, ${faded.textless} sans texte` : '') +
+      (faded.shares > 0 ? `, ${faded.shares} en pourcentage de la boîte` : '')
+    if (faded.items.length === 0 && faded.unreadable.length === 0) {
+      console.log(`  fondus: ${census} — aucune ne couvre une ligne entière`)
+    } else {
+      console.log(`  fondus: ${census}`)
+      if (faded.items.length > 0) {
+        console.log(`  ✗ fondus: ${faded.items.length} rampe(s) peuvent effacer une ligne entière`)
+        for (const item of faded.items.slice(0, 8)) {
+          console.log(
+            `     ${item.what} (${item.edge}) — fondu ${item.fade}px sur une ligne de ${item.line}px` +
+              ` (alpha ${item.alpha} au haut des capitales) — « ${item.text} »`,
+          )
+        }
+      }
+      if (faded.unreadable.length > 0) {
         console.log(
-          `     ${item.what} — fondu ${item.fade}px sur une ligne de ${item.line}px` +
-            ` (alpha ${item.alpha} au haut des capitales) — « ${item.text} »`,
+          `  ✗ fondus: ${faded.unreadable.length} masque(s) que la mesure ne sait pas lire` +
+            ` — c'est là qu'un fondu trop long passerait`,
         )
+        for (const item of faded.unreadable.slice(0, 8)) {
+          console.log(`     ${item.what} — ${item.mask}`)
+        }
       }
       process.exitCode = 11
     }
@@ -2593,55 +2705,287 @@ async function scrollers(page) {
  * opted out of by `data-scrolls`, correctly, because a log is supposed to hold
  * more than its box. Nothing measured it, for as long as it existed.
  *
- * So: for every element carrying a `mask-image` (or its `-webkit-` twin) that
- * ramps **from transparent** over a pixel distance, that distance against the
- * tallest line box of the text inside it. A ramp at least as long as a line box
- * can put a whole line inside itself at some scroll position — and « some scroll
- * position » is not hypothetical on a log that auto-scrolls to wherever the
- * content happens to end.
+ * So: for every element carrying a `mask-image` (or its `-webkit-` twin), every
+ * **vertical** ramp between a fully transparent stop and a stop that paints,
+ * measured in pixels, against the tallest line box of the text inside it. A ramp
+ * at least as long as a line box can put a whole line inside itself at some
+ * scroll position — and « some scroll position » is not hypothetical on a log
+ * that auto-scrolls to wherever the content happens to end.
  *
- * Three things are deliberate. **The ink band, not the line box**, is what the
- * reported alpha describes: a 12px font inside a 19.5px line box paints roughly
- * the middle 12px, so the honest number is the alpha at the top of the capitals
- * rather than at the top of the box, which is always zero and says nothing.
- * **Percentages are skipped**, not failed: a ramp expressed as a share of the box
- * is a different design — it scales with the box rather than with the text — and
- * reporting it here would be guessing at a number this check has no way to
- * resolve.
+ * **The reader is a reader, and the first version was a regex.** It required the
+ * transparent stop to carry a pixel offset:
+ * `/rgba\([^)]*,\s*0\)\s+[\d.]+px,\s*[a-z]+\([^)]*\)\s+([\d.]+)px/`. Half of the
+ * product's own fade system cannot match that, because CSS lets the first stop
+ * drop its `0` and Chromium drops it from the computed value too —
+ * `.fade-below[data-above="true"]`, which `ReadingColumn.tsx` and `Review.tsx`
+ * put on **every** scrolled column, computes to
+ * `linear-gradient(rgba(0, 0, 0, 0), rgb(0, 0, 0) 12px)`. On `review-valider`
+ * both masked elements came back with no distance and were skipped in silence; a
+ * forced 40px ramp over a 25px line box — the exact defect this check exists for
+ * — printed « aucun ne couvre une ligne entière » and exited 0. The same regex
+ * also saw only one of the two ramps of the four-stop combined rule, and was
+ * defeated by a multi-layer mask, below.
+ *
+ * What replaced it parses the value: layers split at top-level commas, then a
+ * direction, then stops of a colour and up to two positions, with the implicit
+ * `0` and implicit `100%` filled in the way the spec fills them. Every form the
+ * product can produce is covered and `SILLAGE_FADE_ATTACK` stages one element of
+ * each: `transparent` and `rgba(0, 0, 0, 0)`, `black` and `currentColor`, the
+ * dropped default direction and a named `to bottom`, `0` and `0px` and no offset
+ * at all, `Npx` and `calc(100% - Npx)`, `mask-image` and its `-webkit-` twin, and
+ * the four-stop rule whose **two** ramps are both measured rather than maxed.
+ *
+ * Four things are deliberate.
+ *
+ * **The ink band, not the line box**, is what the reported alpha describes: a
+ * 12px font inside a 19.5px line box paints roughly the middle 12px, so the
+ * honest number is the alpha at the top of the capitals rather than at the top of
+ * the box, which is always zero and says nothing.
+ *
+ * **Percentages are counted, not failed and not hidden.** A ramp expressed as a
+ * share of the box is a different design — it scales with the box rather than
+ * with the text — and reporting a pixel number for it would be guessing. It is
+ * printed in the census instead, so « this check did not measure that one » is a
+ * number a reader can see rather than an absence.
+ *
+ * **A mask the reader cannot parse is a finding, not a skip.** That is the whole
+ * lesson of the round that found this: an unparsed mask and a clean mask printed
+ * the same sentence, and the unparsed one is precisely where a defect hides. A
+ * `url()` stencil, a `radial-gradient`, a colour space this reader does not know
+ * — all of them say so and fail, and the same census says how many masks were
+ * visited at all, the way `--motion` prints `${seen} élément(s) animé(s)`.
  *
  * And **only a vertical ramp is measured**, which this check got wrong on its
  * first run. `.filter-scroller` fades `to right` over a row of chips, and against
  * a line box that reads as « 28 pixels over a 17.1-pixel line, alpha 0.05 » —
  * which is nonsense: a horizontal fade hides the *ends* of a row, not a line, and
  * that is the question `--scrollers` asks and exempts `text-overflow: ellipsis`
- * from. Chromium drops the default direction from the computed value, so a
- * gradient that still names one is either horizontal or angled and is not this
- * check's business.
+ * from. The exemption is now decided **per layer**, which is what makes it
+ * honest: reading the direction with one `exec` over the whole declaration meant
+ * `linear-gradient(to right, …), linear-gradient(to bottom, …)` — a real mask
+ * shape, two layers multiplied together — exempted its vertical half on the
+ * strength of its horizontal one. Chromium drops `to bottom` and `180deg` from
+ * the computed value and keeps everything else, so an absent direction is the
+ * default and is vertical; `to top` and an angle that resolves to 0 or 180
+ * degrees are vertical too, and are measured from whichever end of the box the
+ * gradient axis starts at.
  */
 async function fades(page) {
   return page.evaluate(() => {
+    /*
+     * Splitting a CSS value cannot be done with `String.split`: every separator
+     * this reader cares about also occurs *inside* `rgba(…)` and `calc(…)`. So:
+     * split on a separator at paren depth zero, and nowhere else.
+     */
+    const splitTop = (value, onComma) => {
+      const parts = []
+      let depth = 0
+      let current = ''
+      for (const ch of value) {
+        if (ch === '(') depth += 1
+        else if (ch === ')') depth -= 1
+        if (depth === 0 && (onComma ? ch === ',' : /\s/.test(ch))) {
+          if (current.trim() !== '') parts.push(current.trim())
+          current = ''
+          continue
+        }
+        current += ch
+      }
+      if (current.trim() !== '') parts.push(current.trim())
+      return parts
+    }
+
+    const PER_DEGREE = { deg: 1, grad: 0.9, rad: 180 / Math.PI, turn: 360 }
+
+    /* 'down' · 'up' · 'other' (another axis, exempt) · null (unreadable). */
+    const axisOf = (token) => {
+      // Absent: Chromium prints no direction for the default, which is `to bottom`.
+      if (token === null) return 'down'
+      const named = /^to\s+(.+)$/.exec(token)
+      if (named) {
+        const sides = named[1].split(/\s+/).sort().join(' ')
+        if (sides === 'bottom') return 'down'
+        if (sides === 'top') return 'up'
+        return 'other'
+      }
+      const angle = /^(-?[\d.]+)(deg|grad|rad|turn)$/.exec(token)
+      if (angle) {
+        const deg = ((Number(angle[1]) * PER_DEGREE[angle[2]]) % 360 + 360) % 360
+        if (deg === 180) return 'down'
+        if (deg === 0) return 'up'
+        return 'other'
+      }
+      return null
+    }
+
+    /*
+     * The alpha of a resolved colour. A mask is an alpha stencil — `mask-mode`
+     * defaults to `alpha` — so this is the only thing about a stop's colour that
+     * matters here, and `0` versus « anything else » is the only distinction the
+     * ramp measurement needs. `null` means « a colour this reader does not know »,
+     * which is a finding rather than an assumption.
+     */
+    const alphaOf = (color) => {
+      if (color === 'transparent') return 0
+      const hex = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color)
+      if (hex) {
+        const body = color.slice(1)
+        if (body.length === 4) return Number.parseInt(body[3] + body[3], 16) / 255
+        if (body.length === 8) return Number.parseInt(body.slice(6), 16) / 255
+        return 1
+      }
+      const fn = /^[a-z-]+\((.*)\)$/is.exec(color)
+      if (!fn) return /^[a-z]+$/i.test(color) ? 1 : null
+      // Both spellings of an alpha channel: `rgba(r, g, b, a)` and `rgb(r g b / a)`.
+      const slashed = /\/\s*([\d.]+%?)\s*$/.exec(fn[1])
+      if (slashed) {
+        const pct = /^([\d.]+)%$/.exec(slashed[1])
+        const value = pct ? Number(pct[1]) / 100 : Number(slashed[1])
+        return Number.isFinite(value) ? value : null
+      }
+      // A slash that is not an alpha this reader knows how to read (`/ none`).
+      if (fn[1].includes('/')) return null
+      const args = splitTop(fn[1], true)
+      if (args.length === 4) {
+        const value = Number(args[3])
+        return Number.isFinite(value) ? value : null
+      }
+      return 1
+    }
+
+    /*
+     * Where a stop sits, in the one frame of reference it can be resolved in
+     * without knowing the box: `start` counts pixels from the beginning of the
+     * gradient axis, `end` counts them back from its end — which is what
+     * `calc(100% - 12px)` says, and what makes a bottom fade measurable at all.
+     * `{ share: true }` is a percentage. `null` is a form this reader does not
+     * know; `undefined` is « the stop carried no position », filled in below.
+     */
+    const positionOf = (token) => {
+      let m = /^(-?[\d.]+)px$/.exec(token)
+      if (m) return { frame: 'start', px: Number(m[1]) }
+      m = /^(-?[\d.]+)$/.exec(token)
+      if (m) return Number(m[1]) === 0 ? { frame: 'start', px: 0 } : null
+      m = /^(-?[\d.]+)%$/.exec(token)
+      if (m) {
+        const pct = Number(m[1])
+        if (pct === 0) return { frame: 'start', px: 0 }
+        if (pct === 100) return { frame: 'end', px: 0 }
+        return { share: true }
+      }
+      m = /^calc\(\s*100%\s*([+-])\s*([\d.]+)px\s*\)$/i.exec(token)
+      if (m) return { frame: 'end', px: m[1] === '-' ? Number(m[2]) : -Number(m[2]) }
+      return null
+    }
+
+    /*
+     * One layer of a `mask-image`, read into the ramps it draws.
+     *   { kind: 'unreadable' }              — say so; do not skip
+     *   { kind: 'other-axis' }              — horizontal or angled, exempt
+     *   { kind: 'ramps', ramps, shares }
+     */
+    const layerRamps = (layer) => {
+      const gradient = /^(?:repeating-)?linear-gradient\((.*)\)$/is.exec(layer.trim())
+      if (!gradient) return { kind: 'unreadable' }
+      const args = splitTop(gradient[1], true)
+      if (args.length < 2) return { kind: 'unreadable' }
+      const directional = /^to\s/i.test(args[0]) || /^-?[\d.]+(deg|grad|rad|turn)$/i.test(args[0])
+      const axis = axisOf(directional ? args.shift().toLowerCase() : null)
+      if (axis === null) return { kind: 'unreadable' }
+      if (axis === 'other') return { kind: 'other-axis' }
+
+      const stops = []
+      for (const arg of args) {
+        const tokens = splitTop(arg, false)
+        /*
+         * A bare length between two stops is an interpolation *hint*: it moves
+         * the midpoint of the ramp and never its extent, so it is dropped rather
+         * than read as a stop with no colour.
+         */
+        if (tokens.length === 1 && (/^[-.\d]/.test(tokens[0]) || /^calc\(/i.test(tokens[0]))) continue
+        const alpha = alphaOf(tokens[0].toLowerCase())
+        if (alpha === null) return { kind: 'unreadable' }
+        if (tokens.length === 1) stops.push({ alpha, at: undefined })
+        // Two positions on one stop is the shorthand for two stops of one colour.
+        else
+          for (const token of tokens.slice(1)) {
+            const at = positionOf(token)
+            if (at === null) return { kind: 'unreadable' }
+            stops.push({ alpha, at })
+          }
+      }
+      if (stops.length < 2) return { kind: 'unreadable' }
+      // The two the spec fills in, and the two this reader was blind to.
+      if (stops[0].at === undefined) stops[0].at = { frame: 'start', px: 0 }
+      if (stops[stops.length - 1].at === undefined) stops[stops.length - 1].at = { frame: 'end', px: 0 }
+
+      const ramps = []
+      let shares = 0
+      for (let i = 0; i + 1 < stops.length; i += 1) {
+        const a = stops[i]
+        const b = stops[i + 1]
+        // A ramp is transparent on exactly one side. Opaque-to-opaque paints
+        // nothing away; transparent-to-transparent hides a band outright, which
+        // is `--scrollers`' question rather than this one.
+        if ((a.alpha === 0) === (b.alpha === 0)) continue
+        const resolved =
+          a.at && b.at && a.at.share !== true && b.at.share !== true && a.at.frame === b.at.frame
+        if (!resolved) {
+          shares += 1
+          continue
+        }
+        /*
+         * Which edge of the *box* the ramp sits at, which is not the same
+         * question as which end of the *gradient* it sits at: `to top` runs the
+         * axis upwards, so its `start` frame is the bottom of the box.
+         */
+        const atTop = (axis === 'down') === (a.at.frame === 'start')
+        ramps.push({ px: Math.abs(a.at.px - b.at.px), edge: atTop ? 'haut' : 'bas' })
+      }
+      return { kind: 'ramps', ramps, shares }
+    }
+
     const out = []
+    const unreadable = []
+    let seen = 0
+    let measured = 0
+    let horizontal = 0
+    let textless = 0
+    let shares = 0
+
     for (const el of document.querySelectorAll('#root *')) {
       const style = getComputedStyle(el)
+      /*
+       * `-webkit-mask-image` is an alias of `mask-image` in Blink, so the two
+       * agree whenever either is set — but reading only the unprefixed one would
+       * make this check depend on that staying true, and the product writes both
+       * everywhere it writes either.
+       */
       const mask = [style.maskImage, style.webkitMaskImage].find((v) => v && v !== 'none')
       if (!mask) continue
-      // Vertical only — see above. `to bottom` and `180deg` are the default and
-      // are not printed; anything else that is named is another axis.
-      const named = /\bto (top|right|bottom|left)|[\d.]+deg/.exec(mask)
-      if (named && !/to bottom\b|\b180deg/.test(named[0])) continue
-      /*
-       * The fade distances: every stop that follows a fully transparent one, in
-       * pixels. `transparent` resolves to `rgba(0, 0, 0, 0)`, and the opaque stop
-       * is `currentColor` resolved to an `rgb(…)` — so the pattern is « a
-       * zero-alpha colour at some offset, then a colour at a pixel offset ».
-       */
-      const ramps = [...mask.matchAll(/rgba\([^)]*,\s*0\)\s+[\d.]+px,\s*[a-z]+\([^)]*\)\s+([\d.]+)px/g)]
-      // …and the closing half of a bottom fade, `calc(100% - Npx)`, which is the
-      // same distance measured from the other end.
-      const tail = [...mask.matchAll(/calc\(100% - ([\d.]+)px\)/g)]
-      const distances = [...ramps, ...tail].map((m) => Number(m[1])).filter((n) => Number.isFinite(n))
-      if (distances.length === 0) continue
-      const fade = Math.max(...distances)
+      seen += 1
+      const what =
+        el.id ||
+        el.getAttribute('aria-label') ||
+        `${el.tagName.toLowerCase()}.${String(el.className?.baseVal ?? el.className ?? '').split(' ')[0]}`
+
+      const ramps = []
+      let unreadableHere = false
+      for (const layer of splitTop(mask, true)) {
+        const parsed = layerRamps(layer)
+        if (parsed.kind === 'unreadable') unreadableHere = true
+        else if (parsed.kind === 'other-axis') horizontal += 1
+        else {
+          shares += parsed.shares
+          ramps.push(...parsed.ramps)
+        }
+      }
+      if (unreadableHere) {
+        unreadable.push({ what, mask: mask.length > 140 ? `${mask.slice(0, 137)}…` : mask })
+        continue
+      }
+      measured += ramps.length
+      if (ramps.length === 0) continue
 
       // The tallest line box of the text this mask is painted over. A mask on a
       // box with no text in it hides nothing a reader was going to read.
@@ -2657,25 +3001,35 @@ async function fades(page) {
         line = lh
         text = node.textContent.trim().slice(0, 34)
       }
-      if (line === 0) continue
-      if (fade < line) continue
+      if (line === 0) {
+        textless += 1
+        continue
+      }
 
-
-      const size = Number.parseFloat(getComputedStyle(el).fontSize) || 12
-      out.push({
-        what:
-          el.id ||
-          el.getAttribute('aria-label') ||
-          `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}`,
-        fade: Math.round(fade * 10) / 10,
-        line: Math.round(line * 10) / 10,
-        // A line box sitting at the very top of the visible area: the alpha the
-        // ramp gives the top of its capitals.
-        alpha: Math.round(Math.min(1, (line - size) / 2 / fade) * 100) / 100,
-        text,
-      })
+      const size = Number.parseFloat(style.fontSize) || 12
+      for (const ramp of ramps) {
+        if (ramp.px < line) continue
+        out.push({
+          what,
+          edge: ramp.edge,
+          fade: Math.round(ramp.px * 10) / 10,
+          line: Math.round(line * 10) / 10,
+          // A line box sitting at the very top of the visible area: the alpha the
+          // ramp gives the top of its capitals.
+          alpha: Math.round(Math.min(1, (line - size) / 2 / ramp.px) * 100) / 100,
+          text,
+        })
+      }
     }
-    return out.sort((a, b) => b.fade - b.line - (a.fade - a.line))
+    return {
+      items: out.sort((a, b) => b.fade - b.line - (a.fade - a.line)),
+      seen,
+      measured,
+      horizontal,
+      textless,
+      shares,
+      unreadable,
+    }
   })
 }
 

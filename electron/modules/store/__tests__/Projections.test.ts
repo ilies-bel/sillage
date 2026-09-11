@@ -8,6 +8,8 @@ import assert from 'node:assert/strict'
 import { Store } from '../index.ts'
 import type { PushIntent } from '../../../core/contracts/push.ts'
 import { meetingAnchor } from '../../../core/contracts/meeting.ts'
+import { adHocContext, adHocMeetingId, adHocTitle } from '../../../core/domain/adHoc.ts'
+import { AD_HOC_ID_PREFIX } from '../Projections.ts'
 import {
   sampleExtraction,
   sampleSegment,
@@ -309,4 +311,201 @@ test('meetings list by the day they belong on, not by when they were last touche
     listed.map((m) => m.id),
   )
   store.close()
+})
+
+/*
+ * ── the compte-rendu the rep validated ──────────────────────────────────────
+ *
+ * `edits.compteRendu` used to reach `draftIntents` and nothing else, so the
+ * string VerySwing received and the string *Historique* drew were two different
+ * documents from the moment a rep corrected a sentence at the gate. The fold is
+ * where the correction now lives; the two cases below are the whole of its
+ * contract, and the second is what makes every meeting confirmed before the
+ * field existed read exactly as it always has.
+ */
+test('the confirmed compte-rendu is folded out of the confirmation, last one winning', () => {
+  const store = new Store(':memory:', clock)
+  store.append('m1', { type: 'meeting.created', title: 'Acme', context: null })
+
+  // Nothing confirmed yet: an absence, so the caller renders the extraction.
+  assert.equal(store.projections.confirmedCompteRendu('m1'), null)
+
+  store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: ['i-1'],
+    at: 5_000,
+    compteRendu: '# Acme\n\nCorrigé par le commercial.',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('m1'), '# Acme\n\nCorrigé par le commercial.')
+
+  store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: ['i-2'],
+    at: 6_000,
+    compteRendu: '# Acme\n\nCorrigé deux fois.',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('m1'), '# Acme\n\nCorrigé deux fois.')
+  store.close()
+})
+
+test('a confirmation written before the field existed is an absence, and « » is not', () => {
+  const store = new Store(':memory:', clock)
+
+  // Exactly the shape every meeting confirmed before this field existed has:
+  // no key at all. It must replay — and answer « nobody recorded this », so the
+  // caller falls back to the stored extraction, which is what those meetings
+  // have always shown.
+  store.append('old', { type: 'meeting.created', title: 'Lefort', context: null })
+  store.append('old', { type: 'confirmation.recorded', intentIds: ['i-1'], at: 5_000 })
+  assert.equal(store.projections.confirmedCompteRendu('old'), null)
+
+  // And the empty string is a *value*: a rep who selected the document, deleted
+  // it and validated anyway did something `reviewGate.ts` deliberately allows,
+  // and the record says so rather than reinstating the model's draft over it.
+  store.append('vidé', { type: 'meeting.created', title: 'Nordis', context: null })
+  store.append('vidé', {
+    type: 'confirmation.recorded',
+    intentIds: [],
+    at: 5_000,
+    compteRendu: '',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('vidé'), '')
+  store.close()
+})
+
+/*
+ * ── an offer nobody accepted is not a meeting the rep had ────────────────────
+ *
+ * The detector calls `create()` at the moment it makes an *offer* (DEC-46), so
+ * every false positive used to write a permanent row into the rep's own record —
+ * drawn in the day grid with an *Ouvrir* button onto an empty meeting, indexed by
+ * the search, and with no delete verb anywhere in the product. A browser tab
+ * holding the microphone for a Loom recording is enough.
+ *
+ * The predicate is *provenance plus never started*, and the three rows below are
+ * the reason it is not the structural « no event, no start, idle »: two of them
+ * look exactly like the residue and both are meetings the rep asked for.
+ */
+const declineAnAdHocOffer = (store: Store, heldSince: number): string => {
+  const id = adHocMeetingId(heldSince)
+  store.append(id, {
+    type: 'meeting.created',
+    title: adHocTitle('Navigateur'),
+    context: adHocContext('Navigateur', heldSince),
+  })
+  store.append(id, {
+    type: 'session.transition',
+    from: 'idle',
+    to: 'armed',
+    command: 'arm',
+    reason: 'appel Navigateur hors calendrier',
+  })
+  store.append(id, {
+    type: 'session.transition',
+    from: 'armed',
+    to: 'idle',
+    command: 'disarm',
+    reason: 'l’appel s’est terminé sans enregistrement',
+  })
+  return id
+}
+
+test('an unscheduled call that was offered and never accepted leaves no row to read', () => {
+  const store = new Store(':memory:', clock)
+  const declined = declineAnAdHocOffer(store, 1_700_000_000_000)
+
+  assert.deepEqual(store.projections.listMeetings(null), [])
+  // The log keeps it: that is genuine history, and DEC-27 leaves exactly one
+  // delete in this codebase. Only the *view* drops it — and `getMeeting` still
+  // answers, because the orchestrator rehydrates by id.
+  assert.ok(store.log.read(declined).some((stored) => stored.event.type === 'meeting.created'))
+  assert.ok(store.projections.getMeeting(declined))
+  store.close()
+})
+
+test('and every unscheduled call the rep did something about is still listed', () => {
+  const store = new Store(':memory:', clock)
+  declineAnAdHocOffer(store, 1_700_000_000_000)
+
+  // Accepted and recorded: `started_at` is set, which is half the predicate.
+  const accepted = adHocMeetingId(1_700_000_060_000)
+  store.append(accepted, {
+    type: 'meeting.created',
+    title: adHocTitle('Teams'),
+    context: adHocContext('Teams', 1_700_000_060_000),
+  })
+  store.append(accepted, {
+    type: 'session.transition',
+    from: 'armed',
+    to: 'recording',
+    command: 'start',
+    reason: null,
+  })
+
+  // Still standing: `armed`, never withdrawn. That one wants attention.
+  const standing = adHocMeetingId(1_700_000_120_000)
+  store.append(standing, {
+    type: 'meeting.created',
+    title: adHocTitle('Zoom'),
+    context: adHocContext('Zoom', 1_700_000_120_000),
+  })
+  store.append(standing, {
+    type: 'session.transition',
+    from: 'idle',
+    to: 'armed',
+    command: 'arm',
+    reason: 'appel Zoom hors calendrier',
+  })
+
+  assert.deepEqual(
+    store.projections.listMeetings(null).map((meeting) => meeting.id).sort(),
+    [accepted, standing].sort(),
+  )
+  store.close()
+})
+
+test('a meeting the rep created by hand is never residue, whatever state it sits in', () => {
+  const store = new Store(':memory:', clock)
+
+  /*
+   * **The two rows the structural predicate would have taken with it**, and the
+   * reason this one tests the id rather than the shape. Both are `idle`, both
+   * have no `event_id` and no `started_at` — which is exactly what the residue
+   * looks like — and both are meetings the rep asked for: « Ajouter au jeudi »
+   * (DEC-31, a rep may place a call on any day) and « Démarrer une réunion »
+   * between `meeting:create` and a `start` that was refused. Hiding the first
+   * empties the calendar cell the rep put it in; hiding the second strands them
+   * on a session screen with no row anywhere to reach it by again.
+   */
+  store.append('man-jeudi', {
+    type: 'meeting.created',
+    title: 'Sodexial — point staffing',
+    context: null,
+    clientName: 'Sodexial',
+    scheduledStart: 1_789_628_400_000,
+  })
+  store.append('man-maintenant', {
+    type: 'meeting.created',
+    title: '',
+    context: null,
+    clientName: null,
+    scheduledStart: null,
+  })
+
+  assert.deepEqual(
+    store.projections.listMeetings(null).map((meeting) => meeting.id).sort(),
+    ['man-jeudi', 'man-maintenant'],
+  )
+  store.close()
+})
+
+test('the prefix the exclusion matches on is the one adHoc.ts mints', () => {
+  // Source as evidence, the `preloadUnwrap.test.ts` shape: the id convention
+  // lives in `core/domain/adHoc.ts` and the SQL above restates its stem. The day
+  // the convention moves, this fails — rather than the predicate quietly
+  // matching nothing and the residue coming back.
+  assert.ok(adHocMeetingId(0).startsWith(AD_HOC_ID_PREFIX))
+  assert.ok(adHocMeetingId(1_700_000_000_000).startsWith(AD_HOC_ID_PREFIX))
+  assert.equal(AD_HOC_ID_PREFIX.includes('%'), false, 'un joker dans un LIKE élargirait la règle')
+  assert.equal(AD_HOC_ID_PREFIX.includes('_'), false)
 })

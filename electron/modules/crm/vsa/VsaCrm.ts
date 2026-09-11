@@ -289,6 +289,7 @@ export class VsaCrm implements CrmPort {
         severity: 'error',
         code: 'crm.task.failed',
         module: 'crm',
+        origin: 'foreign',
         message: reason,
         detail: { retryable },
       })
@@ -327,6 +328,7 @@ export class VsaCrm implements CrmPort {
         severity: 'error',
         code: 'crm.opportunity.failed',
         module: 'crm',
+        origin: 'foreign',
         message: reason,
         detail: { retryable },
       })
@@ -438,6 +440,7 @@ export class VsaCrm implements CrmPort {
           severity: 'warn',
           code: 'crm.referential.fallback',
           module: 'crm',
+          origin: 'foreign',
           message: `valeur par défaut retenue : « ${choice.label} »`,
           detail: { code: choice.code },
         })

@@ -59,8 +59,34 @@ const SIGNALS = [
    * It happened to be *correct* on Windows, which is the point. The gate is not
    * « is this branch wrong », it is « is this branch declared », and a renderer
    * branch was undeclarable.
+   *
+   * **And the first spelling of this signal caught the deprecated form and
+   * missed the modern one.** It was `navigator\.(platform|userAgentData|userAgent)`
+   * — anchored on the *object*, spelled literally, immediately before the dot.
+   * Measured: a probe with `navigator.platform` and `navigator.userAgent` fails
+   * correctly, and
+   *
+   *     (navigator as any).userAgentData?.platform === 'macOS'
+   *
+   * exits 0 — because the cast puts `any)` between `navigator` and the property.
+   * That is the spelling a TypeScript renderer has to use, since
+   * `userAgentData` is not in the DOM lib, so the check caught the form nobody
+   * writes any more and let through the only form that compiles. Every other
+   * indirection had the same hole: `nav.userAgentData`, `const { platform } =
+   * navigator`, `globalThis.navigator.userAgent`.
+   *
+   * So the signal is anchored on the *property* instead of the object. Two
+   * alternatives, each sufficient on its own: `userAgentData`, which has no
+   * meaning but a platform sniff; and `navigator` together with `platform` or
+   * `userAgent` anywhere on the line, in either order, which is what covers a
+   * cast, a destructure and an alias. `navigator.clipboard` in `src/lib/
+   * clipboard.ts` is the one other `navigator` in the repo and mentions neither,
+   * which is what keeps this from being a ban on the object.
    */
-  { id: 'renderer-platform-sniff', re: /navigator\.(platform|userAgentData|userAgent)\b/ },
+  {
+    id: 'renderer-platform-sniff',
+    re: /(?=.*\bnavigator\b)(?=.*\b(?:platform|userAgent)\b)|\buserAgentData\b/,
+  },
 ]
 
 /**

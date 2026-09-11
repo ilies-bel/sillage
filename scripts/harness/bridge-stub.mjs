@@ -2541,6 +2541,14 @@ export function installAppBridge(config) {
     */
     'widget:resize': () => ({ ok: true, above: window.innerHeight > 0 }),
     'widget:passThrough': () => ({ ok: true }),
+    /*
+      The exit handshake's reply. No stage emits `widget:leave` — the pill's exit
+      is a hundred and fifty milliseconds long and a stage photographs a resting
+      screen — but the responder is here because a channel the product can invoke
+      and the stub cannot answer is a rejected promise inside a `.catch`, which is
+      the shape of a fixture that is simpler than the product.
+    */
+    'widget:left': () => ({ ok: true }),
     'window:focus': () => ({ ok: true }),
   }
 

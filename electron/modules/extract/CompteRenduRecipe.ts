@@ -334,6 +334,7 @@ export class CompteRenduRecipe {
           severity: 'error',
           code: 'extract.chunk.failed',
           module: 'extract',
+          origin: 'authored',
           message: failure.message,
           detail: { chunk: chunk.index, of: chunks.length, kind: failure.kind },
         })

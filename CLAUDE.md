@@ -104,6 +104,36 @@ machine) or in `core/domain/` — never in an IPC handler.
   `setContentProtection(true)`: it floats above everything on every Space, which is exactly
   what a rep shares when they share their screen, and what is on it is the client's name,
   their words and the rep's own commercial notes.
+- **The widget's exit is the one exit that is seen, and the fade must not cost the two
+  teardowns that cannot wait** (DEC-49, `Overlay.dismiss()`). Every other surface in this
+  product arrives and leaves inside a window the rep chose to look at. The pill is drawn over
+  *another application* — over the face of the person on the call — and it was `destroy()`ed
+  between two frames at the moment the rep is certainly watching it, because the ordinary way a
+  recording ends is them pressing the pill's own control. So `dismiss()` asks the renderer to
+  fade (`widget:leave`) and destroys the window when it answers (`widget:left`). Four things,
+  and each was a defect waiting in the obvious version. **A fixed wait in the main process is
+  wrong in both directions**: too short and a loaded machine — a call being transcribed, the
+  only condition this window exists in — never paints the first animated frame, so the rep sees
+  exactly the pop the wait was added to remove; and `prefers-reduced-motion` collapses `--motion`
+  to `0ms`, so a constant would hold a static pill on screen for a fifth of a second after the
+  call ended, for the rep who asked for less motion. The renderer answers with the duration **it**
+  resolved off its own computed style, from a layout effect, so the reply precedes the first
+  animated frame and the window always outlives the animation rather than approximately matching
+  it — measured in Chromium on the shipped stylesheet, `{ afterMs: 150 }` resting and
+  `{ afterMs: 0 }` under reduced motion. **The window stops being `#window` first**, because
+  `show()` is idempotent on it: a rep taking two calls back to back would otherwise have the
+  second recording *adopt* a pill that is fading out, which then destroys itself on its own
+  timer and leaves nothing over a live call. **It stops taking the mouse**, with
+  `{ forward: false }` and not the pass-through above — a card mid-fade is still a frameless
+  always-on-top window, and a leaving one has no interest in the pointer ever again. And
+  **`hide()` keeps its own promise and adopts every leaving window**: `before-quit` calls it one
+  line before `store.close()` and `mainWindow.on('closed')` calls it because `window-all-closed`
+  does not fire while any window is open, so a quit arriving inside the fade would otherwise
+  leave a pill whose `moved` handler writes the saved origin through a closed database. The
+  fallback timer is armed *before* the renderer is asked and caps the reply it gets back: the
+  animation is a courtesy, and a pill that outlives the call it reports is worse than a pill
+  that pops. `scripts/e2e.mjs` asserts the window is gone within three seconds rather than
+  fifteen — a tolerance that would pass on a handshake nothing completed.
 - **The pill's anchor is the pill** (DEC-49, `overlayPlacement.ts`). The first version
   anchored a window *edge* — bottom edge in the bottom half of the display, like a menu — and
   the pill is drawn at the **top** of the content with the panel under it, so holding the
@@ -756,8 +786,39 @@ machine) or in `core/domain/` — never in an IPC handler.
   calendar's five minutes and a call starting at t=0 was offered at **t=325s** on the build
   with no calendar; it is 55s now. The strong signal also admits what the process list never
   could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
-  never by name, because they are open all day. Arming is still an offer (HR-7), which is what
-  makes a false positive cost a dismissible row rather than a recording.
+  never by name, because they are open all day.
+
+- **One conversation, one offer** (`AdHocInput.meetingLive`). The detector had the signal and
+  no *arbitration*, and the field that was supposed to supply it — `calendarArmed` — was
+  passed a hard-coded `false`, so the rule it named was never applied at all. Three paths went
+  through the hole and all three were driven: a calendar call **being recorded** that runs past
+  its slot, where `OVERRUN_GRACE_MS` keeps the microphone held; a rep who pressed « Démarrer
+  une réunion », which is the existing route for an unscheduled call and the *fast* one; and a
+  one-poll microphone drop during an ad-hoc recording. Each armed a second meeting over a live
+  one, put a second row on the day wearing the screen's one filled *Enregistrer*, and raised
+  « La réunion commence » mid-call — whose click broadcasts `session:open` and navigates the
+  rep **off their live recording**. That is verbatim the defect `Agenda.#arm`'s docblock
+  records (« Three statements about one meeting, two of them false, on one screen »), fixed on
+  the calendar path and reintroduced one branch over. The guard is « is this product already
+  doing something about a meeting », read from `liveStates()`, and it is a **horizon rather
+  than a park**: a rep who ends one call and takes another immediately still gets the second
+  offer. Two halves of the same rule — a change of held application **withdraws the standing
+  offer** before the new dwell begins, because `#armAdHoc` mints its id from `heldSince`, so
+  leaving Teams for Zoom used to strand the Teams meeting in `armed`, which is in
+  `UPDATE_BLOCKING_STATES` and therefore refused every installer for the rest of the session,
+  about a call that had ended.
+
+- **A synthesised end is not a scheduled end** (`Orchestrator.#startEndWatch`). `graceFor`
+  shortens the end-of-meeting grace from 75 s to 25 s once the silence begins past
+  `scheduledEnd`, and that reasoning is entirely about a *calendar* slot. Both paths that
+  create a meeting without an invite invent that number — `adHocContext` writes
+  `heldSince + 1h` under a docblock saying « it is not a claim about when the call will end »,
+  and `manualContext` writes `endedAt ?? updatedAt`, which for a live meeting is roughly *now*.
+  So a 25-second pause at minute 61 of an unscheduled call ended the recording, and a manual
+  one ran on the short grace from its first second. `eventId === null` is the fact that
+  separates them, and it restores the rule stated above — « a session with no calendar entry
+  always gets the full grace » — which had a test named after it that passed because it
+  supplied a null *context*, not a context carrying a synthesised end.
 
 - **Detection does not require Microsoft** (DEC-28, DEC-26). `Agenda` was constructed only
   inside the Entra branch of `main.ts`, under a comment arguing that arming with no event was
@@ -944,25 +1005,38 @@ machine) or in `core/domain/` — never in an IPC handler.
   Teams join blob.
 - **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
 - **Raw audio is never retained** (DEC-12). Transcribed and discarded.
-- **The bundle's *message* half is a denylist, so client content must not go in one.**
-  `redactDetail` is a genuine allowlist and is airtight; `redactMessage` strips emails, URLs,
-  quoted runs — and now paths, which its own docblock had always claimed it stripped and never
-  did, so `C:\Users\Jean-Pierre.Dupont\…` went into the bundle whose button reads « Sans
-  contenu de conversation. Peut être envoyé au support », naming the rep. A meeting's objet and
-  a client's name are not on any denylist and never will be, so they belong in `detail`, where
-  the allowlist answers `[string:50]` — which is the whole of what a support reader needs.
-- **The diagnostics allowlist is an allowlist, and thirty-two is the number.**
-  `redactDiagnostics.ts` says of itself that it « cannot be wrong by omission », and at
-  `{1,64}` it passed, verbatim, exactly the shapes it exists to catch — a key
-  (`sk-proj-…`, 40), a bearer token (44), a URL, a home directory. All four are
-  « identifier-shaped with no spaces », and all four went into the bundle whose own button
-  reads « Sans contenu de conversation. Peut être envoyé au support. » Nothing leaked,
-  because no shipped `detail:` carries a secret — but the stated property was false and it
-  failed *toward* shipping one. Thirty-two still admits every identifier this product
-  actually puts in `detail:` (a meeting id is 20, a model id 20, an ISO timestamp 24), and
-  a URL or a path is rejected outright: `redactMessage` always stripped both from the
-  *message* and `redactDetail` never applied it, so the two halves disagreed about the
-  same URL.
+- **A message the product did not write is declared, not cleaned** (`npm run check:diag`).
+  `redactMessage` is a denylist over free-form text and it leaked in **four** consecutive
+  rounds — a Windows home directory, a vendor API key, a client's name inside a quotation, and
+  then a client's name that quoting *published*: ASCII `'` was a self-closing delimiter, so an
+  odd count (an English possessive, a French elision — what a foreign string is made of) ate
+  the gaps, and `recipient 'Jean-Pierre Dupont' for 'Sodexial'` came out as
+  `recipient [quoted] for [quoted]Sodexial'`, bare, with the innocent English deleted instead.
+  The verdict after the third round was already written down: **a denylist over free-form text
+  cannot be made safe, only made narrower** — « Néovia Santé » is an ordinary capitalised
+  French word and no rule separates it from « Windows Defender ». So the narrowing stopped.
+  `DiagEvent.origin` is `'foreign'` when the text is not a literal this product wrote, and the
+  redacted bundle carries `[message:N]`; `code` and `detail` already hold what a support reader
+  needs. **A declaration nobody is obliged to make is a comment**, so `check:diag` obliges it:
+  a `.record({…})` whose `message:` is anything but a string literal must declare `'authored'`
+  or `'foreign'`. Forty-eight sites declare, twenty-six of them foreign. The four private
+  `#record` helpers in `app/session/` take `origin` as a **required parameter**, because a grep
+  can only see the one `.record({…})` at the bottom of a fan-in.
+- **`detail` is an allowlist over *shapes*, and a word is not a shape.** `redactDiagnostics.ts`
+  claimed to be unable to be « wrong by omission », and it has been wrong by **admission**
+  three times: at `{1,64}` it passed a key (`sk-proj-…`, 40), a bearer token (44), a URL and a
+  home directory verbatim; at `{1,32}` it passed an Azure key, which is exactly 32. The bound
+  is on the **segment** now, and `redactDiagnostics.test.ts` asserts refusal at *every* length
+  from 21 to 64 for every credential alphabet, so no single number can again be one over.
+  A capitalised word was then refused only when **alone** — for `detail: { subject }`, a
+  meeting's objet, which is the client's name most days — and `isSafeString` short-circuited on
+  `segments.length > 1`, so **one hyphen defeated it**: `Sodexial-staffing`, `Dupont-Marechal`,
+  `CR-Sodexial` all passed. PASCAL is out of the segment set entirely; the one capitalised word
+  this product mints is admitted by *position*, the vendor half of `Xenova/whisper-small`.
+  What remains, stated rather than implied: a proper noun somebody **lowercased** or shouted in
+  caps passes, because `far`, `rep`, `whisper` and `sodexial` are one shape and no tightening
+  short of refusing `channel: 'far'` changes that. So `detail` is **not** where a foreign string
+  goes to be safe — it belongs there as a count or a length, never as itself.
 - **The schema stamp is the receipt for the fold, written after it.** `EventLog`'s
   constructor dropped the projection tables, ran the DDL and stamped the new version — all
   outside a transaction — while the refold lives in `Store` and runs later. A crash, a
@@ -1167,7 +1241,7 @@ but the running main process holds the session in memory and never re-reads it.
 
 ```
 npm test                  # the suite. prints which tests are deferred, and why
-npm run check             # typecheck ×2 + boundaries + CRM + tokens + platform + French + ports + surfaces
+npm run check             # typecheck ×2 + boundaries + CRM + tokens + platform + French + ports + surfaces + reasons + diag + motion
 npm run test:e2e          # builds, then walks the real application under Electron
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```

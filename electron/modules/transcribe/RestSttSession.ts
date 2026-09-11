@@ -346,6 +346,7 @@ export class RestSttSession extends EventEmitter implements SttSession {
           severity: 'error',
           code: 'transcribe.upload.failed',
           module: 'transcribe',
+          origin: 'foreign',
           message: error instanceof Error ? error.message : String(error),
           detail: { provider: this.providerId, bytes: wav.length },
         })

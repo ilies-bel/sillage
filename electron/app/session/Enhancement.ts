@@ -281,7 +281,7 @@ export class Enhancement {
     this.#starting.delete(meetingId)
     this.#startedAt.delete(meetingId)
     this.#lastFailure.set(meetingId, reason)
-    this.#record('warn', 'enhancement.interrupted', reason, meetingId)
+    this.#record('warn', 'enhancement.interrupted', reason, 'authored', meetingId)
     this.#announce(meetingId)
     return true
   }
@@ -353,7 +353,7 @@ export class Enhancement {
       // waiting on a model waits for as long as it takes a rep to configure
       // one, and a clock on that is a stopwatch on the rep.
       this.#startedAt.delete(meetingId)
-      this.#record('warn', 'enhancement.deferred', 'aucun modèle configuré', meetingId)
+      this.#record('warn', 'enhancement.deferred', 'aucun modèle configuré', 'authored', meetingId)
       this.#announce(meetingId)
       return
     }
@@ -411,6 +411,7 @@ export class Enhancement {
         'info',
         'enhancement.completed',
         `compte-rendu produit (${result.compteRendu.length} caractères)`,
+        'authored',
         meetingId,
         // The measured confidence, not a count of failures: `overall` is
         // `faible` when any field's quote could not be located (DEC-21), and
@@ -457,6 +458,9 @@ export class Enhancement {
         expected ? 'warn' : 'error',
         'enhancement.failed',
         reason,
+        // `ExtractionError`'s own French on one branch, and
+        // `rédaction impossible — ${error.message}` on the other.
+        'foreign',
         meetingId,
         { attempt },
       )
@@ -529,6 +533,7 @@ export class Enhancement {
           'info',
           'extraction.account.ambiguous',
           'plusieurs comptes VerySwing correspondent',
+          'authored',
           meetingId,
           { candidates: candidates.slice(0, 4).map((c) => `${c.name} (${c.score})`) },
         )
@@ -541,6 +546,7 @@ export class Enhancement {
         'warn',
         'extraction.account.failed',
         error instanceof Error ? error.message : 'compte VerySwing non résolu',
+        'foreign',
         meetingId,
       )
       return null
@@ -555,10 +561,19 @@ export class Enhancement {
     }
   }
 
+  /**
+   * `origin` is not optional and that is the point (`npm run check:diag`,
+   * `DiagEvent.origin`). Half of these calls pass a literal French sentence and
+   * half pass a remote adapter's `reason` verbatim; from inside this helper the
+   * two are one `string`, and the redacted bundle must not carry the second.
+   * A required parameter is what makes the fan-in the type system's problem
+   * rather than a grep's — the check can only see the one `.record({…})` below.
+   */
   #record(
     severity: 'info' | 'warn' | 'error',
     code: string,
     message: string,
+    origin: 'authored' | 'foreign',
     meetingId: MeetingId,
     detail: Record<string, unknown> = {},
   ): void {
@@ -566,6 +581,7 @@ export class Enhancement {
       severity,
       code,
       module: 'app',
+      origin,
       message,
       detail: { meetingId, ...detail },
     })

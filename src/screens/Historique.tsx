@@ -208,11 +208,28 @@ export function Historique({
           the count, so « les cinquante plus récents » has something to be fifty
           of. `capped` implies more than `SEARCH_LIMIT` matches, so the plural
           here is never wrong.
+
+          **And it is two sentences, because `capped` is set for the listing
+          too.** With an empty box and sixty calls in the store the screen drew
+          « Les 50 appels les plus récents *qui correspondent* … *affinez la
+          recherche* » over an **empty** search field: a remedy naming a control
+          the rep has not used, on an answer that matched nothing because nothing
+          was asked. DEC-26's rule about a dead control is about buttons; a
+          sentence that names an action which is not available is the same
+          failure in prose. So the listing says what it is a list *of* and points
+          at the box beside it, which is a thing the rep can actually do next,
+          and the search keeps the sentence it earned.
+
+          The discriminator is the **answer's own** echoed question and not the
+          live box: `useHistorySearch` drops stale replies, so the two agree, and
+          reading the answer is what keeps the sentence describing the rows under
+          it rather than a keystroke that has not been asked yet.
         */}
-        {search.result?.capped ? (
+        {search.capped && search.result ? (
           <p className="text-muted mt-block measure text-meta">
-            Les {SEARCH_LIMIT} appels les plus récents qui correspondent, sur{' '}
-            {search.result.scanned} appels parcourus. Affinez la recherche pour en voir d’autres.
+            {isSearchActive(search.result.query, search.result.filter)
+              ? `Les ${SEARCH_LIMIT} appels les plus récents qui correspondent, sur ${search.result.scanned} appels parcourus. Affinez la recherche pour en voir d’autres.`
+              : `Les ${SEARCH_LIMIT} appels les plus récents, sur ${search.result.scanned} appels enregistrés. Cherchez un client, un sujet ou un mot prononcé pour retrouver les autres.`}
           </p>
         ) : null}
       </main>

@@ -48,9 +48,35 @@ mask is not one, and `--scrollers` is opted out of there by `data-scrolls`,
 correctly, because a log is *supposed* to hold more than its box. This one
 compares every **vertical** ramp against the tallest line box of the text it
 fades over; a horizontal fade hides the ends of a row rather than a line and is
-`--scrollers`' question, not this one. `.fade-below` carries a declared allowance
-pinned to its own 28 pixels — read the reason where it is written, it is a real
-finding and not an acceptable one.
+`--scrollers`' question, not this one — and that exemption is decided **per
+layer**, because `linear-gradient(to right, …), linear-gradient(to bottom, …)` is
+one declaration in which a vertical ramp can ride behind a horizontal one.
+
+**It parses the value, and it prints what it visited.** The first version was a
+regex that required the transparent stop to carry a pixel offset, and CSS lets the
+first stop drop its `0` — so `.fade-below[data-above="true"]`, which every scrolled
+reading column in the product wears, computed to
+`linear-gradient(rgba(0, 0, 0, 0), rgb(0, 0, 0) 12px)` and was **skipped in
+silence**, under a line reading « aucun ne couvre une ligne entière ». A 40px ramp
+forced over the gate's own 25px line box passed, exit 0. It reads stops now —
+implicit `0` and implicit `100%`, `Npx` and `calc(100% - Npx)`, `transparent` and
+`rgba(…, 0)`, `black` and `currentColor`, the dropped default direction and a named
+one, `mask-image` and its `-webkit-` twin, and **both** ramps of the four-stop
+combined rule rather than the longer of the two. And it prints a census — masks
+visited, vertical ramps measured, layers exempted for the other axis, ramps left in
+percent — the way `--motion` prints how many elements it animated, because a check
+that visited zero elements must not be able to print the same sentence as a check
+that measured everything. A mask it cannot parse is a **finding**, not a skip:
+that is where a too-long fade would hide.
+
+`SILLAGE_FADE_ATTACK=1` stages one element per gradient form the product can
+produce, at a ramp longer than the line box inside it, and is how anyone touching
+the reader finds out whether they have re-opened either hole:
+
+```
+SILLAGE_FADE_ATTACK=1 node scripts/harness/shot.mjs review-valider /dev/null \
+  --no-png --fade      # seven ramps, one unreadable mask, exit 11
+```
 
 **`--scrollers` finds what the harness itself was hiding.** It reports any box
 inside the screen whose content is taller or wider than the box, and it exists

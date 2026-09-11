@@ -234,7 +234,9 @@ export class Outbox {
        */
       const waited = Math.min(Math.max(this.#backoffMs * 2 ** round, told), MAX_BACKOFF_MS)
       if (told > MAX_BACKOFF_MS) {
-        this.#record('warn', 'outbox.throttled', THROTTLED_REASON, meetingId, { retryAfterMs: told })
+        this.#record('warn', 'outbox.throttled', THROTTLED_REASON, 'authored', meetingId, {
+          retryAfterMs: told,
+        })
         await this.#sleep(waited)
         break
       }
@@ -281,7 +283,7 @@ export class Outbox {
       // No attempt event: nothing was attempted. The row stays `pending`, so
       // the intent ships once the connector is configured, on the next drain.
       abandoned.add(intent.id)
-      this.#record('warn', 'outbox.skipped', 'connecteur non configuré', meetingId, {
+      this.#record('warn', 'outbox.skipped', 'connecteur non configuré', 'authored', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
       })
@@ -316,7 +318,7 @@ export class Outbox {
     this.#journal.append(meetingId, { type: 'push.settled', result: settled })
 
     if (settled.ok) {
-      this.#record('info', 'outbox.drained', 'intention envoyée', meetingId, {
+      this.#record('info', 'outbox.drained', 'intention envoyée', 'authored', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
         attempt,
@@ -325,7 +327,7 @@ export class Outbox {
     }
 
     if (settled.retryable) {
-      this.#record('warn', 'outbox.retry', settled.reason, meetingId, {
+      this.#record('warn', 'outbox.retry', settled.reason, 'foreign', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
         attempt,
@@ -336,7 +338,7 @@ export class Outbox {
     // Terminal. The projection leaves the dependants blocked and touches
     // nothing else, so the independent intents in the same fan-out still ship.
     abandoned.add(intent.id)
-    this.#record('error', 'outbox.failed', settled.reason, meetingId, {
+    this.#record('error', 'outbox.failed', settled.reason, 'foreign', meetingId, {
       intentId: intent.id,
       kind: intent.kind,
       attempt,
@@ -359,7 +361,7 @@ export class Outbox {
         type: 'push.settled',
         result: { ok: false, intentId: entry.intentId, reason: INTERRUPTED_REASON, retryable: false },
       })
-      this.#record('error', 'outbox.interrupted', INTERRUPTED_REASON, meetingId, {
+      this.#record('error', 'outbox.interrupted', INTERRUPTED_REASON, 'authored', meetingId, {
         intentId: entry.intentId,
         kind: entry.kind,
       })
@@ -412,10 +414,19 @@ export class Outbox {
     return new Map(this.#journal.projections.intents(meetingId).map((i) => [i.id, i]))
   }
 
+  /**
+   * `origin` is not optional and that is the point (`npm run check:diag`,
+   * `DiagEvent.origin`). Half of these calls pass a literal French sentence and
+   * half pass a remote adapter's `reason` verbatim; from inside this helper the
+   * two are one `string`, and the redacted bundle must not carry the second.
+   * A required parameter is what makes the fan-in the type system's problem
+   * rather than a grep's — the check can only see the one `.record({…})` below.
+   */
   #record(
     severity: 'info' | 'warn' | 'error',
     code: string,
     message: string,
+    origin: 'authored' | 'foreign',
     meetingId: MeetingId,
     detail: Record<string, unknown> = {},
   ): void {
@@ -423,6 +434,7 @@ export class Outbox {
       severity,
       code,
       module: 'app',
+      origin,
       message,
       detail: { meetingId, ...detail },
     })

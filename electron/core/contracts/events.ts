@@ -167,6 +167,34 @@ export const MeetingEventSchema = z.discriminatedUnion('type', [
     type: z.literal('confirmation.recorded'),
     intentIds: z.array(z.string()),
     at: TimestampSchema,
+    /**
+     * **The compte-rendu the rep actually validated**, corrections and all.
+     *
+     * `edits.compteRendu` reached `draftIntents` and nothing else, so the
+     * string VerySwing received and the string *Historique* drew were two
+     * different documents from the moment a rep corrected a sentence at the
+     * gate. Measured: a rep who fixes a wrong client statement and validates
+     * cannot find that call afterwards by the phrase they are certain of — and
+     * the row offers, as its evidence, the sentence they specifically struck
+     * out. CLAUDE.md's invariant is « VerySwing receives the string the rep
+     * read »; this is its converse, and the archive is owed it too.
+     *
+     * It rides on the confirmation rather than on an event of its own because
+     * it is the same fact: this is what was on screen when *Valider* was
+     * pressed. Two events could be written apart and read apart.
+     *
+     * `nullish`, not `nullable().default('')`, for the reason `clientName` is
+     * one on `meeting.created` and `recipe` is one on `LlmInterpretation`:
+     * every confirmation written before this field existed has no key at all
+     * and must replay unchanged. Absent means « nobody recorded what was
+     * validated », and every reader falls back to rendering the stored
+     * extraction, which is exactly what those meetings have always shown.
+     * The empty string is **not** absent — it is a rep who selected the
+     * document, deleted it and validated anyway, which `reviewGate.ts`
+     * deliberately allows, and the record says so rather than quietly
+     * reinstating the model's draft over it.
+     */
+    compteRendu: z.string().nullish(),
   }),
 
   z.object({ type: z.literal('push.intent.created'), intent: PushIntentSchema }),

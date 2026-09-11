@@ -291,11 +291,27 @@ export class Agenda {
      * rather than inferring it, so the rule stays readable in one place.
      */
     if (!(choice.decision.action === 'arm' && choice.event)) {
+      /*
+       * **Is this product already doing something about a meeting?**
+       *
+       * `liveStates()` is every session this process holds — created or
+       * rehydrated this run — so anything recording, extracting, awaiting
+       * confirmation or draining counts. `idle` and `done` do not: a meeting that
+       * finished is not a reason to refuse the next call.
+       *
+       * The field this replaces was `calendarArmed: false`, hard-coded, so the
+       * rule it named was never applied. See `AdHocInput.meetingLive` for the
+       * three paths that went through the hole.
+       */
+      const live = this.#options.orchestrator
+        .liveStates()
+        .some((state) => state === 'armed' || state === 'recording')
+
       const adHoc = decideAdHoc({
         micHeldBy: signal.inCall,
         now,
         heldSince: this.#heldSince,
-        calendarArmed: false,
+        meetingLive: live,
         offered: this.#adHocOffered,
       })
       /*
@@ -357,20 +373,45 @@ export class Agenda {
       return
     }
     if (this.#heldApp !== inCall) {
+      /*
+       * **The previous hold's offer is withdrawn here, and it used not to be.**
+       *
+       * `#armAdHoc` mints its id from `heldSince`, so a new hold is always a new
+       * meeting, and `#withdrawAdHoc` only ever names whatever is *currently* in
+       * `#armed` — which the new offer overwrites. So leaving Teams for Zoom
+       * stranded the Teams meeting in `armed` for the life of the process, and
+       * `armed` is in `UPDATE_BLOCKING_STATES`: **every installer was refused for
+       * the rest of the session** with « une réunion est sur le point de
+       * démarrer », about a call that had ended. A row the boot sweep does not
+       * touch, that `Agenda` will not re-arm, that nothing in the product could
+       * move — exactly what the `disarm` docblock was written to end.
+       */
+      this.#withdrawAdHoc()
       this.#heldApp = inCall
       this.#heldSince = now
       this.#adHocOffered = false
     }
   }
 
-  /** Withdraw a standing unscheduled offer, and tell the machine. */
+  /**
+   * Withdraw a standing **unscheduled** offer, and tell the machine.
+   *
+   * Only an offer, and only an unscheduled one. A meeting the rep accepted is
+   * `recording` and is not this method's business — the call ending is exactly
+   * when they stop it themselves — and clearing `#armed` for it would take the
+   * live call's own row off the screen. A calendar offer is withdrawn by the
+   * branch in `tick` that owns the calendar decision.
+   */
   #withdrawAdHoc(): void {
-    const expired = this.#armed?.meetingId
-    if (expired === undefined) return
+    const standing = this.#armed
+    if (!standing || standing.eventId !== null) return
+    if (this.#options.orchestrator.stateOf(standing.meetingId) !== 'armed') return
     this.#armed = null
-    if (this.#options.orchestrator.stateOf(expired) === 'armed') {
-      this.#options.orchestrator.dispatch(expired, 'disarm', 'l’appel s’est terminé sans enregistrement')
-    }
+    this.#options.orchestrator.dispatch(
+      standing.meetingId,
+      'disarm',
+      'l’appel s’est terminé sans enregistrement',
+    )
   }
 
   /**
@@ -405,6 +446,10 @@ export class Agenda {
         severity: 'warn',
         code: 'agenda.adhoc.refused',
         module: 'session',
+        // Authored on both branches: `state` is a `MeetingState`, and
+        // `outcome.reason` is `STATE_REASON[from]` — a literal table in
+        // `MeetingSession.ts`. A refusal's sentence is the point of the row.
+        origin: 'authored',
         message: outcome.ok ? `état inattendu: ${state}` : outcome.reason,
         detail: { meetingId, state },
         meetingId,
@@ -422,6 +467,11 @@ export class Agenda {
       severity: 'info',
       code: 'agenda.adhoc.armed',
       module: 'session',
+      // Authored: `app` is `MeetingApp.label` — « Teams », « Navigateur »,
+      // « Aircall » — a literal from `MEETING_APPS`, never the process name the
+      // machine reported. `matchMicHolder` returns the label and nothing else,
+      // which is what keeps the rep's own binaries out of this line.
+      origin: 'authored',
       message: `appel non planifié détecté — ${app}`,
       detail: { meetingId, app },
       meetingId,
@@ -519,6 +569,10 @@ export class Agenda {
         severity: 'warn',
         code: 'agenda.arm.refused',
         module: 'session',
+        // Authored on both branches: `state` is a `MeetingState`, and
+        // `outcome.reason` is `STATE_REASON[from]` — a literal table in
+        // `MeetingSession.ts`. A refusal's sentence is the point of the row.
+        origin: 'authored',
         message: outcome.ok ? `état inattendu: ${state}` : outcome.reason,
         detail: { meetingId, state },
         meetingId,

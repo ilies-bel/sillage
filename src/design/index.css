@@ -162,6 +162,40 @@
   }
 
   /*
+   * **The widget leaving the screen, which is the one exit that is seen.**
+   *
+   * Everything else in this product arrives and leaves inside a window the rep
+   * chose to look at. The pill is drawn *over another application* — over the
+   * face of the person on the call — and it was destroyed between two frames at
+   * the one moment the rep is certainly watching it, because the ordinary way it
+   * ends is the rep pressing its own *Terminer*.
+   *
+   * The tokens and nothing else: `--motion`, `--ease-out`, opacity plus a 3px
+   * translate, which is `riseIn` run backwards. No scale — a card scaling away
+   * over a video call is the kind of motion VISION.md §6 rules out, and this one
+   * is on top of everything on every Space.
+   *
+   * `will-change` is deliberately absent. It would promote the layer for the
+   * hundred and fifty milliseconds this class exists, and this window is
+   * transparent, always on top and composited over a video call that wants the
+   * GPU rather more than the fade does.
+   *
+   * The duration is read back off this rule by the renderer and sent to the main
+   * process (`widget:left`), which is what makes the window outlive its own
+   * animation instead of guessing at it — and what makes
+   * `prefers-reduced-motion` mean « go now » rather than « wait 150ms for
+   * nothing ». So the value here is the one in the token, never a constant
+   * repeated in TypeScript.
+   */
+  .widget-leaving {
+    opacity: 0;
+    transform: translateY(3px);
+    transition:
+      opacity var(--motion) var(--ease-out),
+      transform var(--motion) var(--ease-out);
+  }
+
+  /*
    * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
    * muted label. Used by every pane header, which is why it is a component
    * rather than eight copies of the same six utilities.
@@ -374,18 +408,18 @@
   .notepad .ProseMirror {
     outline: none;
     /*
-     * **The box takes the click, not just the text.**
+     * **The box takes the click, not just the text — and on both axes.**
      *
-     * This was `min-height: 100%`, and it drew nothing for as long as it
-     * existed: the percentage resolves against the mount element in
-     * `Notepad.tsx`, whose *specified* height was `auto`, and a percentage
-     * min-height against an auto height is treated as `auto` (CSS 2.1 §10.7).
-     * Measured on an empty notepad: the editable was **26px** tall inside a
-     * 676px wrapper in a 724px pane at 1280×800 — 698 of 724 pixels, 96% of the
-     * surface DEC-11 calls « why the app is open », did not take a caret; 476 of
-     * 502, 95%, at 960×600. The same class of invisible defect as `bg-muted/30`:
-     * a property that is spelled right, resolves to nothing, and shows up in no
-     * screenshot.
+     * The vertical half first. This was `min-height: 100%`, and it drew nothing
+     * for as long as it existed: the percentage resolves against the mount
+     * element in `Notepad.tsx`, whose *specified* height was `auto`, and a
+     * percentage min-height against an auto height is treated as `auto`
+     * (CSS 2.1 §10.7). Measured on an empty notepad: the editable was **26px**
+     * tall inside a 676px wrapper in a 724px pane at 1280×800 — 698 of 724
+     * pixels, 96% of the surface DEC-11 calls « why the app is open », did not
+     * take a caret; 476 of 502, 95%, at 960×600. The same class of invisible
+     * defect as `bg-muted/30`: a property that is spelled right, resolves to
+     * nothing, and shows up in no screenshot.
      *
      * The mount is a column flex container with `h-full` now — a definite height,
      * resolved against a pane that has one — and this is the item that grows into
@@ -395,34 +429,84 @@
      */
     flex: 1 0 auto;
     /*
-     * The page margin lives here rather than on `.notepad`, where it was
-     * `px-8 py-6`: padding on the scroller is 48 pixels of pane that is not the
-     * editor, at the top and bottom edges a rep clicks toward when they come back
-     * from the call. `content-box` against Tailwind's global `border-box` is
-     * deliberate and is what keeps the two numbers independent — `58ch` stays a
-     * measure of *text*, and the padding does not have to be subtracted from it
-     * by hand in a second place.
-     */
-    box-sizing: content-box;
-    padding: 1.5rem 2rem;
-    /* The same measure, in the same unit. See `.measure` above. */
-    max-width: 58ch;
-    /*
-     * Centred in whatever column it is given.
+     * **The measure is cut out of the padding, because a `margin-inline: auto`
+     * moved the defect one axis over rather than fixing it.**
      *
-     * The measure caps the text; it does not cap the column. During a call the
-     * session screen is notes plus the signal rail and nothing else (DEC-23), so
-     * on a 1280 laptop the notepad is a ~1500px column holding 554px of writing
-     * — the rep's own notes hugging the left edge with a thousand pixels of
-     * nothing beside them, which reads as a pane that failed to load rather than
-     * as a page.
+     * The first version of this rule set `max-width: 58ch` and centred the box
+     * with `margin-inline: auto`. An auto margin on the cross axis of a flex
+     * container **cancels `align-items: stretch`** (CSS Flexbox §8.5: auto
+     * margins absorb the free space first, and an item with one is never
+     * stretched), so the editable's *width* fell back to fit-content — the width
+     * of the rep's longest line, and on an empty document the width of nothing
+     * at all. Measured, 1280×800, the pane 998px wide:
      *
-     * `auto` and not a fixed inset: after the call the same notepad is one of
-     * three columns and the measure fills it, where auto margins resolve to
-     * zero and nothing moves.
+     *     as delivered (fixture notes)   editable 612px   386px dead (39%)
+     *     empty, a call just started     editable  64px   934px dead (94%)
+     *     after typing the title line    editable 274px   724px dead (73%)
+     *
+     * — and clicking a 25×5 grid over the pane, asking after each click whether
+     * ProseMirror took the caret: **5 of 125 on an empty notepad at 1280×800,
+     * 15 of 125 at 960×600**, and 15 and 25 of 125 in the three-column layout
+     * after the call. Vertically it was 19 of 19. So the fix for the dead pane
+     * had left the pane dead in the state it opens in, which is the state of
+     * every call at the moment it starts (DEC-6) — and the worst state of the
+     * three, because an empty document is exactly as wide as its widest line.
+     *
+     * The click target and the reading measure are two different boxes, and the
+     * rule above conflated them. Here the editable is stretched — no width, no
+     * max-width, no auto margin, nothing to cancel the stretch — so its border
+     * box **is** the pane, and the measure is what the padding leaves in the
+     * middle: `(100% - 58ch) / 2` on each side is exactly `58ch` of content,
+     * centred, at any pane width. `max()` holds the page margin at `2rem` on a
+     * pane too narrow to spend more — which is the *three-column* layout after
+     * the call, where the notepad sits near its 380px floor, and never the
+     * during-call pane: 1280×800 leaves 225px a side and 960×600 leaves 100,
+     * the same x the text sat at before, so nothing moved.
+     *
+     * `max-width: 58ch` is deliberately **gone** rather than kept as a belt,
+     * and the reason was measured rather than reasoned about. A max-width
+     * clamps a stretched flex item too — against Tailwind's global
+     * `border-box`, it clamps the *border* box — so the editable went back to
+     * 548px of a 998px pane with 98px of text inside it: **70 of 125 clicks at
+     * 1280×800, 90 of 125 at 960×600**, the same defect one third of the way
+     * back. The padding already caps the content at `58ch` and can never let it
+     * exceed it, so the second cap bought nothing and cost the pane. One
+     * number, in one place, doing both jobs.
+     *
+     * After: **125 of 125 at both sizes, empty, typed and as delivered**, and
+     * 125 of 125 in the three-column layout where the pane is 486px at 1280×800
+     * and 309 at 960×600. The text did not move, and `shot.mjs --prose` reads
+     * the same 58 characters it read before.
+     *
+     * The measure is still measured and not chosen, and still in `ch` at the
+     * element's own font size: see `.measure` above, and re-run
+     * `shot.mjs --prose` before touching the 58.
+     *
+     * The page margin lives here and not on `.notepad`, where it was `px-8
+     * py-6`: padding on the *scroller* is 48 pixels of pane that is not the
+     * editor, at the top and bottom edges a rep clicks toward when they come
+     * back from the call — the same defect one box out.
      */
-    margin-inline: auto;
+    padding-block: 1.5rem;
+    padding-inline: max(2rem, (100% - 58ch) / 2);
     color: var(--ink-rep);
+  }
+
+  /*
+   * « Vos notes… » is drawn where the caret will land, not at the pane's edge.
+   *
+   * It was `left-8 top-6` — the page margin as it would be if the text were
+   * flush left — and the text has not been flush left since it was centred: on
+   * an empty notepad at 1280×800 the placeholder sat at x=32 and the caret
+   * appeared at x=225, so the first character a rep typed jumped two hundred
+   * pixels away from the prompt that had invited it. The same expression as the
+   * editable's own padding, resolved against the same box at the same inherited
+   * font size, is what keeps the two in the same place by construction rather
+   * than by two numbers somebody has to keep equal.
+   */
+  .notepad .notepad-placeholder {
+    top: 1.5rem;
+    inset-inline-start: max(2rem, (100% - 58ch) / 2);
   }
 
   .notepad .ProseMirror p {

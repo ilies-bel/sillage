@@ -19,6 +19,7 @@ import type { AuthState, IdentityPort } from '../../core/contracts/identity.ts'
 import type { PushIntent } from '../../core/contracts/push.ts'
 import type { CapabilityReport } from '../../core/contracts/crm.ts'
 import type { ConnectorId } from '../../core/contracts/health.ts'
+import { meetingHeading } from '../../core/contracts/meeting.ts'
 import type { Meeting, MeetingState } from '../../core/contracts/meeting.ts'
 import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { UpdatePort, UpdateStatus } from '../../core/contracts/update.ts'
@@ -251,14 +252,19 @@ export interface IpcDeps {
    *  when there is no updater to ask. */
   appVersion?: string
   /**
-   * The in-meeting widget's two window gestures (`app/windows/Overlay.ts`).
+   * The in-meeting widget's window gestures (`app/windows/Overlay.ts`).
    *
    * Absent in every test and in any run with no overlay — the channels then
    * answer `{ ok: false }` rather than throwing, which is what lets a renderer
    * treat « the window would not move » as a fact rather than as an exception
-   * (DEC-26). Both return a boolean for the same reason: a widget that asked to
-   * be resized and was not is drawing at the wrong size, and it is the only
+   * (DEC-26). They all return a boolean for the same reason: a widget that asked
+   * to be resized and was not is drawing at the wrong size, and it is the only
    * thing that can notice.
+   *
+   * None of them can create or close a window. `left` is the one that ends in a
+   * `destroy()` and it still cannot: it shortens a wait the main process had
+   * already started for a window it had already decided to take away, which is
+   * why a reply from a renderer is allowed to touch it at all.
    */
   widget?: {
     resize(box: {
@@ -269,6 +275,7 @@ export interface IpcDeps {
     }): { ok: boolean; above: boolean }
     passThrough(through: boolean): boolean
     focusMain(meetingId: string | null): boolean
+    left(afterMs: number): boolean
   } | null
   /**
    * A mark the rep just made, to every window.
@@ -451,8 +458,31 @@ const historyIntents = (store: Store, meetingId: string): HistoryIntent[] =>
     remoteId: entry.remoteId,
   }))
 
-/** The compte-rendu as the review gate rendered it, or null before the gate. */
+/**
+ * The compte-rendu of one call: **what the rep validated**, and only failing
+ * that what the model wrote.
+ *
+ * The fallback is the whole of it. `edits.compteRendu` used to reach
+ * `draftIntents` and nothing else, so the string VerySwing received and the
+ * string every read surface drew were two different documents from the moment a
+ * rep corrected a sentence at the gate. Measured on the real gate, the real
+ * store and the real outbox: the intent payload carried the added sentence, the
+ * archive did not, the archive still carried a line the rep had struck out — so
+ * a search for the correction found nothing and a search for the deleted line
+ * found the call and offered that very line as its evidence. CLAUDE.md's
+ * invariant is « VerySwing receives the string the rep read »; this is its
+ * converse, and it now holds by construction, because every surface that draws
+ * or searches a compte-rendu comes through here.
+ *
+ * `null` from `confirmedCompteRendu` is an absence and not an empty document
+ * (its docblock has the distinction), which is what makes every meeting
+ * confirmed before that field existed read exactly as it always has: nothing was
+ * recorded, so the stored extraction is rendered, which is what those meetings
+ * have always shown.
+ */
 const compteRenduOf = (store: Store, meetingId: string): string | null => {
+  const confirmed = store.projections.confirmedCompteRendu(meetingId)
+  if (confirmed !== null) return confirmed
   const stored = store.projections.extraction(meetingId)
   return stored ? renderCompteRendu(stored.extraction, stored.verification) : null
 }
@@ -471,7 +501,13 @@ const compteRenduOf = (store: Store, meetingId: string): string | null => {
  *
  * The title and the client are joined with a newline for the reason the
  * transcript is: an excerpt must never weld two unrelated fields into a phrase
- * nobody wrote.
+ * nobody wrote. **And they are joined the way the row draws them** — through
+ * `meetingHeading`, which is why that function had to move into `contracts`.
+ * Joining the raw objet to the raw client name printed the client twice: the
+ * objet a rep types opens on the client's own name almost every time, so the
+ * excerpt read « Sodexial — comité de staffing Sodexial » under a row that had
+ * just printed « Sodexial » once, three pixels up. The row strips the duplicate
+ * and the evidence line under it put it straight back.
  *
  * The transcript is joined with newlines rather than spaces so a *match* can
  * never weld the end of one speaker's sentence to the start of another's: no
@@ -495,8 +531,11 @@ const MARK_JOIN = '\n· '
 
 const searchableRecord = (store: Store, meetingId: string) => {
   const meeting = store.projections.getMeeting(meetingId)
+  const heading = meeting ? meetingHeading(meeting) : null
   return {
-    meeting: [meeting?.title ?? '', meeting?.clientName ?? ''].filter((s) => s !== '').join('\n'),
+    meeting: [heading?.title ?? '', heading?.subtitle ?? '']
+      .filter((part) => part !== '')
+      .join('\n'),
     // Notes only: a mark made with no note is a moment, not prose. Joined with
     // the separator above, which is the one part of the join that reaches the
     // rep's eyes.
@@ -783,6 +822,14 @@ export const handlers: Handlers = {
     }
 
     const { extraction, verification } = stored
+    /*
+     * The **model's** document, deliberately, and not `compteRenduOf`. This is
+     * the only read in the product that wants the extraction rather than what
+     * was last validated: the gate is reachable from `awaiting_confirmation`
+     * alone, so a meeting arriving here after a confirmation got here by
+     * extracting *again*, and the rep is being asked to check the new document —
+     * not a correction made to the one it replaced.
+     */
     const compteRendu = renderCompteRendu(extraction, verification)
     const edits = prefillEdits(extraction, compteRendu)
     const mailTo = mailRecipients(extraction.facts.interlocuteurs)
@@ -932,7 +979,19 @@ export const handlers: Handlers = {
     // account — is not recorded as confirmed, because nothing was created for
     // it and the log must not claim otherwise.
     const created = intents.map((intent) => intent.id)
-    session.emit({ type: 'confirmation.recorded', intentIds: created, at: (clock ?? Date.now)() })
+    session.emit({
+      type: 'confirmation.recorded',
+      intentIds: created,
+      at: (clock ?? Date.now)(),
+      // **The document that was on screen when the rep pressed the button.**
+      // It travelled into the intents and nowhere else, so *Historique* drew —
+      // and the search searched — the model's draft rather than the rep's
+      // corrected text, on the one screen that exists to find a past call.
+      // Written verbatim, empty string included: deleting the document and
+      // validating is something `reviewGate.ts` deliberately allows, and the
+      // record says what happened rather than reinstating the draft over it.
+      compteRendu: edits.compteRendu,
+    })
     for (const intent of intents) session.emit({ type: 'push.intent.created', intent })
 
     // Fired, not awaited. The rep is never asked a second time and never made
@@ -1140,6 +1199,8 @@ export const handlers: Handlers = {
     ok: widget?.passThrough(through) ?? false,
   }),
 
+  'widget:left': ({ afterMs }, { widget }) => ({ ok: widget?.left(afterMs) ?? false }),
+
   'window:focus': ({ meetingId }, { widget }) => ({
     ok: widget?.focusMain(meetingId ?? null) ?? false,
   }),
@@ -1246,7 +1307,9 @@ export const handlers: Handlers = {
       meeting,
       segments: store.projections.segments(meetingId),
       notes: documentToText(store.projections.document(meetingId)?.doc ?? null),
-      compteRendu: stored ? renderCompteRendu(stored.extraction, stored.verification) : null,
+      // The same reading `meeting:get` and the search do: what the rep
+      // validated, falling back to the model's document when nobody has.
+      compteRendu: compteRenduOf(store, meetingId),
       // From the extraction's deterministic half, which is Graph's answer
       // (DEC-7) — the same list the gate names as « Interlocuteurs ».
       interlocuteurs: stored?.extraction.facts.interlocuteurs ?? [],
@@ -1421,6 +1484,13 @@ export const handlers: Handlers = {
         severity: 'info',
         code: 'update.install.refused',
         module: 'update',
+        // Authored, and the whole value space was read before saying so:
+        // `updateReadiness().reason` is `BLOCKING[state]` or `PUSH_IN_FLIGHT`,
+        // both literals in `core/domain/updateGate.ts`, and that module is pure
+        // core with nothing foreign reaching it. Declaring this `foreign` would
+        // put `[message:34]` in the log where « un envoi vers VerySwing est en
+        // cours » is the entire content of the row.
+        origin: 'authored',
         message: readiness.reason ?? 'installation impossible',
         detail: { states: [...deps.orchestrator.liveStates()] },
       })
@@ -1537,6 +1607,12 @@ export const registerIpc = (ipcMain: IpcMainLike, deps: IpcDeps): void => {
           severity: stated ? 'info' : 'error',
           code: stated ? 'ipc.handler.refused' : 'ipc.handler.failed',
           module: 'ipc',
+          // Foreign, and this is the widest such site in the product: it is the
+          // message of *any* throw from *any* handler — a Zod issue naming a
+          // field's value, a vendor's HTTP body, a filesystem path. A refusal
+          // (`isRefusal`) is one of ours, but the two share one `record` call and
+          // the declaration has to be true of both branches.
+          origin: 'foreign',
           message: err instanceof Error ? err.message : String(err),
           detail: { channel },
         })

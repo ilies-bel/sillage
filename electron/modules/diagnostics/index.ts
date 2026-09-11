@@ -93,6 +93,10 @@ export class Diagnostics implements DiagRecorder {
       code: input.code,
       module: input.module,
       message: input.message,
+      // Carried through rather than decided here: `redactDiagEvent` is the only
+      // thing that reads it, and `full` mode must be able to show the message a
+      // foreign row withheld from the redacted bundle.
+      ...(input.origin ? { origin: input.origin } : {}),
       detail: input.detail ?? {},
       meetingId: input.meetingId ?? null,
     }

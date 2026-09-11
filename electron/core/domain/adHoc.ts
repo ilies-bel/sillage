@@ -126,14 +126,37 @@ export interface AdHocInput {
    */
   heldSince: number | null
   /**
-   * A calendar event is already armed for this instant.
+   * **A meeting is already armed or recording — any meeting, from any path.**
    *
-   * The scheduled offer wins outright. Two offers for one conversation is the
-   * defect `Agenda.#arm`'s docblock records at length — « Three statements about
-   * one meeting, two of them false, on one screen » — and a call that *is* in the
-   * calendar is not an ad-hoc call by definition.
+   * This field was `calendarArmed`, it was documented as « the scheduled offer
+   * wins outright », and `Agenda` passed it a hard-coded `false`. So the rule was
+   * not merely too narrow, it was not applied at all — and the twenty-fourth
+   * review round drove three paths straight through the hole:
+   *
+   *   - a calendar call being **recorded** that runs past its slot, where
+   *     `OVERRUN_GRACE_MS` keeps the microphone held: at minute 51 the detector
+   *     armed a second meeting over the live one;
+   *   - a rep who pressed « Démarrer une réunion » — the existing route for an
+   *     unscheduled call, and the *fast* one, since this one waits 25 seconds —
+   *     and got an offer to record the call they were already recording;
+   *   - a one-poll microphone drop during an ad-hoc recording, which minted a
+   *     second ad-hoc meeting over the first.
+   *
+   * Each produced `liveStates: ["recording","armed"]`, a second row on the day
+   * wearing the screen's one filled *Enregistrer*, and an OS notification reading
+   * « La réunion commence » about a call in progress — whose click broadcasts
+   * `session:open` and navigates the rep **off their live recording**.
+   *
+   * That is verbatim the defect `Agenda.#arm`'s docblock records at length
+   * (« Three statements about one meeting, two of them false, on one screen »).
+   * It was fixed on the calendar path and reintroduced one branch over, which is
+   * this repo's defect shape (b): a fix that produces the next round's finding.
+   *
+   * One conversation, one offer. The question is not « is the *calendar* armed »
+   * but « is this product already doing something about a meeting », and only the
+   * caller can answer it.
    */
-  calendarArmed: boolean
+  meetingLive: boolean
   /**
    * This hold has already produced an offer.
    *
@@ -159,7 +182,7 @@ export type AdHocDecision =
   | { action: 'none'; untilMs: number; reason: string }
 
 export const decideAdHoc = (input: AdHocInput): AdHocDecision => {
-  const { micHeldBy, now, heldSince, calendarArmed, offered } = input
+  const { micHeldBy, now, heldSince, meetingLive, offered } = input
 
   if (!micHeldBy) {
     return {
@@ -169,13 +192,18 @@ export const decideAdHoc = (input: AdHocInput): AdHocDecision => {
     }
   }
 
-  if (calendarArmed) {
-    // Still asked at the idle interval rather than parked: the calendar offer can
-    // be withdrawn — its event ends — and the call underneath it may carry on.
+  if (meetingLive) {
+    /*
+     * Still asked at the idle interval rather than parked: whatever is live can
+     * end — a calendar offer is withdrawn when its event passes, a recording is
+     * stopped — and the call underneath it may carry on. Parking here would mean
+     * a rep who ends one call and takes another immediately gets no offer for the
+     * second.
+     */
     return {
       action: 'none',
       untilMs: now + AD_HOC_IDLE_POLL_MS,
-      reason: 'une réunion du calendrier est déjà proposée',
+      reason: 'une réunion est déjà en cours ou proposée',
     }
   }
 

@@ -244,6 +244,8 @@ export class MeetingSession {
         severity: 'warn',
         code: 'session.transition.rejected',
         module: 'session',
+        // `${command} is not legal from ${from}` — two members of two unions.
+        origin: 'authored',
         message,
         detail: { from, command },
         meetingId: this.id,

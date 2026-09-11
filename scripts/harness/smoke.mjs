@@ -95,6 +95,13 @@
  * resolved colours and a mask is not one, and `--scrollers` is opted out of by
  * `data-scrolls`, correctly, because a log is supposed to hold more than its
  * box. This one compares every fading mask against the line box it fades over.
+ * It **parses** that mask rather than pattern-matching it, because the first
+ * version could not read the implicit `0` CSS lets a first stop drop — which is
+ * the form `.fade-below[data-above="true"]` takes on every scrolled reading
+ * column, skipped in silence on the two stages that carry it — and it prints a
+ * census of what it visited, so a zero here reads as a zero. Every stage in the
+ * list below is one run of that, and `SILLAGE_FADE_ATTACK=1` is how the reader
+ * itself is held to it.
  *
  * It carries `--geometry` as well, which is the other half of the same problem.
  * Ten of the compte-rendu's twenty-three gutter markers were clipped for three

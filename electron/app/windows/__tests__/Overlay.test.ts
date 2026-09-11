@@ -27,7 +27,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BrowserWindow } from 'electron'
 import { memoryKeyValueStore } from '../../../core/contracts/kv.ts'
-import { Overlay, type OverlayHost, type WidgetPlacement } from '../Overlay.ts'
+import { EXIT_FALLBACK_MS, Overlay, type OverlayHost, type WidgetPlacement } from '../Overlay.ts'
 
 /** A 1512×877 laptop work area — a MacBook with its menu bar and Dock taken off. */
 const LAPTOP = { x: 0, y: 0, width: 1512, height: 877 }
@@ -44,7 +44,16 @@ const BELOW = { x: 0, y: 877, width: 1920, height: 1080 }
  */
 const fakeWindow = (x: number, y: number, width: number, height: number) => {
   const handlers = new Map<string, (() => void)[]>()
-  const state = { x, y, width, height, destroyed: false, bounds: 0 }
+  const state = {
+    x,
+    y,
+    width,
+    height,
+    destroyed: false,
+    bounds: 0,
+    /** Every `setIgnoreMouseEvents` this window was given, in order. */
+    mouse: [] as { through: boolean; forward: boolean | undefined }[],
+  }
   const window = {
     isDestroyed: () => state.destroyed,
     getPosition: () => [state.x, state.y],
@@ -61,7 +70,8 @@ const fakeWindow = (x: number, y: number, width: number, height: number) => {
     once: (event: string, fn: () => void) => window.on(event, fn),
     showInactive: () => {},
     destroy: () => void (state.destroyed = true),
-    setIgnoreMouseEvents: () => {},
+    setIgnoreMouseEvents: (through: boolean, options?: { forward?: boolean }) =>
+      void state.mouse.push({ through, forward: options?.forward }),
   }
   /** What the OS does when the rep drags a frameless window by its pill. */
   const drag = (to: { x: number; y: number }) => {
@@ -77,6 +87,8 @@ const staged = (areas: { x: number; y: number; width: number; height: number }[]
   let live = areas
   const built: Fake[] = []
   const placed: WidgetPlacement[] = []
+  /** The windows that were asked to play their exit — `widget:leave`, addressed. */
+  const asked: BrowserWindow[] = []
   const host: OverlayHost = {
     create: (options) => {
       const made = fakeWindow(options.x, options.y, options.width, options.height)
@@ -87,6 +99,7 @@ const staged = (areas: { x: number; y: number; width: number; height: number }[]
     load: () => {},
     focusMain: () => true,
     placed: (placement) => void placed.push(placement),
+    leave: (window) => void asked.push(window),
   }
   const overlay = new Overlay(host, memoryKeyValueStore())
   overlay.show()
@@ -95,6 +108,8 @@ const staged = (areas: { x: number; y: number; width: number; height: number }[]
   return {
     overlay,
     placed,
+    asked,
+    built,
     window,
     /** Unplug a monitor, or plug one in. Primary stays first, as `main.ts` sends it. */
     displays: (next: typeof areas) => {
@@ -171,6 +186,7 @@ test('the rescue is not stored as a placement the rep asked for', () => {
       load: () => {},
       focusMain: () => true,
       placed: () => {},
+      leave: () => {},
     },
     kv,
   )
@@ -240,4 +256,159 @@ test('a rescue that changes the half says so too', () => {
   staging.displays([LAPTOP])
   staging.overlay.displaysChanged()
   assert.deepEqual(staging.placed, [{ ok: true, above: true }])
+})
+
+// ── the exit, and the three promises it must not break ───────────────────────
+//
+// The pill is the one surface in this product drawn over another application,
+// and `destroy()` took it off a video call between two frames — at the one
+// moment the rep is certainly looking at it, because the ordinary way a
+// recording ends is them pressing the pill's own *Terminer*. So it fades.
+//
+// Everything below is about what a fade must not cost. A window that is being
+// animated away is still a live, frameless, always-on-top window, and for a
+// fraction of a second it is one this class no longer holds.
+
+test('la fenêtre qui s’en va cesse d’être la nôtre avant de disparaître', () => {
+  /*
+   * **The second call of the day, taken immediately after the first.**
+   *
+   * `show()` is idempotent on `#window` — deliberately, so a transcript segment
+   * moving the state machine cannot recreate the pill and collapse the rep's open
+   * panel. Which means a window still held here while it faded would be *adopted*
+   * by the next recording, and then destroyed by its own fallback timer a few
+   * hundred milliseconds later: the rep's second call would have nothing over it,
+   * with no gesture able to bring it back.
+   */
+  const staging = staged([LAPTOP])
+  const first = staging.window
+
+  staging.overlay.dismiss()
+  assert.equal(staging.overlay.window, null, 'la fenêtre est encore tenue')
+  assert.equal(first.state.destroyed, false, 'détruite sans laisser le temps de l’animation')
+
+  staging.overlay.show()
+  assert.equal(staging.built.length, 2, 'la seconde réunion a repris la fenêtre mourante')
+  assert.notEqual(staging.overlay.window, first.window)
+})
+
+test('elle ne prend plus la souris, et sans redemander les mouvements', () => {
+  /*
+   * A card mid-fade is a rectangle the rep has no reason to expect a click to
+   * land on — they have finished the call. `{ forward: false }` and not the
+   * pass-through the rest of this file is about: that one keeps delivering moves
+   * so the renderer can notice the pointer coming back over the card, and a
+   * leaving window has no interest in the pointer ever again.
+   */
+  const staging = staged([LAPTOP])
+  staging.window.state.mouse.length = 0
+
+  staging.overlay.dismiss()
+  assert.deepEqual(staging.window.state.mouse, [{ through: true, forward: false }])
+})
+
+test('un rendu muet perd sa fenêtre quand même', (t) => {
+  /*
+   * The animation is a courtesy and the reply is not load-bearing: the timer is
+   * armed *before* the ask. A pill left on screen over a call that has ended —
+   * frameless, no taskbar entry, nothing to alt-tab to — is worse than a pill
+   * that pops.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.overlay.dismiss()
+  assert.deepEqual(staging.asked, [staging.window.window], 'le rendu n’a pas été prévenu')
+
+  t.mock.timers.tick(EXIT_FALLBACK_MS - 1)
+  assert.equal(staging.window.state.destroyed, false, 'détruite avant la fin du délai')
+  t.mock.timers.tick(1)
+  assert.equal(staging.window.state.destroyed, true, 'restée à l’écran sans réponse')
+})
+
+test('la durée annoncée par le rendu est celle qui est attendue, et elle est plafonnée', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  // `--motion`, as the renderer resolves it.
+  const normal = staged([LAPTOP])
+  normal.overlay.dismiss()
+  assert.equal(normal.overlay.left(150), true)
+  t.mock.timers.tick(149)
+  assert.equal(normal.window.state.destroyed, false, 'détruite pendant son animation')
+  t.mock.timers.tick(1)
+  assert.equal(normal.window.state.destroyed, true, 'pas détruite après son animation')
+
+  /*
+   * And a number that arrived over IPC. `afterMs` is a renderer's claim, so it
+   * may shorten the wait this class already promised and may never extend it:
+   * nine seconds of a frameless always-on-top window over the rep's screen is
+   * not a thing a reply gets to ask for.
+   */
+  const liar = staged([LAPTOP])
+  liar.overlay.dismiss()
+  liar.overlay.left(9_000)
+  t.mock.timers.tick(EXIT_FALLBACK_MS)
+  assert.equal(liar.window.state.destroyed, true, 'une réponse a prolongé la vie de la fenêtre')
+})
+
+test('sans mouvement réduit, il n’y a rien à attendre', (t) => {
+  /*
+   * `prefers-reduced-motion` collapses `--motion` to `0ms`, so the renderer
+   * answers zero — and zero must mean « maintenant », not « le délai de secours ».
+   * A constant in the main process would have held a static pill on screen for a
+   * fifth of a second after the call ended, for precisely the rep who asked for
+   * less motion.
+   *
+   * On the next tick and not synchronously: the reply is being sent from the
+   * window that is about to go.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.overlay.dismiss()
+  staging.overlay.left(0)
+  assert.equal(staging.window.state.destroyed, false, 'détruite pendant sa propre réponse')
+  t.mock.timers.tick(0)
+  assert.equal(staging.window.state.destroyed, true)
+})
+
+test('une fermeture emporte la fenêtre qui s’en allait', (t) => {
+  /*
+   * **The one that matters most.** `hide()` has two callers and neither can wait
+   * on a renderer: `before-quit` calls it one line before `store.close()`, and
+   * `mainWindow.on('closed')` calls it because `window-all-closed` does not fire
+   * while any window is open and this one has no taskbar entry to come back from.
+   *
+   * `dismiss()` deliberately leaves a live window behind for a fraction of a
+   * second. A quit arriving inside that fraction would leave it: a pill whose
+   * `moved` handler writes the saved origin through a database that has been
+   * closed, and a process the rep believes they closed with a window still on
+   * screen.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.overlay.dismiss()
+  staging.overlay.hide()
+  assert.equal(staging.window.state.destroyed, true, 'la fenêtre a survécu à la fermeture')
+
+  // And nothing is left armed to fire into a closed store.
+  t.mock.timers.tick(EXIT_FALLBACK_MS * 2)
+  assert.equal(staging.built.length, 1)
+})
+
+test('renvoyer une durée quand rien ne s’en va n’est pas une erreur', () => {
+  /*
+   * The reply crosses a process boundary, so it can arrive after the fallback has
+   * fired or after a quit has taken the window. `false` says « il n’y avait rien »
+   * rather than throwing into an IPC handler, which is the DEC-26 shape: the
+   * renderer is told a fact about its request, not handed an exception.
+   */
+  const staging = staged([LAPTOP])
+  assert.equal(staging.overlay.left(150), false)
+
+  // And dismissing twice is the same non-event.
+  staging.overlay.dismiss()
+  staging.overlay.dismiss()
+  assert.equal(staging.overlay.window, null)
 })

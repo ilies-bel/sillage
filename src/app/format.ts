@@ -154,56 +154,16 @@ export const dayKeyOf = (ms: number): string => dayKey.format(ms)
 
 export const isSameDay = (a: number, b: number): boolean => dayKeyOf(a) === dayKeyOf(b)
 
-/**
- * How a meeting names itself in a list: the client if it has one, else the
- * objet, and « Sans objet » when it has neither.
+/*
+ * How a meeting names itself in a list — **re-exported, not redefined**.
  *
- * The third case is new and it is not an edge: a meeting now starts on one click
- * with no objet and no client, and it stays that way until the rep types one in
- * the session header. Two screens had the same `clientName || title` pair, which
- * rendered an *empty row* for such a meeting — a list of dates with nothing
- * beside them. The label is a rendering concern and stops here: nothing is
- * written into the store, so the CRM never receives « Sans objet ».
+ * It moved to `electron/core/contracts/meeting.ts` when the main process turned
+ * out to need it too: `searchableRecord` builds the surface the search matches
+ * a call's own name in, and it was joining the raw objet to the raw client name,
+ * so the excerpt under a row read « Sodexial — comité de staffing Sodexial »
+ * while the row three pixels above it printed the name once. `src/*` may import
+ * `core/contracts/` and nothing else, which is the same reason `meetingAnchor`
+ * and `speakerLabel` live there. Callers here keep the name.
  */
-export const meetingHeading = (meeting: {
-  title: string
-  clientName: string | null
-}): { title: string; subtitle: string | undefined } => {
-  const client = meeting.clientName?.trim() ?? ''
-  const objet = meeting.title.trim()
-  if (client === '') return { title: objet === '' ? 'Sans objet' : objet, subtitle: undefined }
-  if (objet === '') return { title: client, subtitle: undefined }
-  /*
-   * The objet a rep types almost always opens with the client's own name —
-   * « Sodexial — comité de staffing hebdomadaire », « Nordis Retail — cadrage
-   * support N2 » — because that is how a calendar invitation is written. Drawn
-   * as-is the row said « Sodexial » over « Sodexial — comité de staffing
-   * hebdomadaire », which spends the strongest line on a word repeated three
-   * pixels below it and buries the only part that distinguishes one call from
-   * the next.
-   *
-   * So the client stays on top, where the eye scans, and the objet drops the
-   * prefix it duplicates along with the dash that joined them. Nothing is
-   * invented and nothing is truncated away: if the objet does not open on the
-   * client it is drawn whole.
-   */
-  const rest = withoutClientPrefix(objet, client)
-  return { title: client, subtitle: rest === '' ? undefined : rest }
-}
+export { meetingHeading } from '../../electron/core/contracts/meeting.ts'
 
-/**
- * `« Sodexial — comité de staffing »` under a `Sodexial` title becomes
- * `« comité de staffing »`. Case- and accent-insensitive on the name, and it
- * only ever strips a *leading* occurrence followed by a separator — « point
- * Sodexial » keeps every word it has.
- */
-const SEPARATOR = /^\s*[—–\-:·|]\s*/
-const fold = (value: string): string =>
-  value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('fr')
-
-const withoutClientPrefix = (objet: string, client: string): string => {
-  if (!fold(objet).startsWith(fold(client))) return objet
-  // « Sodexial » as the whole objet leaves nothing for a second line to say —
-  // the title above it already is that word — so the row draws one line.
-  return objet.slice(client.length).replace(SEPARATOR, '').trim()
-}

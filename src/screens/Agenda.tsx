@@ -521,7 +521,15 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             <Results
               rows={search.result?.rows ?? null}
               failure={search.failure}
-              truncated={(search.result?.rows.length ?? 0) >= RESULT_LIMIT}
+              /*
+                The main process's own answer, never a count against
+                `RESULT_LIMIT`. `rows.length >= limit` is one more than the
+                question — eight matches, eight rows, nothing hidden, and the
+                pane told the rep to go and look in *Historique* for results
+                that do not exist. `useHistorySearch` derives it once, from the
+                field the channel has always shipped.
+              */
+              truncated={search.capped}
               onOpen={onOpen}
             />
           ) : (
@@ -589,6 +597,10 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
                  number is a fact about the rep's work and not about which day
                  cell happens to be open. */
               total={pending.result?.rows.length ?? 0}
+              /* Whether there are more than the rows counted — the handler's own
+                 answer, so « 50+ » is drawn when a row was hidden and never
+                 because the count happens to equal the limit. */
+              capped={pending.capped}
               now={now}
               onSeeAll={() => onHistorique('', pendingFilter)}
               onOpen={onOpen}

@@ -16,6 +16,14 @@
  */
 import type { CalendarEvent } from '../contracts/calendar.ts'
 import type { ArmingDecision, MeetingContext, Sensitivity } from '../contracts/meeting.ts'
+/*
+ * Re-exported, not redeclared. It moved to `contracts` because `src/*` may import
+ * nothing else and `screens/agenda/entries.ts` has to apply the same grace — see
+ * the constant's own docblock. Callers that already import it from here keep
+ * working, and there is still exactly one number.
+ */
+export { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
+import { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
 
 /**
  * How early the window opens. Five minutes is the interval between "I am about
@@ -47,18 +55,6 @@ export const ARM_LEAD_MS = 5 * 60_000
  */
 export const ARM_POLL_MS = 20_000
 
-/**
- * How long past its scheduled end an event stays armable **while a conferencing
- * application is still holding a microphone**.
- *
- * Twenty minutes, and the bound is what makes the relaxation honest rather than
- * an open-ended one: a rep who leaves Teams connected over lunch is no longer in
- * the 11:30 call, and the next slot's own window will have opened long before
- * this expires. Shorter than `ARM_LEAD_MS +` a typical slot on purpose, so an
- * overrunning event and the following event cannot both look current for long —
- * and `nextArmable` prefers the one whose slot actually contains `now` anyway.
- */
-export const OVERRUN_GRACE_MS = 20 * 60_000
 
 /**
  * Longer than this and it is a working block, not a call.

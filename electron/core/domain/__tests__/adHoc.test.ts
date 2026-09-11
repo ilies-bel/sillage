@@ -16,7 +16,7 @@ const input = (over: Partial<Parameters<typeof decideAdHoc>[0]> = {}) => ({
   micHeldBy: 'Teams',
   now: T0,
   heldSince: T0,
-  calendarArmed: false,
+  meetingLive: false,
   offered: false,
   ...over,
 })
@@ -53,12 +53,27 @@ test('the dwell boundary is inclusive, so the offer cannot be one poll late', ()
   assert.equal(decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS })).action, 'offer')
 })
 
-test('a calendar event already armed wins outright', () => {
-  // Two offers for one conversation is the defect `Agenda.#arm`'s docblock
-  // records: « Three statements about one meeting, two of them false, on one
-  // screen. »
-  const decision = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, calendarArmed: true }))
+test('anything already armed or recording wins outright', () => {
+  /*
+   * One conversation, one offer. Round 24 drove three paths through a
+   * hard-coded `calendarArmed: false`: a calendar call being recorded that ran
+   * past its slot, a rep who had pressed « Démarrer une réunion », and a
+   * one-poll microphone drop during an ad-hoc recording. Each armed a second
+   * meeting over a live one and fired « La réunion commence » mid-call.
+   */
+  const decision = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, meetingLive: true }))
   assert.equal(decision.action, 'none')
+  assert.match(decision.reason, /déjà en cours ou proposée/)
+})
+
+test('and it is re-asked, so the call after the live one is still offered', () => {
+  // Parking here would mean a rep who ends one call and takes another
+  // immediately gets no offer for the second.
+  const blocked = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, meetingLive: true }))
+  assert.equal(blocked.action, 'none')
+  assert.ok(blocked.untilMs > T0 + AD_HOC_DWELL_MS, 'a horizon, not a park')
+  const freed = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, meetingLive: false }))
+  assert.equal(freed.action, 'offer')
 })
 
 test('one offer per hold — a dismissed offer is not re-offered on every poll', () => {

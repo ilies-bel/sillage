@@ -46,6 +46,13 @@ export const PENDING_SHOWN = 4
  * size. An empty query costs no transcript folding, so this is one indexed scan
  * and a chip filter. Past fifty the number stops being actionable and the
  * heading says so.
+ *
+ * **It is the size of the question and no longer the test for the answer.**
+ * `total >= PENDING_LIMIT` was one more than the question: a rep owing exactly
+ * fifty gestures — measured, fifty rows back with the handler reporting nothing
+ * hidden — read « 50+ » over « Toutes › », a backlog that had been rounded up
+ * and a link that no longer named its own count. The main process says whether a
+ * row was hidden; this says how many to ask for.
  */
 export const PENDING_LIMIT = 50
 
@@ -71,6 +78,16 @@ export interface PendingGatesProps {
    * survives where it belongs: in what is drawn.
    */
   total: number
+  /**
+   * Whether the backlog was **cut short** — the main process's own answer, off
+   * the field the search channel ships on every reply.
+   *
+   * Never `total >= PENDING_LIMIT`: that is one more than the question, and it
+   * turned a rep owing exactly fifty gestures into « 50+ ». The count above is
+   * a number the screen may print; this is the only thing that licenses a `+`
+   * on the end of it.
+   */
+  capped: boolean
   /** Today, from the same clock the day pane uses. */
   now: number
   /** *Tout l'historique* with the same chip on. */
@@ -78,7 +95,7 @@ export interface PendingGatesProps {
   onOpen: (meetingId: string) => void
 }
 
-export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGatesProps) {
+export function PendingGates({ rows, total, capped, now, onSeeAll, onOpen }: PendingGatesProps) {
   // Nothing to owe is not an empty state — it is a section that does not exist.
   // A permanent « rien à valider » panel would be a congratulation the rep gets
   // every day and reads on none of them.
@@ -103,15 +120,21 @@ export function PendingGates({ rows, total, now, onSeeAll, onOpen }: PendingGate
         */}
         <span
           /* A bare numeral beside a heading reads as « En attente de validation
-             trois » and could be anything. The label says what it counts. */
-          aria-label={`${total} réunion${total > 1 ? 's' : ''} en attente de validation`}
+             trois » and could be anything. The label says what it counts — and
+             it says the `+` too: a reader given « 50 » where the screen shows
+             « 50+ » has been told something the screen is not claiming. */
+          aria-label={
+            capped
+              ? `au moins ${total} réunions en attente de validation`
+              : `${total} réunion${total > 1 ? 's' : ''} en attente de validation`
+          }
           className="text-warn min-w-0 flex-1 text-ui tabular-nums"
         >
-          {total >= PENDING_LIMIT ? `${PENDING_LIMIT}+` : total}
+          {capped ? `${total}+` : total}
         </span>
         {total > shown.length ? (
           <Button variant="text" className="shrink-0" onClick={onSeeAll}>
-            {total >= PENDING_LIMIT ? 'Toutes ›' : `Les ${total} ›`}
+            {capped ? 'Toutes ›' : `Les ${total} ›`}
           </Button>
         ) : null}
       </div>

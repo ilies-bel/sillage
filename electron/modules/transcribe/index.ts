@@ -266,6 +266,7 @@ export class TranscribeSession extends EventEmitter {
       severity: 'warn',
       code: 'transcribe.failover',
       module: 'transcribe',
+      origin: 'authored',
       message: `transcription reprise par ${fallback} après l’échec de ${from}`,
       detail: { from, to: fallback, reason },
     })
@@ -285,6 +286,7 @@ export class TranscribeSession extends EventEmitter {
         severity: 'error',
         code: 'transcribe.failover.failed',
         module: 'transcribe',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : String(error),
         detail: { to: fallback },
       })
@@ -339,6 +341,7 @@ export class TranscribeSession extends EventEmitter {
           severity: 'warn',
           code: 'transcribe.stop.failed',
           module: 'transcribe',
+          origin: 'foreign',
           message: result.reason instanceof Error ? result.reason.message : String(result.reason),
           detail: {},
         })
@@ -384,6 +387,8 @@ export class TranscribeSession extends EventEmitter {
       severity: 'error',
       code: `transcribe.${channel}.error`,
       module: 'transcribe',
+      // A provider's or the local engine's own `Error.message`.
+      origin: 'foreign',
       message,
       detail: { provider: this.#providerId },
     })

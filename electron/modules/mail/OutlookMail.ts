@@ -122,6 +122,7 @@ export class OutlookMail implements MailPort {
         severity: 'warn',
         code: 'mail.token.unavailable',
         module: 'mail',
+        origin: 'foreign',
         message: reason,
         detail: { retryable: true },
       })
@@ -157,6 +158,7 @@ export class OutlookMail implements MailPort {
         severity: 'error',
         code: 'mail.draft.failed',
         module: 'mail',
+        origin: 'foreign',
         message: reason,
         detail: { retryable },
       })

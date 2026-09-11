@@ -327,6 +327,82 @@ test('whitespace is collapsed, so a markdown excerpt is one readable line', () =
   assert.equal((match?.excerpt ?? '').includes('\n'), false)
 })
 
+/*
+ * ── the space nobody can see ────────────────────────────────────────────────
+ *
+ * The apostrophe's failure, one character further out and found the same way.
+ * French typography puts U+00A0 before `: ; ! ?` and U+202F inside « … »; Word
+ * and Outlook insert them by autocorrect, so a note pasted out of a mail thread
+ * carries both, and a keyboard emits U+0020 and nothing else. What made it worse
+ * than the apostrophe is that it could not be *diagnosed*: `ellipsise` collapses
+ * every run of whitespace, so an excerpt of that same note renders with ordinary
+ * spaces — there was nothing on any screen to notice.
+ */
+test('the no-break spaces are folded, so a note pasted out of Outlook is findable', () => {
+  const pasted = {
+    meeting: '',
+    marks: '',
+    transcript: '',
+    // Exactly what lands in the notepad: U+202F before the colon (Outlook),
+    // U+00A0 between two words (Word's autocorrect on « profil senior »).
+    notes: 'Le client bloque à 550\u202f: il faut un profil\u00a0senior.',
+    compteRendu: '',
+  }
+
+  for (const query of ['550 :', 'bloque à 550 :', 'profil senior']) {
+    assert.equal(matchesFor(pasted, query).length, 1, `« ${query} » doit trouver l’appel`)
+  }
+
+  // And the other direction: a rep who pastes the phrase *back* into the box
+  // finds a note typed with ordinary spaces.
+  const typed = { meeting: '', marks: '', transcript: '', notes: 'un profil senior', compteRendu: '' }
+  assert.equal(matchesFor(typed, 'profil\u00a0senior').length, 1)
+
+  // One character in, one character out, which is what leaves `foldMapped`'s
+  // index map — and therefore every excerpt offset on this screen — untouched.
+  assert.equal(fold('a\u00a0b'), 'a b')
+  assert.equal(fold('a\u202fb'), 'a b')
+  assert.equal(fold('a\u00a0b').length, 3)
+})
+
+test('a zero-width character is left alone: this fold never deletes', () => {
+  // The line the rule is drawn on. Folding U+200B away would make the fold
+  // change length in a *second* way, and no French input method puts one
+  // between two words a rep means to search for.
+  assert.equal(fold('a\u200bb'), 'a\u200bb')
+})
+
+/*
+ * ── half a character is not a character ─────────────────────────────────────
+ *
+ * `CONTEXT` is counted in UTF-16 units and the slice is taken in them, so a
+ * window edge can land *between the halves of one character*: an emoji in a
+ * rep's note, a rare ideograph in a client's name. What shipped was a lone
+ * surrogate, which no font can draw — the row's evidence opened on `<?>`, on the
+ * screen whose whole job is to say where a call was found.
+ */
+test('an excerpt never carries half a surrogate pair', () => {
+  const lone = (text: string): boolean =>
+    [...text].some((c) => {
+      const point = c.codePointAt(0) as number
+      return point >= 0xd800 && point <= 0xdfff
+    })
+
+  // Every offset of the astral character relative to the window edge, because
+  // exactly one of them splits it and the others must stay untouched.
+  for (let pad = 0; pad < 4; pad += 1) {
+    const transcript = `${'x'.repeat(pad)}\u{1f44d}${'y'.repeat(40 - pad - 1)}TJM de 520 euros`
+    const [match] = matchesFor(
+      { meeting: '', marks: '', transcript, notes: '', compteRendu: '' },
+      'TJM',
+    )
+    assert.ok(match, `pad=${pad}`)
+    assert.equal(lone(match.excerpt), false, `pad=${pad}: ${JSON.stringify(match.excerpt)}`)
+    // Nudged outward, so the character is kept rather than half-dropped.
+    assert.ok(match.excerpt.includes('\u{1f44d}'), `pad=${pad}`)
+  }
+})
+
 // ── The filter chips (DEC-25, DEC-31) ───────────────────────────────────────
 //
 // The chips run in the main process beside the matcher, so — like the matcher —

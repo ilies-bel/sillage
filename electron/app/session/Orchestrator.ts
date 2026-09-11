@@ -224,6 +224,7 @@ export class Orchestrator {
               severity: 'warn',
               code: 'app.broadcast.failed',
               module: 'app',
+              origin: 'foreign',
               message: error instanceof Error ? error.message : 'diffusion impossible',
               detail: { channel },
             })
@@ -371,6 +372,7 @@ export class Orchestrator {
         severity: 'error',
         code: 'enhancement.unhandled',
         module: 'app',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : 'fin de réunion incomplète',
         detail: { meetingId },
       })
@@ -479,6 +481,7 @@ export class Orchestrator {
               severity: 'warn',
               code: 'signals.push.failed',
               module: 'app',
+              origin: 'foreign',
               message: error instanceof Error ? error.message : 'signal rail indisponible',
               detail: { meetingId },
             })
@@ -543,7 +546,31 @@ export class Orchestrator {
    */
   #startEndWatch(meetingId: MeetingId): void {
     if (this.#endWatch.has(meetingId)) return
-    const scheduledEnd = this.#store.projections.context(meetingId)?.scheduledEnd ?? null
+    /*
+     * **A synthesised end is not a scheduled end.**
+     *
+     * `graceFor` shortens the end-of-meeting grace from 75 s to 25 s once the
+     * silence starts past `scheduledEnd`, and the reasoning for that is entirely
+     * about a *calendar* slot: the invite said 15:00, it is 15:02, a pause is far
+     * more likely to be the end. A meeting with no invite has no such instant,
+     * and both paths that create one invent a number:
+     *
+     *   `adHocContext`   `heldSince + 1h`, whose own docblock says « it is not a
+     *                    claim about when the call will end » — and `graceFor`
+     *                    read it as exactly that claim, so a 25-second pause at
+     *                    minute 61 of an unscheduled call ended the recording.
+     *   `manualContext`  `endedAt ?? updatedAt`, which for a live meeting is
+     *                    roughly *now* — the short grace from the first second.
+     *
+     * `eventId === null` is the fact that separates them, and it is the same fact
+     * `MeetingContextSchema` documents: « Null for a manually started session with
+     * no calendar entry ». CLAUDE.md already states the rule this restores — « a
+     * session with no calendar entry always gets the full grace » — and there is a
+     * test named for it, which passed because it supplies a null *context*, not a
+     * context with a synthesised end.
+     */
+    const context = this.#store.projections.context(meetingId)
+    const scheduledEnd = context && context.eventId !== null ? context.scheduledEnd : null
     this.#endWatch.set(
       meetingId,
       new EndOfMeetingWatch({
@@ -557,6 +584,7 @@ export class Orchestrator {
             severity: 'info',
             code: 'session.autoEnded',
             module: 'app',
+            origin: 'authored',
             message: reason,
             detail: { meetingId, scheduledEnd },
           })

@@ -34,6 +34,27 @@ const DEBOUNCE_MS = 200
 export interface HistorySearchState {
   /** Null until the first answer arrives. Never a locally computed subset. */
   result: HistorySearchResult | null
+  /**
+   * **Whether a row was hidden — the main process's answer, never the screen's
+   * arithmetic.**
+   *
+   * `capped` has shipped on every answer since the channel existed and exactly
+   * one screen read it. The other two counted their own rows against their own
+   * limit and got it wrong in the same direction, because `rows.length >= limit`
+   * is *one more* than the question: a pane asking for eight and given eight
+   * with nothing behind them told the rep there was more. Measured — eight
+   * matches, eight rows, handler `capped: false`, and the calendar drawing
+   * « Les premiers résultats — l'historique les porte tous » — and again on the
+   * backlog, where exactly fifty calls owed read « 50+ » and « Toutes › ».
+   *
+   * Round 23 fixed this once, in the handler, where the loop now stops one row
+   * *past* the limit. The regression test pins the copy on *Historique* and by
+   * construction could not see the two screens doing the arithmetic themselves.
+   * So the derivation lives here, in the one hook every box goes through, and a
+   * screen is handed a boolean it cannot get wrong. `false` before the first
+   * answer: nothing is known to be hidden until something says so.
+   */
+  capped: boolean
   failure: string | null
 }
 
@@ -72,5 +93,5 @@ export function useHistorySearch(
     // in an unrelated field.
   }, [query, limit, filter.client, filter.periode, filter.statut, filter.intention])
 
-  return { result, failure }
+  return { result, failure, capped: result?.capped ?? false }
 }

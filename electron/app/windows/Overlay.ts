@@ -65,6 +65,22 @@ export const OVERLAY_ORIGIN_KEY = 'overlay.origin'
  */
 export const INITIAL_SIZE: Size = { width: 232, height: 52 }
 
+/**
+ * How long a leaving window is given to answer `widget:left` before it is
+ * destroyed anyway.
+ *
+ * A ceiling on a renderer that cannot reply — a crashed one, a wedged one, one
+ * whose `webContents` was gone before the message was queued — and *not* the
+ * duration of the animation, which only the renderer knows and which it sends
+ * back. Half a second is a long time for a fade of `--motion` (150ms) and a
+ * short time to have a pill on screen over a call that has ended.
+ *
+ * It is the cap on the renderer's own number as well: `afterMs` arrives over
+ * IPC, so a renderer reporting nine seconds must not be able to leave a
+ * frameless always-on-top window over the rep's screen for nine seconds.
+ */
+export const EXIT_FALLBACK_MS = 500
+
 export interface OverlayHost {
   /** `new BrowserWindow(...)`, injected so this file is reachable in a test. */
   create(options: OverlayWindowOptions): BrowserWindow
@@ -84,6 +100,17 @@ export interface OverlayHost {
    * test has to be able to assert.
    */
   placed(placement: WidgetPlacement): void
+  /**
+   * `window.webContents.send('widget:leave', {})` — tell *this* window to play
+   * its exit.
+   *
+   * Takes the window rather than reading `#window`, because by the time it is
+   * called the window is no longer the current one: `dismiss()` releases it
+   * first, so a recording starting in the same second gets a fresh pill instead
+   * of adopting the one that is fading out. And it is addressed rather than
+   * broadcast for the same reason — see `widget:leave` in `contracts/ipc.ts`.
+   */
+  leave(window: BrowserWindow): void
 }
 
 export interface OverlayWindowOptions {
@@ -137,6 +164,20 @@ export class Overlay {
   #above = false
   /** True while `resize()` is moving the window itself — see the `moved` handler. */
   #moving = false
+  /**
+   * Windows playing their exit, with the timer that will destroy each one.
+   *
+   * A set rather than one, and adopted by `hide()`, because the two are
+   * different promises and the dangerous one must still be able to keep its own.
+   * `dismiss()` leaves a live window on screen for a moment after it has stopped
+   * being `#window`; `hide()` is called from `before-quit` **immediately before
+   * `store.close()`**, and from `mainWindow.on('closed')`, where an open window
+   * is the difference between `window-all-closed` firing and a process the rep
+   * cannot get back into. A dying widget that outlived either would be a `moved`
+   * handler writing the saved origin through a closed database, and a quit that
+   * silently did not happen.
+   */
+  #leaving = new Map<BrowserWindow, ReturnType<typeof setTimeout>>()
 
   constructor(host: OverlayHost, kv: KeyValueStore) {
     this.#host = host
@@ -239,10 +280,113 @@ export class Overlay {
     })
   }
 
+  /**
+   * Gone now, and gone for the two reasons a widget must be able to vanish
+   * without asking anybody.
+   *
+   * `before-quit` calls this one line before `store.close()`, and
+   * `mainWindow.on('closed')` calls it because `window-all-closed` does not fire
+   * while any window is open and this one has no taskbar entry to come back
+   * from. Neither can afford to wait on a renderer, so neither does — and both
+   * take the leaving windows with them, which is the half that is easy to
+   * forget: `dismiss()` deliberately leaves a live window behind for a fraction
+   * of a second, and a quit arriving inside that fraction would leave it.
+   */
   hide(): void {
     const window = this.#window
     this.#window = null
+    for (const [leaving, timer] of this.#leaving) {
+      clearTimeout(timer)
+      if (!leaving.isDestroyed()) leaving.destroy()
+    }
+    this.#leaving.clear()
     if (window && !window.isDestroyed()) window.destroy()
+  }
+
+  /**
+   * **The call ended: fade, then go.**
+   *
+   * The ordinary way this window closes, and the only one that can afford a
+   * frame of animation — see `hide()` for the two that cannot. What it buys is
+   * stated in `widget:leave`'s contract: this is the single surface in the
+   * product drawn over another application, and `destroy()` took it off a video
+   * call between two frames at the one moment the rep was certainly looking at
+   * it.
+   *
+   * Three things happen in this order and the order is the whole of it.
+   *
+   * **The window stops being ours first.** `show()` is idempotent on `#window`,
+   * so a window still held here would be *adopted* by the next recording — and
+   * the next recording can begin in the same second, because a rep taking two
+   * calls back to back is ordinary. The rep would get a pill already fading out,
+   * which then destroys itself on the fallback timer, leaving nothing over a
+   * live call.
+   *
+   * **It stops taking the mouse.** A card mid-fade is still a frameless
+   * always-on-top window, and it is one the rep has no reason to expect a click
+   * to land on: they have finished the call. `{ forward: false }` and not the
+   * pass-through elsewhere in this file — that one keeps moves so the renderer
+   * can notice the pointer coming back over the card, and a leaving window has
+   * no interest in the pointer ever again.
+   *
+   * **Then it is asked.** The timer is armed before the ask and not after the
+   * reply, so a renderer that never replies still loses its window: the animation
+   * is a courtesy and the pill outliving the call is not a trade worth making.
+   */
+  dismiss(): void {
+    const window = this.#window
+    if (!window || window.isDestroyed()) {
+      this.#window = null
+      return
+    }
+    this.#window = null
+
+    try {
+      window.setIgnoreMouseEvents(true, { forward: false })
+    } catch {
+      // A window whose native side is already gone. It is being destroyed
+      // either way; there is nothing here worth failing a teardown over.
+    }
+    this.#leaving.set(
+      window,
+      setTimeout(() => this.#reap(window), EXIT_FALLBACK_MS),
+    )
+    this.#host.leave(window)
+  }
+
+  /**
+   * The renderer answering: it has armed its exit and this is what it will take.
+   *
+   * Clamped to `EXIT_FALLBACK_MS` — the number arrives over IPC from a renderer,
+   * and no reply may extend a frameless always-on-top window's life beyond what
+   * `dismiss()` already promised. `0` — which is what `prefers-reduced-motion`
+   * resolves to — destroys on the next tick rather than synchronously, so the
+   * reply can be sent before the window carrying it is gone.
+   *
+   * **Every leaving window, not one**, and that is a choice rather than an
+   * oversight: the handlers get no sender, and a window in `#leaving` is one this
+   * class has *already decided* to destroy. Settling an older one early costs a
+   * few milliseconds of an animation nobody is looking at any more, where
+   * guessing wrong the other way would leave a pill on the screen.
+   *
+   * `false` when nothing was leaving, which is not an error: the fallback may
+   * have fired first, or the quit path may have taken the window already.
+   */
+  left(afterMs: number): boolean {
+    if (this.#leaving.size === 0) return false
+    const wait = Math.min(Math.max(0, Math.round(afterMs)), EXIT_FALLBACK_MS)
+    for (const [window, timer] of this.#leaving) {
+      clearTimeout(timer)
+      this.#leaving.set(window, setTimeout(() => this.#reap(window), wait))
+    }
+    return true
+  }
+
+  #reap(window: BrowserWindow): void {
+    const timer = this.#leaving.get(window)
+    if (timer !== undefined) clearTimeout(timer)
+    this.#leaving.delete(window)
+    if (!window.isDestroyed()) window.destroy()
   }
 
   /**

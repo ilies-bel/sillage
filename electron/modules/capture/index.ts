@@ -239,6 +239,7 @@ export class CaptureSession extends EventEmitter {
       severity: verdict === 'tooQuiet' ? 'warn' : 'info',
       code: verdict === 'tooQuiet' ? 'capture.level.tooQuiet' : 'capture.level.ok',
       module: 'capture',
+      origin: 'authored',
       message:
         verdict === 'tooQuiet'
           ? `niveau d’entrée trop faible pour être transcrit (crête ${watch.peak.toFixed(4)})`
@@ -400,6 +401,7 @@ export class CaptureSession extends EventEmitter {
         severity: 'warn',
         code: 'capture.rep.narrowband',
         module: 'capture',
+        origin: 'authored',
         message: `micro ouvert à ${native}\u00a0Hz — lien bande étroite (HFP)`,
         detail: { nativeSampleRate: native },
       })
@@ -595,6 +597,7 @@ export class CaptureSession extends EventEmitter {
         severity: outcome.level,
         code: `capture.${channel}.${outcome.reason ?? 'silence'}`,
         module: 'capture',
+        origin: 'authored',
         message: outcome.message,
         detail: { channel },
       })
@@ -665,6 +668,7 @@ export class CaptureSession extends EventEmitter {
       severity,
       code,
       module: 'capture',
+      origin: 'foreign',
       message: message(error),
       detail: {},
     })

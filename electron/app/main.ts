@@ -421,6 +421,7 @@ process.on('uncaughtException', (err) => {
     severity: 'error',
     code: 'app.uncaughtException',
     module: 'app',
+    origin: 'foreign',
     message: err.message,
     detail: { name: err.name },
   })
@@ -432,6 +433,7 @@ process.on('unhandledRejection', (reason) => {
     severity: 'error',
     code: 'app.unhandledRejection',
     module: 'app',
+    origin: 'foreign',
     message: reason instanceof Error ? reason.message : String(reason),
     detail: {},
   })
@@ -1031,6 +1033,14 @@ const boot = async (): Promise<void> => {
       // The stacking direction, when the renderer did not ask — a display going
       // away, or a drag across the display's midline. See `widget:placed`.
       placed: ({ above }) => broadcast('widget:placed', { above }),
+      /*
+       * Addressed to the leaving window and never broadcast: two widget windows
+       * exist for a moment when one recording ends and the next begins, and a
+       * fan-out would tell the new pill to fade out too. See `widget:leave`.
+       */
+      leave: (window) => {
+        if (!window.isDestroyed()) window.webContents.send('widget:leave', {})
+      },
     },
     store.appState,
   )
@@ -1073,7 +1083,11 @@ const boot = async (): Promise<void> => {
   const syncOverlay = (): void => {
     const recording = orchestrator.liveIds().some((id) => orchestrator.stateOf(id) === 'recording')
     if (recording) overlay.show()
-    else overlay.hide()
+    // `dismiss`, not `hide`: this is the transition-driven path — the recording
+    // stopped — and it is the only one of the three that can afford a frame of
+    // animation. The window closing with the main window and the deferred quit
+    // both still call `hide()`, and both reasons are in its docblock.
+    else overlay.dismiss()
   }
   resyncOverlay = syncOverlay
 
@@ -1500,6 +1514,7 @@ const boot = async (): Promise<void> => {
           severity: 'warn',
           code: 'capture.channelBleed',
           module: 'app',
+          origin: 'authored',
           message: `${bleed.dropped} passage(s) du client repris sur le micro du commercial — enceintes ouvertes, résidu que l’annulation d’écho n’a pas absorbé ; un casque supprime le problème`,
           detail: { meetingId, dropped: bleed.dropped, repSegments: bleed.repSegments },
         })
@@ -1541,6 +1556,7 @@ const boot = async (): Promise<void> => {
           severity: 'info',
           code: 'lexicon.learned',
           module: 'app',
+          origin: 'authored',
           /*
            * The client's name is the client's. `redactMessage` is a denylist and
            * « Néovia Santé » is not on it, so this line reached the bundle whose
@@ -1939,6 +1955,7 @@ const boot = async (): Promise<void> => {
           severity: 'info',
           code: 'transcribe.prewarm.ready',
           module: 'transcribe',
+          origin: 'authored',
           message: `modèle local préchargé en ${((Date.now() - started) / 1000).toFixed(1)} s`,
           detail: { model: model ?? DEFAULT_MODEL_ID, ms: Date.now() - started },
         })
@@ -2122,6 +2139,7 @@ const boot = async (): Promise<void> => {
           severity: 'error',
           code: 'outbox.drain.failed',
           module: 'app',
+          origin: 'foreign',
           message: error instanceof Error ? error.message : 'envoi impossible',
           detail: { meetingId },
         })
@@ -2195,6 +2213,7 @@ const boot = async (): Promise<void> => {
       severity: 'warn',
       code: 'outbox.interrupted.boot',
       module: 'app',
+      origin: 'authored',
       message: `${stalled.length} envoi(s) interrompus par un arrêt de l’application — à vérifier dans l’outil distant`,
       detail: { intentIds: stalled.map((entry) => entry.intentId) },
     })
@@ -2253,6 +2272,7 @@ const boot = async (): Promise<void> => {
       severity: 'warn',
       code: 'recording.interrupted.boot',
       module: 'app',
+      origin: 'authored',
       message: `${interrupted.length} enregistrement(s) interrompus par un arrêt de l’application — terminés`,
       detail: { meetingIds: interrupted.map((meeting) => meeting.id) },
     })
@@ -2266,6 +2286,7 @@ const boot = async (): Promise<void> => {
       severity: 'warn',
       code: 'enhancement.interrupted.boot',
       module: 'app',
+      origin: 'authored',
       message: `${stranded.length} compte(s)-rendu interrompus par un arrêt de l’application — remis en attente`,
       detail: { meetingIds: stranded.map((meeting) => meeting.id) },
     })
@@ -2437,6 +2458,7 @@ const boot = async (): Promise<void> => {
       resize: (box) => overlay.resize(box),
       passThrough: (through) => overlay.passThrough(through),
       focusMain: (meetingId) => overlay.focusMain(meetingId),
+      left: (afterMs) => overlay.left(afterMs),
     },
     broadcastMark: (meetingId, mark) => broadcast('moment:marked', { meetingId, mark }),
     broadcastForget: (meetingId, markId) => broadcast('moment:forgotten', { meetingId, markId }),
@@ -2505,6 +2527,7 @@ const boot = async (): Promise<void> => {
               severity: 'error',
               code: 'app.quit.endFailed',
               module: 'app',
+              origin: 'foreign',
               message: error instanceof Error ? error.message : 'arrêt impossible',
               detail: { meetingId },
               meetingId,

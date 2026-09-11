@@ -26,7 +26,13 @@ export interface ResultsProps {
   /** Null while the first answer is in flight. */
   rows: readonly HistoryRow[] | null
   failure: string | null
-  /** True when the answer filled the pane, so there is more behind the link. */
+  /**
+   * True when a row was **hidden** — the main process's own `capped`, never a
+   * count of the rows above against the limit they were asked for. That
+   * comparison is one more than the question: eight matches filling an
+   * eight-row pane with nothing behind them drew « l'historique les porte
+   * tous », sending a rep to a second screen for results that do not exist.
+   */
   truncated: boolean
   onOpen: (meetingId: string) => void
 }

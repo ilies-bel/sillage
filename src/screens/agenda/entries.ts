@@ -17,7 +17,7 @@
  */
 import type { CalendarEvent } from '../../../electron/core/contracts/calendar.ts'
 import type { AgendaSnapshotPayload } from '../../../electron/core/contracts/ipc.ts'
-import type { Meeting, MeetingState } from '../../../electron/core/contracts/meeting.ts'
+import { Meeting, MeetingState, OVERRUN_GRACE_MS } from '../../../electron/core/contracts/meeting.ts'
 import { dayKeyOf, type DayKey } from '../../app/calendar.ts'
 
 export interface AgendaEntry {
@@ -178,6 +178,28 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
 const startOf = (meeting: Meeting): number =>
   meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt
 
+/**
+ * Is this row behind the rep, or still theirs to record?
+ *
+ * **A call that runs over is not past, and this used to say it was.** For a row
+ * with no meeting yet the answer was `end < now`, so at 14:31 on a 14:00–14:30
+ * slot the row moved under *Passées* and `DayPane` drew **no control at all** —
+ * while `Agenda.armNow`, which the control would have called, would happily have
+ * armed it. DEC-9 says sales calls overrun constantly.
+ *
+ * The domain has the same grace (`decideArming`, `OVERRUN_GRACE_MS`) and applies
+ * it only while a microphone is still held, because a schedule alone is not
+ * evidence a call is still happening and the app must not *offer* on a guess.
+ * Here the microphone deliberately does not come into it: `armNow` does not
+ * consult `decideArming` — the detector guesses, the rep has said — so the
+ * control has to be reachable on a machine that produces no microphone signal at
+ * all, which is every older binary, macOS before 14.4, a locked-down Windows box
+ * and any call taken on a desk phone. Withholding it there would be the dead
+ * control DEC-26 forbids, in reverse: a live meeting with no way to record it.
+ *
+ * One number, imported rather than restated — see its docblock in
+ * `core/contracts/meeting.ts` for why it lives there.
+ */
 const isPast = ({
   state,
   end,
@@ -189,7 +211,7 @@ const isPast = ({
 }): boolean => {
   if (state === 'recording' || state === 'armed') return false
   if (state && AFTER_THE_CALL.has(state)) return true
-  return end < now
+  return end + OVERRUN_GRACE_MS < now
 }
 
 const attendeesOf = (event: CalendarEvent): string | null => {

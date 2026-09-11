@@ -321,6 +321,36 @@ export function Widget() {
  */
 const HALO = 20
 
+/**
+ * How long this element's own transition will take, in milliseconds — read off
+ * the resolved style and never written down twice.
+ *
+ * `.widget-leaving` names `var(--motion)`, and `--motion` is `0ms` under
+ * `prefers-reduced-motion`. A constant here would be a second copy of a number
+ * `tokens.css` owns, and it would be the *wrong* copy for exactly the rep who
+ * asked for less motion: they would get a static pill held on screen for a fifth
+ * of a second after their call ended, which is the opposite of what the setting
+ * asks for.
+ *
+ * `duration + delay`, per property, taking the longest — the two lists are
+ * index-matched by the spec, and a shorthand `transition` with no delay resolves
+ * to `0s` rather than to nothing. A style engine that answers neither — jsdom
+ * does not — gives `0`, which is a correct answer: there is nothing to wait for.
+ */
+const transitionMs = (element: Element): number => {
+  const style = getComputedStyle(element)
+  const seconds = (raw: string): number[] =>
+    (raw || '').split(',').map((part) => {
+      const text = part.trim()
+      const value = Number.parseFloat(text)
+      if (!Number.isFinite(value)) return 0
+      return text.endsWith('ms') ? value : value * 1000
+    })
+  const durations = seconds(style.transitionDuration)
+  const delays = seconds(style.transitionDelay)
+  return Math.max(0, ...durations.map((ms, index) => ms + (delays[index] ?? 0)))
+}
+
 function Frame({ open, children }: { open: boolean; children: (above: boolean) => React.ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
   const [above, setAbove] = useState(false)
@@ -337,6 +367,39 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
    * broadcast now.
    */
   useBroadcast('widget:placed', ({ above: next }) => setAbove(next))
+
+  /*
+   * **The window is about to be destroyed and this is the only warning it gets.**
+   *
+   * `Overlay.dismiss()` asks, this fades, and the reply says how long the fade
+   * takes so the main process can destroy the window after it rather than
+   * during it. Nothing about the widget's *content* changes — the pill keeps its
+   * elapsed time and its counter to the last frame, because the recording did
+   * happen and a card that blanked its own numbers on the way out would be
+   * saying something about the call that is not true.
+   *
+   * The reply is not load-bearing: `Overlay` armed a fallback timer before it
+   * asked, so a renderer that is wedged, crashed or simply slower than half a
+   * second loses its window anyway. A pill that outlives the call it reports is
+   * worse than a pill that pops.
+   */
+  const [leaving, setLeaving] = useState(false)
+  useBroadcast('widget:leave', () => setLeaving(true))
+  const shell = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!leaving) return
+    /*
+     * A layout effect, so the answer is sent *before* the first animated frame
+     * is painted rather than after it. The main process counts from the reply, so
+     * measuring early can only make the window outlive the animation — measuring
+     * late would clip its own tail, which is the failure this whole handshake
+     * exists to avoid.
+     */
+    const element = shell.current
+    void invoke('widget:left', { afterMs: element ? transitionMs(element) : 0 }).catch(
+      () => undefined,
+    )
+  }, [leaving])
 
   /**
    * The last measurement that was sent, **outside the effect**.
@@ -474,7 +537,19 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
 
   return (
     <div
-      className="flex h-full w-full items-start justify-center bg-transparent"
+      ref={shell}
+      /*
+       * The exit rides on the *outer* div and never on `box`. `box` is the
+       * measured element: `ResizeObserver` watches its border box, which a
+       * transform does not change, and `pillTop` is a difference of two rects
+       * that a transform shifts equally — so the fade sends no `widget:resize`
+       * from either half. Putting the class on the measured element would have
+       * been correct by that same arithmetic and one refactor away from not
+       * being.
+       */
+      className={`flex h-full w-full items-start justify-center bg-transparent${
+        leaving ? ' widget-leaving' : ''
+      }`}
       onPointerMove={onPointerMove}
     >
       {/*

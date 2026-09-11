@@ -655,7 +655,14 @@ test('a dismissed offer is not re-offered on every poll for the rest of the call
   h.orchestrator.dispatch(first, 'disarm', 'le commercial a refusé')
 
   for (let i = 2; i <= 8; i++) await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS * i })
-  assert.equal(h.store.projections.listMeetings(20).length, 1, 'one offer per hold, never one per poll')
+  /*
+   * Asserted on the *offer*, not on a row count. `Projections.listMeetings` now
+   * hides an `adhoc-` meeting that is `idle` and never started — a call that was
+   * offered and declined is not a meeting the rep had — so counting rows here
+   * would measure that filter rather than this rule, and would read `0` whether
+   * one offer was made or eight.
+   */
+  assert.equal(h.armed.length, 1, 'one offer per hold, never one per poll')
   h.store.close()
 })
 
@@ -668,11 +675,15 @@ test('leaving Teams for Zoom is a new call, and gets its own dwell', async () =>
   h.setHeld('Zoom')
   const switched = T0 + AD_HOC_DWELL_MS + 1_000
   await h.agenda.tick({ now: switched })
-  assert.equal(
-    h.agenda.snapshot().armed?.subject,
-    'Appel non planifié — Teams',
-    'the new hold has not earned its dwell yet',
-  )
+  /*
+   * The Teams offer is withdrawn *immediately*, not carried until the Zoom hold
+   * earns its dwell — which is what this test asserted before round 24. Leaving
+   * Teams means that call is over, so a standing *Enregistrer* naming it is a
+   * button a rep presses on a finished conversation; and leaving it in `armed`
+   * stranded it there for the life of the process, refusing every installer.
+   */
+  assert.equal(h.agenda.snapshot().armed, null, 'the finished call stops being offered at once')
+
   await h.agenda.tick({ now: switched + AD_HOC_DWELL_MS })
   assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Zoom')
   h.store.close()
@@ -794,5 +805,173 @@ test('but a real change is published immediately', async () => {
   await h.agenda.tick({ now: T0 + 30_000 + AD_HOC_DWELL_MS })
   assert.ok(h.snapshots.length > quiet, 'an offer appearing is a change')
   assert.equal(h.snapshots.at(-1)?.armed?.subject, 'Appel non planifié — Teams')
+  h.store.close()
+})
+
+// ── One conversation, one offer ─────────────────────────────────────────────
+//
+// Round 24 drove three paths through a `calendarArmed: false` that `Agenda`
+// hard-coded, so the rule the field named was never applied at all. Each armed a
+// second meeting over a live one, put a second row on the day wearing the
+// screen's one filled *Enregistrer*, and fired an OS notification reading « La
+// réunion commence » about a call already in progress — whose click broadcasts
+// `session:open` and navigates the rep off their live recording.
+
+test('a manually started call is not offered back to the rep 25 seconds later', async () => {
+  // « Démarrer une réunion » is the existing route for an unscheduled call, and
+  // the fast one: this detector waits for a dwell.
+  const h = harness([], null, 'Teams')
+  h.orchestrator.create({ id: 'manuelle', title: 'Appel Sodexial', context: null })
+  h.orchestrator.dispatch('manuelle', 'arm', 'manuel')
+  h.orchestrator.dispatch('manuelle', 'start', 'le commercial a pressé Démarrer')
+
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+
+  assert.equal(h.agenda.snapshot().armed, null, 'no second offer for one conversation')
+  assert.equal(h.armed.length, 0, 'and no « La réunion commence » over a live call')
+  assert.equal(h.orchestrator.stateOf('manuelle'), 'recording', 'the real one is untouched')
+  assert.equal(h.store.projections.listMeetings(10).length, 1, 'one row, not two')
+  h.store.close()
+})
+
+test('a recording that keeps the microphone held does not arm a second meeting', async () => {
+  // The overrun case: `OVERRUN_GRACE_MS` keeps a calendar call armable past its
+  // slot precisely *because* the microphone is still held, and that same hold
+  // was feeding the ad-hoc path.
+  const h = harness([event('AAA')], 'Teams', 'Teams')
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const calendarMeeting = h.agenda.snapshot().armed!.meetingId
+  h.orchestrator.dispatch(calendarMeeting, 'start', 'le commercial enregistre')
+  assert.equal(h.orchestrator.stateOf(calendarMeeting), 'recording')
+
+  // Well past the scheduled end, microphone still held.
+  for (let i = 1; i <= 6; i++) await h.agenda.tick({ now: T0 + 3_600_000 + i * AD_HOC_DWELL_MS })
+
+  const live = h.orchestrator.liveStates().filter((s) => s === 'armed' || s === 'recording')
+  assert.deepEqual(live, ['recording'], `expected one live meeting, got ${JSON.stringify(live)}`)
+  assert.equal(h.store.projections.listMeetings(10).length, 1, 'no second row for one call')
+  h.store.close()
+})
+
+test('once the live meeting ends, the next call is offered normally', async () => {
+  // The guard is a horizon, not a park: a rep who finishes one call and takes
+  // another immediately must still get the second offer.
+  const h = harness([], null, 'Teams')
+  h.orchestrator.create({ id: 'manuelle', title: 'Appel Sodexial', context: null })
+  h.orchestrator.dispatch('manuelle', 'arm', 'manuel')
+  h.orchestrator.dispatch('manuelle', 'start', 'démarré')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed, null)
+
+  h.orchestrator.dispatch('manuelle', 'end', 'terminée')
+  // A new hold, so a new dwell.
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + 2 * AD_HOC_DWELL_MS })
+  h.setHeld('Zoom')
+  const t = T0 + 3 * AD_HOC_DWELL_MS
+  await h.agenda.tick({ now: t })
+  await h.agenda.tick({ now: t + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Zoom')
+  h.store.close()
+})
+
+test('leaving Teams for Zoom does not strand the Teams meeting in armed for ever', async () => {
+  /*
+   * `#armAdHoc` mints its id from `heldSince`, so a new hold is always a new
+   * meeting, and `#withdrawAdHoc` only ever named whatever was *currently* in
+   * `#armed` — which the new offer overwrote. `armed` is in
+   * `UPDATE_BLOCKING_STATES`, so the stranded row refused every installer for the
+   * rest of the session with « une réunion est sur le point de démarrer », about
+   * a call that had ended.
+   */
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const first = h.agenda.snapshot().armed!.meetingId
+
+  h.setHeld('Zoom')
+  const t = T0 + AD_HOC_DWELL_MS + 1_000
+  await h.agenda.tick({ now: t })
+  await h.agenda.tick({ now: t + AD_HOC_DWELL_MS })
+  const second = h.agenda.snapshot().armed!.meetingId
+
+  assert.notEqual(first, second)
+  assert.equal(h.orchestrator.stateOf(first), 'idle', 'the abandoned offer was disarmed')
+  assert.ok(
+    !h.orchestrator.liveStates().includes('armed') ||
+      h.orchestrator.stateOf(second) === 'armed',
+    'nothing is armed except the offer that is actually standing',
+  )
+
+  h.setHeld(null)
+  await h.agenda.tick({ now: t + AD_HOC_DWELL_MS + 60_000 })
+  const blocking = h.orchestrator.liveStates().filter((s) => s === 'armed' || s === 'recording')
+  assert.deepEqual(blocking, [], `an update would be refused by ${JSON.stringify(blocking)}`)
+  h.store.close()
+})
+
+test('a meeting the rep accepted is never withdrawn by a change of application', async () => {
+  // `#withdrawAdHoc` clears `#armed` and disarms — neither of which may happen to
+  // a call under way. The call ending is exactly when the rep stops it.
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const accepted = h.agenda.snapshot().armed!.meetingId
+  h.orchestrator.dispatch(accepted, 'start', 'le commercial a accepté')
+
+  h.setHeld('Zoom')
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 1_000 })
+  assert.equal(h.orchestrator.stateOf(accepted), 'recording', 'still recording')
+  h.store.close()
+})
+
+test('a one-poll microphone drop during a recording does not mint a second meeting', async () => {
+  /*
+   * Round 24's third path. The microphone signal is a poll over a process list,
+   * and a single missed reading — a device switching, a HAL hiccup — resets the
+   * hold. `#armAdHoc` mints its id from `heldSince`, so the next hold is always a
+   * fresh `idle` meeting and always armable; without the live guard that meant a
+   * second ad-hoc meeting on top of the one being recorded.
+   */
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const first = h.agenda.snapshot().armed!.meetingId
+  h.orchestrator.dispatch(first, 'start', 'le commercial a accepté')
+
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 })
+  h.setHeld('Teams')
+  for (let i = 1; i <= 4; i++) {
+    await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 + i * AD_HOC_DWELL_MS })
+  }
+
+  assert.equal(h.orchestrator.stateOf(first), 'recording', 'the call carries on')
+  assert.equal(h.store.projections.listMeetings(10).length, 1, 'one row for one conversation')
+  const live = h.orchestrator.liveStates().filter((s) => s === 'armed' || s === 'recording')
+  assert.deepEqual(live, ['recording'])
+  h.store.close()
+})
+
+test('a flicker under a standing offer replaces it rather than stacking on it', async () => {
+  // The same drop while the rep has not yet accepted. The stale offer must be
+  // withdrawn — it names a hold that ended — and exactly one may stand after.
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const first = h.agenda.snapshot().armed!.meetingId
+
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 })
+  h.setHeld('Teams')
+  for (let i = 1; i <= 4; i++) {
+    await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 + i * AD_HOC_DWELL_MS })
+  }
+
+  assert.equal(h.orchestrator.stateOf(first), 'idle', 'the stale offer was disarmed')
+  const live = h.orchestrator.liveStates().filter((s) => s === 'armed' || s === 'recording')
+  assert.equal(live.length, 1, `exactly one offer may stand, got ${JSON.stringify(live)}`)
   h.store.close()
 })

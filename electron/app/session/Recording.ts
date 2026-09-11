@@ -180,6 +180,7 @@ export class Recording {
         severity: 'error',
         code: 'transcribe.start.failed',
         module: 'transcribe',
+        origin: 'foreign',
         message: reason,
         detail: { meetingId: session.id },
         meetingId: session.id,
@@ -318,6 +319,7 @@ export class Recording {
       severity: 'error',
       code: `recording.${module}.${channel}`,
       module,
+      origin: 'foreign',
       message: error instanceof Error ? error.message : String(error),
       detail: {},
     })

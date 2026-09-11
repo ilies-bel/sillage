@@ -355,15 +355,26 @@ try {
       .waitFor({ timeout: 45_000 })
   })
 
-  await step('the widget goes when the recording does', async () => {
+  await step('the widget goes when the recording does, and inside its own deadline', async () => {
     /*
      * A pill floating over every other application is chrome the rep has to
      * close; one that outlived the call would also be saying « enregistrement
      * en cours » about a meeting that has ended. `syncOverlay` is driven from
      * the same transition broadcast the renderer is, so this is the assertion
      * that the two cannot drift.
+     *
+     * **Three seconds and not fifteen, and the number is the point.** The widget
+     * no longer closes synchronously: it fades, and `Overlay.dismiss()` waits
+     * either for the renderer to say how long that takes (`widget:left`) or for
+     * `EXIT_FALLBACK_MS`, whichever comes first — so the window is gone at most
+     * half a second after the transition, *whatever the renderer does*. A
+     * fifteen-second tolerance would have passed on a handshake that never
+     * completed, with only the fallback doing the work, which is precisely the
+     * silent degradation this step is here to refuse. This is also the only place
+     * in the repo where that round trip runs over the real preload, on a real
+     * second window, in the packaged app.
      */
-    const gone = await waitFor(async () => (await findWidget()) === null, 15_000)
+    const gone = await waitFor(async () => (await findWidget()) === null, 3_000)
     if (!gone) throw new Error('le widget est resté ouvert après la fin de l’enregistrement')
   })
 

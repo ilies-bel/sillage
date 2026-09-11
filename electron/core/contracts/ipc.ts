@@ -568,6 +568,43 @@ export const invokeChannels = {
   },
 
   /**
+   * **The widget has armed its exit and says how long it needs.**
+   *
+   * The pill is destroyed when the recording stops, and `destroy()` is
+   * instantaneous: a card with a shadow over a video call vanished between two
+   * frames, at the one moment the rep is certainly looking at it — they had just
+   * pressed its *Terminer*. Everything else in this product that leaves the
+   * screen fades (`--motion`, `animate-rise-in`); the one surface drawn *over
+   * another application* popped.
+   *
+   * A fixed wait in the main process was the obvious fix and the wrong one in
+   * both directions. Too short and a loaded machine — a call being transcribed,
+   * which is the only condition this window exists in — never paints the first
+   * animated frame, so the rep sees exactly the pop the wait was added to
+   * remove. And with `prefers-reduced-motion` the durations collapse to `0ms`,
+   * so a constant would hold a static pill on screen for a fifth of a second
+   * after the call ended, for the rep who asked for less motion.
+   *
+   * So the renderer answers with the duration **it** resolved, read off its own
+   * computed style, and the main process destroys the window that long after the
+   * reply. The reply is sent before the first animated frame is painted
+   * (a layout effect), so the window always outlives the animation rather than
+   * approximately matching it. `0` means there is nothing to wait for and the
+   * window goes now, which is what reduced motion asks for.
+   *
+   * It is **not** load-bearing: `Overlay` starts a fallback timer when it asks,
+   * and a renderer that never replies loses its window all the same. A pill that
+   * outlives the call it reports is worse than a pill that pops.
+   */
+  'widget:left': {
+    request: z.object({
+      /** What the renderer's own transition will take, in milliseconds. */
+      afterMs: z.number().finite().nonnegative(),
+    }),
+    response: z.object({ ok: z.boolean() }),
+  },
+
+  /**
    * **Bring the main window back**, and put it on this meeting.
    *
    * The widget's way out of itself: the rep is in Teams, they want the notepad,
@@ -936,6 +973,21 @@ export const broadcastChannels = {
    * direction: *where* the window is, the main process has already moved it to.
    */
   'widget:placed': z.object({ above: z.boolean() }),
+  /**
+   * **Play your exit** — the one broadcast addressed to a single window.
+   *
+   * Sent straight to the leaving window's `webContents`, never through
+   * `broadcast()`, and that is the whole reason it is worth a note: a recording
+   * can stop and another start inside the same second (a rep taking two calls
+   * back to back), so for a moment there are two widget windows — the one fading
+   * out and the one that has just appeared. A fan-out over every window would
+   * tell the new pill to leave as well, and it would, silently, leaving the rep
+   * with nothing over their live call.
+   *
+   * It carries nothing. The renderer's answer is `widget:left`, which carries
+   * the only number either side needs.
+   */
+  'widget:leave': z.object({}),
   /**
    * And the other half: a mark the rep took back.
    *

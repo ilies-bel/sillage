@@ -183,6 +183,22 @@ export const HistorySearchResultSchema = z.object({
    * la recherche pour en voir d'autres » — a screen telling a rep to narrow a
    * search that was already complete. The handler now collects one row past the
    * limit, drops it, and reports whether it existed.
+   *
+   * **And it is the only thing allowed to answer that question.** The fix above
+   * landed in the handler, and the two screens that had *not* read this field
+   * kept the arithmetic it replaced: the calendar's pane compared its own row
+   * count to `RESULT_LIMIT`, the backlog section compared its own total to
+   * `PENDING_LIMIT`, and both were the same off-by-one one layer out — eight
+   * matches with nothing hidden sent a rep to *Historique* for results that do
+   * not exist, and exactly fifty calls owed read « 50+ » over « Toutes › ».
+   * `useHistorySearch` derives it once now, so no screen counts rows.
+   *
+   * **It is set for the plain listing too**, and that is not a defect — fifty of
+   * sixty calls is a truncation whether or not anything was typed. What *was* a
+   * defect is reading it as « a search was truncated »: *Historique*'s sentence
+   * named « affinez la recherche » over an empty box, which is a remedy that is
+   * not available. A screen drawing anything from this asks what question was
+   * answered — both halves are echoed back beside it for exactly that.
    */
   capped: z.boolean().optional(),
 })

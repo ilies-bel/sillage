@@ -202,6 +202,7 @@ export class MsalIdentity implements IdentityPort {
       severity: 'warn',
       code,
       module: 'identity',
+      origin: 'foreign',
       message: error instanceof Error ? error.message : String(error),
       detail: {},
     })

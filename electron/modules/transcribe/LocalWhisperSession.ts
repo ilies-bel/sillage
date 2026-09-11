@@ -231,6 +231,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
         severity: 'info',
         code: 'transcribe.local.download',
         module: 'transcribe',
+        origin: 'authored',
         message: `téléchargement du modèle local ${progress}%`,
         detail: { model: modelId, progress },
       })
@@ -349,6 +350,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
         severity: 'error',
         code: 'transcribe.local.abandoned',
         module: 'transcribe',
+        origin: 'foreign',
         message: `${lost} segment(s) perdus — ${reason}`,
         detail: { lost, model: this.#modelId },
       })
@@ -374,6 +376,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
         severity: 'error',
         code: 'transcribe.local.drainTimeout',
         module: 'transcribe',
+        origin: 'authored',
         message: `fin de réunion: ${this.#outstanding()} segment(s) non transcrits après ${this.#drainTimeoutMs} ms`,
         detail: { outstanding: this.#outstanding(), model: this.#modelId },
       })

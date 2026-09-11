@@ -478,3 +478,62 @@ test('widget:placed flips which way the panel opens', async () => {
     expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▾')
   })
 })
+
+/**
+ * **The exit is asked for, and answered with a number.**
+ *
+ * `Overlay.dismiss()` broadcasts `widget:leave` and destroys the window when the
+ * renderer says its animation is over — see `widget:left` in `contracts/ipc.ts`
+ * for why a constant in the main process was the wrong answer in both
+ * directions. Two halves here, and jsdom can only hold one of them honestly:
+ * that the class the stylesheet acts on is applied, and that the reply is sent.
+ *
+ * The **duration** is not asserted here on purpose. jsdom resolves no
+ * `transition` shorthand, so `transitionMs` answers `0` — which is a correct
+ * answer for an environment with no animation, and would be a fixture proving
+ * a property it cannot exercise if it were asserted as the product's. The real
+ * number is measured against the shipped stylesheet in Chromium
+ * (`scripts/harness/shot.mjs --motion` runs on all four widget stages, and
+ * `scratch/widget-exit.mjs` measured 150ms resting and 0ms under
+ * `prefers-reduced-motion`).
+ *
+ * What must not happen is asserted as well: the pill does **not** blank its own
+ * numbers on the way out. The recording happened; a card that erased its elapsed
+ * time and its mark count in its last frames would be saying something about the
+ * call that is not true.
+ */
+test('the widget fades out when the recording ends, and says how long that takes', async () => {
+  const left: unknown[] = []
+  bridge.when('widget:left', (payload) => {
+    left.push(payload)
+    return { ok: true }
+  })
+  render(<Widget />)
+
+  const elapsed = await screen.findByLabelText('Durée d’enregistrement')
+  /*
+   * Found by the drag region's own ancestor rather than by a path: the shell is
+   * the element the *frame* renders, and `Frame` is the component under test
+   * here. `data-pill` is the anchor the placement is built on, so its outermost
+   * ancestor inside the render container is the one box that cannot move
+   * without the widget's geometry moving with it.
+   */
+  const shell = screen.getByLabelText('Durée d’enregistrement').closest('.justify-center')
+  assertShell(shell)
+  expect(shell.className).not.toContain('widget-leaving')
+
+  await act(async () => {
+    bridge.emit('widget:leave', {})
+  })
+
+  expect(shell.className).toContain('widget-leaving')
+  // One reply, carrying the duration this renderer resolved for its own rule.
+  expect(left).toEqual([{ afterMs: 0 }])
+  // And the pill still says what the call was.
+  expect(elapsed.textContent).toBeTruthy()
+  expect(screen.getByText('Enregistrement en cours')).toBeTruthy()
+})
+
+function assertShell(node: Element | null): asserts node is Element {
+  if (node === null) throw new Error('la coque du widget n’a pas été trouvée')
+}

@@ -199,6 +199,7 @@ export class SignalExtractor {
         severity: 'warn',
         code: 'signals.chunk.failed',
         module: 'signals',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : String(error),
         detail: { segments: chunk.length },
       })

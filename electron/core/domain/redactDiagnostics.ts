@@ -16,19 +16,32 @@
  * it was meant to describe, and that is what the sweep in the test guards.
  *
  * **The two halves are not equally safe, and the difference is the whole story
- * of this file.** `redactDetail` is a genuine allowlist. `redactMessage` is a
- * denylist over free-form French, and it has now leaked in three separate review
- * rounds — a Windows home directory, then a vendor API key, then a client's
- * name. Each rule below carries the string that got past it. The honest verdict,
- * written down so the fourth round does not have to rediscover it: **a denylist
- * over free-form text cannot be made safe, only made narrower.** A client's name
- * is an ordinary capitalised French word and no rule distinguishes
- * « Néovia Santé » from « Windows Defender ». What follows removes every
- * *mechanical* shape — an address, a locator, a credential, a quotation — and
- * what it cannot remove is a name a call site chose to interpolate. So the rule
- * that actually holds the promise lives at the call sites: **a message says how
- * many and of what kind; the thing itself goes in `detail`, where the allowlist
- * answers `[string:12]`.** `main.ts`'s `lexicon.learned` is the worked example.
+ * of this file.** `redactDetail` is an allowlist over identifier *shapes*.
+ * `redactMessage` is a denylist over free-form French, and it has now leaked in
+ * four separate review rounds — a Windows home directory, then a vendor API key,
+ * then a client's name inside a quotation, then a client's name that quoting
+ * *published*. Each rule below carries the string that got past it. The verdict
+ * was written down after the third round: **a denylist over free-form text
+ * cannot be made safe, only made narrower.** A client's name is an ordinary
+ * capitalised French word and no rule distinguishes « Néovia Santé » from
+ * « Windows Defender ».
+ *
+ * **The fourth round stopped narrowing it and made the call site say instead.**
+ * `DiagEvent.origin` is `'foreign'` when the message carries text this product
+ * did not author — a vendor's error body, an OS string, a value interpolated in
+ * from the world — and a foreign message leaves as `[message:N]`, not as prose
+ * a denylist was asked to clean. `npm run check:diag` is what makes that
+ * omission-proof: a `.record({…})` whose `message:` is anything but a string
+ * literal must declare `'authored'` or `'foreign'`, so the next call site fails
+ * CI rather than leaking. The rules below still run on an authored message —
+ * a path or a key can reach one through a template — but they are no longer the
+ * only thing between a client's name and a support mailbox.
+ *
+ * And `detail` is **not** the destination for what a message may not carry. The
+ * grammar there admits words, because `far`, `rep`, `whisper` and `sodexial` are
+ * one shape; what belongs there is a count, a length, or an id the app minted.
+ * `main.ts`'s `lexicon.learned` — « 4 terme(s) appris pour un client », with the
+ * count in `detail` — is the worked example.
  */
 import type {
   DiagBundle,
@@ -63,34 +76,61 @@ import type {
  * from twenty-one to sixty-four, for every credential alphabet**, so no single
  * number can again be one over.
  *
- * The four shapes, and the whole vocabulary they exist to admit:
+ * The three shapes, and the whole vocabulary they exist to admit:
  *
  *     LOWER   [a-z0-9]{1,20}       far · rep · whisper · 606ec6e9bd8a8ff2 · fr
  *     UPPER   [A-Z0-9]{1,20}       OPPY · COMPANY · FREE
  *     CAMEL   [a-z][a-zA-Z]{0,19}  tooQuiet · fieldMissing · pushUnsettled
- *     PASCAL  [A-Z][a-zA-Z]{0,19}  Xenova — and only beside another segment
  *
  * A credential mixes case *and* digits inside one piece, which is none of the
- * four at any length: `AbCdEf0123456789` is refused at sixteen characters, where
- * the old rule kept it.
+ * three at any length: `AbCdEf0123456789` is refused at sixteen characters,
+ * where the old rule kept it.
  *
- * **PASCAL alone is a proper noun, so a lone one is refused.** `Agenda` records
- * `detail: { subject: context.subject }` and a meeting's objet is very often one
- * word — « Sodexial », « Neovia » — which is ASCII, unspaced, and was therefore
- * kept in full by every version of this allowlist. It is admitted only *beside*
- * another segment, which is what `Xenova/whisper-small` is and what a company
- * name is not. The cost is measured and accepted: `app.uncaughtException` puts
- * `err.name` in `detail`, so `TypeError` now reads `[string:9]` while the `code`
- * still says which handler fired.
+ * **A capitalised word is a proper noun wherever it stands, and « beside another
+ * segment » was not a rule — one hyphen defeated it.** The previous round
+ * refused a *lone* PASCAL segment, because `Agenda` records
+ * `detail: { subject: event.context.subject }` and a meeting's objet is very
+ * often one word: « Sodexial », « Neovia ». But `isSafeString` short-circuited
+ * on `segments.length > 1`, so anything with a separator in it never reached
+ * that test at all. Measured against the shipped function:
+ *
+ *     'Sodexial'           → [string:8]   (the case the round was written for)
+ *     'Sodexial-staffing'  → passes verbatim
+ *     'Dupont-Marechal'    → passes verbatim
+ *     'CR-Sodexial'        → passes verbatim
+ *
+ * A hyphenated objet and a double-barrelled French surname are not edge cases;
+ * they are how the field is spelled. So PASCAL is out of the segment set
+ * entirely, and the one place this product genuinely mints a capitalised word is
+ * recognised as a **position** instead: the vendor half of a Hugging Face repo
+ * id, `Xenova/whisper-small` (`core/contracts/models.ts`). The cost is measured
+ * and accepted: `app.uncaughtException` puts `err.name` in `detail`, so
+ * `TypeError` reads `[string:9]` while the `code` still says which handler fired.
+ *
+ * **What this grammar still cannot refuse, stated rather than implied.** It is
+ * proof against *shapes* — a credential, an address, a locator — because those
+ * are mechanical. It is not proof against a **word**: `far`, `rep`, `whisper`
+ * and `sodexial` are one shape, and `local-whisper` and `jean-pierre.dupont`
+ * are another. A proper noun somebody typed in lower case, or shouted in caps,
+ * passes, and no tightening short of refusing `channel: 'far'` changes that. The
+ * file's old claim that it « cannot be wrong by omission » was true of shapes
+ * and false of words. The place that can be closed is the call site: a value
+ * from outside the app belongs in `detail` as a count or a length, never as
+ * itself.
  */
-const SEGMENT = /^(?:[a-z0-9]{1,20}|[A-Z0-9]{1,20}|[a-z][a-zA-Z]{0,19}|[A-Z][a-zA-Z]{0,19})$/
+const SEGMENT = /^(?:[a-z0-9]{1,20}|[A-Z0-9]{1,20}|[a-z][a-zA-Z]{0,19})$/
 /**
- * The same set without PASCAL, for a value that is one segment on its own.
- * Stated positively rather than as « not PASCAL »: `OPPY` is an all-caps VSA
- * literal *and* matches `[A-Z][a-zA-Z]{0,19}`, so the negative reading refused
- * `linkType` — the one field that says how a compte-rendu hangs off the CRM.
+ * The one position a capitalised word is machine vocabulary: `Vendor/name`, a
+ * Hugging Face repo id. It is anchored to the slash rather than allowed
+ * anywhere, so `Sodexial-staffing` has nowhere to match — and the rest of the
+ * value is still held to `SEGMENT`, so `Sodexial/Comité` is refused on the `é`.
+ * The residual is `Sodexial/staffing` — a capitalised word, one slash, one
+ * lowercase word — which is the model-id shape exactly and cannot be told apart
+ * from it. Dropping the exemption instead would answer `[string:20]` for
+ * `model:`, which is the field the memory gate and the download path are
+ * diagnosed through.
  */
-const LONE_SEGMENT = /^(?:[a-z0-9]{1,20}|[A-Z0-9]{1,20}|[a-z][a-zA-Z]{0,19})$/
+const MODEL_VENDOR = /^[A-Z][a-zA-Z]{0,19}\//
 const SEGMENT_SPLIT = /[.\-_:/]/
 /**
  * A model id is `vendor/name` and nothing here has two slashes; a path does.
@@ -111,12 +151,17 @@ const isSafeString = (value: string): boolean => {
   if (value.length === 0) return false
   if (countOf(value, '/') > MAX_SLASHES) return false
   if (countOf(value, '.') > MAX_DOTS) return false
-  const segments = value.split(SEGMENT_SPLIT)
-  if (segments.length > MAX_SEGMENTS) return false
-  if (!segments.every((segment) => SEGMENT.test(segment))) return false
+  // The vendor half of a model id is consumed first and counted as one segment.
+  // Everything after it goes through the same grammar as everything else, so
+  // the exemption is one capitalised word in one position and nothing more.
+  const vendor = MODEL_VENDOR.exec(value)
+  const body = vendor ? value.slice(vendor[0].length) : value
+  if (body.length === 0) return false
+  const segments = body.split(SEGMENT_SPLIT)
+  if (segments.length + (vendor ? 1 : 0) > MAX_SEGMENTS) return false
   // `@` and `\` are in no segment shape, so an address and a Windows path are
-  // already refused above; a lone proper noun is not, and has to be named.
-  return segments.length > 1 || LONE_SEGMENT.test(segments[0] as string)
+  // refused here; so, now, is a capitalised word anywhere but the vendor slot.
+  return segments.every((segment) => SEGMENT.test(segment))
 }
 
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/g
@@ -232,11 +277,44 @@ const AUTH_HEADER = /\b(?:bearer|basic)\s+[A-Za-z0-9+/=._~-]{8,}/gi
  * Each delimiter now closes with itself, and there is no minimum. `’` (U+2019)
  * is deliberately **not** a delimiter: it is the French apostrophe that
  * `check:french` enforces in every string this product writes, so `l’échec de
- * l’appel` would pair across the elision. ASCII `'` is a delimiter precisely
- * because product prose never contains one — where it appears it comes from an
- * English library or a JSON echo, and there it is quoting a value.
+ * l’appel` would pair across the elision.
+ *
+ * **And ASCII `'` did the same thing to the strings that come from *outside*
+ * the app, which is the only kind it ever appears in.** The reasoning above was
+ * that product prose never contains an ASCII apostrophe, so where one appears it
+ * is quoting a value. True — and it omits that the *rest* of that sentence is a
+ * vendor's English or a Java backend's French, both of which are full of
+ * apostrophes that quote nothing: an English possessive, a French elision. With
+ * an odd count the pairing ate the gaps again, and this time it did worse than
+ * miss the name — it **published** one that had been delimited before the rule
+ * ran:
+ *
+ *     in   The mailbox's owner rejected recipient 'Jean-Pierre Dupont' for 'Sodexial'
+ *     out  The mailbox[quoted]Jean-Pierre Dupont[quoted]Sodexial'
+ *
+ *     in   l'objet 'Sodexial — comité' n'a pas pu être créé
+ *     out  l[quoted]Sodexial — comité[quoted]a pas pu être créé
+ *
+ * `crm/vsa/http.ts`'s `messageOf` returns VerySwing's body verbatim and a
+ * Java/SQL backend emits ASCII `'`, so this is the live path, not a contrivance.
+ *
+ * So an ASCII `'` opens a quotation only where a quotation can open — after a
+ * non-letter — and closes only where one can close. A possessive (`mailbox's`)
+ * and an elision (`l'objet`, `n'a`) are both preceded by a letter and are
+ * neither. The content is lazy and may cross an apostrophe, so
+ * `'l'appel d'offres'` is taken whole; an **unbalanced** opener matches nothing
+ * and leaves its text standing, which is the residual and is why
+ * `origin: 'foreign'` exists one layer up — a message with an unbalanced ASCII
+ * quote is by construction one this product did not write.
+ *
+ * The other four delimiters keep their own class, which cannot be used for
+ * anything but quoting and so cannot straddle a gap the way `'` did.
  */
-const QUOTED = /«[^«»\n]*»|“[^“”\n]*”|"[^"\n]*"|'[^'\n]*'|`[^`\n]*`/g
+const QUOTED = new RegExp(
+  '«[^«»\\n]*»|“[^“”\\n]*”|"[^"\\n]*"|`[^`\\n]*`' +
+    "|(?<![A-Za-z0-9À-ÿ])'[^\\n]{0,200}?'(?![A-Za-z0-9À-ÿ])",
+  'g',
+)
 
 const MAX_MESSAGE = 240
 
@@ -279,6 +357,18 @@ export const redactDetail = (detail: Record<string, unknown>): Record<string, un
 }
 
 /**
+ * **A foreign message leaves as its length and nothing else.**
+ *
+ * `[message:N]` is the same answer `describe` gives a string in `detail`, and it
+ * costs less than it looks: `code` already says what failed (`crm.task.failed`,
+ * `transcribe.upload.failed`) and `detail` already carries the retryable flag,
+ * the provider, the count. What is lost is the vendor's own sentence, which is
+ * exactly the thing four rounds of denylist could not be made safe.
+ *
+ * `redactMessage` still runs on an **authored** message. A template this product
+ * wrote can still interpolate a path, and `origin: 'authored'` is a claim about
+ * provenance, not about hygiene.
+ *
  * `meetingId` survives. It is an app-minted opaque id — it says *which* call a
  * failure belongs to, which is most of the diagnostic value, and it says
  * nothing about who was on it. Correlating it back to a client requires the
@@ -290,7 +380,11 @@ export const redactDiagEvent = (event: DiagEvent): DiagEvent => ({
   severity: event.severity,
   code: event.code,
   module: event.module,
-  message: redactMessage(event.message),
+  message:
+    event.origin === 'foreign'
+      ? `[message:${event.message.length}]`
+      : redactMessage(event.message),
+  ...(event.origin ? { origin: event.origin } : {}),
   detail: redactDetail(event.detail),
   meetingId: event.meetingId,
 })
