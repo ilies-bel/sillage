@@ -1289,11 +1289,35 @@ const boot = async (): Promise<void> => {
     correctorFor: (meetingId) => {
       const meeting = store.projections.getMeeting(meetingId)
       const stored = store.lexicon.forClient(meeting?.clientName ?? null)
-      return (text) =>
-        correctWithLexicon(
-          text,
-          stored.map((t) => ({ term: t.term, category: t.category, variants: t.variants })),
-        )
+      const terms = stored.map((t) => ({ term: t.term, category: t.category, variants: t.variants }))
+      /*
+       * **And the term is recorded as heard** (`Lexicon.observe`).
+       *
+       * `correct()` has always returned `applied` — « the enrichment signal for
+       * `hits` », in its own words — and nothing anywhere consumed it beyond a
+       * diagnostic line. So `hits` was zero on every row of every install, and
+       * `forClient`'s `ORDER BY hits DESC` ranked nothing: the promise that « a
+       * term that keeps turning up in real calls survives truncation ahead of
+       * one added once and never spoken » was ordered by `created_at` alone.
+       * `observe` was declared, implemented, unit-tested, and called by its test
+       * and nothing else — the shape `check-ports.mjs` exists to catch, one
+       * layer below where that check looks.
+       *
+       * Only rows this meeting actually loaded are counted: `applied` also
+       * carries the shipped ESN list, which lives in code and has no row to
+       * increment. One small UPDATE per corrected segment, on the capture path —
+       * and `Recording.#corrected` calls this inside the try/catch that exists
+       * so a correction table can never cost the sentence (DEC-26).
+       */
+      const rows = new Map(stored.map((t) => [t.term, t]))
+      return (text) => {
+        const result = correctWithLexicon(text, terms)
+        for (const term of result.applied) {
+          const row = rows.get(term)
+          if (row) store.lexicon.observe(row.scope, row.scopeKey, term)
+        }
+        return result
+      }
     },
     // Said at the top of the end-of-meeting path, not at the model call. The
     // transcriber flush sits between the two, and `ended` draws no control — so

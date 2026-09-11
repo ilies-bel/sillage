@@ -696,6 +696,16 @@ machine) or in `core/domain/` — never in an IPC handler.
   the **body** rather than a finished string, which is what puts every test in the repo through
   the same reading the product does — it was the other way round, and that is precisely where
   this defect lived.
+- **A term the rep's calls keep producing outranks one added once** (`Lexicon.observe`,
+  DEC-17). `correct()` has always returned `applied` — « the enrichment signal for `hits` », in
+  its own docblock — and the corrector in `main.ts` threw it into a diagnostic line and nowhere
+  else. So `hits` was zero on every row of every install, `forClient`'s `ORDER BY hits DESC`
+  ranked nothing, and the truncation that decides which terms reach a Whisper prompt fell back
+  to `created_at`. `observe` was declared, implemented and unit-tested, with its test as its
+  only caller: the shape `check:ports` exists to catch, one layer below where that check looks.
+  Only rows this meeting loaded are counted — `applied` also carries the shipped ESN list, which
+  lives in code and has no row — and the write happens inside the try/catch that exists so a
+  correction table can never cost the sentence (DEC-26).
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
