@@ -62,22 +62,52 @@ Règles, dans l'ordre :
 7. Réponds en français, en deux ou trois phrases. Rapporte ce qui a été dit et attribue-le ("Le client indique que…", "Le commercial propose…"). N'affirme jamais en ton nom propre ce que quelqu'un a dit.
 8. Garde les approximations telles qu'elles ont été prononcées : « autour de 550 » ne devient pas « 550 ».`
 
-/** How the transcript is laid out for the model. Speaker, time, text. */
-const renderSegments = (segments: readonly TranscriptSegment[]): string => {
-  const lines = segments
+/**
+ * How the transcript is laid out for the model, and **how much of it was kept**.
+ *
+ * `from` is the meeting offset of the first turn the model was given, or null
+ * when it was given all of them. Two things went wrong without it. The slice was
+ * by *character*, so the model's first line was the fragment `l : On reprend le
+ * point…` — half a speaker label — and it was silent: on a ninety-minute call
+ * the first twenty minutes were dropped and the answer read « La transcription
+ * de cet appel ne permet pas de répondre », which is a false statement about the
+ * recording. The docblock on `ASK_MAX_INPUT_CHARS` has claimed otherwise since
+ * it was written.
+ */
+const renderSegments = (
+  segments: readonly TranscriptSegment[],
+): { transcript: string; from: number | null } => {
+  const ordered = segments
     .filter((segment) => segment.isFinal)
     .slice()
     .sort((a, b) => a.startMs - b.startMs)
-    .map((segment) => {
-      const who = segment.channel === 'rep' ? 'Commercial' : 'Client'
-      return `${who} : ${segment.text.trim()}`
-    })
+
+  const lines = ordered.map((segment) => {
+    const who = segment.channel === 'rep' ? 'Commercial' : 'Client'
+    return `${who} : ${segment.text.trim()}`
+  })
 
   const joined = lines.join('\n')
-  // The tail, when it does not fit. See `ASK_MAX_INPUT_CHARS`.
-  return joined.length <= ASK_MAX_INPUT_CHARS
-    ? joined
-    : joined.slice(joined.length - ASK_MAX_INPUT_CHARS)
+  if (joined.length <= ASK_MAX_INPUT_CHARS) return { transcript: joined, from: null }
+
+  // Whole turns from the end, never a character slice: half a speaker label is
+  // the model's first impression of the call.
+  let kept = 0
+  let first = ordered.length
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const cost = (lines[i]?.length ?? 0) + 1
+    if (kept + cost > ASK_MAX_INPUT_CHARS) break
+    kept += cost
+    first = i
+  }
+  // At least one turn, however long it is: an empty transcript would be reported
+  // as « nothing was said », which is a different and wrong answer.
+  if (first === ordered.length) first = ordered.length - 1
+
+  return {
+    transcript: lines.slice(first).join('\n'),
+    from: ordered[first]?.startMs ?? 0,
+  }
 }
 
 export interface AskInput {
@@ -90,13 +120,32 @@ export interface AskInput {
  * One call. Errors are normalised to `ExtractionError` so the IPC layer can put
  * a French sentence on screen rather than a provider's stack (DEC-26).
  */
-export const askTranscript = async (llm: LlmPort, input: AskInput): Promise<AskDraft> => {
-  const transcript = renderSegments(input.segments)
+export interface AskResult {
+  draft: AskDraft
+  /**
+   * The meeting offset of the first turn the model was given, or null when it
+   * was given the whole call. See `renderSegments`.
+   */
+  readFrom: number | null
+}
+
+export const askTranscript = async (llm: LlmPort, input: AskInput): Promise<AskResult> => {
+  const { transcript, from } = renderSegments(input.segments)
 
   try {
     const reply = await llm.structured<AskDraft>({
       instructions: ASK_INSTRUCTIONS,
-      input: `Question : ${input.question.trim()}\n\nTranscription :\n${transcript}`,
+      input:
+        `Question : ${input.question.trim()}\n\n` +
+        // Told, rather than left to infer it from a conversation that starts
+        // mid-sentence: a model that does not know the transcript is partial
+        // answers « ce n'est pas dans la transcription » about the part it was
+        // not given.
+        (from === null
+          ? ''
+          : 'Attention : seule la fin de la réunion est fournie ci-dessous. ' +
+            'Si la réponse n’y est pas, dis-le sans affirmer qu’elle est absente de la réunion.\n\n') +
+        `Transcription :\n${transcript}`,
       schema: AskDraftSchema,
       schemaName: 'AskDraft',
       maxOutputTokens: ASK_MAX_OUTPUT_TOKENS,
@@ -107,7 +156,7 @@ export const askTranscript = async (llm: LlmPort, input: AskInput): Promise<AskD
     // Revalidated locally, for the reason `CompteRenduRecipe` revalidates: a
     // stub, a cache or a provider that promised schema enforcement can all hand
     // back something that never met the schema.
-    return AskDraftSchema.parse(reply)
+    return { draft: AskDraftSchema.parse(reply), readFrom: from }
   } catch (error) {
     throw asExtractionError(error)
   }

@@ -250,13 +250,37 @@ function Answer({
    * most meetings, and a model with no way to give it invents one instead — so
    * the prompt asks for it and the screen has to draw it as an answer.
    */
+  /*
+   * **And how much of the call was read, when it was not all of it.**
+   *
+   * `ASK_MAX_INPUT_CHARS` keeps the *tail* of a long meeting, and on a
+   * ninety-minute call that is 60 065 characters of 124 765. The sentence above
+   * — « la transcription de cet appel ne permet pas de répondre » — is then a
+   * false statement about the recording, from the one feature whose whole claim
+   * is that it answers from the recording. It is also exactly the DEC-21 shape:
+   * the app knows something the rep needs and says nothing.
+   *
+   * Drawn on both outcomes, because a truncated *answer* is as partial as a
+   * truncated refusal.
+   */
+  const partial =
+    answer.readFrom == null ? null : (
+      <p className="text-warn measure mt-1 text-meta">
+        Seule la fin de l’appel a été lue, à partir de {formatOffset(answer.readFrom)} — la
+        question porte peut-être sur un passage antérieur.
+      </p>
+    )
+
   if (!answer.answered) {
     return (
       <div className="mt-3">
         <Question>{answer.question}</Question>
         <p className="text-muted measure text-ui">
-          La transcription de cet appel ne permet pas de répondre. Rien n’a été inventé.
+          {answer.readFrom == null
+            ? 'La transcription de cet appel ne permet pas de répondre. Rien n’a été inventé.'
+            : 'Ce qui a été lu de l’appel ne permet pas de répondre. Rien n’a été inventé.'}
         </p>
+        {partial}
       </div>
     )
   }
@@ -264,6 +288,7 @@ function Answer({
   return (
     <div className="mt-3">
       <Question>{answer.question}</Question>
+      {partial}
       <p className="text-body measure whitespace-pre-wrap text-copy leading-relaxed">
         {answer.answer}
       </p>

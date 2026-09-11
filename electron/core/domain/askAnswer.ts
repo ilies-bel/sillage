@@ -34,6 +34,8 @@ export const verifyAnswer = (
   question: string,
   draft: AskDraft,
   segments: readonly TranscriptSegment[],
+  /** Where the model's view of the call began, when it was not the beginning. */
+  readFrom: number | null = null,
 ): AskAnswer => {
   const answer = draft.answer.trim()
 
@@ -46,7 +48,7 @@ export const verifyAnswer = (
    * the one that asks it to admit failure.
    */
   if (!draft.answered || answer === '') {
-    return { question, answered: false, answer: '', citations: [] }
+    return { question, answered: false, answer: '', citations: [], readFrom }
   }
 
   const seen = new Set<string>()
@@ -56,6 +58,14 @@ export const verifyAnswer = (
     // filtered position is how a citation ends up labelled with somebody else's
     // channel.
     .map((cited) => ({ quote: cited.quote.trim(), channel: cited.channel }))
+    /*
+     * **A blank is not a citation**, and it is the one thing dropped rather than
+     * marked. There is no claim in it to distrust and nothing for a reader to
+     * open, so « introuvable » would be a statement about nothing. Dropped
+     * *before* the count below, so an answer whose quotes were all blank is
+     * still an answer with no citation, which is no answer (DEC-21).
+     */
+    .filter(({ quote }) => quote !== '')
     /*
      * **Too short to verify is kept and marked, not dropped** — which is the
      * rule this whole file is written around, and this filter was the one place
@@ -134,8 +144,8 @@ export const verifyAnswer = (
    * marked; **no** quote is not a weaker answer, it is no answer.
    */
   if (citations.length === 0) {
-    return { question, answered: false, answer: '', citations: [] }
+    return { question, answered: false, answer: '', citations: [], readFrom }
   }
 
-  return { question, answered: true, answer, citations }
+  return { question, answered: true, answer, citations, readFrom }
 }

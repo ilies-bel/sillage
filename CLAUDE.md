@@ -466,6 +466,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   lighter with nothing saying anything went wrong, and the filter counted *raw*
   characters where `MIN_QUOTE_CHARS` is documented as counted after
   normalisation, so the two disagreed at the boundary.
+- **`Demander` reads the same transcript the recipe does, and says how much of it it read.**
+  Three things were wrong at once on the surface whose whole claim is that every word is
+  checkable. It read the **raw** log: `withoutChannelBleed` is imported in one place, for the
+  compte-rendu, so on a laptop with open speakers — 24 of 38 rep segments, measured — the
+  client's sentence existed twice and `askAnswer`'s blind search resolves `rep` first, so the
+  client's price ceiling came back labelled « Moi » and the citation opened on the rep's echo
+  (DEC-47). It **truncated silently**: `ASK_MAX_INPUT_CHARS` keeps the tail, 60 065 characters
+  of 124 765 on a ninety-minute call, by a *character* slice — so the model's first line was
+  half a speaker label — and nothing told the model or the rep, so a question about the first
+  twenty minutes answered « la transcription de cet appel ne permet pas de répondre », which is
+  a false statement about the recording. `ask.ts`'s own docblock said « when it truncates, the
+  answer says so » from the day it was written. And a **blank quote** — which `min(1)` accepts,
+  because a model sends a space rather than an empty string — was refused two schemas later by
+  `TranscriptSpanSchema`, throwing a raw Zod issue array into a French panel and discarding a
+  good verified citation beside it. A blank carries no claim, so it is the one thing dropped
+  rather than marked, and dropped *before* the count, so « an answer with no citation is no
+  answer » stands.
 - **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
   This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
   sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers

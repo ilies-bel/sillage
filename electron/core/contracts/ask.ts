@@ -75,7 +75,28 @@ export const AskDraftSchema = z.strictObject({
        * rendering the rule exists to prevent. The model has no reason to send
        * one, which is precisely why nothing downstream was looking.
        */
-      quote: z.string().min(1),
+      /*
+       * **And it is `trim()` without `min(1)`, because refusing here costs the
+       * whole answer.**
+       *
+       * `min(1)` accepted a single space, and `TranscriptSpanSchema`'s own
+       * `min(1)` — applied *after* trimming — rejected it two schemas later, so
+       * `register.ts` threw a raw Zod issue array into a French panel:
+       *
+       *     [{"code":"too_small","path":["citations",0,"span","quote"], ...}]
+       *
+       * `AskPanel` prints `error.message`, and it is not a `refuse()`, so the
+       * same line also landed in the diagnostics at `severity: 'error'`. A
+       * perfectly good verified citation in the same answer went with it.
+       *
+       * Tightening it here would still cost the answer — one blank among four
+       * real quotes would refuse the draft. A blank carries no claim, so there
+       * is nothing to mark and nothing for a rep to distrust: `verifyAnswer`
+       * drops it before it counts them, which leaves the other three and leaves
+       * the « an answer with no citation is no answer » rule intact, because an
+       * answer whose quotes were *all* blank still ends with none.
+       */
+      quote: z.string().trim(),
       channel: z.enum(['rep', 'far']).nullable(),
     }),
   ),
@@ -93,5 +114,22 @@ export const AskAnswerSchema = z.object({
   answered: z.boolean(),
   answer: z.string(),
   citations: z.array(AskCitationSchema),
+  /**
+   * **How much of the call the model was actually given**, when it was not all
+   * of it.
+   *
+   * `ASK_MAX_INPUT_CHARS` keeps the *tail* of a long meeting, and `ask.ts`'s
+   * docblock has said « when it truncates, the answer says so » since it was
+   * written. Nothing said so: the constant had no reader outside its own file,
+   * no flag reached here, and the model was never told the transcript was
+   * partial. Measured on a ninety-minute call — 124 765 characters, 60 065
+   * sent — a question about the need stated in the first twenty minutes came
+   * back « La transcription de cet appel ne permet pas de répondre. », which is
+   * a false statement about the recording, from the one feature whose whole
+   * claim is that it answers from the recording.
+   *
+   * Null when the whole call was read, which is the ordinary case.
+   */
+  readFrom: z.number().int().nonnegative().nullable().optional(),
 })
 export type AskAnswer = z.infer<typeof AskAnswerSchema>

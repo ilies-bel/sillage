@@ -25,6 +25,7 @@ export { FAIBLE_MARKER, compteRenduSources, renderCompteRendu } from './compteRe
 export type { CompteRenduSource } from './compteRendu.ts'
 /** *Demander* (DEC-21, DEC-23) — see `core/contracts/ask.ts`. */
 export { ASK_INSTRUCTIONS, askTranscript } from './ask.ts'
+export type { AskResult } from './ask.ts'
 export type { AskInput } from './ask.ts'
 export {
   CHARS_PER_TOKEN,

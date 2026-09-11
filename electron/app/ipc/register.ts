@@ -24,6 +24,7 @@ import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { UpdatePort, UpdateStatus } from '../../core/contracts/update.ts'
 import { updatesUnavailable } from '../../core/contracts/update.ts'
 import { updateReadiness } from '../../core/domain/updateGate.ts'
+import { withoutChannelBleed } from '../../core/domain/channelBleed.ts'
 import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
@@ -1127,7 +1128,27 @@ export const handlers: Handlers = {
       throw refuse('La réunion est en cours — les questions attendent la fin de l’appel.')
     }
 
-    const segments = store.projections.segments(meetingId).filter((segment) => segment.isFinal)
+    /*
+     * **De-bleeded, exactly as the recipe reads it** (DEC-41).
+     *
+     * `withoutChannelBleed` is imported in one place — `main.ts`, for the
+     * compte-rendu — and this path read the raw log. On a laptop with open
+     * speakers the microphone hears the far end too, measured at **24 of 38 rep
+     * segments on a real call**, so this is the ordinary configuration and not
+     * an edge.
+     *
+     * What it cost: the client's own sentence exists twice, once correctly on
+     * `far` and once as the rep's echo on `rep`. `askAnswer`'s blind search
+     * tries `rep` first, so a quote the model left unattributed — which rule 6
+     * of the prompt explicitly invites — came back labelled « Moi », and
+     * pressing it opened the reader on the rep's echo. The wrong side of the
+     * call, on the one sentence that mattered, on the surface whose entire
+     * claim is that every word is checkable (DEC-47). It also spent half the
+     * sixty-thousand-character budget on duplicates.
+     */
+    const segments = withoutChannelBleed(
+      store.projections.segments(meetingId).filter((segment) => segment.isFinal),
+    )
     if (segments.length === 0) {
       throw refuse('Aucune transcription n’a été enregistrée pour cet appel.')
     }
@@ -1139,8 +1160,8 @@ export const handlers: Handlers = {
       )
     }
 
-    const draft = await askTranscript(resolved.port, { question, segments })
-    return verifyAnswer(question, draft, segments)
+    const { draft, readFrom } = await askTranscript(resolved.port, { question, segments })
+    return verifyAnswer(question, draft, segments, readFrom)
   },
 
   'history:record': ({ meetingId }, { store }) => {

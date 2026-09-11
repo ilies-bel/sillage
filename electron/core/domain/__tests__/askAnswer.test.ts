@@ -15,7 +15,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { TranscriptSegment } from '../../contracts/transcript.ts'
-import { AskDraftSchema, type AskDraft } from '../../contracts/ask.ts'
+import { AskAnswerSchema, AskDraftSchema, type AskDraft } from '../../contracts/ask.ts'
 import { verifyAnswer } from '../askAnswer.ts'
 
 const segment = (
@@ -183,7 +183,91 @@ test('« the record does not say » is an answer, and draws no prose', () => {
     answered: false,
     answer: '',
     citations: [],
+    readFrom: null,
   })
+})
+
+test('a blank quote costs the blank quote, never the answer', () => {
+  /*
+   * A single space passed `AskDraftSchema`'s `min(1)` and was rejected two
+   * schemas later by `TranscriptSpanSchema`'s own `min(1)`, applied *after*
+   * trimming — so `register.ts` threw a raw Zod issue array into a French panel,
+   * `AskPanel` printed it, the diagnostics recorded it at `severity: 'error'`,
+   * and a perfectly good verified citation in the same answer was discarded with
+   * it. A blank carries no claim: there is nothing to mark and nothing to open.
+   */
+  const good = RECORD[0]!
+  const answer = verifyAnswer(
+    'Quel plafond ?',
+    draft({
+      answered: true,
+      answer: 'Le client indique un plafond.',
+      quotes: [
+        { quote: '  ', channel: 'far' },
+        { quote: good.text, channel: good.channel },
+      ],
+    }),
+    RECORD,
+  )
+
+  assert.equal(answer.answered, true)
+  assert.equal(answer.citations.length, 1, 'la bonne citation survit')
+  assert.equal(answer.citations[0]?.verified, true)
+  // Every answer must survive its own contract on the way to the renderer.
+  assert.doesNotThrow(() => AskAnswerSchema.parse(answer))
+})
+
+test('an answer whose quotes are all blank is still no answer', () => {
+  // Dropped *before* the count, so the DEC-21 rule is untouched: an answer with
+  // no citation is not a weaker answer, it is no answer.
+  const answer = verifyAnswer(
+    'Quel plafond ?',
+    draft({ answered: true, answer: 'Un plafond a été évoqué.', quotes: [{ quote: ' ', channel: null }] }),
+    RECORD,
+  )
+  assert.equal(answer.answered, false)
+  assert.deepEqual(answer.citations, [])
+})
+
+test('a refusal says how much of the call it was given', () => {
+  /*
+   * **The difference between « the recording does not say » and « the part I
+   * read does not say ».**
+   *
+   * `ASK_MAX_INPUT_CHARS` keeps the tail of a long meeting — 60 065 characters
+   * of 124 765 on a ninety-minute call — and `ask.ts`'s docblock has said « when
+   * it truncates, the answer says so » since it was written. Nothing said so, so
+   * a question about the need stated in the first twenty minutes came back « La
+   * transcription de cet appel ne permet pas de répondre », which is a false
+   * statement about the recording from the one feature whose whole claim is that
+   * it answers from the recording.
+   */
+  const refused = verifyAnswer(
+    'Quel TJM ont-ils annoncé ?',
+    draft({ answered: false, answer: '', quotes: [] }),
+    RECORD,
+    1_200_000,
+  )
+  assert.equal(refused.readFrom, 1_200_000)
+
+  // And an answer is as partial as a refusal, so it carries it too.
+  const answered = verifyAnswer(
+    'Quel TJM ont-ils annoncé ?',
+    draft({
+      answered: true,
+      answer: 'Le client indique un plafond.',
+      quotes: [{ quote: RECORD[0]!.text, channel: RECORD[0]!.channel }],
+    }),
+    RECORD,
+    1_200_000,
+  )
+  assert.equal(answered.readFrom, 1_200_000)
+
+  // Null when the whole call was read, which is the ordinary case.
+  assert.equal(
+    verifyAnswer('x', draft({ answered: false, answer: '', quotes: [] }), RECORD).readFrom,
+    null,
+  )
 })
 
 /*
@@ -218,13 +302,33 @@ test('the question carried back is the rep’s own string', () => {
  * footnote list holding nothing. The model has no reason to send one, which is
  * exactly why nothing downstream was looking.
  */
-test('a quote that is the empty string never reaches the verifier', () => {
+test('an empty quote parses and is dropped, rather than refusing the draft', () => {
+  /*
+   * **This asserted a refusal, and the refusal was the cost.**
+   *
+   * `min(1)` accepted a single *space* — which is what a model actually
+   * produces — so the blank got past here and was rejected two schemas later by
+   * `TranscriptSpanSchema`, throwing a raw Zod issue array into a French panel
+   * and taking a perfectly good verified citation with it. Tightening the
+   * boundary would have kept the same cost: one blank among four real quotes
+   * would refuse the whole answer.
+   *
+   * A blank carries no claim. There is nothing to mark « introuvable » and
+   * nothing for a reader to open, so it is the one thing dropped rather than
+   * kept — and dropped before the count, so « an answer with no citation is no
+   * answer » is untouched (the test above drives that).
+   */
   const parsed = AskDraftSchema.safeParse({
     answered: true,
     answer: 'Le plafond est à 550 €.',
-    quotes: [{ quote: '', channel: 'far' }],
+    quotes: [{ quote: '', channel: 'far' }, { quote: '   ', channel: 'far' }],
   })
-  assert.equal(parsed.success, false)
+  assert.equal(parsed.success, true)
+  assert.deepEqual(
+    parsed.success ? parsed.data.quotes.map((q) => q.quote) : null,
+    ['', ''],
+    'trimmées ici, écartées par le vérificateur',
+  )
 
   // And the ordinary shape still parses.
   assert.equal(
