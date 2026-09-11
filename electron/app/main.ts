@@ -1575,6 +1575,28 @@ const boot = async (): Promise<void> => {
             mailFailure ? mailHealth(new Error(mailFailure.lastError ?? ''), at) : { state: 'ok' },
           )
         }
+
+        /*
+         * **And the meeting is told the pass is over.**
+         *
+         * `pushSettled` had an entry in `UserCommand`, a rule in `TRANSITIONS`
+         * and the only *guarded* rule in the whole table — and **no call site
+         * anywhere in the product**. So pressing *Valider* moved a meeting into
+         * `pushing` and left it there for the life of the database: `done` was
+         * unreachable, and with it « Validée » on the agenda row, « Déjà
+         * validée. » at the gate, and `settled` in the recipe picker. A call that
+         * shipped hours ago read « Envoi… » forever, and
+         * `Guards.allIntentsSettled` — correct code, tested — never ran.
+         *
+         * Dispatched after **every** pass, not only a clean one, and the guard is
+         * what decides: all intents terminal (drained *or* failed) moves to
+         * `done`, anything still pending stays in `pushing`, which is the DEC-26
+         * reading — a VSA outage leaves the row visibly mid-flight rather than
+         * quietly « done » with nothing in the CRM. A meeting that is not in
+         * `pushing` refuses the command and the refusal is a no-op, so a
+         * boot-time re-drain of an old meeting costs nothing.
+         */
+        orchestrator.dispatch(meetingId, 'pushSettled')
       })
       .catch((error: unknown) => {
         diagnostics.record({
@@ -1755,7 +1777,21 @@ const boot = async (): Promise<void> => {
      */
     const record = { ...result, at: Date.now() }
     store.appState.set(ESSAI_LAST_KEY, JSON.stringify(record))
-    orchestrator.setHealth('capture', essaiHealth(record) ?? audio)
+    /*
+     * **Re-measured, never the boot constant.**
+     *
+     * This was `essaiHealth(record) ?? audio`, and `audio` is a `const` computed
+     * once at startup — so a trial that *passed* (both channels heard, so
+     * `essaiHealth` returns null) republished whatever the boot probe had said
+     * minutes or hours earlier. The rep who ran the twenty-second trial to prove
+     * their machine works, and proved it, got the stale failure back. The
+     * registered retry twenty lines above already does the right thing, which is
+     * to ask the OS again.
+     */
+    orchestrator.setHealth(
+      'capture',
+      essaiHealth(record) ?? capturePermissionHealth(captureAccess(), Date.now()) ?? { state: 'ok' },
+    )
     return result
   }
 

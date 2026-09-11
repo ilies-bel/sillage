@@ -1685,7 +1685,28 @@ async function prose(page) {
 
     const seen = new Set()
     const out = []
-    const surfaces = document.querySelectorAll('.measure, .notepad .ProseMirror')
+    /*
+     * **Every element that owns a run of prose, not only the ones that opted in.**
+     *
+     * This measured `.measure` and the notepad, which are the surfaces that
+     * remembered to ask — so the one failure it could never see is the one the
+     * rule exists to prevent: a new pane holding prose that simply forgot the
+     * class. The invariant is « one reading measure », and a check that only
+     * inspects the elements wearing it is checking the label rather than the
+     * text.
+     *
+     * Ninety characters of *own* text is the test for « this is prose ». A
+     * heading, a button, a cell and a timestamp are all shorter than that by a
+     * wide margin, so the threshold separates them without a list of tag names
+     * that would need maintaining — and an element is measured only for the text
+     * it owns, never for its children's, so a wrapper is not reported for the
+     * paragraphs inside it.
+     */
+    const surfaces = [...document.querySelectorAll('body *')].filter((el) =>
+      [...el.childNodes].some(
+        (node) => node.nodeType === 3 && (node.textContent ?? '').trim().length > 90,
+      ),
+    )
     for (const el of surfaces) {
       const style = getComputedStyle(el)
       const box =
@@ -1701,7 +1722,12 @@ async function prose(page) {
       const chars = Math.round(box / advance)
       if (chars <= MAX) continue
 
-      const what = `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}`
+      if (el.offsetParent === null && style.position !== 'fixed') continue
+      // Named with whether it is inside a reading surface at all: « 82ch hors
+      // .measure » is a different defect from « 82ch dans .measure », and they
+      // have different fixes — one is a missing class, the other a wrong number.
+      const held = el.closest('.measure, .notepad') !== null
+      const what = `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}${held ? '' : ' [hors .measure]'}`
       const key = `${what}:${chars}`
       if (seen.has(key)) continue
       seen.add(key)

@@ -140,6 +140,13 @@ export class Orchestrator {
   #broadcast: Broadcaster
   #sessions = new Map<MeetingId, MeetingSession>()
   #health: HealthSnapshot
+  /**
+   * What each module last *claimed*, before `#truthful` stripped a `retryable`
+   * nobody had registered a way to act on. `registerRetry` re-asks the question
+   * against this, so the order of two statements in `main.ts` cannot decide
+   * whether a rep gets a button.
+   */
+  #claimed: Partial<HealthSnapshot> = {}
   #retries = new Map<ConnectorId, () => Promise<ConnectorHealth>>()
   #recordings = new Map<MeetingId, Recording>()
 
@@ -545,6 +552,9 @@ export class Orchestrator {
   }
 
   setHealth(connector: ConnectorId, health: ConnectorHealth): void {
+    // What the module claimed, kept unstripped — see `registerRetry`, which has
+    // to be able to re-ask the question when a retry arrives after a health.
+    this.#claimed = { ...this.#claimed, [connector]: health }
     this.#health = { ...this.#health, [connector]: this.#truthful(connector, health) }
     this.#broadcast('health:changed', {
       connector,
@@ -590,7 +600,41 @@ export class Orchestrator {
    * cannot work, which is the exact dead button DEC-26 forbids.
    */
   registerRetry(connector: ConnectorId, retry: () => Promise<ConnectorHealth>): void {
+    const first = !this.#retries.has(connector)
     this.#retries.set(connector, retry)
+
+    /*
+     * **And the health already published is re-truthed, because `#truthful` runs
+     * at write time and registration order is not a thing anyone can see.**
+     *
+     * `main.ts` published the capture health twenty-two lines before it
+     * registered capture's retry. `#truthful` had therefore already stripped
+     * `retryable: true` down to `false` and *stored the stripped value* — so on
+     * macOS first run, the one permission that cannot be repaired after the call
+     * drew « Réglages › » instead of « Autoriser », on both the onboarding step
+     * and the *Requis* row it sends the rep to. Verbatim the failure
+     * `capturePermission.ts` was written to close, reopened by two statements in
+     * the wrong order, with nothing on screen or in any test able to show it —
+     * and the harness fixture asserted the opposite in prose, twice.
+     *
+     * Re-publishing here makes the order irrelevant rather than correct-by-luck,
+     * and it re-truths **the module's own claim** rather than guessing: a
+     * connector whose health genuinely says `retryable: false` — `restricted`, a
+     * managed device where nothing will ever change — must not be handed a retry
+     * it never asked for. That is why `#claimed` exists beside `#health`: one is
+     * what the module said, the other is what the app can honestly offer.
+     * Only on the first registration, and only when the answer actually changes,
+     * so a re-registration does not re-broadcast an unchanged row.
+     */
+    const claimed = this.#claimed[connector]
+    if (!first || !claimed) return
+    const upgraded = this.#truthful(connector, claimed)
+    const stored = this.#health[connector]
+    const offers = (health: ConnectorHealth | undefined): boolean =>
+      health !== undefined && health.state !== 'ok' && health.retryable
+    if (offers(upgraded) === offers(stored)) return
+    this.#health = { ...this.#health, [connector]: upgraded }
+    this.#broadcast('health:changed', { connector, health: upgraded, at: this.#clock() })
   }
 
   async retry(connector: ConnectorId): Promise<ConnectorHealth> {

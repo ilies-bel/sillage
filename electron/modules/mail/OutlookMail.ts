@@ -82,7 +82,51 @@ export class OutlookMail implements MailPort {
    * know. A forbidden scope is the one exception — it is a bug, not an outage.
    */
   async createDraft(payload: MailDraftPayload): Promise<PushResult> {
-    const token = await this.#token()
+    /*
+     * **The token, in its own block, and it used to have none at all.**
+     *
+     * The docstring above says « never throws for a Graph failure », and the one
+     * call that reliably *does* throw sat above the `try` enforcing it:
+     * `MsalIdentity` raises `InteractionRequiredError` for a token needing a
+     * fresh sign-in — an expired refresh, a revoked consent, a laptop offline
+     * long enough. The throw escaped to `Outbox.#attempt`, which cannot tell a
+     * fault from a decision, so the intent was recorded **`failed`**.
+     *
+     * `failed` is the one terminal state here: `drainable()` selects `pending`,
+     * the row deliberately has no *Réessayer* (the attempt threw, nobody knows
+     * whether the record exists), and a boot-time re-drain skips it. A rep who
+     * validated on a train lost the follow-up draft permanently.
+     *
+     * Its own block rather than a wider `catch`, because the distinction is the
+     * whole of DEC-26's rule and the wider version would erase it. A failure
+     * *here* is a failure **before the request was ever sent** — nothing was
+     * created, and `retryable: true` is a fact rather than a hope. A failure
+     * below, mid-POST, is the genuinely unknown case, and that one stays
+     * terminal: retrying a create whose answer was lost is how a mailbox gets
+     * two identical drafts.
+     */
+    let token: string
+    try {
+      token = await this.#token()
+    } catch (error) {
+      /*
+       * A forbidden scope in the list is the one exception, and it throws on
+       * through: HR-8 says this product creates drafts and never sends, so one
+       * reaching `#guardScopes` is a **bug in the code that built this adapter**, not an
+       * outage a rep can wait out. Turning it into a retryable push result would
+       * bury the one failure here nobody should ever be asked to tolerate.
+       */
+      if (error instanceof ForbiddenScopeError) throw error
+      const reason = error instanceof Error ? error.message : 'jeton Microsoft indisponible'
+      this.#diagnostics.record({
+        severity: 'warn',
+        code: 'mail.token.unavailable',
+        module: 'mail',
+        message: reason,
+        detail: { retryable: true },
+      })
+      return { ok: false, intentId: '', reason, retryable: true }
+    }
 
     try {
       const created = await postDraft({ token, fetch: this.#fetch, body: messageBody(payload) })

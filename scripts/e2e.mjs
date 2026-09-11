@@ -534,6 +534,40 @@ try {
     }
   })
 
+  await step('the meeting leaves `pushing` when nothing is still in flight', async () => {
+    /*
+     * **`pushSettled` had a rule, a guard and no caller.**
+     *
+     * It is the only *guarded* transition in the whole table — `pushing → done`
+     * when every intent is terminal — and nothing in the product dispatched it.
+     * So pressing *Valider* moved a meeting into `pushing` and left it there for
+     * the life of the database: « Validée » on the agenda row, « Déjà validée. »
+     * at the gate and `settled` in the recipe picker were all unreachable, and a
+     * call that shipped hours ago read « Envoi… » forever.
+     *
+     * The assertion is the **invariant**, not a state: a meeting is in `pushing`
+     * if and only if some intent is still pending. That is true whether or not a
+     * connector exists on this machine — which matters, because none does here —
+     * and it is what a step asserting `state === 'done'` would have got wrong in
+     * the other direction, calling a meeting finished with nothing in the CRM.
+     */
+    const { meeting, outbox } = await page.evaluate(
+      (meetingId) => window.app.invoke('meeting:get', { meetingId }),
+      gated,
+    )
+    const inFlight = outbox.filter((row) => row.state !== 'drained' && row.state !== 'failed')
+    if (inFlight.length === 0 && meeting.state === 'pushing') {
+      throw new Error(
+        'tout est retombé et la réunion est restée en « pushing » — `pushSettled` n’est dispatché par personne',
+      )
+    }
+    if (inFlight.length > 0 && meeting.state !== 'pushing') {
+      throw new Error(
+        `${inFlight.length} intention(s) encore en vol mais la réunion est « ${meeting.state} »`,
+      )
+    }
+  })
+
   await step('the app reopens on the database it left behind', async () => {
     await app.close()
     noise = []

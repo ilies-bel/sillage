@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { VsaCrm } from '../vsa/VsaCrm.ts'
 import { crmHealth } from '../index.ts'
-import { VsaError, type FetchLike } from '../vsa/http.ts'
+import { VsaError, vsaError, type FetchLike } from '../vsa/http.ts'
 import { ReferentialCache, pick, PICK_HINTS, normalise, REFERENTIALS } from '../vsa/referentials.ts'
 import { VsaSession } from '../vsa/http.ts'
 import type { VsaConfig } from '../vsa/config.ts'
@@ -568,11 +568,41 @@ test('an unknown failure is down but retryable, and never silent', () => {
 })
 
 test('a push failure is settled, never thrown — the Outlook draft must still ship', async () => {
+  /*
+   * **And a 5xx on a *create* is terminal, which this test used to deny.**
+   *
+   * It asserted `retryable: true` three lines above another that says « there is
+   * no idempotency key to retry behind » — the suite carried both halves of the
+   * contradiction. A 502/503/504 on a POST is the canonical case where the
+   * upstream did the write and the answer was lost on the way back, so nobody
+   * knows whether the task exists. `Outbox.#ready` is deliberately not gated on
+   * `attempts` and `main.ts` re-drains every pending row at boot: measured, that
+   * was three identical POSTs per drain and three more per relaunch, unbounded,
+   * into the client's system of record.
+   *
+   * What the *name* of this test is about still holds and is the load-bearing
+   * half: it is **settled, not thrown**, so `Outbox` records a reason and the
+   * Outlook draft beside it still ships (DEC-26).
+   */
   const { fetch } = sandbox((call) =>
     call.path === '/v1/crm/tasks' ? { ok: false, status: 500, body: { message: 'boom' } } : undefined,
   )
   const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok, false)
+  assert.equal(result.ok === false && result.retryable, false)
+  assert.match(result.ok === false ? result.reason : '', /boom/)
+})
+
+test('a throttle is retryable on a create, because the server refused before doing anything', async () => {
+  /*
+   * The asymmetry is the whole point. A 429 is a refusal to process, stated by
+   * the server *before* it wrote anything — a fact about the request. A 5xx is a
+   * failure after it started — a guess about the write.
+   */
+  const { fetch } = sandbox((call) =>
+    call.path === '/v1/crm/tasks' ? { ok: false, status: 429, body: { message: 'trop de requêtes' } } : undefined,
+  )
+  const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok === false && result.retryable, true)
 })
 
@@ -591,4 +621,13 @@ test('a create with no id is terminal — there is no idempotency key to retry b
   const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok, false)
   assert.equal(result.ok === false && result.retryable, false)
+})
+
+test('a read that fails with a 5xx is still retryable — nothing was written', () => {
+  // The method is what separates them: a GET that fails created nothing, so
+  // asking again is free. `vsaError` defaults to GET for the same reason.
+  assert.equal(vsaError(503, '{}', 'GET').retryable, true)
+  assert.equal(vsaError(503, '{}', 'POST').retryable, false)
+  assert.equal(vsaError(429, '{}', 'POST').retryable, true)
+  assert.equal(vsaError(400, '{}', 'GET').retryable, false)
 })

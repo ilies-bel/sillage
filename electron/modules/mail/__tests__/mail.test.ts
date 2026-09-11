@@ -215,3 +215,58 @@ test('every failure a rep can hit maps to a reason and an honest retry flag', ()
   assert.equal(unknown.state, 'down')
   assert.equal(unknown.state === 'down' && unknown.reason, 'câble débranché')
 })
+
+test('a sign-in that has expired is retryable, and nothing was sent', async () => {
+  /*
+   * **The one call that reliably throws sat outside the block whose docstring
+   * promises this method never throws.**
+   *
+   * `MsalIdentity` raises for a token that needs a fresh sign-in — an expired
+   * refresh, a revoked consent, a laptop offline long enough. The throw escaped
+   * to `Outbox.#attempt`, which cannot tell a fault from a decision, so the
+   * intent was recorded `failed` — and `failed` is terminal here: `drainable()`
+   * selects `pending`, the row has no *Réessayer* by design, and a boot-time
+   * re-drain skips it. A rep who validated on a train lost the follow-up draft
+   * permanently, for a failure that provably created nothing.
+   */
+  const expired: IdentityPort = {
+    ...identity,
+    token: async () => {
+      throw new Error('interaction requise — reconnectez votre compte Microsoft')
+    },
+  }
+  const seen = recorder(() => ({ ok: true, status: 201, body: '{"id":"AAMkAGI2"}' }))
+  const mail = new OutlookMail({
+    identity: expired,
+    fetch: seen.fetch,
+    diagnostics: { record: () => {} },
+  })
+
+  const result = await mail.createDraft(PAYLOAD)
+
+  assert.equal(result.ok, false)
+  // Retryable because it is a *fact*, not a hope: the request was never sent.
+  assert.equal(result.retryable, true)
+  assert.match(result.reason ?? '', /interaction requise/)
+  assert.equal(seen.calls.length, 0, 'rien ne doit partir sans jeton')
+})
+
+test('a failure mid-POST stays terminal, because nobody knows what was created', async () => {
+  /*
+   * The other side of the same rule, and the reason the token gets its own
+   * block instead of a wider `catch`: a request that left and whose answer was
+   * lost is the genuinely unknown case. Retrying that is how a mailbox gets two
+   * identical drafts, and `/me/messages` has no idempotency key either.
+   */
+  const mail = new OutlookMail({
+    identity,
+    fetch: async () => {
+      throw new TypeError('fetch failed')
+    },
+    diagnostics: { record: () => {} },
+  })
+
+  const result = await mail.createDraft(PAYLOAD)
+  assert.equal(result.ok, false)
+  assert.equal(result.retryable, false)
+})
