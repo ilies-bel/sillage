@@ -460,8 +460,11 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
-  renamed on one side of the bridge would ship. Twenty-three steps under Playwright's Electron
-  driver on a throwaway `--user-data-dir`, which is also the only way first run is reachable.
+  renamed on one side of the bridge would ship. **Twenty-eight** steps under Playwright's
+  Electron driver on a throwaway `--user-data-dir`, which is also the only way first run is
+  reachable — and five of them are the review gate, seeded through the product's own `Store`
+  with the app closed, because `review:confirm` is the one thing here that writes into a
+  client's CRM and it had no coverage on the real main process anywhere.
   It ends the meeting it starts and never runs the audio trial — twenty seconds of listening
   would raise an OS prompt no headless run can answer. **It launches twice**: every other test
   in the repo, and every step of the first launch, runs against a store created from nothing,
@@ -635,17 +638,20 @@ node scripts/harness/serve.mjs                 # the same app at a URL, for tool
 ```
 
 `scripts/harness/README.md` has the screen list. `--scan` runs a design detector inside the
-rendered page; `--geometry`, `--targets`, `--prose`, `--a11y` and `--contrast` are the five
-measured checks, and each exists because something shipped past a screenshot — clipped gutter
-markers, forty controls under 24×24, a measure rendering eighty-one characters, a control
-whose only name is « ‹ ». `--contrast` is computed from resolved styles **with transitions
-switched off**: `getComputedStyle` returns the current *animated* value, which is how the
-bundled detector reads a resting 14:1 button as 4.0:1 — and how the first version of this
-check reproduced the same false positive at 1.16:1. **A design pass that only reads `src/` has not looked at the product** — the
-defects that matter here live in rendered geometry and in the accessibility tree.
+rendered page; `--geometry`, `--targets`, `--prose`, `--a11y`, `--contrast` and `--scrollers`
+are the six measured checks, and each exists because something shipped past a screenshot —
+clipped gutter markers, forty controls under 24×24, a measure rendering eighty-one characters,
+a control whose only name is « ‹ », a progress indicator that drew as one dot, eleven
+textareas clipping their own content inside the two columns the arming guard measures.
+`--contrast` is computed from resolved styles **with transitions switched off**:
+`getComputedStyle` returns the current *animated* value, which is how the bundled detector
+reads a resting 14:1 button as 4.0:1 — and how the first version of this check reproduced the
+same false positive at 1.16:1. **A design pass that only reads `src/` has not looked at the
+product** — the defects that matter here live in rendered geometry and in the accessibility
+tree.
 
 ```
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all three checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all six checks
 ```
 
 **Both sizes, always.** `smoke.mjs` drives 1280×800 *and* 960×600 — the width
