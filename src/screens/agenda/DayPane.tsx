@@ -191,7 +191,30 @@ function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
 
   return (
-    <Row density="roomy" align="center">
+    /*
+     * **The armed row arrives, rather than simply being there.**
+     *
+     * Only the armed one, and only on mount. An offer is the one row on this
+     * screen that appeared *because the app noticed something* — a calendar
+     * window opening, or `core/domain/adHoc.ts` detecting a call nobody
+     * scheduled — and a list item inserted with no transition is the textbook
+     * change-blindness case: a rep looking straight at the day sees a row that
+     * reads as having always been there.
+     *
+     * DEC-46's OS notification covers the rep who is in Teams with this window
+     * behind three others. Nothing covered the rep who is looking at the app,
+     * which on an unscheduled call is the likelier of the two — they have not
+     * been told a meeting is coming, so they have no reason to be anywhere else.
+     *
+     * The other rows deliberately do not animate. VISION.md §6 asks for quiet and
+     * a rep switches Jour/Semaine/Mois constantly; animating a whole list on
+     * every switch buys nothing and costs a hundred and fifty milliseconds of
+     * motion each time. `riseIn` is `var(--motion) var(--ease-out)`, so it is 150
+     * ms, it is the one curve this product owns, and it collapses to nothing
+     * under `prefers-reduced-motion` because `--motion` does — no second rule to
+     * keep in step, which is what `shot.mjs --motion` checks.
+     */
+    <Row density="roomy" align="center" className={entry.armed ? 'animate-rise-in' : undefined}>
       <span className="text-muted w-28 shrink-0 tabular-nums text-ui">
         {showDay ? (
           <span className="block">{upperFirst(formatDayMedium(noonOf(entry.day)))}</span>
