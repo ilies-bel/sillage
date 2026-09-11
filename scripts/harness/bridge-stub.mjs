@@ -1317,7 +1317,20 @@ export function installAppBridge(config) {
   const NO_ENTRA_HEALTH = {
     calendar: {
       state: 'down',
-      reason: 'aucune application Microsoft configurée — le calendrier reste vide',
+      /*
+        **Kept equal to `main.ts` by a test, because it drifted.**
+
+        `main.ts` gained a second clause — a rep on a build with no Entra loses
+        the calendar *and* every arming offer, and DEC-26 says a degradation is
+        stated — and this fixture kept the old one-clause sentence. So every
+        `--sans-entra` stage photographed a string the product no longer emits,
+        and it flattered the app in the usual direction: shorter, calmer, and
+        unable to show whether the real sentence fits the card it is drawn in.
+        Four times now. `harnessFixture.test.ts` holds this pair to the source.
+      */
+      reason:
+        'aucune application Microsoft configurée — le calendrier reste vide, ' +
+        'et aucune réunion ne sera proposée à l’enregistrement : démarrez-les avec « Démarrer une réunion »',
       since: now - 3 * HOUR,
       retryable: false,
     },

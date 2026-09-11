@@ -261,3 +261,57 @@ test('the fixture’s settings snapshot is one the product could actually send',
     'une revendication de juridiction est revenue dans le fixture — voir DEC-37',
   )
 })
+
+/**
+ * **The stub's health sentences are the ones `main.ts` emits — the fourth time
+ * this fixture has been caught saying something the product does not.**
+ *
+ * `main.ts` gained a second clause on the no-Entra `calendar` row: a rep on that
+ * build loses the calendar *and* every arming offer, because `Agenda` and
+ * `MeetingApps` are both constructed inside the branch that needs a Graph
+ * registration — and DEC-26 says a degradation is stated, never silent. The
+ * fixture kept the old one-clause sentence, so every `--sans-entra` stage
+ * photographed a string the product no longer emits.
+ *
+ * It flattered the app in the direction the previous three did: shorter and
+ * calmer than the truth, and — because it is half the length — unable to show a
+ * reviewer whether the real sentence still fits the card it is drawn in at 960
+ * pixels, which is the width `main.ts` declares as the minimum.
+ *
+ * Source as evidence, the `preloadUnwrap.test.ts` shape. A string comparison
+ * rather than an import, because `bridge-stub.mjs` is deliberately one
+ * self-contained function with no imports — Playwright serialises it to source
+ * and evaluates it in the page — so the two cannot share a constant and a test
+ * is the only thing that can hold them equal.
+ *
+ * It guards itself against finding nobody: both sides must be non-empty, or a
+ * rename turns this into a test that passes by comparing two absences.
+ */
+test('the harness stub states the no-Entra degradation the product states', () => {
+  const stub = readFileSync(STUB, 'utf8')
+  const main = readFileSync(path.resolve(HERE, '../../../app/main.ts'), 'utf8')
+
+  /*
+   * Both files write the sentence as two adjacent literals — it is too long for
+   * one line under the formatter — so the comparison is over the *joined*
+   * text rather than over source lines.
+   */
+  const joined = (source: string): string[] => {
+    const out: string[] = []
+    const re = /'(aucune application Microsoft configurée[^']*)'(\s*\+\s*'([^']*)')?/g
+    let match: RegExpExecArray | null
+    while ((match = re.exec(source)) !== null) out.push(match[1]! + (match[3] ?? ''))
+    return out.sort()
+  }
+
+  const fromMain = joined(main)
+  const fromStub = joined(stub)
+
+  assert.ok(fromMain.length >= 2, `main.ts should state two no-Entra rows, found ${fromMain.length}`)
+  assert.ok(fromStub.length >= 2, `the stub should state two no-Entra rows, found ${fromStub.length}`)
+  assert.deepEqual(
+    fromStub,
+    fromMain,
+    'the harness fixture states a different degradation from the one the product emits',
+  )
+})
