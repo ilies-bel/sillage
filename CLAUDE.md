@@ -1017,7 +1017,22 @@ Where the two platforms genuinely differ, the difference lives in one place each
 `.mjs` runner, because `cmd.exe` does not read them and the failure lands on the primary
 platform.
 
-Third-party native addons are down to **one** — `keytar`. Adding a second is a decision, not a
+Third-party native addons are **one** — `keytar` — and that was a claim before it was a
+fact: `better-sqlite3` sat in `dependencies` for months, unimported since the store moved to
+`node:sqlite`, rebuilt by `node-gyp` on every `npm install` and shipped inside the installer
+because `build.files` takes `node_modules` whole. It went with the previous product's other
+leftovers.
+
+Thirty-eight of them, 700 MB of `node_modules`: `@deepgram/sdk`, `@google-cloud/speech`,
+`@google/genai`, `openai`, `groq-sdk`, `@anthropic-ai/sdk` and both ElevenLabs clients (this
+product reaches every provider over plain HTTP through `RestSttSession` and
+`OpenAiCompatibleLlm` — no vendor SDK), `three`, `react-icons`, `jspdf`, `tesseract.js`,
+`mammoth`, `pdf-parse`, `katex`, `qrcode`, `screenshot-desktop`, `liquid-glass-react` and the
+rest of the answer assistant's surface. `onnxruntime-node` and `sharp` stay: nothing in `src/`
+or `electron/` imports them and `@huggingface/transformers` requires both at runtime, which is
+the one case the import scan cannot see.
+
+Adding a native addon back is a decision, not a dependency: Adding a second is a decision, not a
 dependency: it has to be rebuilt per Electron ABI, per arch, on both platforms, and on Windows
 that means MSVC and Python on every machine that runs `npm install`.
 
