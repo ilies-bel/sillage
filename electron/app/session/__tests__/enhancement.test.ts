@@ -723,3 +723,4 @@ test('no CRM configured at all is simply no account, with no lookup attempted', 
   assert.ok(h.store.projections.extraction(h.id))
   h.cleanup()
 })
+

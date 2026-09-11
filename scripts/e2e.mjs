@@ -578,6 +578,58 @@ try {
     await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
   })
 
+  await step('a recording the previous process never ended is not left running', async () => {
+    /*
+     * **`recording` was the one live state with no boot recovery.**
+     *
+     * `before-quit` stopped the agenda and closed the store and never ended a
+     * meeting, and on Windows — the primary platform — `window-all-closed`
+     * quits: the ordinary gesture of getting the app out of the way during a
+     * call ended the call with nothing. The transcriber was never flushed, so
+     * the tail was lost, and the meeting sat in `recording` forever. There is no
+     * capture behind it — the device was released when the process died — so the
+     * session screen drew a recording pill over nothing, the gate refused the
+     * meeting, `Agenda` would not re-arm it (`arm` is illegal from `recording`),
+     * and nothing anywhere could end it.
+     *
+     * Written straight into the log with the app closed, so this is the crash
+     * case and not the polite one: the previous process left a transition to
+     * `recording` and no transition out.
+     */
+    await app.close()
+    app = null
+
+    const dbPath = dbUnder(profile)
+    const store = new Store(dbPath)
+    let abandoned = null
+    try {
+      abandoned = `crash-${Date.now().toString(36)}`
+      store.appendAll(abandoned, [
+        // Created and started, with no transition out — which is exactly what a
+        // process that died mid-call leaves in the log.
+        { type: 'meeting.created', title: 'Appel interrompu', context: null, clientName: null },
+        { type: 'session.transition', from: 'idle', to: 'recording', command: 'start', reason: null },
+      ])
+    } finally {
+      store.log.db.close()
+    }
+
+    noise = []
+    await launch()
+    await page.waitForSelector('#root > *', { timeout: 45_000 })
+
+    const { meeting } = await page.evaluate(
+      (meetingId) => window.app.invoke('meeting:get', { meetingId }),
+      abandoned,
+    )
+    if (meeting.state === 'recording') {
+      throw new Error('la réunion abandonnée est toujours « en cours » après un redémarrage')
+    }
+    if (meeting.state !== 'ended') {
+      throw new Error(`état inattendu après récupération : ${meeting.state}`)
+    }
+  })
+
   await step('the meeting written last time is still there', async () => {
     await page.keyboard.press('Control+h')
     await page.getByRole('heading', { name: 'Historique' }).waitFor()

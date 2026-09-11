@@ -297,3 +297,4 @@ test('registering a retry gives the control back, with no screen to update', asy
   assert.deepEqual(await orchestrator.retry('capture'), { state: 'ok' })
   store.close()
 })
+

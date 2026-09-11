@@ -578,6 +578,24 @@ machine) or in `core/domain/` — never in an IPC handler.
   Teams join blob.
 - **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
 - **Raw audio is never retained** (DEC-12). Transcribed and discarded.
+- **A window closing does not get to abandon a recording, and a crash does not get to
+  strand one.** `before-quit` stopped the agenda, stopped update checks and closed the
+  store — and never ended a live meeting. On Windows, the primary platform,
+  `window-all-closed` quits, so the ordinary gesture of getting the app out of the way
+  during a call ended the call with nothing: the transcriber was never flushed, so the
+  tail was lost (`stopRecording`'s own docblock calls it « the part with the next steps
+  in it »), and the meeting sat in `recording` for ever. The app already knew how to ask
+  — `updateReadiness` refuses a ten-second installer while a call is live, two hundred
+  lines above — it just never asked here. The quit is **deferred, not refused**, and
+  enhancement is deliberately *not* waited for: it can take minutes and the rep pressed
+  close. The meeting lands in `ended`, which is DEC-39's deferred case.
+  And the boot sweep covers what no handler can — a crash, a SIGKILL, a battery. A
+  meeting found in `recording` at startup has no capture behind it: the device was
+  released when the process died, so the session screen drew a recording pill over
+  nothing, the gate refused the meeting, `Agenda` would not re-arm it (`arm` is illegal
+  from `recording`), and nothing anywhere could end it. `Enhancement.reconcile` cannot do
+  this one — its `dispatch` dep is narrowed to the three extraction commands, because
+  ending a meeting is the state machine's business, not the recipe's.
 - **The capture path has zero network dependencies** (DEC-26). Everything downstream may
   fail; nothing downstream may stop a meeting being recorded. **`Recording.start` was the
   exact inversion of this for as long as it existed**: `transcribe.start()` reaches

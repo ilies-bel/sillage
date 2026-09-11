@@ -1694,6 +1694,48 @@ const boot = async (): Promise<void> => {
    * ago is exactly the one nobody has managed to open since, and it costs one
    * indexed read per launch to free it.
    */
+  /*
+   * **And a meeting stranded in `recording`, which had no recovery at all.**
+   *
+   * `Enhancement.reconcile` handles `extracting` and deliberately cannot handle
+   * this one: its `dispatch` dep is narrowed to the three extraction commands,
+   * because ending a meeting is the state machine's business and not the
+   * recipe's. So the sweep does it here.
+   *
+   * A meeting is in `recording` at boot because the previous process did not end
+   * it — a crash, a SIGKILL, a battery, or a window closed during a call, which
+   * on Windows is the ordinary gesture of getting the app out of the way (the
+   * `before-quit` handler above now defers the quit and ends it, but that only
+   * covers the gesture). There is no capture behind it: the device was released
+   * when the process died. So the session screen drew a recording pill over
+   * nothing, the review gate refused the meeting, `Agenda` would not re-arm it —
+   * `arm` is illegal from `recording` — and nothing anywhere could end it.
+   *
+   * `ended` is the honest state and the one every surface already handles:
+   * whatever was transcribed is in the store (DEC-12 persists as it arrives),
+   * the rep's notes are theirs, and `ended` is precisely DEC-39's deferred case,
+   * so the compte-rendu is written from what survived. The reason is recorded,
+   * because « the app stopped » and « the rep pressed Terminer » are different
+   * facts about one transition.
+   */
+  const interrupted = store.projections
+    .listMeetings(500)
+    .filter((meeting) => meeting.state === 'recording')
+    .filter(
+      (meeting) =>
+        orchestrator.dispatch(meeting.id, 'end', 'l’application s’est arrêtée pendant l’enregistrement')
+          .ok,
+    )
+  if (interrupted.length > 0) {
+    diagnostics.record({
+      severity: 'warn',
+      code: 'recording.interrupted.boot',
+      module: 'app',
+      message: `${interrupted.length} enregistrement(s) interrompus par un arrêt de l’application — terminés`,
+      detail: { meetingIds: interrupted.map((meeting) => meeting.id) },
+    })
+  }
+
   const stranded = store.projections
     .listMeetings(500)
     .filter((meeting) => enhancement.reconcile(meeting.id, meeting.state))
@@ -1867,7 +1909,61 @@ const boot = async (): Promise<void> => {
     detail: { purgedDiagnostics: purged, dev: isDev },
   })
 
-  app.on('before-quit', () => {
+  /**
+   * **A window closing does not get to abandon a recording.**
+   *
+   * This stopped the agenda, stopped update checks and closed the store, and
+   * never ended a live meeting. On Windows — the primary platform —
+   * `window-all-closed` quits, so the ordinary gesture of getting the app out of
+   * the way during a call ended the call with nothing: the transcriber was never
+   * flushed, so the tail was lost (`stopRecording`'s own docblock calls it « the
+   * part with the next steps in it »), and the meeting was left in `recording`,
+   * which `Enhancement.reconcile` does not recover — it returns false for
+   * anything that is not `extracting`, so unlike its sibling case there was no
+   * boot recovery either. With `autoInstallOnAppQuit` a staged update then ran
+   * on the way out.
+   *
+   * The app already knew how to ask the question: `updateReadiness` refuses a
+   * ten-second installer while a call is live, two hundred lines above. It just
+   * never asked it here.
+   *
+   * The quit is deferred, not refused. `end` is dispatched so the state machine
+   * moves and the renderer hears it, and `stopRecording` is awaited so both
+   * providers flush — but **enhancement is not waited for**: it can take minutes,
+   * and a rep who pressed close would be looking at a window that will not go
+   * away. The meeting lands in `ended`, which is exactly DEC-39's deferred case;
+   * `drainDeferredEnhancements` picks it up on the next launch.
+   */
+  let quitting = false
+  app.on('before-quit', (event) => {
+    const recording = orchestrator
+      .liveIds()
+      .filter((id) => orchestrator.stateOf(id) === 'recording')
+
+    if (!quitting && recording.length > 0) {
+      quitting = true
+      event.preventDefault()
+      void (async () => {
+        for (const meetingId of recording) {
+          try {
+            orchestrator.dispatch(meetingId, 'end', 'fermeture de l’application')
+            await orchestrator.stopRecording(meetingId)
+          } catch (error) {
+            diagnostics.record({
+              severity: 'error',
+              code: 'app.quit.endFailed',
+              module: 'app',
+              message: error instanceof Error ? error.message : 'arrêt impossible',
+              detail: { meetingId },
+              meetingId,
+            })
+          }
+        }
+        app.quit()
+      })()
+      return
+    }
+
     agenda?.stop()
     stopUpdateChecks()
     store.close()

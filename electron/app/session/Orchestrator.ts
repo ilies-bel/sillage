@@ -379,6 +379,19 @@ export class Orchestrator {
     return [...this.#sessions.values()].map((session) => session.state)
   }
 
+  /**
+   * The meetings this process is holding, by id.
+   *
+   * `liveStates` answers « is anything happening » — enough to refuse an
+   * installer — and `before-quit` needs the other half: *which* meeting is
+   * recording, so it can be ended properly rather than abandoned when the window
+   * closes. In memory only, and that is the correct scope: a session is here
+   * because it was created or rehydrated this run.
+   */
+  liveIds(): readonly MeetingId[] {
+    return [...this.#sessions.keys()]
+  }
+
   /** Debounced from the editor at ~500ms (DEC-12). */
   saveDocument(meetingId: MeetingId, revision: number, doc: unknown): number {
     const session = this.session(meetingId)
