@@ -100,6 +100,24 @@ const REST_PROVIDERS = new Set<string>([
  * provider that cannot take hotwords must not be handed them (DEC-17). Azure
  * over the short-audio REST endpoint is exactly that case.
  */
+/**
+ * **Every provider the registry offers has an adapter here, and this is checked.**
+ *
+ * `deepgram` was declared in `STT_PROVIDERS` with `streaming: true` — the only
+ * streaming row, so `selectProvider` preferred it the moment a rep opted into a
+ * cloud upgrade — and it was absent from `REST_PROVIDERS`, so it had none. The
+ * cost was not a missing feature: `TranscribeSession.start` threw out of
+ * `Recording.start`, `Orchestrator`'s single catch set **capture** down and
+ * aborted the meeting, and a rep who pasted a Deepgram key into Réglages stopped
+ * being able to record a call while being told their microphone was
+ * unavailable. `registry.test.ts` asserted the selector picks it. Nobody had
+ * asked whether it could run.
+ *
+ * `transcribe.test.ts` now holds every id in `STT_PROVIDERS` to a constructible
+ * session, so a row without an adapter fails the suite instead of the call.
+ */
+export const ADAPTED_PROVIDERS: ReadonlySet<string> = new Set([...REST_PROVIDERS, 'local-whisper'])
+
 export const createSttSession = (providerId: string, options: SttSessionOptions): SttSession => {
   if (REST_PROVIDERS.has(providerId)) {
     const boostAllowed = descriptorFor(providerId)?.boost !== 'none'

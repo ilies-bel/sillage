@@ -10,7 +10,8 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { STT_PROVIDERS, descriptorFor, selectProvider } from '../registry.ts'
+import { STT_PROVIDERS, descriptorFor, providerRank, selectProvider } from '../registry.ts'
+import { ADAPTED_PROVIDERS } from '../index.ts'
 
 const FR = 'fr-FR'
 
@@ -107,12 +108,48 @@ test('a hosted provider is reachable on its key alone — location does not gate
 })
 
 test('a streaming provider outranks a batch one', () => {
-  const chosen = selectProvider({
-    configured: ['deepgram', 'azure-fr'],
-    language: FR,
-    preferCloud: true,
+  /*
+   * **Proved on `rank`, not on a shipped row, and that is the point.**
+   *
+   * This asserted the selector picks `deepgram` — a row that declared
+   * `streaming: true` and had **no adapter**. `createSttSession` threw for it,
+   * the throw escaped `Recording.start`, and `Orchestrator`'s single catch set
+   * *capture* down and aborted the meeting: a rep who pasted a Deepgram key into
+   * Réglages stopped being able to record while being told their microphone was
+   * unavailable. This test asserted the selector reaches it. Nobody asked whether
+   * it could run, and the test's own subject made the defect look intentional.
+   *
+   * The *preference* is real and worth holding. Held against the ranking
+   * function directly, so it cannot be satisfied again by declaring a provider
+   * the product cannot start.
+   */
+  const cloud = (streaming: boolean): Parameters<typeof providerRank>[0] => ({
+    id: 'x',
+    label: 'x',
+    tier: 'cloud',
+    auth: 'apiKey',
+    capabilities: { residency: 'remote', streaming, languages: [FR], cost: 'metered' },
+    boost: 'none',
   })
-  assert.deepEqual(chosen, { ok: true, id: 'deepgram' })
+  assert.ok(
+    providerRank(cloud(true), true) < providerRank(cloud(false), true),
+    'un fournisseur streaming doit passer devant un fournisseur batch',
+  )
+})
+
+test('every provider the table offers can actually be started', () => {
+  /*
+   * The check that was missing. A row here is an offer — `Reglages` renders it
+   * `selectable` and `selectProvider` may pick it — so a row without an adapter
+   * is not an unimplemented feature, it is a recording that does not happen.
+   */
+  for (const descriptor of STT_PROVIDERS) {
+    assert.ok(
+      ADAPTED_PROVIDERS.has(descriptor.id),
+      `${descriptor.id} est proposé dans STT_PROVIDERS et n’a pas de session — ` +
+        'createSttSession lèverait, et la réunion serait abandonnée.',
+    )
+  }
 })
 
 test('table order breaks a tie between two upgrades that behave the same', () => {

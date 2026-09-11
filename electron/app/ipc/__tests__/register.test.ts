@@ -1324,15 +1324,15 @@ test('a provider that cannot be used is listed with the reason, never hidden (DE
   })
 
   const snapshot = await ipc.invoke('settings:snapshot', {})
-  const deepgram = snapshot.stt.rows.find((row) => row.id === 'deepgram')
+  const unusable = snapshot.stt.rows.find((row) => row.id === 'elevenlabs')
 
-  assert.ok(deepgram, 'the unusable provider is in the table, not dropped from it')
-  assert.equal(deepgram.configured, false)
-  assert.equal(deepgram.selectable, false)
-  assert.match(deepgram.reason ?? '', /clé/)
+  assert.ok(unusable, 'the unusable provider is in the table, not dropped from it')
+  assert.equal(unusable.configured, false)
+  assert.equal(unusable.selectable, false)
+  assert.match(unusable.reason ?? '', /clé/)
   // It still says where the audio would go, which is the half the screen
   // carries now that the row refuses nothing.
-  assert.equal(deepgram.residency, 'remote')
+  assert.equal(unusable.residency, 'remote')
   cleanup()
 })
 
@@ -1471,13 +1471,13 @@ test('the shipped registries all declare a tier and survive the row builder', ()
   // runs on this machine, including the hosted ones, which is what makes the
   // choice informed now that it is no longer made here.
   const rows = providerRows(STT_PROVIDERS, {
-    configured: ['deepgram'],
-    selected: 'deepgram',
+    configured: ['elevenlabs'],
+    selected: 'elevenlabs',
     reason: null,
   })
-  const deepgram = rows.find((row) => row.id === 'deepgram')
-  assert.equal(deepgram?.residency, 'remote')
-  assert.equal(deepgram?.selectable, true, 'a configured provider is one someone chose')
+  const cloud = rows.find((row) => row.id === 'elevenlabs')
+  assert.equal(cloud?.residency, 'remote')
+  assert.equal(cloud?.selectable, true, 'a configured provider is one someone chose')
   assert.ok(
     rows.every((row) => ['local', 'remote'].includes(row.residency)),
     'every row states where the audio would go',

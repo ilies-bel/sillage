@@ -146,7 +146,28 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
       },
     )
 
-    if (this.#prompt) engine.setPrompt(this.#prompt)
+    /*
+     * **Set unconditionally, because the engine is pooled and outlives the call.**
+     *
+     * This was `if (this.#prompt)`, and `#prompt` is `''` for a meeting with no
+     * calendar context and no stored terms — so that meeting **never overwrote
+     * the previous one's**. `prewarmLocalEngine()` holds a reference that is
+     * never released, so the pooled engine and its worker survive every meeting,
+     * and `setPrompt` is last-writer-wins.
+     *
+     * Driven against the real pool and a real worker: meeting A with
+     * `["ZAIOU","Sodexial","DIMOS"]`, then meeting B with none, decoded B with
+     * A's terms. Whisper's `initial_prompt` *biases decoding toward what it is
+     * given* — IMPLEMENTATION.md §4 measured them inserting themselves into
+     * speech, and `boost.ts` calls that outcome « worse than not learning at
+     * all ». So a prospect's transcript could acquire a different client's
+     * company name and a different client's surnames, and that transcript is
+     * what the compte-rendu is folded from and what VerySwing receives.
+     *
+     * An empty string is a statement — « this call has no vocabulary » — and it
+     * has to be made, not skipped.
+     */
+    engine.setPrompt(this.#prompt)
   }
 
   write(chunk: Buffer, sampleRate: number): void {

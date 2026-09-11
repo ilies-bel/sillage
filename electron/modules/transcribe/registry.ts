@@ -54,16 +54,22 @@ export const STT_PROVIDERS: SttProviderDescriptor[] = [
     // reason — the REST endpoint returns one final result per upload.
     boost: 'none',
   },
-  {
-    id: 'deepgram',
-    label: 'Deepgram',
-    tier: 'cloud',
-    auth: 'apiKey',
-    // The one streaming row in the table, which is why it outranks the batch
-    // engines the moment the rep opts into a cloud upgrade.
-    capabilities: { residency: 'remote', streaming: true, languages: ['fr-FR'], cost: 'metered' },
-    boost: 'keyterms',
-  },
+  /*
+   * **Deepgram was here and had no adapter.**
+   *
+   * It declared `streaming: true` — the only row in the table that did — so
+   * `selectProvider` preferred it the instant a rep opted into a cloud upgrade,
+   * and `createSttSession` has no branch for it. The result was not a missing
+   * feature: the throw escaped `Recording.start`, `Orchestrator`'s single catch
+   * set *capture* down and aborted the meeting, and a rep who pasted a Deepgram
+   * key into Réglages stopped being able to record while being told their
+   * microphone was unavailable. `registry.test.ts` asserted the selector picks
+   * it; nothing asked whether it could run.
+   *
+   * A row here is an offer, and `Reglages` renders it `selectable`. It comes
+   * back the day it has a session — `transcribe.test.ts` holds every id in this
+   * table to a constructible one, so it cannot come back without.
+   */
   {
     id: 'groq-whisper',
     label: 'Groq (Whisper large v3 turbo)',
@@ -156,6 +162,20 @@ export type Selection = { ok: true; id: string } | { ok: false; reason: string }
  * "Configured" for `local-whisper` means the weights are on disk, so this
  * cannot select an engine that would have to download itself first.
  */
+/**
+ * Where a provider sits in the preference order. Lower wins.
+ *
+ * Exported so the *preference* can be tested without a shipped row standing in
+ * for it. That is not pedantry: the streaming preference used to be proved by
+ * asserting the selector picks `deepgram`, a row that declared `streaming: true`
+ * and had no adapter — so the test that was meant to hold the rule instead made
+ * a recording-breaking row look deliberate.
+ */
+export const providerRank = (p: SttProviderDescriptor, preferCloud: boolean): number => {
+  if (p.capabilities.residency === 'local') return preferCloud ? 6 : 0
+  return p.capabilities.streaming ? 2 : 4
+}
+
 export const selectProvider = (input: SelectionInput): Selection => {
   const configured = new Set(input.configured)
   const eligible = STT_PROVIDERS.filter((p) => {
@@ -165,12 +185,7 @@ export const selectProvider = (input: SelectionInput): Selection => {
     return true
   })
 
-  const rank = (p: SttProviderDescriptor): number => {
-    if (p.capabilities.residency === 'local') return input.preferCloud ? 6 : 0
-    return p.capabilities.streaming ? 2 : 4
-  }
-
-  const best = eligible.slice().sort((a, b) => rank(a) - rank(b))[0]
+  const best = eligible.slice().sort((a, b) => providerRank(a, input.preferCloud === true) - providerRank(b, input.preferCloud === true))[0]
   if (best) return { ok: true, id: best.id }
 
   // Say which constraint bit. "aucun fournisseur disponible" sends someone to

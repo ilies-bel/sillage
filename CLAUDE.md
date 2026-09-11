@@ -579,7 +579,32 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
 - **Raw audio is never retained** (DEC-12). Transcribed and discarded.
 - **The capture path has zero network dependencies** (DEC-26). Everything downstream may
-  fail; nothing downstream may stop a meeting being recorded.
+  fail; nothing downstream may stop a meeting being recorded. **`Recording.start` was the
+  exact inversion of this for as long as it existed**: `transcribe.start()` reaches
+  `createSttSession`, which throws for a provider id it has no branch for, and the throw
+  escaped into `Orchestrator.startRecording`'s single catch — which sets **capture** down
+  and aborts the meeting. A downstream, remote, *optional* subsystem failing at t=0 meant
+  the rep pressed *Enregistrer*, nothing was recorded, and the app said the microphone was
+  unavailable. Capture had never been asked to start. The order is right and must stay
+  (the transcriber listens before the first frame); the throw is contained instead. The
+  reachable instance was `deepgram` — declared as the only `streaming: true` row, so
+  `selectProvider` *preferred* it the moment a rep opted into a cloud upgrade, with no
+  adapter behind it — and a registry test asserted the selector picks it. **A row in
+  `STT_PROVIDERS` is an offer the product must be able to honour**: `registry.test.ts`
+  holds every id to a constructible session, and the streaming preference is proved
+  against `providerRank` rather than against a shipped row, so it can never again be
+  satisfied by declaring a provider that cannot start.
+- **The local engine is pooled and outlives the meeting, so its prompt must be set
+  unconditionally.** `prewarmLocalEngine()` holds a reference that is never released, and
+  `setPrompt` is last-writer-wins — so `if (this.#prompt) engine.setPrompt(…)` meant a
+  meeting with no calendar context and no stored terms **never overwrote the previous
+  one's**. Whisper's `initial_prompt` biases decoding toward what it is given (§4 measured
+  the terms inserting themselves into speech), so a prospect's transcript could acquire a
+  different client's company name and surnames — in the transcript the compte-rendu is
+  folded from and VerySwing receives. An empty prompt is a statement and has to be made.
+  The test asserts the **source shape**, the way `preloadUnwrap.test.ts` does, because
+  `acquireEngine` returns a fresh engine whenever a `spawn` is injected: two sessions in a
+  test can never share the pooled engine that production always shares.
 - **`POST /v1/crm/tasks` has no idempotency key.** The outbox persists the returned `id` in
   the same transaction that drains the intent, and never re-posts a drained one.
 - **Where a provider runs is surfaced, never enforced** (HR-11 as amended by DEC-33 and
