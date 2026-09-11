@@ -82,7 +82,24 @@ build({
     'pdf-parse',
     'mammoth',
   ],
+  /*
+   * **Maps yes, sources no — and they never reach an installer.**
+   *
+   * `sourcemap: true` alone embedded `sourcesContent`: 82 MB of the 126 MB in
+   * `dist-electron` were `.map` files, and `main.js.map` carried 655
+   * `sourcesContent` entries — 108 of them this product's own `DEC-`
+   * commentary, verbatim. `package.json`'s `build.files` shipped
+   * `dist-electron` whole, so a third of the payload was the original
+   * TypeScript, handed to anyone holding the installer.
+   *
+   * The maps are still written, because a stack trace that maps to
+   * `Recording.ts:135` is worth having while developing and in a diagnostics
+   * bundle. What is dropped is the *content* of those files, which a map does
+   * not need to do that job — and `build.files` now excludes every
+   * map file outright, so what ships has neither.
+   */
   sourcemap: true,
+  sourcesContent: false,
   jsx: 'automatic',
   loader: {
     '.ts': 'ts',

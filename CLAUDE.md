@@ -808,6 +808,21 @@ silently. That happened twice — the second time it broke six stages at once, i
 features under review — and both times the lesson was written down in a comment. A comment is
 not a check.
 
+## What ships
+
+`build.files` in `package.json` decides what lands in an installer, and two
+things it used to carry were mistakes rather than choices.
+
+**Sourcemaps with the source inside them.** `build-electron.js` set
+`sourcemap: true`, which embeds `sourcesContent` — 82 MB of a 126 MB
+`dist-electron`, and `main.js.map` alone held 655 source files, **108 of them
+this product's own `DEC-` commentary, verbatim**. A third of the payload was the
+original TypeScript, handed to anyone holding the installer. Maps are still
+written, because a stack trace that maps to `Recording.ts:135` is worth having
+while developing and in a diagnostics bundle; `sourcesContent: false` drops what
+a map does not need for that, and `build.files` excludes every map outright, so
+what ships has neither. 82 MB → 26 MB locally, zero packaged.
+
 ## Platforms — Windows is the primary one (HR-2)
 
 The reps this ships to are on Windows laptops. macOS is where it is *written*, which is the
