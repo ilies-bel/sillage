@@ -348,6 +348,59 @@ test('compteRenduSources — every source is a line the document wrote, with its
   }
 })
 
+test('compteRenduSources — a newline inside a value loses neither the row nor its source', () => {
+  /*
+   * **The failure was silent in both directions.** `unwrapProse` is applied to
+   * the narrative and to nothing else, so a model that wrapped « Besoin » across
+   * two lines broke the row in half — the second half drawn as ordinary prose
+   * with no gutter and no marker — and `compteRenduSources` matches the line as
+   * written by string equality, so the `[source ▸]` on the most operative line in
+   * the document went with it. A line that matches nothing is drawn plain, which
+   * is what keeps the free recipe working and is exactly what made this
+   * invisible: nothing on screen says the provenance was lost.
+   */
+  const wrapped = {
+    ...sampleExtraction,
+    interpretation: {
+      ...sampleExtraction.interpretation,
+      besoin:
+        sampleExtraction.interpretation.besoin === null
+          ? null
+          : {
+              ...sampleExtraction.interpretation.besoin,
+              value: sampleExtraction.interpretation.besoin.value.replace(' ', '\n  '),
+            },
+    },
+  }
+
+  const text = renderCompteRendu(wrapped, sampleVerification)
+  const sources = compteRenduSources(wrapped)
+  const bare = text
+    .split('\n')
+    .filter((line) => line.startsWith('- '))
+    .map((line) =>
+      line
+        .slice(2)
+        .replace(/[\s\u00a0]*⚠[\s\u00a0]*faible[\s\u00a0]*$/u, '')
+        .trim(),
+    )
+
+  assert.equal(
+    sources.length,
+    compteRenduSources(sampleExtraction).length,
+    'aucune source ne disparaît',
+  )
+  for (const source of sources) {
+    assert.ok(bare.includes(source.text), `source absente du document : « ${source.text} »`)
+  }
+  // And the row is still one row: nothing spilled into the prose below it.
+  assert.equal(
+    text.split('\n').filter((l) => l.startsWith('- **Besoin** : ')).length,
+    1,
+  )
+  assert.ok(!text.includes('\n  '), 'la valeur est repliée sur une ligne')
+})
+
 test('compteRenduSources — the free recipe produces none, because it types nothing', () => {
   // DEC-43: no typed field means no cited item means nothing to point at. An
   // empty list is the honest answer and the renderer draws plain bullets.

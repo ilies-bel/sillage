@@ -104,3 +104,56 @@ test('a signal that alternates every sample is not measured as silence', () => {
   // And silence is still silence.
   assert.equal(peakToPeakInt16LE(Buffer.alloc(640)), 0)
 })
+
+// ── a channel that was producing and stopped ────────────────────────────────
+
+test('a channel that dies mid-call is reported, once', () => {
+  /*
+   * **The case this file's own header claims and could not see.**
+   *
+   * `handleWatchdogTick` returned early on `chunkCount > 0`, so the *first*
+   * chunk disarmed the watchdog for the rest of the meeting, and
+   * `maybeInterChunkGapLog` fires from `handleChunk`, which is exactly what
+   * never comes again. Driven over fifty minutes at 1 chunk/s whose far half
+   * dies at 1:00, the classifier said nothing at all.
+   */
+  const c = new SystemAudioHealthClassifier({ watchdogMs: 12_000, stallMs: 8_000 })
+  c.handle({ kind: 'capture-started', nowMs: 0 })
+
+  const loud = Buffer.alloc(640)
+  for (let i = 0; i < 320; i++) loud.writeInt16LE(i % 2 === 0 ? 12_000 : -12_000, i * 2)
+
+  // A minute of real audio, then nothing for the remaining forty-nine.
+  let now = 0
+  for (; now < 60_000; now += 1_000) c.handle({ kind: 'chunk', chunk: loud, nowMs: now })
+
+  const said: string[] = []
+  for (; now < 3_000_000; now += 4_000) {
+    const outcome = c.handle({ kind: 'watchdog-tick', nowMs: now })
+    if (outcome.type === 'log') said.push(outcome.reason)
+  }
+
+  assert.deepEqual(said, ['stalled-mid-capture'], 'said once, and said at all')
+})
+
+test('a stutter is not a death', () => {
+  // `interChunkGapLogMs` is the stutter; this is the channel stopping. A gap
+  // shorter than `stallMs` that closes must say nothing new.
+  const c = new SystemAudioHealthClassifier({ watchdogMs: 12_000, stallMs: 8_000 })
+  c.handle({ kind: 'capture-started', nowMs: 0 })
+  const loud = Buffer.alloc(640)
+  for (let i = 0; i < 320; i++) loud.writeInt16LE(i % 2 === 0 ? 12_000 : -12_000, i * 2)
+
+  c.handle({ kind: 'chunk', chunk: loud, nowMs: 1_000 })
+  assert.equal(c.handle({ kind: 'watchdog-tick', nowMs: 5_000 }).type, 'none')
+  c.handle({ kind: 'chunk', chunk: loud, nowMs: 6_000 })
+  assert.equal(c.handle({ kind: 'watchdog-tick', nowMs: 10_000 }).type, 'none')
+})
+
+test('a channel that never produced anything still reports the initial silence', () => {
+  // The stall branch must not swallow the case that was already caught.
+  const c = new SystemAudioHealthClassifier({ watchdogMs: 12_000, stallMs: 8_000 })
+  c.handle({ kind: 'capture-started', nowMs: 0 })
+  const outcome = c.handle({ kind: 'watchdog-tick', nowMs: 12_001 })
+  assert.equal(outcome.type === 'log' && outcome.reason, 'initial-silence-no-chunks')
+})

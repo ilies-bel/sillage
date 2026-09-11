@@ -523,16 +523,29 @@ export class CaptureSession extends EventEmitter {
        * minutes of it is a meeting being half recorded with nothing saying so,
        * which is the failure this whole file exists to end.
        */
+      /*
+       * **And the third: a channel that was arriving and stopped.**
+       *
+       * The watchdog used to be disarmed by the first chunk, so the case the
+       * classifier's own header claims — a route change mid-call leaving the tap
+       * on an endpoint no longer playing — was reported by nothing. A rep who
+       * unplugs a USB headset twenty minutes into a call loses the far side for
+       * the rest of it; on Windows there is no error channel from
+       * `SystemAudioCapture` to say so either, so the silence *is* the signal.
+       */
       if (
         outcome.reason === 'initial-silence-no-chunks' ||
-        outcome.reason === 'sustained-zero-valued-silence'
+        outcome.reason === 'sustained-zero-valued-silence' ||
+        outcome.reason === 'stalled-mid-capture'
       ) {
         this.emit('health', {
           state: 'degraded',
           reason:
             outcome.reason === 'initial-silence-no-chunks'
               ? `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.`
-              : `${sideCap} est coupé : le signal est à zéro depuis le début de l’appel. Vérifiez le bouton « muet ».`,
+              : outcome.reason === 'sustained-zero-valued-silence'
+                ? `${sideCap} est coupé : le signal est à zéro depuis le début de l’appel. Vérifiez le bouton « muet ».`
+                : `${sideCap} s’est interrompu pendant l’appel — plus rien n’arrive. Vérifiez le périphérique audio.`,
           since: this.#clock(),
           retryable: true,
         } satisfies ConnectorHealth)

@@ -122,13 +122,34 @@ export const unwrapProse = (prose: string): string => {
 const mark = (report: VerificationReport | undefined, path: string): string =>
   report?.fields[path] === 'faible' ? ` ${FAIBLE_MARKER}` : ''
 
+/**
+ * **A typed field's value is one line, and it is made one here.**
+ *
+ * `unwrapProse` undoes the model's soft wraps in the *narrative* and nothing
+ * touched the eleven typed values — so a newline the model put inside « Besoin »
+ * broke the row in half: the second half was drawn as ordinary prose with no
+ * marker and no gutter, and `compteRenduSources` matches the line **as written**
+ * by string equality, so the `[source ▸]` on the most operative line in the
+ * document silently went. A line that matches nothing is drawn plain, which is
+ * the behaviour that keeps the free recipe working and is exactly what makes
+ * this invisible: nothing on screen says the provenance was lost.
+ *
+ * Collapsed rather than unwrapped, because these are *values*: a field holds one
+ * answer, and a newline inside one is never meaning, only formatting the model
+ * chose. The narrative keeps `unwrapProse`, which has to decide whether a break
+ * ends a sentence.
+ */
+export const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
+
 const line = (
   report: VerificationReport | undefined,
   path: string,
   label: string,
   body: string | null,
 ): string =>
-  body === null ? `- **${label}** : ${NOT_MENTIONED}` : `- **${label}** : ${body}${mark(report, path)}`
+  body === null
+    ? `- **${label}** : ${NOT_MENTIONED}`
+    : `- **${label}** : ${oneLine(body)}${mark(report, path)}`
 
 const formatProfil = (profil: z.infer<typeof ProfilRechercheSchema>): string => {
   const stack = profil.stack.filter((s) => s.trim() !== '')
@@ -177,7 +198,7 @@ const listSection = <T>(
   return [
     heading,
     '',
-    ...items.map((item, i) => `- ${format(item.value)}${mark(report, `${path}.${i}`)}`),
+    ...items.map((item, i) => `- ${oneLine(format(item.value))}${mark(report, `${path}.${i}`)}`),
     '',
   ]
 }
@@ -433,13 +454,13 @@ export const compteRenduSources = (extraction: ExtractionESN): CompteRenduSource
    * failing anywhere. `compteRendu.test.ts` holds the two halves together.
    */
   const row = (label: string, body: string | null, span: TranscriptSpan | null | undefined) => {
-    const trimmed = body?.trim()
+    const trimmed = body === null ? '' : oneLine(body)
     if (!trimmed || !span) return
     out.push({ text: `**${label}** : ${trimmed}`, span })
   }
   const item = (text: string, span: TranscriptSpan | null | undefined) => {
     if (!span) return
-    out.push({ text: text.trim(), span })
+    out.push({ text: oneLine(text), span })
   }
 
   row('Besoin', interpretation.besoin?.value ?? null, interpretation.besoin?.span)

@@ -97,6 +97,28 @@ test('messages lose addresses, URLs and quoted runs, and are capped', () => {
   assert.equal(redactMessage('x'.repeat(500)).length, 240)
 })
 
+test('a path is stripped on both platforms, UNC included', () => {
+  /*
+   * The Windows share is the one that matters most, on the primary platform
+   * (HR-2): `\\SRV-PARIS\partage\clients\Neovia.xlsx` names the client in the
+   * share and the site in the server, and it is what an error carries when a rep
+   * opens a document from a network drive. The drive-letter alternative could
+   * never match it — a UNC path has no `X:` — while the docblock said paths were
+   * stripped.
+   */
+  for (const [input, expected] of [
+    ['ouverture de \\\\SRV-PARIS\\partage\\clients\\Neovia.xlsx impossible', 'ouverture de [chemin] impossible'],
+    ['C:\\Users\\Jean.Dupont\\notes.docx', '[chemin]'],
+    ['/Users/jean/notes.md', '[chemin]'],
+    ['~/Documents/offre.pdf', '[chemin]'],
+  ] as const) {
+    assert.equal(redactMessage(input), expected)
+  }
+  // And a sentence with no path is untouched — this is a denylist, and one that
+  // eats ordinary French would make the bundle unreadable.
+  assert.equal(redactMessage('le modèle a refusé la réponse'), 'le modèle a refusé la réponse')
+})
+
 test('the meeting id survives — it says which call, not who was on it', () => {
   assert.equal(redactDiagEvent(leaky).meetingId, 'm-42')
 })

@@ -68,7 +68,18 @@ const URL_WITH_PAYLOAD = /\bhttps?:\/\/\S+/g
  * space in it loses its tail rather than its head, which still removes the part
  * that names a person.
  */
-const PATH = /(?:[A-Za-z]:[\\/]|~\/|(?<![\w.])\/(?=[A-Za-z0-9._-]))[^\s"'«»]*/g
+/*
+ * **And the UNC path, which is the Windows one that matters most.**
+ *
+ * `\\SRV-PARIS\partage\clients\Neovia.xlsx` names the client in the share, the
+ * site in the server, and it is what a Windows error message carries when a rep
+ * opens a document from a network drive — on the primary platform (HR-2), into a
+ * bundle whose own button reads « Sans contenu de conversation. Peut être envoyé
+ * au support. » The drive-letter alternative could never match it: a UNC path
+ * has no `X:`. Its own docblock has claimed to strip paths since before any of
+ * them were stripped.
+ */
+const PATH = /(?:\\\\[A-Za-z0-9._-]|[A-Za-z]:[\\/]|~\/|(?<![\w.])\/(?=[A-Za-z0-9._-]))[^\s"'«»]*/g
 /** Quoted runs are how transcript excerpts end up inside an error message. */
 const QUOTED = /["“”«»'`]{1}[^"“”«»'`]{8,}["“”«»'`]{1}/g
 

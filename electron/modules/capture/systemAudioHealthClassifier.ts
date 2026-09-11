@@ -53,6 +53,7 @@ export type HealthOutcome =
 
 export interface HealthClassifierOptions {
   watchdogMs?: number
+  stallMs?: number
   zeroObservationMs?: number
   meaningfulPeakToPeak?: number
   interChunkGapLogMs?: number
@@ -62,6 +63,12 @@ const DEFAULT_WATCHDOG_MS = 12_000
 const DEFAULT_ZERO_OBSERVATION_MS = 12_000
 const DEFAULT_MEANINGFUL_PEAK_TO_PEAK = 100
 const DEFAULT_INTER_CHUNK_GAP_LOG_MS = 2_000
+/**
+ * How long a channel that **was** producing may produce nothing before it is
+ * reported. Longer than `interChunkGapLogMs`, which is a stutter; this is a
+ * channel that stopped.
+ */
+const DEFAULT_STALL_MS = 8_000
 
 function peakToPeakInt16LE(chunk: Buffer): number {
   if (!Buffer.isBuffer(chunk) || chunk.length < 2) return 0
@@ -95,6 +102,7 @@ function peakToPeakInt16LE(chunk: Buffer): number {
 
 export class SystemAudioHealthClassifier {
   readonly watchdogMs: number
+  readonly stallMs: number
   readonly zeroObservationMs: number
   readonly meaningfulPeakToPeak: number
   readonly interChunkGapLogMs: number
@@ -106,6 +114,7 @@ export class SystemAudioHealthClassifier {
   hasMeaningfulSignal = false
   noChunkLogEmitted = false
   zeroValuedLogEmitted = false
+  stalledLogEmitted = false
 
   static supportedEventKinds = Object.freeze([
     'capture-started',
@@ -116,6 +125,7 @@ export class SystemAudioHealthClassifier {
 
   constructor(options: HealthClassifierOptions = {}) {
     this.watchdogMs = options.watchdogMs ?? DEFAULT_WATCHDOG_MS
+    this.stallMs = options.stallMs ?? DEFAULT_STALL_MS
     this.zeroObservationMs = options.zeroObservationMs ?? DEFAULT_ZERO_OBSERVATION_MS
     this.meaningfulPeakToPeak = options.meaningfulPeakToPeak ?? DEFAULT_MEANINGFUL_PEAK_TO_PEAK
     this.interChunkGapLogMs = options.interChunkGapLogMs ?? DEFAULT_INTER_CHUNK_GAP_LOG_MS
@@ -131,6 +141,7 @@ export class SystemAudioHealthClassifier {
     this.hasMeaningfulSignal = false
     this.noChunkLogEmitted = false
     this.zeroValuedLogEmitted = false
+    this.stalledLogEmitted = false
   }
 
   handle(event: HealthEvent): HealthOutcome {
@@ -152,7 +163,45 @@ export class SystemAudioHealthClassifier {
   }
 
   handleWatchdogTick(event: Extract<HealthEvent, { kind: 'watchdog-tick' }>): HealthOutcome {
-    if (this.stopped || this.chunkCount > 0 || this.noChunkLogEmitted) return { type: 'none' }
+    if (this.stopped) return { type: 'none' }
+
+    /*
+     * **A channel that was producing and stopped, which nothing could notice.**
+     *
+     * The header of this file claims it catches « a route change mid-call [that]
+     * leaves the tap on an endpoint no longer playing ». It did not: the guard
+     * below returns early on `chunkCount > 0`, so the **first** chunk disarmed
+     * the watchdog for the rest of the meeting, and `maybeInterChunkGapLog` —
+     * the only other thing that looks at the interval — fires from `handleChunk`,
+     * which is exactly what never comes again. Executed over a fifty-minute call
+     * whose far half died at 1:00, this classifier said **nothing**, 3000 chunks
+     * and forty-nine silent minutes later.
+     *
+     * On Windows there is no backstop at all: `SystemAudioCapture` has no
+     * runtime error channel to JS — `tsfn.call(Err(..))` appears only in the
+     * three init branches — so `AUDCLNT_E_DEVICE_INVALIDATED` from an unplugged
+     * headset is a `continue` in a loop with no way to say so. The rep finishes
+     * the call, the header says « Tout fonctionne », and the compte-rendu is
+     * folded from half a transcript.
+     *
+     * Once per meeting, like the other two: a channel that comes back says
+     * nothing new, and one that does not has already been said.
+     */
+    if (this.chunkCount > 0) {
+      if (this.stalledLogEmitted || this.lastChunkAtMs === null) return { type: 'none' }
+      const silentFor = event.nowMs - this.lastChunkAtMs
+      if (silentFor < this.stallMs) return { type: 'none' }
+      this.stalledLogEmitted = true
+      return {
+        type: 'log',
+        level: 'warn',
+        reason: 'stalled-mid-capture',
+        gapMs: silentFor,
+        message: `ce canal ne produit plus rien depuis ${Math.round(silentFor / 1000)}\u00a0s — la capture continue mais rien n’arrive`,
+      }
+    }
+
+    if (this.noChunkLogEmitted) return { type: 'none' }
     const startedAtMs = this.startedAtMs ?? event.nowMs
     if (event.nowMs - startedAtMs < this.watchdogMs) return { type: 'none' }
 
