@@ -134,3 +134,20 @@ test('a record that cannot be parsed is not a health claim', () => {
   assert.equal(EssaiRecordSchema.safeParse(result(true, true)).success, false, 'at est requis')
   assert.equal(EssaiRecordSchema.safeParse({ ...result(true, true), at: 1 }).success, true)
 })
+
+test('silence on both channels is not a degradation — it establishes nothing', () => {
+  /*
+   * `heard` is `peak > SPEECH_FLOOR`, so a rep who runs the trial in a quiet
+   * room and says nothing measures false on both. Persisting that puts a
+   * permanent warning on the connector row and, by DEC-32, moves the general
+   * app status — the app telling somebody their machine is broken on the
+   * strength of twenty seconds in which nobody did anything.
+   *
+   * It is the rule `essaiWorthRepeating` already states fifty lines up, and for
+   * one commit this function contradicted it.
+   */
+  const silence = { ...result(false, false), at: 1_760_000_000_000 }
+  assert.equal(essaiHealth(silence), null)
+  // And it is still worth offering again, which is the honest response to it.
+  assert.equal(essaiWorthRepeating(silence), true)
+})

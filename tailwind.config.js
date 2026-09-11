@@ -92,6 +92,22 @@ module.exports = {
        * `border-x` can say, `ring-x` has to be able to say too, or the next
        * outline is invisible for the same reason.
        */
+      /*
+       * And the third utility that draws a rule, for the third time.
+       *
+       * `decoration-card` would otherwise resolve through the generic `colors`
+       * palette to `--bg-card` — a near-white *background* token — so a dotted
+       * underline asked to be the weight of a table rule would have drawn in the
+       * colour of the paper. Same shape as `ring-card` below and `bg-muted/30`
+       * before it: the class name is right, something resolves, and the element
+       * is silently unstyled. A rule-drawing utility reads the border tokens,
+       * and `design/tokens.test.ts` holds the three scales to each other.
+       */
+      textDecorationColor: {
+        subtle: 'var(--border-subtle)',
+        card: 'var(--border-card)',
+        muted: 'var(--text-muted)',
+      },
       ringColor: {
         DEFAULT: 'var(--border-subtle)',
         subtle: 'var(--border-subtle)',

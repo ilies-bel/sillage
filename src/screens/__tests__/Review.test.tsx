@@ -60,7 +60,8 @@ const panel = (over: Partial<ReviewPanel> = {}): ReviewPanel => ({
     taskName: 'Acme Industries — besoin Dev Java',
     accountId: 'ACC-1042',
     accountName: 'Acme Industries',
-    compteRendu: '# Acme Industries\n\nRenfort de deux profils Java.\n',
+    compteRendu:
+      '# Acme Industries\n\nRenfort de deux profils Java.\n\n### Prochaines étapes\n\n- envoyer 2 CV — Julien — vendredi\n- ranger le bureau\n',
     besoin: "Renfort de l'équipe plateforme",
     profils: '2 × Dev Java — senior (Java, Spring)',
     modeCollaboration: 'régie',
@@ -109,6 +110,16 @@ const panel = (over: Partial<ReviewPanel> = {}): ReviewPanel => ({
   ],
   mailTo: ['camille.leroy@acme-industries.fr'],
   overall: 'ok',
+  /*
+   * Two of the three bullets came from a cited item; the third did not. The
+   * document has to make exactly the first two followable — the point of
+   * matching on string equality is that a line the composer did not write from
+   * evidence stays plain rather than acquiring a control that leads nowhere.
+   */
+  sources: [
+    { text: 'envoyer 2 CV — Julien — vendredi', span: span('on vous envoie deux CV vendredi') },
+    { text: 'relancer les achats', span: span('il faut repasser par les achats') },
+  ],
   intents: [
     {
       id: 'm1:crm.task',
@@ -1156,5 +1167,69 @@ describe('DEC-4 — the rows describe the form as it stands, not as it arrived',
 
     await valider()
     expect(confirmCall()?.intentIds).toContain('m1:crm.opportunity')
+  })
+})
+
+describe('the bullets are checkable, the way the fields are (DEC-21)', () => {
+  /*
+   * The eleven typed rows each offered a `[source ▸]` and the twenty-four
+   * hundred pixels of compte-rendu beside them offered provenance on quotations
+   * only — five followable fragments across twenty-eight substantive lines, and
+   * **none at all on the twelve bullets**. The bullets are the operative half:
+   * « Envoyer 3 CV avec TJM avant vendredi » is the commitment that becomes the
+   * VerySwing task, and it was the least checkable thing on a screen whose whole
+   * argument is that nothing ships unchecked.
+   *
+   * Nothing new is claimed here. The spans were already on the `Cited<T>` items
+   * the composer wrote each line from and `spanVerification` had already looked
+   * them up; they simply never left the extraction.
+   */
+  test('a bullet written from a cited item opens the record on it', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      segments: [segment('s1', 'far', 61_000, 'On vous envoie deux CV vendredi, promis.')],
+    }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Not fetched until asked — the same rule `source ▸` keeps.
+    expect(screen.queryByText(/promis/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /envoyer 2 CV — Julien — vendredi/ }))
+    // The same reader, over the same stored segments.
+    await screen.findByText(/On vous envoie deux CV vendredi/)
+  })
+
+  test('a ⚠ faible bullet keeps its provenance — it is the one most worth checking', async () => {
+    // The marker is appended to the rendered line and is not part of what was
+    // said. Comparing with it attached would strip the control from exactly the
+    // lines a rep needs it on, which is backwards.
+    bridge.when('review:get', () =>
+      openGate({
+        edits: {
+          ...panel().edits,
+          compteRendu: '### Prochaines étapes\n\n- relancer les achats ⚠ faible\n',
+        },
+        sources: [
+          { text: 'relancer les achats', span: span('il faut repasser par les achats') },
+        ],
+      }),
+    )
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.getByRole('button', { name: /relancer les achats/ })).toBeTruthy()
+  })
+
+  test('a bullet the composer did not write from evidence stays plain', async () => {
+    /*
+     * The match is string equality on purpose. A near-match would be the app
+     * guessing which sentence a piece of evidence belongs to — the failure
+     * DEC-21 exists to prevent — and a control that leads nowhere is the dead
+     * control DEC-26 forbids.
+     */
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.queryByRole('button', { name: /ranger le bureau/ })).toBeNull()
+    expect(screen.getByText(/ranger le bureau/)).toBeTruthy()
   })
 })

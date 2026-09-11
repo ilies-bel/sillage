@@ -34,6 +34,7 @@ import type {
 } from '../../core/contracts/extraction.ts'
 import type { Cited } from '../../core/contracts/extraction.ts'
 import type { Attendee } from '../../core/contracts/meeting.ts'
+import type { TranscriptSpan } from '../../core/contracts/transcript.ts'
 import { isFreeForm } from '../../core/contracts/recipes.ts'
 import type { z } from 'zod'
 import type {
@@ -381,4 +382,94 @@ export const renderCompteRendu = (
     : ''
 
   return `${document}${legend}\n`
+}
+
+/**
+ * **Where each line of the document came from, so the bullets can be checked
+ * the way the fields already are** (DEC-21).
+ *
+ * The eleven typed rows in the gate's rail each carry a `[source ▸]`, and the
+ * twenty-four hundred pixels of compte-rendu beside them carried provenance on
+ * quotations only — five followable fragments across twenty-eight substantive
+ * lines, and **none at all on the twelve bullets**. The bullets are the
+ * operative half: « 2 × Data Engineer confirmé », « Envoyer 3 CV avec TJM avant
+ * vendredi ». Those are the commitments that become the VerySwing task, and they
+ * were the least checkable thing on a screen whose whole argument is that
+ * nothing ships unchecked.
+ *
+ * Nothing new is claimed and nothing is re-verified. Every one of these lines is
+ * already composed *from* a `Cited<T>` whose span `spanVerification` looked up in
+ * the stored transcript; the span simply never left the extraction. This pairs
+ * each rendered line with the span it was rendered from — deterministically,
+ * because both sides call the same `format`, so the renderer matches on string
+ * equality and never on a heuristic.
+ *
+ * What is *followed* is the span's own quote, never the composed line: the line
+ * is how the document says it and the quote is what was actually said, and only
+ * the second is findable in a transcript. So the pairing is « this line, that
+ * fragment » — which is the same pairing `[source ▸]` already makes for a field.
+ *
+ * It is a **side channel on purpose.** DEC-44: the document is never rendered as
+ * markdown anywhere and VerySwing receives the string the rep read, so a marker
+ * written into the text would land in the CRM as literal punctuation. The
+ * provenance travels beside the document, not inside it.
+ */
+export interface CompteRenduSource {
+  /** The line as `renderCompteRendu` wrote it, without the `- ` and any marker. */
+  text: string
+  span: TranscriptSpan
+}
+
+export const compteRenduSources = (extraction: ExtractionESN): CompteRenduSource[] => {
+  const { interpretation } = extraction
+  const out: CompteRenduSource[] = []
+
+  /*
+   * The line **as written**, which is the whole of the match. `text` is compared
+   * for equality by the renderer, so it has to be assembled by exactly the code
+   * paths that assembled the document — `\`**${label}** : ${body}\`` for an
+   * « Éléments retenus » row, `format(item.value)` for a list item — or the
+   * provenance silently disappears the day one of them is reworded, with nothing
+   * failing anywhere. `compteRendu.test.ts` holds the two halves together.
+   */
+  const row = (label: string, body: string | null, span: TranscriptSpan | null | undefined) => {
+    const trimmed = body?.trim()
+    if (!trimmed || !span) return
+    out.push({ text: `**${label}** : ${trimmed}`, span })
+  }
+  const item = (text: string, span: TranscriptSpan | null | undefined) => {
+    if (!span) return
+    out.push({ text: text.trim(), span })
+  }
+
+  row('Besoin', interpretation.besoin?.value ?? null, interpretation.besoin?.span)
+  row(
+    'Mode de collaboration',
+    interpretation.modeCollaboration === null
+      ? null
+      : MODE_LABEL[interpretation.modeCollaboration.value],
+    interpretation.modeCollaboration?.span,
+  )
+  row(
+    'TJM évoqué',
+    interpretation.tjmEvoque === null ? null : formatTjm(interpretation.tjmEvoque.value),
+    interpretation.tjmEvoque?.span,
+  )
+  row('Démarrage', interpretation.dateDemarrage?.value ?? null, interpretation.dateDemarrage?.span)
+  row(
+    'Durée de mission',
+    interpretation.dureeMission?.value ?? null,
+    interpretation.dureeMission?.span,
+  )
+  row(
+    'Contexte technique',
+    interpretation.contexteTechnique?.value ?? null,
+    interpretation.contexteTechnique?.span,
+  )
+
+  for (const p of interpretation.profilsRecherches) item(formatProfil(p.value), p.span)
+  for (const o of interpretation.objections) item(formatObjection(o.value), o.span)
+  for (const e of interpretation.prochainesEtapes) item(formatEtape(e.value), e.span)
+
+  return out
 }

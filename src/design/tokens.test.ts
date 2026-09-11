@@ -261,3 +261,55 @@ describe("fonts are shipped, not fetched", () => {
     expect(fonts).toMatch(/Inter/);
   });
 });
+
+/*
+ * ── the three utilities that draw a rule have to agree ──────────────────────
+ *
+ * `bg-muted/30` compiled to no rule and the meter's bars were invisible.
+ * `ring-card` named a colour `ringColor` did not have and `StateDot`'s outline
+ * never drew, so the splash's « Audio » row had a hole where the other two have
+ * a dot. `decoration-card` would have resolved through the generic palette to
+ * `--bg-card` — a near-white *background* token — and drawn a dotted underline
+ * in the colour of the paper.
+ *
+ * Three instances, one shape: the class name is right, something resolves, and
+ * the element is silently unstyled. Whatever `border-*` can say, `ring-*` and
+ * `decoration-*` must be able to say, and must say the same thing.
+ */
+describe('border, ring and decoration name the same rules', () => {
+  // Read as text and parsed by the same regexes the rest of this file uses:
+  // `tailwind.config.js` is CommonJS and this suite runs as an ES module.
+  const config = read('../../tailwind.config.js')
+  const scale = (name: string): Record<string, string> => {
+    const block = new RegExp(`${name}: \\{([^}]*)\\}`).exec(config)?.[1]
+    if (!block) throw new Error(`${name} absent de tailwind.config.js`)
+    return Object.fromEntries(
+      [...block.matchAll(/([A-Za-z-]+|'[^']+'):\s*'([^']+)'/g)].map((m) => [
+        m[1].replace(/'/g, ''),
+        m[2],
+      ]),
+    )
+  }
+  const borderColor = scale('borderColor')
+  const ringColor = scale('ringColor')
+  const textDecorationColor = scale('textDecorationColor')
+
+  test('every border token is reachable from ring-* and decoration-*', () => {
+    for (const [name, value] of Object.entries(borderColor)) {
+      if (name === 'DEFAULT') continue
+      expect(ringColor[name], `ring-${name} n’existe pas`).toBe(value)
+      expect(textDecorationColor[name], `decoration-${name} n’existe pas`).toBe(value)
+    }
+  })
+
+  test('and none of them silently means a background', () => {
+    // The trap that produced this: `colors.card` is `--bg-card`, so a rule
+    // utility that falls through to the generic palette draws in the colour of
+    // the surface it sits on.
+    for (const scale of [borderColor, ringColor, textDecorationColor]) {
+      for (const [name, value] of Object.entries(scale)) {
+        expect(String(value), `${name} pointe vers un fond`).not.toMatch(/--bg-/)
+      }
+    }
+  })
+})

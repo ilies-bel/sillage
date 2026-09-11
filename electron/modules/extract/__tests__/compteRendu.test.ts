@@ -10,10 +10,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { ExtractionESN, VerificationReport } from '../../../core/contracts/extraction.ts'
-import { sampleExtraction } from '../../../core/contracts/fixtures.ts'
+import {
+  sampleExtraction,
+  sampleLibreExtraction,
+  sampleVerification,
+} from '../../../core/contracts/fixtures.ts'
 import type { MeetingContext } from '../../../core/contracts/meeting.ts'
 import { COMPTE_RENDU_SECTIONS } from '../../../core/contracts/recipes.ts'
-import { FAIBLE_MARKER, renderCompteRendu, unwrapProse } from '../compteRendu.ts'
+import {
+  FAIBLE_MARKER,
+  compteRenduSources,
+  renderCompteRendu,
+  unwrapProse,
+} from '../compteRendu.ts'
 import { UNRESOLVED_ACCOUNT, buildFacts, interlocuteursOf } from '../facts.ts'
 
 const allOk: VerificationReport = {
@@ -299,4 +308,48 @@ test('prose the prompt already asked for passes through untouched', () => {
 
 test('it never joins across a structural line, in either direction', () => {
   assert.equal(unwrapProse('Une phrase.\n## Titre\nSuite.'), 'Une phrase.\n## Titre\nSuite.')
+})
+
+/*
+ * ── the document's own provenance (DEC-21) ──────────────────────────────────
+ *
+ * `compteRenduSources` is only worth anything if every entry it returns is a
+ * line the document actually contains, character for character: the renderer
+ * matches on string equality, and a formatter changed on one side and not the
+ * other would silently drop the provenance from every bullet with nothing
+ * failing. This is the check that the two halves are the same half.
+ */
+test('compteRenduSources — every source is a line the document wrote, with its span', () => {
+  const text = renderCompteRendu(sampleExtraction, sampleVerification)
+  const sources = compteRenduSources(sampleExtraction)
+  assert.ok(sources.length > 0, 'une extraction typée doit produire des sources')
+
+  /*
+   * The rendered line minus the `- ` and minus a trailing `⚠ faible` — the exact
+   * operation the renderer performs, for the same reason: the marker is appended
+   * to the line and is not part of what was said, so a field the extraction
+   * could not verify would otherwise lose the provenance it most needs.
+   */
+  const bare = text
+    .split('\n')
+    .filter((line) => line.startsWith('- '))
+    .map((line) =>
+      line
+        .slice(2)
+        .replace(/[\s\u00a0]*⚠[\s\u00a0]*faible[\s\u00a0]*$/u, '')
+        .trim(),
+    )
+  for (const source of sources) {
+    // Equality, exactly as the renderer compares: the source is the whole line
+    // as written, `**Label** : value` included.
+    const found = bare.includes(source.text)
+    assert.ok(found, `source absente du document : « ${source.text} »`)
+    assert.ok(source.span.quote.length > 0, 'une source sans citation ne prouve rien')
+  }
+})
+
+test('compteRenduSources — the free recipe produces none, because it types nothing', () => {
+  // DEC-43: no typed field means no cited item means nothing to point at. An
+  // empty list is the honest answer and the renderer draws plain bullets.
+  assert.deepEqual(compteRenduSources(sampleLibreExtraction), [])
 })

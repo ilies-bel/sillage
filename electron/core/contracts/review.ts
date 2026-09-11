@@ -161,6 +161,26 @@ export const ReviewPanelSchema = z.object({
   /** `faible` when any interpretive field's quote could not be located. */
   overall: ConfidenceSchema,
   intents: z.array(ReviewIntentSchema),
+  /**
+   * **Where each generated line of the compte-rendu came from** (DEC-21).
+   *
+   * The eleven rows in the rail each offer a `[source ▸]`; the document beside
+   * them offered provenance on quotations only — five followable fragments
+   * across twenty-eight substantive lines, and none at all on the twelve
+   * bullets. The bullets are the operative half: « Envoyer 3 CV avec TJM avant
+   * vendredi » is the commitment that becomes the VerySwing task, and it was the
+   * least checkable thing on a screen whose argument is that nothing ships
+   * unchecked.
+   *
+   * Nothing new is claimed. Each entry pairs a line the composer wrote with the
+   * span it was written from — the same span `spanVerification` already looked
+   * up — so the renderer matches on string equality, never on a heuristic.
+   *
+   * **Beside the document and never inside it** (DEC-44): VerySwing receives the
+   * string the rep read, so a marker written into the text would land in the CRM
+   * as literal punctuation.
+   */
+  sources: z.array(z.object({ text: z.string(), span: TranscriptSpanSchema })),
 })
 export type ReviewPanel = z.infer<typeof ReviewPanelSchema>
 

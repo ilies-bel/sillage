@@ -288,6 +288,29 @@ export function TranscriptReader({ meetingId, focus, interlocuteurs }: Transcrip
       <CopyButton text={transcriptText(segments, interlocuteurs)} what="la transcription" />
       </div>
 
+      {/*
+        **Who « Client » can be** (DEC-47, DEC-7).
+
+        The far channel is labelled by side and never by person: the hardware
+        measures which channel a turn arrived on, and *which of two people spoke*
+        is a guess this product does not make — there is no diarisation, and no
+        amount of plausibility makes « Élodie » true of a turn Marc took. With
+        one interlocutor the calendar settles it and `speakerLabel` prints the
+        first name; with two it prints « Client », correctly, and a rep reading a
+        column of them has lost something the app *does* know: who was on that
+        side of the call.
+        So it is stated once, here, as the fact it is — the calendar's attendee
+        list — rather than smuggled into a column where it would read as an
+        attribution. The rep can tell « the buyer or the technician » apart from
+        the words; they could not tell it apart from nothing.
+      */}
+      {interlocuteurs.length > 1 ? (
+        <p className="text-muted mb-3 text-meta">
+          Côté client&nbsp;: {interlocuteurs.map((person) => person.name).join(', ')}. Les tours
+          sont attribués au canal, jamais à une personne.
+        </p>
+      ) : null}
+
       <div className="mb-3 flex items-baseline gap-inline">
         <input
           value={needle}

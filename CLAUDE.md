@@ -255,6 +255,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   handler that declines, because a second path that could confirm what the button is refusing
   is a second gate (DEC-4). The Réglages pane is a *view* of `SHORTCUTS`, never a second list.
 
+- **The document's own lines are followable, not just its quotations** (DEC-21).
+  The eleven typed rows each offer a `[source ▸]`; the compte-rendu beside them
+  offered provenance on « … » fragments only — five followable lines out of
+  twenty-eight, and **none on the twelve bullets**, which are the operative half:
+  « Envoyer 3 CV avec les TJM associés » is the commitment that becomes the
+  VerySwing task. Nothing new is claimed to fix it. Every one of those lines was
+  already composed *from* a `Cited<T>` whose span `spanVerification` had looked
+  up; the span simply never left the extraction. `compteRenduSources` pairs each
+  line **as written** with that span, `review:get` ships it beside the document,
+  and the renderer matches on **string equality** — never a heuristic, because a
+  near-match would be the app guessing which sentence a piece of evidence belongs
+  to. A line that matches nothing stays plain, which is what keeps the free
+  recipe (types nothing, so no sources) and *Historique* (no panel) working
+  untouched. What is *followed* is the span's quote, never the composed line:
+  the line is how the document says it, the quote is what was said, and only the
+  second is findable in a transcript. It travels **beside** the document and
+  never inside it (DEC-44) — VerySwing receives the string the rep read.
 - **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
   This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
   sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers
@@ -307,6 +324,16 @@ machine) or in `core/domain/` — never in an IPC handler.
   says so and seeds its search with the fragment that failed. It is asked for by a click and
   never fetched otherwise, and it is **not** the live transcript pane DEC-38 removed: that was a
   proof of life during a call and is still the input meter's job.
+- **Whatever `border-*` can say, `ring-*` and `decoration-*` must say too.**
+  Three instances of one shape now: `bg-muted/30` compiled to no rule and the
+  meter's below-floor bars were invisible; `ring-card` named a colour `ringColor`
+  did not have and `StateDot`'s outline never drew, leaving a hole where the
+  splash's other rows have a dot; and `decoration-card` would have fallen through
+  the generic `colors` palette to `--bg-card` — a near-white *background* token —
+  drawing a dotted underline in the colour of the paper. The class name is right,
+  something resolves, the element is silently unstyled, and no screenshot shows
+  it. `design/tokens.test.ts` holds the three scales to each other and refuses
+  any of them pointing at a `--bg-` token.
 - **No `/NN` opacity modifier on a design token.** Tailwind cannot recompute alpha on a bare
   `var()`, so `bg-muted/30` compiles to *no rule at all* — the class name is spelled right,
   nothing throws, and the element is simply unstyled. Two shipped that way: the meter's
@@ -541,6 +568,35 @@ modules/crm/vsa/          the only place VSA exists
 
 **CI check:** `grep -rn 'tiersCode\|oppyId\|salesStage' electron/ src/` must return hits
 only under `electron/modules/crm/vsa/`. Anywhere else means the abstraction leaked.
+
+## The end-to-end run reaches the gate
+
+`scripts/e2e.mjs` starts the **packaged** application under Playwright's Electron
+driver and walks a rep's first ten minutes. For a dozen rounds it stopped short of
+the one screen that matters most, for an honest reason: a headless run produces no
+audio, so no transcript, so no extraction, so the gate correctly refuses — and the
+run asserted exactly that, that the door is not there when it should not be.
+
+Which left `review:confirm` — **the only thing in this product that writes into a
+client's CRM** — with no end-to-end coverage at all. The screenshot harness drives
+the gate against real layout and a stubbed `window.app`; the renderer's tests drive
+it against a fake bridge in jsdom, where every box measures zero and the guard
+therefore fails open. Neither had ever seen the real store, the real state machine,
+the real field map or the real outbox.
+
+So the log is now seeded **through the product's own `Store`**, with the app
+closed — every event validated by its own Zod schema on the way in and folded by
+its own `Projections`, from `core/contracts/fixtures.ts` — and the next launch
+rehydrates the session from those transitions like any other. Five steps follow:
+the gate opens on a rehydrated session, the fields are the stored extraction, a
+citation opens the record on a turn that is really there, *Valider* is withheld
+until both columns have been shown, and the press lands. **The connector being
+absent is the case worth running**: it is the one where something could be lost
+silently, and what has to hold is that the intents are in the outbox and an attempt
+that could not start stays `pending` with a reason rather than `failed`.
+
+Seed with the app closed. SQLite would take the write from a second connection,
+but the running main process holds the session in memory and never re-reads it.
 
 ## Commands
 

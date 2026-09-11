@@ -878,6 +878,38 @@ const SCREENS = {
         either sentence would pass on one branch and hang on the other.
       */
       await page.getByPlaceholder('Rechercher dans la transcription…').waitFor()
+
+      /*
+       * **And the bullets, which are the operative half.**
+       *
+       * Provenance used to stop at the quotations: five followable fragments
+       * across twenty-eight substantive lines, and **none at all on the twelve
+       * bullets** — « Envoyer 3 CV avec les TJM associés » being the commitment
+       * that becomes the VerySwing task, and the least checkable thing on a
+       * screen whose whole argument is that nothing ships unchecked. The spans
+       * were already on the cited items; they just never left the extraction.
+       *
+       * Counted rather than eyeballed, because « some bullets are followable »
+       * is exactly the claim a screenshot cannot settle.
+       */
+      await page.getByRole('button', { name: 'Lecture', exact: true }).click()
+      await page.waitForTimeout(500)
+      const bullets = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('main.fade-below .relative')].filter((row) =>
+          row.querySelector('[data-hangs="marqueur"]')?.textContent?.trim().startsWith('-'),
+        )
+        return {
+          total: rows.length,
+          sourced: rows.filter((row) => row.querySelector('button')).length,
+        }
+      })
+      if (bullets.total === 0) throw new Error('aucune puce trouvée dans le compte-rendu')
+      if (bullets.sourced < bullets.total) {
+        throw new Error(
+          `${bullets.total - bullets.sourced} puce(s) sur ${bullets.total} sans provenance — ` +
+            'chacune est une affirmation qui part dans VerySwing sans moyen de la vérifier',
+        )
+      }
     },
   },
 
@@ -1641,6 +1673,15 @@ async function scrollers(page) {
       // Declared on purpose — a wide table or a code block is allowed to scroll
       // sideways inside its own box, and says so.
       if (el.dataset.scrolls !== undefined) continue
+      /*
+       * And truncation that **advertises itself** is not hiding. The check is
+       * for content cut off with nothing on screen saying so — a clipped
+       * textarea that looks exactly like a short one. A `line-clamp` or a
+       * `text-overflow: ellipsis` draws the ellipsis that says « there is more »,
+       * which is the cue whose absence this whole check is about.
+       */
+      if (style.webkitLineClamp && style.webkitLineClamp !== 'none') continue
+      if (style.textOverflow === 'ellipsis') continue
       const label =
         el.id ||
         el.getAttribute('aria-label') ||

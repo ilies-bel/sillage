@@ -128,3 +128,62 @@ test('every quotation in the fixture’s compte-rendu is in the fixture’s call
       'REGISTRE n’autorise les guillemets que pour ce que le client a dit.',
   )
 })
+
+test('every source the fixture offers leads to a turn the fixture’s call contains', () => {
+  /*
+   * The document's provenance (DEC-21), held to the same standard as its
+   * quotations — and for the same reason, which is that the failure is silent.
+   *
+   * Twelve bullets became followable. A `span.quote` the transcript does not
+   * contain opens the reader on « Cet extrait est introuvable dans la
+   * transcription », so a fixture with one invented quote would photograph the
+   * feature's *failure* state on the flagship screen and pass every other check
+   * in the repo. The stub has already been caught lying three times, each time
+   * about something that made the app look better than it is.
+   */
+  const source = readFileSync(STUB, 'utf8')
+  const block = /sources: \[([\s\S]*?)\n    \],/.exec(source)?.[1]
+  const lines = /const LINES = \[([\s\S]*?)\n  \]/.exec(source)?.[1]
+  assert.ok(block && lines, 'le harnais a changé de forme — mets ce test à jour')
+
+  const fold = (text: string) =>
+    text
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+
+  const call = fold(lines)
+  const quotes = [...block.matchAll(/quote: '((?:[^'\\]|\\.)*)'/g)].map((m) => m[1] ?? '')
+  assert.ok(quotes.length >= 10, `attendues au moins dix sources, trouvées ${quotes.length}`)
+
+  const missing = quotes.filter((quote) => !call.includes(fold(quote)))
+  assert.deepEqual(
+    missing,
+    [],
+    'une source du compte-rendu de démonstration pointe vers des mots que l’appel ' +
+      'ne contient pas — la capture montrerait « introuvable » sur la fonctionnalité ' +
+      'qu’elle est censée prouver.',
+  )
+
+  /*
+   * And the other half: a source whose `text` is not a line of the fixture's own
+   * compte-rendu matches nothing, so the bullet is drawn plain and the entry is
+   * dead weight that no screenshot would reveal.
+   */
+  const doc = /compteRendu: \[([\s\S]*?)\n    \]\.join/.exec(source)?.[1] ?? ''
+  const written = new Set(
+    [...doc.matchAll(/'- ((?:[^'\\]|\\.)*)'/g)].map((m) =>
+      (m[1] ?? '').replace(/[\s ]*⚠[\s ]*faible[\s ]*$/u, '').trim(),
+    ),
+  )
+  const texts = [...block.matchAll(/text:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1] ?? '')
+  const orphans = texts.filter((text) => !written.has(text))
+  assert.deepEqual(
+    orphans,
+    [],
+    'une source ne correspond à aucune ligne du compte-rendu de démonstration — ' +
+      'le rendu compare par égalité, donc cette puce resterait sans provenance.',
+  )
+})

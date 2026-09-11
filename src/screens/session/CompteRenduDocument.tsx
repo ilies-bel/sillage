@@ -56,6 +56,28 @@ interface CompteRenduDocumentProps {
    * nowhere (DEC-26).
    */
   onQuote?: (quote: string) => void
+  /**
+   * **Where the generated lines came from** (DEC-21), paired with the span each
+   * was written from.
+   *
+   * `onQuote` above makes the quotations followable, and those were the only
+   * followable thing in the document: five fragments across twenty-eight
+   * substantive lines, and **none on the twelve bullets**. The bullets are the
+   * operative half — « Envoyer 3 CV avec TJM avant vendredi » is the commitment
+   * that becomes the VerySwing task — and they were the least checkable thing on
+   * the screen.
+   *
+   * Matched on **string equality**, never on a heuristic: `compteRenduSources`
+   * composes each entry through the same formatter that wrote the line, so a
+   * bullet either is one of these or is not. A line that does not match is drawn
+   * exactly as before, which is what keeps a recipe that types nothing — and a
+   * stored extraction rendered by *Historique*, which has no panel — working
+   * untouched.
+   *
+   * The document itself is not changed by this (DEC-44). VerySwing receives the
+   * string the rep read; the provenance travels beside it.
+   */
+  sources?: readonly { text: string; span: { quote: string } }[]
   className?: string
 }
 
@@ -82,8 +104,42 @@ const HEADING_CLASS: Record<1 | 2 | 3, string> = {
   3: 'text-strong mt-row first:mt-0 text-copy font-semibold leading-snug',
 }
 
-export function CompteRenduDocument({ text, onQuote, className }: CompteRenduDocumentProps) {
+/**
+ * The `⚠ faible` the composer appends, as it can appear in a rendered line.
+ *
+ * The space before it is a non-breaking one in the composer's output and an
+ * ordinary one in a hand-written fixture, and both have to strip — a field whose
+ * quote could not be verified is the field whose provenance a rep most wants to
+ * follow, so losing the match there would be exactly backwards.
+ */
+const TRAILING_FAIBLE = /[\s\u00a0]*⚠[\s\u00a0]*faible[\s\u00a0]*$/u
+
+export function CompteRenduDocument({
+  text,
+  onQuote,
+  sources,
+  className,
+}: CompteRenduDocumentProps) {
   const lines = parseCompteRendu(text)
+
+  /*
+   * The line, without its `⚠ faible`, against what the composer wrote.
+   *
+   * The marker is appended to the rendered line and is not part of what was
+   * said, so it is stripped before the comparison — otherwise every field the
+   * extraction could not verify would lose the provenance it most needs. Exact
+   * equality after that, on purpose: both strings came from the same formatter,
+   * and a near-match here would be the app guessing which sentence the evidence
+   * belongs to, which is the failure DEC-21 exists to prevent.
+   */
+  const sourceFor = (line: string): string | null => {
+    if (!sources || sources.length === 0) return null
+    const bare = line.replace(TRAILING_FAIBLE, '').trim()
+    const hit = sources.find((s) => s.text === bare)
+    // The **quote**, not the line. The line is how the document says it; the
+    // quote is what was said, and only the second is findable in a transcript.
+    return hit ? hit.span.quote : null
+  }
 
   return (
     <div className={className ? `${GUTTER} ${className}` : GUTTER}>
@@ -115,11 +171,56 @@ export function CompteRenduDocument({ text, onQuote, className }: CompteRenduDoc
         }
 
         if (line.kind === 'bullet') {
+          /*
+            The whole line is the citation when the composer wrote it from one.
+            Not a fragment inside it: the bullet *is* the claim, and « 2 × Data
+            Engineer confirmé — Databricks, Airflow, dbt » is one assertion whose
+            evidence is one span. `onQuote` is given the line's own text, and the
+            reader looks it up the way it looks up a quotation — including
+            answering « introuvable », which is the honest outcome for a line the
+            model composed from something it misheard.
+          */
+          const sourced = sourceFor(line.text)
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
               <p className="text-body text-copy leading-relaxed">
-                <Prose text={line.text} onQuote={onQuote} />
+                {sourced && onQuote ? (
+                  /*
+                    **Lighter than a quotation's underline, on purpose.**
+
+                    A guillemet fragment is rare and sits inside a paragraph, so
+                    it can afford the `--text-muted` rule `Demander` gives a
+                    citation. Every bullet being followable is the opposite
+                    situation: six consecutive rows of « Éléments retenus » all
+                    ruled at that weight turned the section into a link farm and
+                    made the document harder to read than the thing it is
+                    evidence for. So the rest state is `--border-card`, which is
+                    the weight of a table rule — present, findable, and not
+                    competing with the words — and hover and focus bring it up to
+                    the same rule a quotation wears, because at that point the
+                    rep has singled the line out.
+
+                    `focus-visible` and not only `hover`: twelve of these are
+                    reached by keyboard, and a control whose only affordance is a
+                    pointer is a control half the product cannot use.
+
+                    `min-h-[24px]` because a one-line bullet — « **TJM évoqué** :
+                    550 € » — measures 23, and WCAG 2.2's *Target Size* exception
+                    for a control *inline in a sentence* does not apply: this
+                    control **is** the line. Eight of the twelve were under the
+                    floor, in a rail whose rows are a trackpad-width apart.
+                  */
+                  <button
+                    type="button"
+                    onClick={() => onQuote(sourced)}
+                    className="text-body hover:text-strong decoration-card hover:decoration-muted focus-visible:decoration-muted min-h-[24px] text-left underline decoration-dotted decoration-from-font underline-offset-4 transition"
+                  >
+                    <Prose text={line.text} />
+                  </button>
+                ) : (
+                  <Prose text={line.text} onQuote={onQuote} />
+                )}
               </p>
             </div>
           )

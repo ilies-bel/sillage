@@ -21,7 +21,8 @@ export type {
 } from './CompteRenduRecipe.ts'
 export { ExtractionError, extractionErrorMessage } from './errors.ts'
 export type { ExtractionErrorKind } from './errors.ts'
-export { FAIBLE_MARKER, renderCompteRendu } from './compteRendu.ts'
+export { FAIBLE_MARKER, compteRenduSources, renderCompteRendu } from './compteRendu.ts'
+export type { CompteRenduSource } from './compteRendu.ts'
 /** *Demander* (DEC-21, DEC-23) — see `core/contracts/ask.ts`. */
 export { ASK_INSTRUCTIONS, askTranscript } from './ask.ts'
 export type { AskInput } from './ask.ts'

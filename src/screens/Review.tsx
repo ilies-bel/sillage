@@ -1134,6 +1134,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 <CompteRenduDocument
                   text={edits.compteRendu}
                   onQuote={(quote) => locate({ quote, label: 'compte-rendu', from: 'answer' })}
+                  sources={panel.sources}
                 />
               </>
             ) : (

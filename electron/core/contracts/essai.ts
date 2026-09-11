@@ -213,6 +213,26 @@ export const essaiHealth = (
 ): { state: 'degraded'; reason: string; since: number; retryable: false } | null => {
   if (!record) return null
   if (record.rep.heard && record.far.heard) return null
+  /*
+   * **Silence on both channels establishes nothing, so it is not a
+   * degradation** — and this function said otherwise for one commit.
+   *
+   * `heard` is `peak > SPEECH_FLOOR`, so a rep who runs the trial in a quiet
+   * room and says nothing measures `false` on both. Writing that into the
+   * connector row makes it permanent across restarts and, by DEC-32, moves the
+   * *general* app status off « Tout fonctionne » — the app telling somebody
+   * their machine is broken on the strength of twenty seconds in which nobody
+   * did anything. That is the same lie in the other direction as offering
+   * « tout va bien » for the same twenty seconds, and it is the rule
+   * `essaiWorthRepeating` above already states: « one who heard neither may
+   * simply have said nothing, and the honest offer is *recommencer*, not a
+   * warning ». The card says so at the time, which is where it belongs.
+   *
+   * What is left is the one case the trial genuinely establishes: the machine
+   * *can* hear — one channel arrived — and the other did not. That asymmetry
+   * cannot be explained by a quiet room.
+   */
+  if (!record.rep.heard && !record.far.heard) return null
   return {
     state: 'degraded',
     reason: `${essaiSummary(record)} Relancez l’essai de 20 secondes après correction.`,

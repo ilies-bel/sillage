@@ -46,7 +46,7 @@ import {
   passesFilter,
   withFilterDefaults,
 } from '../../core/domain/historySearch.ts'
-import { askTranscript, renderCompteRendu } from '../../modules/extract/index.ts'
+import { askTranscript, compteRenduSources, renderCompteRendu } from '../../modules/extract/index.ts'
 import { verifyAnswer } from '../../core/domain/askAnswer.ts'
 import {
   ONBOARDING_KEY,
@@ -650,6 +650,13 @@ export const handlers: Handlers = {
         mailTo,
         overall: verification.overall,
         intents: drafted.map((d) => d.view),
+        /*
+         * The document's own provenance (DEC-21). Composed from the same
+         * `Cited<T>` items the document was rendered from, so the renderer
+         * matches on string equality; the free recipe extracts nothing typed and
+         * therefore contributes none, which is correct rather than missing.
+         */
+        sources: compteRenduSources(extraction),
       },
     }
   },

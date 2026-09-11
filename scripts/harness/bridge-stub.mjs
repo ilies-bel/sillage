@@ -746,6 +746,72 @@ export function installAppBridge(config) {
       : [],
     mailTo: entra ? ['elodie.vasseur@neovia-sante.fr', 'sophie.bertrand@neovia-sante.fr'] : [],
     overall: 'faible',
+    /*
+      **Where each generated line came from** (DEC-21).
+
+      Twelve bullets carried no provenance at all while the eleven typed rows
+      beside them each carried a `[source ▸]` — and the bullets are the operative
+      half, « Envoyer 3 CV avec les TJM associés » being the commitment that
+      becomes the VerySwing task. `text` is the line **as written**, marker
+      excluded, because the renderer matches on equality; `span.quote` is what
+      was actually said, because that is what is findable in `SEGMENTS`.
+
+      Every quote below is a verbatim fragment of a real turn in `LINES`, which
+      `harnessFixture.test.ts` proves — a fixture whose provenance leads nowhere
+      would photograph this feature failing and call it a pass. The objection row
+      is deliberately among them: a `⚠ faible` line is the one whose evidence a
+      rep most wants to open.
+    */
+    sources: [
+      {
+        text: '**Besoin** : Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
+        span: { quote: 'il nous manque deux data engineers', channel: 'far', startMs: 182_000, endMs: 186_400 },
+      },
+      {
+        text: '**Mode de collaboration** : régie',
+        span: { quote: 'De la régie, clairement', channel: 'far', startMs: 631_000, endMs: 633_800 },
+      },
+      {
+        text: '**TJM évoqué** : 550 €',
+        span: { quote: 'plutôt sur du 550 euros pour un data engineer confirmé', channel: 'far', startMs: 742_000, endMs: 747_500 },
+      },
+      {
+        text: '**Démarrage** : début septembre 2026',
+        span: { quote: 'Idéalement début septembre', channel: 'far', startMs: 498_000, endMs: 500_900 },
+      },
+      {
+        text: '**Durée de mission** : 12 mois, clause de sortie à 6 mois',
+        span: { quote: 'douze mois, avec une clause de sortie à six mois', channel: 'far', startMs: 552_000, endMs: 556_700 },
+      },
+      {
+        text: '**Contexte technique** : Databricks et Airflow en place, dbt en cours de généralisation, sortie des pipelines Talend historiques avant fin d’année.',
+        span: { quote: 'Databricks et Airflow, avec du dbt qu’on est en train de généraliser', channel: 'far', startMs: 268_000, endMs: 273_600 },
+      },
+      {
+        text: '2 × Data Engineer — confirmé (Databricks, Airflow, dbt)',
+        span: { quote: 'il nous manque deux data engineers', channel: 'far', startMs: 182_000, endMs: 186_400 },
+      },
+      {
+        text: '1 × Lead Data — senior (architecture, cadrage, revue de code)',
+        span: { quote: 'un profil plus senior pour cadrer', channel: 'far', startMs: 186_400, endMs: 189_200 },
+      },
+      {
+        text: 'La grille achats plafonne à 550 € sur un profil confirmé — _sans réponse apportée_',
+        span: { quote: 'votre TJM de l’an dernier était un peu haut pour nos achats', channel: 'far', startMs: 700_000, endMs: 705_400 },
+      },
+      {
+        text: 'Envoyer 3 CV avec les TJM associés — Julien Marchand — avant vendredi',
+        span: { quote: 'Je vous envoie trois CV d’ici vendredi', channel: 'rep', startMs: 788_000, endMs: 791_900 },
+      },
+      {
+        text: 'Mettre Sophie Bertrand en copie — Élodie Vasseur',
+        span: { quote: 'Mettez Sophie en copie', channel: 'far', startMs: 812_000, endMs: 814_300 },
+      },
+      {
+        text: 'Point de calage une fois les profils lus — la semaine suivante',
+        span: { quote: 'un point de calage la semaine prochaine une fois les CV lus', channel: 'rep', startMs: 840_000, endMs: 845_100 },
+      },
+    ],
     intents: [
       {
         id: 'm-neovia-cadrage:crm.task',

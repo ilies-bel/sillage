@@ -436,11 +436,16 @@ try {
   })
 
   await step('the gate opens on a session rehydrated from the log', async () => {
-    // Not a route the renderer invented: the state came back out of SQLite,
-    // through `replayState`, into a `MeetingSession` this process never created.
-    await page.keyboard.press('Control+h')
-    await page.getByRole('heading', { name: 'Historique' }).waitFor({ timeout: 30_000 })
-    await page.getByRole('button', { name: 'Relire et valider' }).first().click()
+    /*
+     * Through the calendar, which is the route a rep takes: the row opens the
+     * session screen, and the session screen draws *Relire et valider* only
+     * because `orchestrator.stateOf` answered `awaiting_confirmation` — a state
+     * that came back out of SQLite through `replayState`, into a
+     * `MeetingSession` this process never created.
+     */
+    await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
+    await page.getByRole('button', { name: /^(Ouvrir|Enregistrer)$/ }).first().click()
+    await page.getByRole('button', { name: 'Relire et valider' }).click({ timeout: 30_000 })
     await page.getByText('Prêt à envoyer').waitFor({ timeout: 30_000 })
   })
 
@@ -455,8 +460,30 @@ try {
     const value = await tjm.inputValue()
     if (!value.includes('520')) throw new Error(`le TJM extrait n’est pas pré-rempli : « ${value} »`)
 
-    await page.getByRole('button', { name: /source/ }).first().click()
-    await page.getByText('on est plutôt sur un TJM de 520 euros').first().waitFor({ timeout: 15_000 })
+    /*
+     * The reader is waited on by its *search field*, which is present in both
+     * outcomes, and then judged by its header. The quote itself cannot be waited
+     * on as text: the hit is highlighted, which splits it across nodes.
+     *
+     * What has to hold is the outcome — the citation was **found**. A quote the
+     * record does not contain opens the same reader saying « introuvable », and
+     * a step that only checked the reader had opened would pass on that too,
+     * which is the exact failure DEC-21 exists to make visible.
+     */
+    /*
+     * `source ▸` expands the row and shows the quote; *Voir dans la
+     * transcription* is what opens the record. Two controls on purpose — the
+     * transcript is fetched by a click and never otherwise — so the step takes
+     * both, on an *interpretive* row: a deterministic one offers no jump,
+     * because it has nothing to jump to (DEC-7).
+     */
+    await page.locator('#row-besoin').getByRole('button', { name: /^source/ }).click()
+    await page.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    await page.getByPlaceholder('Rechercher dans la transcription…').waitFor({ timeout: 15_000 })
+    if ((await page.getByText(/introuvable dans la transcription/).count()) > 0) {
+      throw new Error('la citation vérifiée est annoncée introuvable dans le vrai transcript')
+    }
+    await page.getByText(/Citation du champ/).waitFor({ timeout: 15_000 })
   })
 
   await step('Valider is withheld until both columns have been shown (DEC-4)', async () => {
