@@ -65,7 +65,17 @@ export const AskDraftSchema = z.strictObject({
   /** Verbatim fragments of the transcript. May be empty when nothing was found. */
   quotes: z.array(
     z.strictObject({
-      quote: z.string(),
+      /*
+       * **`min(1)`, because an empty string is not a citation.**
+       *
+       * `verifyAnswer` refuses an answer whose `quotes` is empty — « an answer
+       * with no citation is not a weaker answer, it is no answer » (DEC-21) —
+       * and one empty string walked straight past that count: a confident
+       * paragraph with a footnote list holding nothing, which is the exact
+       * rendering the rule exists to prevent. The model has no reason to send
+       * one, which is precisely why nothing downstream was looking.
+       */
+      quote: z.string().min(1),
       channel: z.enum(['rep', 'far']).nullable(),
     }),
   ),

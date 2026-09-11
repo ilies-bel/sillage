@@ -207,6 +207,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   almost every time (« Sodexial — comité de staffing »), so `meetingHeading` strips the prefix
   it duplicates. Drawn raw, the strongest line on the row was a word repeated three pixels
   below it.
+- **A 5xx on a POST is not retryable, and it took saying twice.** `modules/crm/vsa/http.ts`
+  carries the rule and the measurement behind it — « 6 POSTs across two drains » — and
+  `modules/mail/graph.ts` classified `>= 500` as retryable on a function whose only request is
+  `POST /me/messages`. A gateway timeout on a draft create says nothing about whether the draft
+  was created, and a 504 from a proxy in front of Graph is routinely a request that landed: the
+  rep validated during a ten-minute Graph blip and opened Outlook to three identical follow-ups
+  addressed to their client — once per attempt in the drain, and again on every relaunch,
+  because the boot re-drains every pending row. `OutlookMail`'s own docblock stated the correct
+  rule while the code did the opposite. `429` stays retryable: it is the one status that says
+  explicitly that the request was not processed, and it carries `Retry-After`.
+- **An empty compte-rendu is not a task** (`core/domain/reviewGate.ts`). `ReviewEdits.compteRendu`
+  deliberately has no `min(1)` — a rep who selects the document in « Modifier » and deletes it
+  has done something they can undo, and refusing the whole confirmation would discard every
+  other correction — and the comment saying so ends « and `draftIntents` already refuses a task
+  with no description, on the row, in French ». It did not: `taskPossible` read the *name*.
+  « Select all, delete, validate » put an empty `taskDescription` into the client's system of
+  record, where there is no idempotency key and no delete verb.
 - **A `failed` push is not a missing *Réessayer*, it is a missing sentence.** `Outbox` retries
   everything it safely can — an adapter that knows nothing was created answers
   `{ ok: false, retryable: true }` and the row stays `pending`. `failed` is the opposite case:
@@ -219,6 +236,16 @@ machine) or in `core/domain/` — never in an IPC handler.
   `tailwind.config.js` — same failure as `bg-muted/30`: a name that is right, a rule that does
   not exist, an element simply unstyled. The splash's « Audio » row had a hole where the other
   two rows have a dot.
+- **The guard measures what *ships*, and `data-unmeasured` is how a column says what does
+  not.** *Demander*'s answer sits under the compte-rendu, where it belongs — and it is a read
+  over the record that writes nothing and confirms nothing (DEC-25). Inside the measurement it
+  was 216 pixels of content arriving after the column had been read, so the growth rule deleted
+  the coverage and **asking one question cost seven page turns at 1280×800 and ten at 960×600**.
+  Following a citation costs nothing, because the transcript is its own view — so the one
+  feature this product has over a general-purpose notetaker's chat box was the only thing on the
+  screen being punished for being used. The subtree is marked and the measurement stops where it
+  starts; measured from the rects and the scroll position, never `offsetTop`, which is relative
+  to the nearest *positioned* ancestor and would answer from another coordinate system.
 - **The arming guard remembers *which view* was read, and never charges for it
   twice.** Coverage is a set keyed by what the column is showing — `compte-rendu`,
   `transcription`, and for the rail the sorted set of checked intents, which is the
@@ -336,6 +363,17 @@ machine) or in `core/domain/` — never in an IPC handler.
   It is **never a gate**: *Continuer* is live on a step where nothing has been granted, and
   every exit — *Passer* and *Réglages ›* included — records `onboarding:seen`, because nagging
   somebody who said no is how an onboarding becomes the thing people close without reading.
+- **An accelerator that means « send » must not fire from the box whose content is
+  being sent.** `Ctrl/⌘ Entrée` was allowed while typing, on the argument that it « submits,
+  which is what those keys do in every mail client » — and that muscle memory is exactly what
+  made it the most dangerous line in this product. The only screen that claims `valider` is the
+  review gate, and two of the things a rep types there are **the follow-up mail's subject and
+  its body**. In a mail client, `Ctrl Entrée` in a mail body sends that mail; here it fired
+  `review:confirm` — the VerySwing task, the opportunity and the Outlook draft — with no
+  idempotency key, no delete verb on `CrmPort`, and nothing on screen mentioning the
+  accelerator. *Demander*'s input is on the same screen and did the same. It is claimed only
+  outside an editable now, and losing it there costs nothing: the rep is one Tab or one click
+  from the button, which is the gesture DEC-4 is about.
 - **The keyboard is declared in one file and printed in Réglages** (`src/app/shortcuts.ts`).
   VISION.md §6 says « keyboard-first » and there was not one global shortcut, so every route
   cost a rep a mouse and a hunt. Six now: `Ctrl/⌘ N K H ,`, `Échap`, `Ctrl/⌘ Entrée`. Three
@@ -714,6 +752,13 @@ machine) or in `core/domain/` — never in an IPC handler.
   Teams join blob.
 - **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
 - **Raw audio is never retained** (DEC-12). Transcribed and discarded.
+- **The bundle's *message* half is a denylist, so client content must not go in one.**
+  `redactDetail` is a genuine allowlist and is airtight; `redactMessage` strips emails, URLs,
+  quoted runs — and now paths, which its own docblock had always claimed it stripped and never
+  did, so `C:\Users\Jean-Pierre.Dupont\…` went into the bundle whose button reads « Sans
+  contenu de conversation. Peut être envoyé au support », naming the rep. A meeting's objet and
+  a client's name are not on any denylist and never will be, so they belong in `detail`, where
+  the allowlist answers `[string:50]` — which is the whole of what a support reader needs.
 - **The diagnostics allowlist is an allowlist, and thirty-two is the number.**
   `redactDiagnostics.ts` says of itself that it « cannot be wrong by omission », and at
   `{1,64}` it passed, verbatim, exactly the shapes it exists to catch — a key

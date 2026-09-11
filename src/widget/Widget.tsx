@@ -268,7 +268,23 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
       const anchor = element.querySelector('[data-pill]')?.getBoundingClientRect()
       const width = Math.ceil(frame.width)
       const height = Math.ceil(frame.height)
-      const key = `${width}×${height}`
+      // Where the pill is inside the frame, which is what lets the main process
+      // leave *the pill* where it was rather than a window edge.
+      const pillTop = Math.max(0, Math.round((anchor?.top ?? frame.top) - frame.top))
+      /*
+       * **`pillTop` is part of the key, and leaving it out was a 382-pixel
+       * jump.**
+       *
+       * It is a function of the stacking direction, not of the size: `flex-col`
+       * puts the pill at `HALO`, `flex-col-reverse` at `height − pillH − HALO`.
+       * So dragging the widget across the display's midline with the panel open
+       * flips `above`, moves the pill by the panel's whole height — and left the
+       * frame exactly `width × height`. No message, and the main process went on
+       * holding a `pillTop` of 402 for a pill painted at 20, so the next
+       * legitimate resize placed the window as if the pill were where it no
+       * longer was.
+       */
+      const key = `${width}×${height}×${pillTop}`
       // The observer fires on every sub-pixel change; the window may only be
       // moved for a real one, or a resize animates against itself.
       if (width === 0 || height === 0 || key === last) return
@@ -276,9 +292,7 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
       void invoke('widget:resize', {
         width,
         height,
-        // Where the pill is inside the frame, which is what lets the main
-        // process leave *the pill* where it was rather than a window edge.
-        pillTop: Math.max(0, Math.round((anchor?.top ?? frame.top) - frame.top)),
+        pillTop,
         pillHeight: Math.round(anchor?.height ?? height),
       })
         .then((placement) => setAbove(placement.above))
@@ -287,8 +301,17 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
     const observer = new ResizeObserver(send)
     observer.observe(element)
     send()
-    return () => observer.disconnect()
-  }, [])
+    /*
+     * And a flip of `above` moves the pill without resizing anything, so the
+     * observer never fires for it. `send` is idempotent — the key stops a
+     * duplicate — so asking on every render of the frame costs one rect read.
+     */
+    const raf = requestAnimationFrame(send)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+    }
+  })
 
   /*
    * The pointer over the halo hands the mouse back to whatever is underneath.

@@ -169,3 +169,31 @@ test('and still admits everything a diagnostic actually carries', () => {
     },
   )
 })
+
+/**
+ * **The bundle's button says « Peut être envoyé au support », and the message
+ * half was a denylist.**
+ *
+ * `redactDetail` is a genuine allowlist and is airtight. `redactMessage` is the
+ * other half, and it stripped emails, URLs and quoted runs — so a Windows home
+ * directory, which names the rep, went through untouched under a docblock
+ * claiming the opposite: « `redactMessage` has always stripped both from the
+ * *message* », of a URL and a path.
+ */
+test('a filesystem path never reaches the bundle', () => {
+  assert.equal(
+    redactMessage('échec vers C:\\Users\\Jean-Pierre.Dupont\\AppData\\Roaming\\Sillage\\vault.db'),
+    'échec vers [chemin]',
+  )
+  assert.equal(redactMessage('lecture de /Users/jdupont/Library/Sillage/db'), 'lecture de [chemin]')
+  assert.equal(redactMessage('modèle absent de ~/.cache/sillage/whisper'), 'modèle absent de [chemin]')
+
+  // And what is not a path stays legible: a support reader needs the sentence.
+  assert.equal(redactMessage('2 connecteurs en défaut'), '2 connecteurs en défaut')
+  assert.equal(
+    redactMessage('transcription indisponible: modèle Xenova/whisper-small absent'),
+    'transcription indisponible: modèle Xenova/whisper-small absent',
+  )
+  // A version, a ratio and a time of day are not paths either.
+  assert.equal(redactMessage('v0.1.4 · 3/4 · 14:30'), 'v0.1.4 · 3/4 · 14:30')
+})

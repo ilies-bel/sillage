@@ -543,8 +543,28 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
    * in a field that is on screen, next to the reason.
    */
   const taskName = edits.taskName.trim()
-  const taskPossible = taskName !== ''
-  const NO_TASK_NAME = 'Donnez un objet à la réunion — VerySwing n’accepte pas une tâche sans nom.'
+  /*
+   * **And a body, which the contract said was checked here and was not.**
+   *
+   * `ReviewEdits.compteRendu` carries no `min(1)`, and its own comment explains
+   * why — a rep who selects the whole document in « Modifier » and deletes it
+   * has done something they can undo, and rejecting the confirmation would
+   * discard every other correction alongside it — on the strength of « and
+   * `draftIntents` already refuses a task with no description, on the row, in
+   * French ». It did not: `taskPossible` read the *name* and nothing else. An
+   * empty string, or three spaces and a newline, went into `taskDescription` and
+   * landed in the client's system of record, where `POST /v1/crm/tasks` has no
+   * idempotency key and `CrmPort` no delete verb.
+   *
+   * Stated on the row like every other unavailable intent (DEC-26), and the
+   * remedy is on the same screen: the document is in the column next to it.
+   */
+  const taskBody = edits.compteRendu.trim()
+  const taskPossible = taskName !== '' && taskBody !== ''
+  const NO_TASK_NAME =
+    taskName === ''
+      ? 'Donnez un objet à la réunion — VerySwing n’accepte pas une tâche sans nom.'
+      : 'Le compte-rendu est vide — VerySwing recevrait une tâche sans contenu.'
 
   /*
    * A free-form compte-rendu drafts no opportunity (DEC-43).

@@ -179,6 +179,28 @@ test('a throttled draft comes back retryable, a rejected one does not', async ()
   assert.equal(second.ok === false && second.reason, 'destinataire invalide')
 })
 
+/**
+ * **A 5xx on the draft create is terminal, for the same reason the 201-with-no-id
+ * is.**
+ *
+ * `POST /me/messages` has no idempotency key, and a 503 or a 504 from a proxy
+ * in front of Graph is routinely a request that landed. Retrying it put three
+ * identical follow-ups, addressed to the client, in the rep's Outlook — once
+ * per attempt in the drain, and again on every relaunch, because the boot
+ * re-drains every pending row. `modules/crm/vsa/http.ts` carries the same rule
+ * and the measurement behind it; this module's own docblock stated it and the
+ * code did the opposite.
+ */
+test('no 5xx on the draft create is retried', async () => {
+  for (const status of [500, 502, 503, 504]) {
+    const { fetch, calls } = recorder(() => ({ ok: false, status, body: '' }))
+    const result = await new OutlookMail({ identity, fetch }).createDraft(PAYLOAD)
+    assert.equal(result.ok, false, `${status} devrait échouer`)
+    assert.equal(result.ok === false && result.retryable, false, `${status} ne doit pas être rejoué`)
+    assert.equal(calls.length, 1)
+  }
+})
+
 test('a created draft with no id is terminal — a second POST would leave two drafts', async () => {
   const { fetch } = recorder(() => ({ ok: true, status: 201, body: '{}' }))
   const result = await new OutlookMail({ identity, fetch }).createDraft(PAYLOAD)

@@ -151,7 +151,6 @@ export const providerRows = (
         descriptor.auth === 'none' ? NO_CREDENTIAL : (input.credentials?.[descriptor.id] ?? NO_CREDENTIAL),
       fields: fieldsOf(descriptor, input),
       residency: descriptor.capabilities.residency,
-      streaming: descriptor.capabilities.streaming,
       cost: descriptor.capabilities.cost,
       configured: input.configured.includes(descriptor.id),
       selected: input.selected === descriptor.id,

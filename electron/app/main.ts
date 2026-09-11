@@ -680,10 +680,43 @@ const captureAccess = (): CaptureAccess => ({
  * the domain never asks for this unless a permission was measured as refused,
  * and on Windows nothing is.
  */
-const PRIVACY_PANE: Record<'microphone' | 'screen', string> = {
-  microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
-  screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
-}
+const PRIVACY_PANE: Record<NodeJS.Platform | 'default', Record<'microphone' | 'screen', string>> = {
+  darwin: {
+    microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+    screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+  },
+  /*
+   * **Windows measures a refusal too, and the button that offered to fix it
+   * opened an Apple URL.**
+   *
+   * The comment above this used to end « and on Windows nothing is », which
+   * Electron's own typings contradict: `getMediaAccessStatus` is annotated
+   * `@platform win32,darwin` and documents the Windows 10 global microphone
+   * switch. With that switch off the status is `denied`, so
+   * `capturePermissionHealth` returns `degraded, retryable: true`, the screen
+   * draws *Autoriser*, and pressing it called `shell.openExternal` on
+   * `x-apple.systempreferences:…` — a scheme Windows does not know — swallowed
+   * the rejection, re-measured, and returned the identical `degraded`. A
+   * pressable control that can never do anything, for ever, on the primary
+   * platform (HR-2): the exact thing DEC-26 forbids, offered by the code that
+   * says it exists to prevent it.
+   *
+   * `ms-settings:` is the equivalent, and there is no screen-recording
+   * permission to open on Windows — the key is there so the record is total,
+   * and it lands on the privacy root rather than pretending to a pane that does
+   * not exist.
+   */
+  win32: {
+    microphone: 'ms-settings:privacy-microphone',
+    screen: 'ms-settings:privacy',
+  },
+  /** Anywhere else, `openExternal` rejects and the caller swallows it. */
+  default: { microphone: '', screen: '' },
+} as Record<NodeJS.Platform | 'default', Record<'microphone' | 'screen', string>>
+
+/** The pane for this host, or the empty pair where there is none to open. */
+const privacyPane = (): Record<'microphone' | 'screen', string> =>
+  PRIVACY_PANE[process.platform] ?? PRIVACY_PANE.default
 
 /**
  * What *Autoriser* does — and the reason the screen-recording half is a
@@ -700,14 +733,16 @@ const requestCaptureAccess = async (): Promise<void> => {
   if (actionFor(before.microphone) === 'ask') {
     await systemPreferences.askForMediaAccess?.('microphone')
   } else if (actionFor(before.microphone) === 'open') {
-    await shell.openExternal(PRIVACY_PANE.microphone).catch(() => undefined)
+    const pane = privacyPane().microphone
+    if (pane) await shell.openExternal(pane).catch(() => undefined)
   }
 
   if (actionFor(before.screen) === 'ask') {
     // The prompt is the point; the sources are thrown away.
     await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false }).catch(() => undefined)
   } else if (actionFor(before.screen) === 'open') {
-    await shell.openExternal(PRIVACY_PANE.screen).catch(() => undefined)
+    const pane = privacyPane().screen
+    if (pane) await shell.openExternal(pane).catch(() => undefined)
   }
 }
 
@@ -1406,7 +1441,14 @@ const boot = async (): Promise<void> => {
           severity: 'info',
           code: 'lexicon.learned',
           module: 'app',
-          message: `${learned.length} terme(s) appris pour ${after?.clientName}`,
+          /*
+           * The client's name is the client's. `redactMessage` is a denylist and
+           * « Néovia Santé » is not on it, so this line reached the bundle whose
+           * button says « Peut être envoyé au support » with the name in it. The
+           * allowlist in `redactDetail` answers `[string:13]`, which says the
+           * same thing about the shape and nothing about the client.
+           */
+          message: `${learned.length} terme(s) appris pour un client`,
           detail: { meetingId, terms: learned.length },
         })
       }

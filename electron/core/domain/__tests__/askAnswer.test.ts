@@ -15,7 +15,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { TranscriptSegment } from '../../contracts/transcript.ts'
-import type { AskDraft } from '../../contracts/ask.ts'
+import { AskDraftSchema, type AskDraft } from '../../contracts/ask.ts'
 import { verifyAnswer } from '../askAnswer.ts'
 
 const segment = (
@@ -206,4 +206,33 @@ test('the question carried back is the rep’s own string', () => {
   // what was asked.
   const answer = verifyAnswer('Quel TJM ?', draft(), RECORD)
   assert.equal(answer.question, 'Quel TJM ?')
+})
+
+/**
+ * **An empty string is not a citation.**
+ *
+ * `verifyAnswer` refuses an answer with no quotes — « an answer with no
+ * citation is not a weaker answer, it is no answer » (DEC-21) — and one empty
+ * string walked past that count: `quotes: []` answered `false` correctly, and
+ * `quotes: [{ quote: '' }]` answered `true` with the full paragraph and a
+ * footnote list holding nothing. The model has no reason to send one, which is
+ * exactly why nothing downstream was looking.
+ */
+test('a quote that is the empty string never reaches the verifier', () => {
+  const parsed = AskDraftSchema.safeParse({
+    answered: true,
+    answer: 'Le plafond est à 550 €.',
+    quotes: [{ quote: '', channel: 'far' }],
+  })
+  assert.equal(parsed.success, false)
+
+  // And the ordinary shape still parses.
+  assert.equal(
+    AskDraftSchema.safeParse({
+      answered: true,
+      answer: 'Le plafond est à 550 €.',
+      quotes: [{ quote: 'on est plutôt sur du 550', channel: 'far' }],
+    }).success,
+    true,
+  )
 })

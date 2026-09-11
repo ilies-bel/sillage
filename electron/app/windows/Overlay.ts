@@ -114,6 +114,8 @@ export class Overlay {
    */
   #pillTop = 0
   #pillHeight = INITIAL_SIZE.height
+  /** True while `resize()` is moving the window itself — see the `moved` handler. */
+  #moving = false
 
   constructor(host: OverlayHost, kv: KeyValueStore) {
     this.#host = host
@@ -143,15 +145,32 @@ export class Overlay {
     this.#window = window
 
     /*
-     * The position is remembered on every move rather than on close, because
-     * the ordinary way this window ends is the process exiting with a call
-     * still on screen, and `moved` is the only event that is certain to have
-     * fired by then.
+     * **What is remembered is where the *pill* was, not where the window was.**
+     *
+     * The window's origin is the top-left of the *frame*, and with the panel
+     * open that is the top of the panel — three hundred and seventy pixels above
+     * the pill. A rep who dragged the widget with the panel open found the
+     * collapsed pill, on the next call, where the panel's corner had been:
+     * measured, dropped at pill y=964 and restored at 592.
+     *
+     * The origin is still what is stored, because that is what `placeWindow`
+     * takes — but the one stored is the origin the *collapsed* window would have
+     * had, which is the pill's own position. One addition, at the moment the
+     * fact is known.
+     *
+     * And **only for a move the rep made**: `setBounds` in `resize()` emits
+     * `moved` too, so re-saving from inside our own repositioning walked the
+     * saved origin twenty pixels up the display on every panel open — a widget
+     * that creeps off the top of the screen over a working day.
+     *
+     * Remembered on every move rather than on close, because the ordinary way
+     * this window ends is the process exiting with a call still on screen, and
+     * `moved` is the only event certain to have fired by then.
      */
     window.on('moved', () => {
-      if (window.isDestroyed()) return
+      if (window.isDestroyed() || this.#moving) return
       const [x = 0, y = 0] = window.getPosition()
-      this.#kv.set(OVERLAY_ORIGIN_KEY, JSON.stringify({ x, y }))
+      this.#kv.set(OVERLAY_ORIGIN_KEY, JSON.stringify({ x, y: y + this.#pillTop }))
     })
     window.on('closed', () => {
       if (this.#window === window) this.#window = null
@@ -219,7 +238,12 @@ export class Overlay {
     // One call, so the move and the resize cannot be observed apart — two calls
     // draw a frame of the new size at the old origin, which over a video call
     // reads as a flinch.
-    window.setBounds({ ...origin, ...to })
+    this.#moving = true
+    try {
+      window.setBounds({ ...origin, ...to })
+    } finally {
+      this.#moving = false
+    }
     /*
      * **The pass-through survives a resize, and that took a bug to learn.**
      *

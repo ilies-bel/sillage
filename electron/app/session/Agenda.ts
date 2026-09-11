@@ -281,8 +281,19 @@ export class Agenda {
       severity: 'info',
       code: 'agenda.armed',
       module: 'session',
-      message: `réunion armée depuis le calendrier: ${event.context.subject}`,
-      detail: { start: event.context.scheduledStart },
+      /*
+       * **The subject is the client's, so it goes in `detail` and not here.**
+       *
+       * `redactMessage` is a denylist — emails, URLs, paths, quoted runs — and a
+       * meeting's objet is none of those: « Sodexial — comité de staffing
+       * renfort Java Q4 » came back from it unchanged and into the bundle whose
+       * button reads « Sans contenu de conversation. Peut être envoyé au
+       * support ». `redactDetail` is the allowlist, and it replaces a
+       * fifty-character string with `[string:50]`, which is the whole of what a
+       * support reader needs: a meeting was armed, and it had a subject.
+       */
+      message: 'réunion armée depuis le calendrier',
+      detail: { start: event.context.scheduledStart, subject: event.context.subject },
       meetingId,
     })
   }

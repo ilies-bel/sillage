@@ -123,7 +123,16 @@ if (split < 0 || invokeChannels.length === 0 || broadcastChannels.length === 0) 
 const code = (source) =>
   source
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:'"\`\\])\/\/[^\n]*/g, '$1')
+    /*
+     * The guard used to be `[^:'"\`\\]`, meant to spare `https://` and a `//`
+     * inside a string — and it spared a great deal more: a `//` written
+     * immediately after a quote, a backtick or a colon was left in the code,
+     * so `const label = 'rien'// 'meeting:purgeAll' -- à recâbler` passed this
+     * check. Only `:` and `\` can precede a *real* `//` that is not a comment
+     * (`https://`, a Windows escape); a quote before one closes a string and the
+     * rest of the line is a comment like any other.
+     */
+    .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1')
 
 const bodies = new Map(files.map((file) => [file, code(text.get(file))]))
 
@@ -180,7 +189,13 @@ for (const channel of broadcastChannels) {
 const rust = files.filter((file) => file.endsWith('.rs'))
 const declared = new Set()
 for (const file of rust) {
-  for (const match of text.get(file).matchAll(/^\s*(?:pub )?mod ([a-z_0-9]+)\s*;/gm)) {
+  /*
+   * `bodies`, not `text`: this rule read the **raw** source where every other
+   * rule reads the comment-stripped one, so `/*\nmod zombie;\n*\/` at the top of
+   * `lib.rs` declared a module to this check and to no compiler. The `//` form
+   * was caught only by luck — the `^\s*` anchor does not match `// mod x;`.
+   */
+  for (const match of (bodies.get(file) ?? '').matchAll(/^\s*(?:pub )?mod ([a-z_0-9]+)\s*;/gm)) {
     declared.add(match[1])
   }
 }

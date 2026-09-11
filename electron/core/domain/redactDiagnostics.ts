@@ -53,6 +53,22 @@ const SAFE_STRING = /^[A-Za-z0-9_.:/+@-]{1,32}$/
 const LOCATOR = /:\/\/|^[/~]|^[A-Za-z]:[\\/]/
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/g
 const URL_WITH_PAYLOAD = /\bhttps?:\/\/\S+/g
+/**
+ * **A filesystem path, which this file claimed to strip and never did.**
+ *
+ * `LOCATOR` above says « `redactMessage` has always stripped both from the
+ * *message* » — of a URL and a path — and it stripped the URL only. So
+ * `échec vers C:\Users\Jean-Pierre.Dupont\AppData\Roaming\Sillage\vault.db`
+ * went into the bundle whose own button reads « Sans contenu de conversation.
+ * Peut être envoyé au support », carrying the rep's own full name, on the
+ * primary platform where the home directory is spelled that way.
+ *
+ * Both shapes, because both occur: a Windows drive path and a POSIX absolute or
+ * `~` path. Greedy to the first whitespace, like the URL rule — a path with a
+ * space in it loses its tail rather than its head, which still removes the part
+ * that names a person.
+ */
+const PATH = /(?:[A-Za-z]:[\\/]|~\/|(?<![\w.])\/(?=[A-Za-z0-9._-]))[^\s"'«»]*/g
 /** Quoted runs are how transcript excerpts end up inside an error message. */
 const QUOTED = /["“”«»'`]{1}[^"“”«»'`]{8,}["“”«»'`]{1}/g
 
@@ -66,6 +82,7 @@ export const redactMessage = (message: string): string =>
   message
     .replace(EMAIL, '[email]')
     .replace(URL_WITH_PAYLOAD, '[url]')
+    .replace(PATH, '[chemin]')
     .replace(QUOTED, '[quoted]')
     .slice(0, MAX_MESSAGE)
 

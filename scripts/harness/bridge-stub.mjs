@@ -1346,7 +1346,6 @@ export function installAppBridge(config) {
           label: 'Whisper (local)',
           tier: 'local',
           residency: 'local',
-          streaming: false,
           cost: 'free',
           auth: 'none',
           credential: { stored: false, hint: null },
@@ -1361,7 +1360,6 @@ export function installAppBridge(config) {
           label: 'Whisper large-v3 (local)',
           tier: 'local',
           residency: 'local',
-          streaming: false,
           cost: 'free',
           auth: 'none',
           credential: { stored: false, hint: null },
@@ -1376,7 +1374,6 @@ export function installAppBridge(config) {
           label: 'Azure Speech — France Centre',
           tier: 'cloud',
           residency: 'remote',
-          streaming: true,
           cost: 'metered',
           auth: 'apiKey',
           credential: { stored: false, hint: null },
@@ -1391,7 +1388,6 @@ export function installAppBridge(config) {
           label: 'Soniox',
           tier: 'cloud',
           residency: 'remote',
-          streaming: true,
           cost: 'metered',
           auth: 'apiKey',
           credential: { stored: false, hint: null },
@@ -1413,7 +1409,6 @@ export function installAppBridge(config) {
           label: 'Mistral AI',
           tier: 'cloud',
           residency: 'remote',
-          streaming: true,
           cost: 'metered',
           auth: 'apiKey',
           credential: { stored: true, hint: 'a41d' },
@@ -1428,7 +1423,6 @@ export function installAppBridge(config) {
           label: 'Ollama — Qwen2.5 14B',
           tier: 'local',
           residency: 'local',
-          streaming: true,
           cost: 'free',
           auth: 'none',
           credential: { stored: false, hint: null },
@@ -1443,7 +1437,6 @@ export function installAppBridge(config) {
           label: 'OpenAI',
           tier: 'cloud',
           residency: 'remote',
-          streaming: true,
           cost: 'metered',
           auth: 'apiKey',
           credential: { stored: false, hint: null },
@@ -2340,9 +2333,23 @@ export function installAppBridge(config) {
     // The two window gestures. They move a window and answer a boolean; there
     // is no window here, and `false` would be a lie about a request that was
     // made and honoured everywhere it is real.
-    // No window here, so no placement: `above: false` is the honest answer for
-    // a pill drawn in a page rather than floating over a display.
-    'widget:resize': () => ({ ok: true, above: false }),
+    /*
+      **The stacking direction the real placement would answer.**
+
+      This said `above: false` unconditionally — « no window here, so no
+      placement » — and the real `opensAbove` returns **true** at 1920×1040,
+      1366×728 and 2560×1400, because the widget's default position is the
+      bottom of the display and that is the bottom half. So the layout every
+      rep's first open actually gets had never been rendered by any stage, by
+      any of the six measured checks, or by anything else. Fourth time this
+      fixture has been caught flattering the product, and the first time by
+      answering a *placement* question it had no business having an opinion on.
+
+      The page is not a display, so this is `true` by the same rule for the same
+      reason: a pill drawn near the bottom of a 1280×800 viewport is in its
+      bottom half.
+    */
+    'widget:resize': () => ({ ok: true, above: window.innerHeight > 0 }),
     'widget:passThrough': () => ({ ok: true }),
     'window:focus': () => ({ ok: true }),
   }

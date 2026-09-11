@@ -515,6 +515,13 @@ const RESIDENCY_LABEL = {
   remote: 'hors machine',
 } as const
 
+/** What a provider costs to use, in the two words a rep needs (DEC-33). */
+const COST_LABEL = {
+  free: 'gratuit',
+  metered: 'facturé à l’usage',
+  included: 'inclus dans votre abonnement',
+} as const
+
 /**
  * **« Cette machine uniquement »** (DEC-37) — the one switch in this product
  * that refuses something.
@@ -614,6 +621,19 @@ function LlmIntro() {
 
 // ── Local models (DEC-35) ───────────────────────────────────────────────────
 
+/**
+ * How hard a checkpoint works the machine during a call.
+ *
+ * Named for the rep's experience rather than for the model: « rapide » is what a
+ * laptop does with `small`, and « lent » is the honest word for a large model on
+ * the four-year-old Windows machines this ships to (HR-2).
+ */
+const SPEED_LABEL = {
+  fast: 'rapide',
+  medium: 'assez rapide',
+  slow: 'lent sur une machine modeste',
+} as const
+
 /** French, and the sentence is the state — never a bare status word. */
 const MODEL_STATE: Record<ModelRow['status'], (row: ModelRow) => string> = {
   absent: () => 'non installé',
@@ -682,8 +702,19 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
               </span>
 
               <span className="flex shrink-0 items-center gap-3">
+                {/*
+                  **Size, accuracy and speed — the three the lede promises.**
+
+                  « plus ils sont grands, plus ils sont précis et plus ils
+                  sollicitent la machine pendant la réunion » is two sentences
+                  above this row, and the row itself answered two thirds of it:
+                  `speed` has been on `ModelRow` since the table existed and was
+                  drawn by nothing. It is the half a rep on a four-year-old
+                  Windows laptop cares about most, and the one the prose can only
+                  state in general.
+                */}
                 <span className="text-muted text-meta">
-                  {row.sizeMb} Mo · précision {row.accuracy}
+                  {row.sizeMb} Mo · précision {row.accuracy} · {SPEED_LABEL[row.speed]}
                 </span>
 
                 {row.status === 'ready' && !row.selected ? (
@@ -873,6 +904,23 @@ function ProviderLine({
 
         <span className="flex shrink-0 items-center gap-3">
           <span className="text-muted text-meta">{RESIDENCY_LABEL[row.residency]}</span>
+          {/*
+            **What it costs, beside where it runs.**
+
+            `cost` has been on `ProviderRow` since the row existed, crossed the
+            bridge on every settings read, and was drawn by nothing — so the one
+            question a rep asks after « où ça tourne » had an answer in the
+            payload and nowhere on screen. It is two words and it is the
+            difference between a provider they can leave on and one that invoices
+            per meeting.
+
+            `free` says nothing: on this table it is true of exactly the local
+            engines, which already say « sur la machine » next to it, and a label
+            repeating the neighbouring one is noise.
+          */}
+          {row.cost === 'free' ? null : (
+            <span className="text-muted text-meta">{COST_LABEL[row.cost]}</span>
+          )}
 
           {/*
             Choosing is a separate act from configuring. A rep with two keys

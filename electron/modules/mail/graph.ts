@@ -128,7 +128,24 @@ export const postDraft = async (options: GraphPostOptions): Promise<any> => {
     throw new GraphError({
       status,
       message: messageOf(body, status),
-      retryable: status === 429 || status === 503 || status === 504 || status >= 500,
+      /*
+       * **A 5xx on a POST is not retryable, and this is the second time that
+       * has had to be said in this repo.**
+       *
+       * `modules/crm/vsa/http.ts` carries the same rule and the measurement
+       * behind it — « 6 POSTs across two drains » — and the only request that
+       * ever reaches this function is `POST /me/messages`. A gateway timeout on
+       * a draft create tells us nothing about whether the draft was created: a
+       * 504 from a proxy in front of Graph is routinely a request that landed.
+       * Retrying it put three identical follow-ups, addressed to the client, in
+       * the rep's Outlook — once per attempt in the drain, and again on every
+       * relaunch, because `main.ts` re-drains every pending row at boot.
+       *
+       * `OutlookMail`'s own docblock states the correct rule and the code did
+       * the opposite. `429` stays: it is the one status that says explicitly
+       * that the request was *not* processed, and it carries `Retry-After`.
+       */
+      retryable: status === 429,
       retryAfterMs: retryAfterOf(response.headers),
       needsSignIn: status === 401,
     })

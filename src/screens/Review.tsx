@@ -111,6 +111,35 @@ const SHRINK_SLACK = 64
  */
 const GROWTH_SLACK = 100
 
+/**
+ * **How much of a column is what ships.**
+ *
+ * The guard's promise is that everything leaving the machine has been shown, and
+ * one thing in the document column leaves nothing: *Demander*'s answer, which is
+ * a read over the record (DEC-25) that writes nothing and confirms nothing. It
+ * is still *in* the column — it belongs under the document it is about — so the
+ * subtree says so with `data-unmeasured` and the measurement stops where it
+ * starts.
+ *
+ * Where the unmeasured part *starts*, not the scroller's height minus its
+ * height: what matters is where the shipped content ends, and the unmeasured
+ * part is always last. A column with none is its own `scrollHeight`, which is
+ * every other case.
+ *
+ * Measured from the rects and the scroll position rather than from `offsetTop`:
+ * `offsetTop` is relative to the nearest *positioned* ancestor, which on this
+ * screen is not the scroller, so it would answer a number from another
+ * coordinate system and be wrong by whatever the header happens to be tall.
+ */
+const shippedHeight = (el: HTMLElement): number => {
+  const rest = el.querySelector<HTMLElement>('[data-unmeasured]')
+  if (!rest) return el.scrollHeight
+  const top = rest.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+  // A subtree with no box yet (a first paint, a hidden pane) measures zero, and
+  // a column whose shipped part is « nothing » would arm on an empty read.
+  return top > 0 ? top : el.scrollHeight
+}
+
 /** A view that has been shown end to end: the box, and what was in it. */
 interface Covered {
   /** The narrowest box it has been covered at. */
@@ -541,7 +570,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
          * larger is content that was not there, and the case this caught was a
          * thousand.
          */
-        if (el.scrollHeight > at.content + GROWTH_SLACK) {
+        if (shippedHeight(el) > at.content + GROWTH_SLACK) {
           covered.current[column].delete(view)
           shownAs.current[column] = { view, height: el.clientHeight }
           seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
@@ -579,7 +608,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
 
       const range = seen.current[column]
       if (!range) return true
-      const done = range.from <= 8 && range.to >= el.scrollHeight - 8
+      const done = range.from <= 8 && range.to >= shippedHeight(el) - 8
       /*
        * The **narrowest** box it has ever been covered at. Covering at a smaller
        * height is the stronger statement — the same content, more scrolling — so
@@ -592,7 +621,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           // The **tallest** content it has been covered at, for the mirror of
           // the reason the box keeps its narrowest: covering taller content is
           // the stronger statement, so it is the one to carry forward.
-          content: Math.max(at?.content ?? 0, el.scrollHeight),
+          content: Math.max(at?.content ?? 0, shippedHeight(el)),
         })
       }
       return done
@@ -1308,12 +1337,29 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               It writes nothing and confirms nothing (DEC-4, DEC-5). The one
               button on this screen is still the one button.
             */}
-            <AskPanel
-              meetingId={meetingId}
-              interlocuteurs={panel.interlocuteurs}
-              onLocate={(quote, label) => locate({ quote, label, from: 'answer' })}
-              className="border-subtle mt-block border-t pt-row"
-            />
+            {/*
+              **Not part of what ships, and marked so the guard knows.**
+
+              `data-unmeasured` is read by `read()`: the arming guard's promise
+              is that everything *that leaves the machine* has been shown, and an
+              answer leaves nothing — it is a read over the record, like
+              *Historique* (DEC-25). Left inside the measurement it cost the rep
+              seven page turns at 1280×800 and ten at 960×600 for asking one
+              question, because a 216-pixel answer is content that appeared after
+              the column was read. Following a citation — the same evidence, one
+              tab away — costs nothing, because the transcript is its own view.
+              The one feature this product has over a general-purpose
+              notetaker's chat box was the only thing on the screen being
+              punished.
+            */}
+            <div data-unmeasured>
+              <AskPanel
+                meetingId={meetingId}
+                interlocuteurs={panel.interlocuteurs}
+                onLocate={(quote, label) => locate({ quote, label, from: 'answer' })}
+                className="border-subtle mt-block border-t pt-row"
+              />
+            </div>
 
             {/*
               The turn for *this* column, at the end of it. Only when this column

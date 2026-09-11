@@ -122,16 +122,42 @@ describe('it stays out of the way while a rep is writing', () => {
     expect(fired).toEqual([])
   })
 
-  test.each(['champ', 'zone', 'notes'])('Échap and Ctrl Entrée still work from « %s »', (label) => {
+  test.each(['champ', 'zone', 'notes'])('Échap still leaves from « %s »', (label) => {
     const fired: ShortcutId[] = []
     const { getByLabelText } = render(<Harness fired={fired} />)
-    const field = getByLabelText(label)
+    press('Escape', {}, getByLabelText(label))
+    // A draft survives it — `PENDING_EDITS` at the gate, the store in the
+    // notepad — which is what makes leaving a safe thing to do mid-sentence.
+    expect(fired).toEqual(['retour'])
+  })
 
-    // The two that mean something *while* typing, and mean the same thing in
-    // every mail client a rep has ever used.
-    press('Escape', {}, field)
-    press('Enter', { ctrlKey: true }, field)
-    expect(fired).toEqual(['retour', 'valider'])
+  /**
+   * **The most dangerous line this file ever had.**
+   *
+   * `valider` was allowed while typing, on the argument that `Ctrl Entrée`
+   * « submits, which is what those keys do in every mail client » — and that
+   * muscle memory is precisely what made it wrong. The only screen that claims
+   * `valider` is the review gate, and two of the things a rep types there are
+   * the follow-up mail's **subject and body**. In a mail client, `Ctrl Entrée`
+   * in a mail body sends that mail; here it fired `review:confirm` — the
+   * VerySwing task and the Outlook draft, from inside the box whose content is
+   * the thing being sent, with no idempotency key and no undo (DEC-4).
+   * *Demander*'s input is on the same screen and did the same.
+   */
+  test.each(['champ', 'zone', 'notes'])('Ctrl Entrée does not confirm from « %s »', (label) => {
+    const fired: ShortcutId[] = []
+    const { getByLabelText } = render(<Harness fired={fired} />)
+    press('Enter', { ctrlKey: true }, getByLabelText(label))
+    expect(fired).toEqual([])
+  })
+
+  test('and it still confirms from outside a field', () => {
+    // Losing it inside a field costs nothing: the rep is one Tab or one click
+    // from the button, which is the gesture DEC-4 is actually about.
+    const fired: ShortcutId[] = []
+    render(<Harness fired={fired} />)
+    press('Enter', { ctrlKey: true })
+    expect(fired).toEqual(['valider'])
   })
 })
 

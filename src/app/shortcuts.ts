@@ -77,7 +77,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: 'valider',
     keys: 'Ctrl/⌘ Entrée',
     label: 'Valider',
-    where: 'à la revue, quand le bouton est armé',
+    where: 'à la revue, quand le bouton est armé et hors saisie',
   },
 ]
 
@@ -108,9 +108,23 @@ const resolve = (event: KeyboardEvent): ShortcutId | null => {
  * is somewhere a person is typing. `Ctrl N` inside the compte-rendu they are
  * correcting must not start a recording.
  *
- * The two exceptions are the two that mean something *while* typing: `Échap`
- * leaves, and `Ctrl Entrée` submits — which is what those keys do in every mail
- * client a rep has ever used.
+ * One exception, `Échap`, which leaves — and a draft survives it
+ * (`PENDING_EDITS`).
+ *
+ * **`Ctrl Entrée` used to be the second, and that was the most dangerous line in
+ * this file.** The argument was that it « submits, which is what those keys do in
+ * every mail client a rep has ever used » — and it is exactly that muscle memory
+ * that makes it wrong here. The only screen that claims `valider` is the review
+ * gate, and two of the things a rep types on that screen are *the follow-up mail's
+ * subject and its body*. In a mail client, `Ctrl Entrée` in a mail body sends that
+ * mail. Here it fired `review:confirm`: the VerySwing task and the Outlook draft,
+ * from inside the box whose content is the thing being sent, with no idempotency
+ * key and no undo (DEC-4). *Demander*'s input is on the same screen and did the
+ * same.
+ *
+ * So it is claimed only outside an editable, and losing it there costs nothing:
+ * the rep is one Tab or one click from the button, and the button is the gesture
+ * DEC-4 is about.
  *
  * `closest`, not the target's own tag. A keydown inside ProseMirror lands on
  * whatever element the caret is in — a `<p>`, a `<li>`, an `<h2>` — never on the
@@ -125,7 +139,7 @@ const typing = (target: EventTarget | null): boolean => {
   return typeof el?.closest === 'function' && el.closest(EDITABLE) !== null
 }
 
-const ALLOWED_WHILE_TYPING: readonly ShortcutId[] = ['retour', 'valider']
+const ALLOWED_WHILE_TYPING: readonly ShortcutId[] = ['retour']
 
 /**
  * Install the ones this screen answers, for as long as it is mounted.

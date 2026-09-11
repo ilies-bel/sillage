@@ -64,7 +64,15 @@ export const ProviderRowSchema = z
     label: z.string().min(1),
     tier: ProviderTierSchema,
     residency: ResidencySchema,
-    streaming: z.boolean(),
+    /*
+     * `streaming` used to ride here too, and it never reached a pixel: whether a
+     * provider can stream is how `providerRank` breaks a tie (`registry.ts`), not
+     * anything a rep can act on — and every shipped row declares `false`, so the
+     * column would have said one word, always the same. A field that crosses the
+     * bridge on every settings read for nobody is the shape
+     * `scripts/check-surfaces.mjs` exists to catch, one layer below where that
+     * check looks.
+     */
     cost: CostSchema,
     /** How this provider is reached. The screen renders its control from this (DEC-34). */
     auth: AuthKindSchema,

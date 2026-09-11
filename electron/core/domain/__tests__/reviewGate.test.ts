@@ -344,3 +344,40 @@ test('an empty mail subject costs the draft and nothing else', () => {
 test('a subject that is present is not refused for its own sake', () => {
   assert.equal(gate(sampleExtraction).view('mail.draft').available, true)
 })
+
+/**
+ * **An empty compte-rendu is not a task.**
+ *
+ * `ReviewEdits.compteRendu` deliberately carries no `min(1)` — a rep who selects
+ * the whole document in « Modifier » and deletes it has done something they can
+ * undo, and rejecting the whole confirmation would discard every other
+ * correction alongside it. That comment then says « and `draftIntents` already
+ * refuses a task with no description, on the row, in French », and it did not:
+ * `taskPossible` read the *name* and nothing else, so an empty body went into
+ * `taskDescription` and landed in the client's system of record — where
+ * `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb.
+ */
+test('a task with no body is refused on the row, with the reason', () => {
+  const extraction = sampleExtraction
+  const all = ['crm.task', 'crm.opportunity', 'mail.draft'].map((k) => `${MEETING}:${k}`)
+  const drafted = (compteRendu: string) =>
+    draftIntents({
+      meetingId: MEETING,
+      facts: extraction.facts,
+      edits: { ...prefillEdits(extraction, DOCUMENT), compteRendu },
+      mailTo: ['client@acme.fr'],
+      checked: all,
+    }).find((d) => d.view.kind === 'crm.task')!
+
+  const empty = drafted('')
+  assert.equal(empty.view.available, false)
+  assert.equal(empty.intent, null)
+  assert.match(empty.view.reason ?? '', /compte-rendu est vide/)
+
+  // Whitespace is empty: three spaces and a newline is not a description, and
+  // it is exactly what « tout sélectionner, supprimer » leaves behind.
+  assert.equal(drafted('   \n  ').intent, null)
+
+  // And the ordinary case is untouched.
+  assert.ok(drafted(DOCUMENT).intent)
+})
