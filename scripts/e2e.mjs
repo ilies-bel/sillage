@@ -729,26 +729,59 @@ try {
      * at the gate and `settled` in the recipe picker were all unreachable, and a
      * call that shipped hours ago read « Envoi… » forever.
      *
-     * The assertion is the **invariant**, not a state: a meeting is in `pushing`
-     * if and only if some intent is still pending. That is true whether or not a
-     * connector exists on this machine — which matters, because none does here —
-     * and it is what a step asserting `state === 'done'` would have got wrong in
-     * the other direction, calling a meeting finished with nothing in the CRM.
+     * **And the rule this step first encoded was wrong in the other direction,
+     * which is why it failed the round after it was written.**
+     *
+     * It asserted « in `pushing` if and only if some intent is not `drained` or
+     * `failed` », and called that true whether or not a connector exists. It is
+     * not: a third terminal case was added deliberately, because the second one
+     * was costing a rep everything. `Outbox.#attempt` finds no port, abandons
+     * the intent **without an attempt event** — on purpose, so it ships the day
+     * the connector is configured — and the row stays `pending`. On the demo
+     * build, which DEC-28 calls the first deliverable and which has no VerySwing
+     * tenant, that is the *ordinary* path: one press of *Valider* left the
+     * meeting in `pushing` for the life of the database, the calendar read
+     * « Envoi… » on that call for ever, and because the boot re-drain rehydrates
+     * the session, `liveStates()` carried `pushing` and **every future update
+     * was refused**. An intent nobody can route is settled as far as the
+     * *meeting* is concerned.
+     *
+     * So this machine — no connector, nothing routable — is the case where the
+     * meeting **must** reach a terminal state, and the old assertion demanded
+     * the opposite. What still has to hold beside it is the half that could lose
+     * something silently: the intents are **kept**, `pending` and not `failed`,
+     * queued for the day a tenant exists. Settling the meeting is not discarding
+     * the queue.
+     *
+     * The direction this no longer covers — a *routable* intent genuinely on the
+     * wire keeping the meeting in `pushing` — is not reachable here, because it
+     * needs a configured connector. `MeetingSession`'s unit tests hold it, and
+     * this step says so rather than pretending to measure it.
      */
     const { meeting, outbox } = await page.evaluate(
       (meetingId) => window.app.invoke('meeting:get', { meetingId }),
       gated,
     )
-    const inFlight = outbox.filter((row) => row.state !== 'drained' && row.state !== 'failed')
-    if (inFlight.length === 0 && meeting.state === 'pushing') {
+    if (meeting.state === 'pushing') {
       throw new Error(
-        'tout est retombé et la réunion est restée en « pushing » — `pushSettled` n’est dispatché par personne',
+        'la réunion est restée en « pushing » alors qu’aucun connecteur ne peut router ses intentions — ' +
+          'elle y resterait pour la vie de la base, et le bloc de mise à jour avec elle',
       )
     }
-    if (inFlight.length > 0 && meeting.state !== 'pushing') {
+    const kept = outbox.filter((row) => row.state === 'pending')
+    if (kept.length === 0) {
       throw new Error(
-        `${inFlight.length} intention(s) encore en vol mais la réunion est « ${meeting.state} »`,
+        `la réunion est « ${meeting.state} » et rien n’attend dans l’outbox — ` +
+          'régler la réunion ne doit pas vider la file',
       )
+    }
+    for (const row of outbox) {
+      if (row.state === 'failed') {
+        throw new Error(
+          `${row.kind} est « failed » alors qu’aucune tentative n’a pu démarrer — ` +
+            'une tentative impossible reste « pending », avec sa raison',
+        )
+      }
     }
   })
 

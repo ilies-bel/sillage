@@ -1761,7 +1761,7 @@ async function main() {
    * injects rules of its own, and a check that runs after it is measuring the
    * harness rather than the product.
    */
-  let motionOff = { undeclared: [], persisting: [] }
+  let motionOff = { undeclared: [], persisting: [], seen: 0 }
   if (flags.motion) {
     await page.evaluate(() => document.fonts.ready)
     motionOff = await motion(page)
@@ -1841,9 +1841,11 @@ async function main() {
     }
   }
   if (flags.motion) {
-    const { undeclared, persisting } = motionOff
+    const { undeclared, persisting, seen } = motionOff
     if (undeclared.length === 0 && persisting.length === 0) {
-      console.log('  mouvement: tout passe par les jetons, et s’arrête quand l’OS le demande')
+      console.log(
+        `  mouvement: ${seen} élément(s) animé(s), tous par les jetons, tous muets sous prefers-reduced-motion`,
+      )
     } else {
       if (undeclared.length > 0) {
         console.log(`  ✗ mouvement: ${undeclared.length} élément(s) hors jetons`)
@@ -2473,6 +2475,22 @@ async function motion(page) {
   return {
     undeclared: live.filter((m) => m.offToken || m.offCurve),
     persisting: reduced,
+    /*
+     * **How many elements were actually looked at**, printed even when the
+     * check passes.
+     *
+     * This is the `--scrollers` lesson in its other half. That check scoped
+     * itself to a landmark list, visited **zero** elements on a screen with no
+     * landmark, and printed « rien de caché » over four unmeasured panes — and
+     * nothing in its output distinguished « I looked and found nothing » from
+     * « I looked at nothing ». A silent zero reads as evidence.
+     *
+     * Zero is not a failure here: a stage can legitimately hold no animated
+     * element, and a splash with three static rows does. It is a *number a human
+     * can see*, so « tout passe par les jetons » on a stage that measured
+     * nothing cannot be mistaken for a stage that measured forty.
+     */
+    seen: live.length,
   }
 }
 
