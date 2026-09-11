@@ -4,6 +4,14 @@ Renders any screen of the app to a PNG, without Electron, without a real audio
 device, without Graph, VerySwing or an LLM key — and runs a design detector
 inside that same rendered page.
 
+This harness is **not** the end-to-end run. It drives the real renderer against a
+stubbed `window.app`, so it sees layout, geometry and the accessibility tree and
+never sees the main process. `scripts/e2e.mjs` is the other half — it starts the
+*packaged* application and walks 28 steps through the real bridge, the real store
+and the real state machine, including the gate and the one press that writes to a
+client's CRM. A defect lives in one or the other, rarely in both, and each was
+introduced after something shipped that the other could not have caught.
+
 ```
 node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--no-png] [--sans-entra]
 node scripts/harness/smoke.mjs                 # every stage × two sizes, with all four checks
@@ -16,17 +24,36 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Five measured checks, and each exists because something shipped past a
+**Six measured checks, and each exists because something shipped past a
 screenshot.** `--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
 the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
-because nothing counted), `--a11y` (a control whose only name is « ‹ »), and
+because nothing counted), `--a11y` (a control whose only name is « ‹ »),
 `--contrast`, computed from resolved styles with transitions switched off —
 `getComputedStyle` returns the current *animated* value, which is how the bundled
-detector reports a resting 14:1 button as 4.0:1. All five run on every stage at
-1280×800 *and* at 960×600 — the width `main.ts` declares as
-the minimum, where a text field was crushed to fourteen pixels while every check
-at the comfortable size passed.
+detector reports a resting 14:1 button as 4.0:1 — and `--scrollers`, below. All
+six run on every stage at 1280×800 *and* at 960×600 — the size `main.ts` declares
+as the minimum, where a text field was crushed to fourteen pixels while every
+check at the comfortable size passed.
+
+**`--scrollers` finds what the harness itself was hiding.** It reports any box
+inside the screen whose content is taller or wider than the box, and it exists
+because the review gate's arming guard measures **two** columns and withholds
+*Valider* until both have been shown — so a scroller *nested* in one of them is a
+hole in that promise, and one no picture shows, because a clipped textarea looks
+exactly like a short one. There were eleven: `FieldRow` sized its box from
+`value.split('\n')`, a count of *newlines* where a rep reads *wrapped* lines,
+under a `Math.min(6, …)` ceiling. A nine-line « Prochaines étapes » hid three
+lines at 1280×800, armed; at 960×600 three fields hid text at once.
+
+**Thirteen rounds of screenshots missed it, and the reason is in this file.**
+`--expand` injects `textarea { field-sizing: content !important }` so a `fullPage`
+shot shows the mail draft rather than scrolling past it — so every screenshot ever
+taken of that gate showed the fields at their full height while the shipped
+product cut them off. The check runs **before** the expansion, deliberately.
+Truncation that draws its own ellipsis — a `line-clamp`, a `text-overflow` — is
+exempt: the check is for content cut off with nothing on screen saying so. A box
+that scrolls on purpose declares `data-scrolls`.
 
 **`--geometry` measures what a picture hides.** Anything marked `data-hangs` —
 the compte-rendu's gutter markers today — is compared against the padding edge
