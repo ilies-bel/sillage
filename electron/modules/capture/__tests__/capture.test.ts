@@ -25,6 +25,7 @@ import {
   type NativeCapture,
 } from '../nativeModule.ts'
 import type { AudioFrame } from '../index.ts'
+import type { ConnectorHealth } from '../../../core/contracts/health.ts'
 
 /** Lets the deferred `setImmediate` teardown bodies run. */
 const settle = () => new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
@@ -385,4 +386,80 @@ test('a frame arriving after stop is dropped', async () => {
   // must not reach the transcript, or finalize() cannot see a clean audio-end.
   for (const capture of live) capture.onData?.(null, Buffer.from([9]))
   assert.deepEqual(frames, [])
+})
+
+// ── A channel that produces nothing ────────────────────────────────────────
+
+/** One frame with real amplitude, so the classifier sees a meaningful signal. */
+const audible = (): Buffer => {
+  const pcm = Buffer.alloc(640)
+  for (let i = 0; i < 320; i += 1) pcm.writeInt16LE(i % 2 === 0 ? 6_000 : -6_000, i * 2)
+  return pcm
+}
+
+
+test('a channel that never produces a frame says so, per side', async () => {
+  /*
+   * **`SystemAudioHealthClassifier` was constructed only in its own test file.**
+   *
+   * 137 lines written for exactly this — a twelve-second no-chunk watchdog and a
+   * sustained-zero detector — and nothing in the product asked it anything. So
+   * the failure this whole product is built around could happen in silence: on
+   * Windows the loopback taps the *multimedia* default while Teams routes to the
+   * communications default (`speaker/windows.rs` documents that hole itself), a
+   * route change mid-call leaves the tap on an endpoint no longer playing, a
+   * microphone is muted in hardware. In every case the channel yields nothing,
+   * `#onFrame` returns early on keepalives so `#measure` is never reached, no
+   * `InputLevelWatch` is ever created, and `capture.level.tooQuiet` cannot fire.
+   * The header said « Tout fonctionne » and the compte-rendu described a
+   * monologue.
+   *
+   * Per channel, because the two have opposite fixes (DEC-45): nothing on `rep`
+   * is a microphone, nothing on `far` is the system tap, and the sentence has to
+   * say which. `degraded`, never `down` — the meeting is recording and half of
+   * it is arriving (DEC-32).
+   */
+  let now = 0
+  const session = new CaptureSession({ clock: () => now, tickMs: 2 })
+  const health: ConnectorHealth[] = []
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+
+  await session.start()
+  // Twelve seconds of the meeting, with nothing arriving on either channel.
+  for (let i = 0; i < 4; i += 1) {
+    now += 4_000
+    await new Promise((resolve) => setTimeout(resolve, 8))
+  }
+
+  const said = health.filter((h) => h.state === 'degraded').map((h) => (h.state === 'degraded' ? h.reason : ''))
+  assert.ok(
+    said.some((reason) => reason.includes('votre micro')),
+    'le canal du commercial doit être nommé',
+  )
+  assert.ok(
+    said.some((reason) => reason.includes('l’audio de votre ordinateur')),
+    'le canal du client doit être nommé',
+  )
+  await session.stop()
+})
+
+test('a channel that is producing audio says nothing at all', async () => {
+  // The other half, and the reason the watchdog is fed before the keepalive
+  // guard rather than after: a tap that is delivering is a tap nobody should
+  // hear about (DEC-26 — this path may not grow a rule that costs a meeting).
+  let now = 0
+  const session = new CaptureSession({ clock: () => now, tickMs: 2 })
+  const health: ConnectorHealth[] = []
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+
+  await session.start()
+  for (let i = 0; i < 4; i += 1) {
+    now += 4_000
+    // The fake calls back the way the native binding does: `(err, chunk)`.
+    for (const capture of trace.live) capture.onData?.(null, audible())
+    await new Promise((resolve) => setTimeout(resolve, 8))
+  }
+
+  assert.deepEqual(health.filter((h) => h.state !== 'ok'), [])
+  await session.stop()
 })

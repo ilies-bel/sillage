@@ -22,6 +22,8 @@ import { InputLevelWatch, rmsOfInt16, type InputLevel } from '../../core/domain/
 import { MicrophoneCapture } from './MicrophoneCapture.ts'
 import { SystemAudioCapture } from './SystemAudioCapture.ts'
 import { loadNativeModule } from './nativeModule.ts'
+import { SystemAudioHealthClassifier } from './systemAudioHealthClassifier.ts'
+import type { HealthEvent } from './systemAudioHealthClassifier.ts'
 
 export { MicrophoneCapture } from './MicrophoneCapture.ts'
 export { SystemAudioCapture } from './SystemAudioCapture.ts'
@@ -42,6 +44,13 @@ export interface CaptureOptions {
   systemDeviceId?: string | null
   diagnostics?: DiagRecorder
   clock?: () => number
+  /**
+   * How often the watchdog asks « has this channel produced anything ». Four
+   * seconds in production, so the classifier's twelve-second window is reached
+   * with room; injectable because the alternative is a test that waits twelve
+   * real seconds, and a check nobody runs is a check that does not exist.
+   */
+  tickMs?: number
 }
 
 export interface CaptureSessionEvents {
@@ -113,6 +122,7 @@ export class CaptureSession extends EventEmitter {
   #system: SystemAudioCapture | null = null
   #options: CaptureOptions
   #diagnostics: DiagRecorder
+  #clock: () => number
   #running = false
   /**
    * A stop in flight. Every entry point awaits it before starting, so a restart
@@ -130,6 +140,7 @@ export class CaptureSession extends EventEmitter {
     super()
     this.#options = options
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
+    this.#clock = options.clock ?? Date.now
   }
 
   /**
@@ -141,6 +152,10 @@ export class CaptureSession extends EventEmitter {
 
   /** Per channel: is the level high enough to be transcribed? */
   #levels = new Map<Channel, InputLevelWatch>()
+  /** One per channel — see `#watch`. The two have opposite failures (DEC-45). */
+  #health = new Map<Channel, SystemAudioHealthClassifier>()
+  /** Feeds `watchdog-tick`, which is how a channel that produced *nothing* is noticed. */
+  #tick: ReturnType<typeof setInterval> | null = null
   #reported = new Map<Channel, InputLevel>()
 
   /**
@@ -154,6 +169,15 @@ export class CaptureSession extends EventEmitter {
    * here, which is the same argument that admits the zero test above it.
    */
   #onFrame(channel: Channel, chunk: Buffer, sampleRate: number): void {
+    /*
+     * The watchdog is fed **before** the keepalive guard, and that ordering is
+     * the point. A keepalive is the tap saying « I am alive and there was
+     * nothing » — which is exactly the state this is here to notice, and the
+     * early return below is why `#measure` never ran for a channel that
+     * produced no audio at all.
+     */
+    this.#watch(channel, { kind: 'chunk', chunk, nowMs: this.#clock() })
+
     if (isKeepalive(chunk)) return
 
     this.#measure(channel, chunk, sampleRate)
@@ -255,6 +279,21 @@ export class CaptureSession extends EventEmitter {
 
     this.#running = true
 
+    /*
+     * The watchdog tick, which is the **only** way a channel that produced
+     * nothing at all is ever noticed: every other signal in this file is
+     * derived from a frame, and a channel with no frames emits none. Four
+     * seconds, so the classifier's twelve-second window is reached with room;
+     * `unref` so it can never hold the process open (DEC-26 — nothing here may
+     * outlive a meeting).
+     */
+    this.#health.clear()
+    this.#tick = setInterval(() => {
+      const nowMs = this.#clock()
+      for (const channel of ['rep', 'far'] as const) this.#watch(channel, { kind: 'watchdog-tick', nowMs })
+    }, this.#options.tickMs ?? 4_000)
+    this.#tick.unref?.()
+
     const mic = new MicrophoneCapture(this.#options.micDeviceId ?? null)
     this.#mic = mic
     mic.on('data', (chunk: Buffer) => {
@@ -313,6 +352,12 @@ export class CaptureSession extends EventEmitter {
     if (!this.#running && !this.#teardown) return this.#teardown ?? undefined
     this.#running = false
 
+    if (this.#tick) clearInterval(this.#tick)
+    this.#tick = null
+    for (const classifier of this.#health.values()) {
+      classifier.handle({ kind: 'capture-stopped' })
+    }
+
     const mic = this.#mic
     const system = this.#system
     this.#mic = null
@@ -334,6 +379,76 @@ export class CaptureSession extends EventEmitter {
       if (this.#teardown === teardown) this.#teardown = null
     }
     return undefined
+  }
+
+  /**
+   * **Has this channel produced any audio at all?**
+   *
+   * `SystemAudioHealthClassifier` is 137 lines written for exactly this — a
+   * 12-second no-chunk watchdog and a sustained-zero detector — and it was
+   * constructed **only in its own test file**. Nothing in the product asked it
+   * anything, so the one failure this whole product is built around could happen
+   * in silence: on Windows the loopback taps the *multimedia* default while
+   * Teams routes to the communications default (`speaker/windows.rs` documents
+   * that hole itself), a route change mid-call leaves the tap on an endpoint
+   * that is no longer playing, a mic is muted in hardware — and in every case
+   * the channel yields nothing, `#measure` is never reached because `#onFrame`
+   * returns early on keepalives, no `InputLevelWatch` is ever created, and
+   * `capture.level.tooQuiet` can never fire. The header said « Tout fonctionne »
+   * for the length of the call and the compte-rendu described a monologue.
+   *
+   * CLAUDE.md states this failure in the macOS-permission case and
+   * `Onboarding.tsx` exists to prevent it. This is the same outcome on the
+   * *primary* platform (HR-2), reachable through a Sound Settings checkbox
+   * rather than a permission prompt.
+   *
+   * **Per channel, because the two have opposite fixes** (DEC-45): nothing on
+   * `rep` is a microphone, nothing on `far` is the system tap, and the rep is
+   * the only one who can tell which.
+   *
+   * `degraded`, never `down`: the meeting is being recorded and half of it is
+   * arriving. DEC-32 reserves an app-level status change for a subsystem that
+   * stops a meeting, and this one has not.
+   */
+  #watch(channel: Channel, event: HealthEvent): void {
+    let classifier = this.#health.get(channel)
+    if (!classifier) {
+      classifier = new SystemAudioHealthClassifier()
+      classifier.handle({ kind: 'capture-started', nowMs: this.#clock() })
+      this.#health.set(channel, classifier)
+    }
+    const outcome = classifier.handle(event)
+    if (outcome.type === 'none') return
+
+    const side = channel === 'rep' ? 'votre micro' : 'l’audio de votre ordinateur'
+    if (outcome.type === 'log') {
+      this.#diagnostics.record({
+        severity: outcome.level,
+        code: `capture.${channel}.${outcome.reason ?? 'silence'}`,
+        module: 'capture',
+        message: outcome.message,
+        detail: { channel },
+      })
+      // A channel that has produced nothing at all is the case a rep has to be
+      // told about while the call is still running, not after it.
+      if (outcome.reason === 'initial-silence-no-chunks') {
+        this.emit('health', {
+          state: 'degraded',
+          reason: `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.`,
+          since: this.#clock(),
+          retryable: true,
+        } satisfies ConnectorHealth)
+      }
+      return
+    }
+    if (outcome.type === 'warn-user') {
+      this.emit('health', {
+        state: 'degraded',
+        reason: `Entrée et sortie sur le même périphérique — ${side} risque de ne rien capter.`,
+        since: this.#clock(),
+        retryable: true,
+      } satisfies ConnectorHealth)
+    }
   }
 
   #onError(channel: Channel, error: unknown): void {

@@ -594,6 +594,24 @@ machine) or in `core/domain/` — never in an IPC handler.
   holds every id to a constructible session, and the streaming preference is proved
   against `providerRank` rather than against a shipped row, so it can never again be
   satisfied by declaring a provider that cannot start.
+- **A channel that produces *nothing* is the one case every other signal misses**
+  (`capture/systemAudioHealthClassifier.ts`). `#onFrame` returns early on a
+  keepalive — the tap saying « I am alive and there was nothing » — so `#measure`
+  is never reached, no `InputLevelWatch` is ever created, and
+  `capture.level.tooQuiet` cannot fire. Every instrument in that file is derived
+  from a frame, and a silent channel emits none. So the watchdog is fed **before**
+  the keepalive guard and on a timer, per channel, and it is the only thing that
+  can notice. The failure it catches is the one the product is built around,
+  reachable on the *primary* platform through a Sound Settings checkbox rather
+  than a permission prompt: the Windows loopback taps the **multimedia** default
+  while Teams routes to the **communications** default, which the rep configures
+  separately (`speaker/windows.rs` documents that hole itself). `degraded`, never
+  `down` — the meeting is recording and half of it is arriving (DEC-32) — and the
+  sentence names *which* side, because nothing on `rep` is a microphone and
+  nothing on `far` is the system tap, which have opposite fixes (DEC-45).
+  **This module existed, tested, for months with no caller**: it was a `.mjs`
+  inside `electron/`, therefore outside `tsc` entirely, so nothing could notice.
+  A module here carries `.ts` for that reason and not only for the build.
 - **The local engine is pooled and outlives the meeting, so its prompt must be set
   unconditionally.** `prewarmLocalEngine()` holds a reference that is never released, and
   `setPrompt` is last-writer-wins — so `if (this.#prompt) engine.setPrompt(…)` meant a
