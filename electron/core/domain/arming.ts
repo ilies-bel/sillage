@@ -48,6 +48,19 @@ export const ARM_LEAD_MS = 5 * 60_000
 export const ARM_POLL_MS = 20_000
 
 /**
+ * How long past its scheduled end an event stays armable **while a conferencing
+ * application is still holding a microphone**.
+ *
+ * Twenty minutes, and the bound is what makes the relaxation honest rather than
+ * an open-ended one: a rep who leaves Teams connected over lunch is no longer in
+ * the 11:30 call, and the next slot's own window will have opened long before
+ * this expires. Shorter than `ARM_LEAD_MS +` a typical slot on purpose, so an
+ * overrunning event and the following event cannot both look current for long —
+ * and `nextArmable` prefers the one whose slot actually contains `now` anyway.
+ */
+export const OVERRUN_GRACE_MS = 20 * 60_000
+
+/**
  * Longer than this and it is a working block, not a call.
  *
  * All-day events are the case that matters. Their window would otherwise open
@@ -78,15 +91,29 @@ export interface ArmingInput {
   event: ArmableEvent
   now: number
   /**
-   * The conferencing application whose audio is on the system loopback right
-   * now, or null. Supplied by `modules/capture/` — this file must not know how
-   * that is detected, only that it is a name or nothing.
+   * The conferencing application that is *running* right now, or null. Supplied
+   * by `modules/capture/` — this file must not know how that is detected, only
+   * that it is a name or nothing.
+   *
+   * Weak by construction: Teams starts with Windows and stays open all day, so
+   * on most machines this is a constant. It is nonetheless the only signal that
+   * exists **before** a call begins, which is what `ARM_LEAD_MS` is for.
    */
   meetingAudio: string | null
+  /**
+   * The conferencing application *holding a microphone* right now, or null — a
+   * call that is actually happening, rather than an application that is open.
+   *
+   * Optional because a binary built before `mic_apps.rs` existed cannot answer
+   * it, and the absence has to mean « we did not measure it » rather than « no
+   * call » (DEC-45). Every rule below that reads it therefore only ever *adds*
+   * arming; none withholds it on a null.
+   */
+  micHeldBy?: string | null
 }
 
 export const decideArming = (input: ArmingInput): ArmingDecision => {
-  const { event, now, meetingAudio } = input
+  const { event, now, meetingAudio, micHeldBy = null } = input
 
   if (PRIVATE.has(event.sensitivity)) {
     return { action: 'skip', reason: 'événement marqué privé dans Outlook' }
@@ -103,8 +130,36 @@ export const decideArming = (input: ArmingInput): ArmingDecision => {
     return { action: 'skip', reason: 'plage trop longue pour être une réunion' }
   }
 
+  /*
+   * **A call that runs over has not finished, and this used to say it had.**
+   *
+   * DEC-9 says in as many words that sales calls overrun constantly. The rule
+   * here was `now >= scheduledEnd → skip`, so auto-arming stopped at the
+   * scheduled minute — and `DayPane` gates its manual control on the same
+   * instant, so at 14:31 on a 14:00–14:30 slot a rep had neither. What they had
+   * instead was « Démarrer une réunion », which creates a meeting with no
+   * `eventId`: no attendees, no « Interlocuteurs » on the header, no chance for
+   * `speakerLabel` to name the far channel after a person rather than « Client »,
+   * and the strongest signal account resolution has, all dropped — at the moment
+   * the conversation is going *well enough to run late*.
+   *
+   * The microphone signal is what makes this safe to relax. « The slot ended »
+   * is a schedule; « a conferencing app is holding a microphone » is the call
+   * still happening. Extending on a clock alone would arm the 14:00 event over
+   * the 15:00 one; extending only while the evidence says a call is live cannot.
+   *
+   * Bounded all the same: a rep who leaves Teams in a call over lunch is not in
+   * this meeting, and the grace is deliberately shorter than a slot.
+   */
   if (now >= event.scheduledEnd) {
-    return { action: 'skip', reason: 'événement terminé' }
+    const overrunning = micHeldBy !== null && micHeldBy !== undefined
+    if (!overrunning) {
+      return { action: 'skip', reason: 'événement terminé' }
+    }
+    if (now >= event.scheduledEnd + OVERRUN_GRACE_MS) {
+      return { action: 'skip', reason: 'événement terminé depuis trop longtemps' }
+    }
+    return { action: 'arm', reason: `${micHeldBy} émet du son après l’heure prévue` }
   }
 
   const opensAt = event.scheduledStart - ARM_LEAD_MS
@@ -137,6 +192,21 @@ export const decideArming = (input: ArmingInput): ArmingDecision => {
    * not « wake me when the event ends », but « ask again shortly, because the
    * thing that decides this is a process list nobody will tell us about ».
    */
+  /*
+   * Either signal satisfies the conjunction, and the strong one is named first.
+   *
+   * `micHeldBy` non-null implies a conferencing app is running, so this is not a
+   * new case so much as a better *sentence*: « Teams est ouvert » and « Teams
+   * émet du son » are different facts, and the reason string is read by a rep in
+   * the agenda's empty state. It also covers the `micOnly` applications — a
+   * browser tab, a Slack huddle, Aircall — which `matchMeetingApp` refuses to
+   * report by name because they are open all day, and which therefore never
+   * produce `meetingAudio` at all.
+   */
+  if (micHeldBy) {
+    return { action: 'arm', reason: `${micHeldBy} émet du son` }
+  }
+
   if (!meetingAudio) {
     return {
       action: 'wait',
@@ -145,7 +215,7 @@ export const decideArming = (input: ArmingInput): ArmingDecision => {
     }
   }
 
-  return { action: 'arm', reason: `${meetingAudio} émet du son` }
+  return { action: 'arm', reason: `${meetingAudio} est ouvert` }
 }
 
 /** Which event the app is offering to record, and why — or why it is offering none. */
@@ -170,8 +240,20 @@ export const nextArmable = (
   events: readonly CalendarEvent[],
   now: number,
   meetingAudio: string | null,
+  micHeldBy: string | null = null,
 ): ArmingChoice => {
   let armed: ArmingChoice | null = null
+  /*
+   * An event armed only by `OVERRUN_GRACE_MS` is kept apart and loses to any
+   * event whose slot actually contains `now`.
+   *
+   * Without the split, a 14:00–15:00 call running over to 15:05 would beat the
+   * 15:00–16:00 call on « the earlier start wins », and the rep would be offered
+   * the conversation they have just left instead of the one they are in. The
+   * microphone is held either way, so the signal cannot separate them — only the
+   * clock can, and this is the one place that knows both slots.
+   */
+  let overrun: ArmingChoice | null = null
   let waiting: ArmingChoice | null = null
 
   for (const event of events) {
@@ -179,10 +261,14 @@ export const nextArmable = (
     // neither is ever a call to record.
     if (event.isCancelled || event.isAllDay) continue
 
-    const decision = decideArming({ event: event.context, now, meetingAudio })
+    const decision = decideArming({ event: event.context, now, meetingAudio, micHeldBy })
     if (decision.action === 'arm') {
-      if (!armed || event.context.scheduledStart < (armed.event?.context.scheduledStart ?? Infinity)) {
-        armed = { event, decision }
+      const isOverrun = now >= event.context.scheduledEnd
+      const slot = isOverrun ? 'overrun' : 'current'
+      const held = slot === 'overrun' ? overrun : armed
+      if (!held || event.context.scheduledStart < (held.event?.context.scheduledStart ?? Infinity)) {
+        if (slot === 'overrun') overrun = { event, decision }
+        else armed = { event, decision }
       }
       continue
     }
@@ -195,6 +281,7 @@ export const nextArmable = (
   }
 
   if (armed) return armed
+  if (overrun) return overrun
   if (waiting) return waiting
   return { event: null, decision: { action: 'skip', reason: 'aucune réunion dans la fenêtre' } }
 }

@@ -500,28 +500,54 @@ The screen the demo is watched on.
   - [x] `note/schema.ts` — adapted: upstream's eight custom node views are down to zero.
         `taskList`/`taskItem`, `image`/`fileAttachment`, `appLink`, `mention-@`, `session` and
         `clip` are their product, and every node type the document can contain is a shape
-        `modules/extract/` has to read. Node *names* kept exactly (`codeBlock`, `bulletList`,
+        `core/domain/documentText.ts` has to flatten for `modules/extract/`. Node *names* kept exactly (`codeBlock`, `bulletList`,
         `listItem`, `hardBreak`) so a document written by either tree parses in the other.
-  - [x] `note/title-layout.ts`, `note/trailing-empty-line-click.ts`, `transaction-guard.ts` —
-        verbatim, with their tests.
+  - [x] `note/trailing-empty-line-click.ts`, `transaction-guard.ts` — verbatim, with their
+        tests, and **wired**: the click plugin is in `Notepad.tsx`'s plugin list and the guard
+        is its `dispatchTransaction`. They were ported, tested and called by nobody, which is
+        the failure this list has recorded four times elsewhere — `[x]` next to a file is not
+        `[x]` next to a behaviour. The pane under « Vos notes… » did not take a click over 96%
+        of its height (measured: a 26px editable in a 724px pane at 1280×800, 476 of 502 dead
+        at 960×600), and a throw out of `applyTransaction` could not reach the error boundary,
+        because it happens in a DOM handler React never sees.
+  - [x] ~~`note/title-layout.ts`~~ — **deleted**, with its test and with `note/keymap.ts`'s
+        `onNavigateToTitle` parameter and the three handlers that hung off it. It forced the
+        document's first block to be an `h1` because upstream's note had a title *line*; here a
+        meeting's title is the calendar's objet, drawn in the session header, and DEC-5 forbids
+        anything writing into the rep's document during a call. Nothing ever passed the
+        callback, and there is nothing for it to reach.
   - [x] Renderer test harness: **vitest + jsdom**, driven from `scripts/run-tests.mjs` so
         `npm test` is still one command. A second framework, for one reason — the ported code
         keeps its upstream tests and those tests are vitest. Rewriting them into `node --test`
         would be rewriting the thing that made the port worth doing.
   - [x] `scripts/lib/boundaries.mjs` fix: the renderer rule denied `src/` importing *itself*.
         It is about what the renderer may reach into `electron/` for, not one import path and
-        no other; `src/editor/note/title-layout.ts` needs `./schema`. Regression test added.
+        no other; `src/editor/note/keymap.ts` needs `./schema`. Regression test added.
   - [x] `note/keymap.ts` — adapted: upstream's Enter/Backspace/Tab handlers special-case
         `taskItem` before falling through to `listItem`; with the node gone the special cases
         went and the `listItem` paths they sat in front of are what remain.
-  - [x] `markdown.ts` + `markdown/{parser,schema,serializer}.ts`. **One deliberate behaviour
-        change:** upstream catches everything in both directions, so an unserialisable
-        document becomes `""`. Its own test file calls that out as a known hazard. Here
-        `json2md` throws `MarkdownSerializationError` instead, because its output is what
-        step 8 writes into the VSA task's `taskDescription` — a silent `""` means the rep
-        clicks *Valider*, the push succeeds, and the CRM records a meeting whose compte-rendu
-        is empty. `md2json` still falls back, because unparseable markdown degrades to the
-        same text as one paragraph and loses nothing.
+  - [x] ~~`markdown.ts` + `markdown/{parser,schema,serializer}.ts`~~ — **deleted**, with
+        `markdown.test.ts`, and with `markdown-it` and `prosemirror-markdown` out of
+        `dependencies` (2.5 MB of `node_modules`, shipped inside every installer because
+        `build.files` takes it whole). The behaviour change that used to be argued here —
+        `json2md` throwing where upstream returned `""` — was justified by « its output is what
+        step 8 writes into the VSA task's `taskDescription` ». **It is not**: the rep's notes
+        reach the recipe as plain text through `core/domain/documentText.ts`, which says in its
+        own docblock why the flattening lives there, and the import rule makes the claim
+        structurally impossible — `src/*` may import `core/contracts/` only, so nothing outside
+        the renderer can call a function in `src/editor/`. 1147 lines and 48 green tests
+        excused by a comment; `vendor/anarlog-editor/` still holds all four files, so the port
+        costs an hour on the day a caller exists.
+  - [x] **`buildInputRules()` wired into `Notepad.tsx`**, and the block vocabulary given keys
+        (`NOTE_SHORTCUTS`, printed in Réglages). The function had eight green tests and no
+        caller, so in the shipped editor `# Titre` was a paragraph containing a hash, `- point`
+        a paragraph containing a dash, `**gras**` two pairs of asterisks and `l'appel d'offres`
+        kept U+0027 — while `check:french` enforces U+2019 in the repo's own prose,
+        `history:search` folds on it and `terms.fr-esn.ts` ships that very phrase as a Whisper
+        boost term. `index.css` has styled `h1 h2 h3 ul ol blockquote pre code hr` for that pane
+        since it was written and the keyboard could reach none of it; there is no toolbar and
+        there must not be one (HR-10). Heading levels stop at three, because Tailwind's
+        preflight draws an `h4` exactly like the paragraph it replaced.
   - [x] `editor-error-boundary.tsx` — French, and it says **« L'enregistrement continue. »**
         That sentence is the point: the capture path has no dependency on the renderer
         (DEC-26), so a dead editor costs the notepad and nothing else, but a rep who does not

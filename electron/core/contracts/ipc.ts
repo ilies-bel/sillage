@@ -68,7 +68,17 @@ export const AgendaSnapshotSchema = z.object({
    */
   window: z.object({ from: TimestampSchema, to: TimestampSchema }),
   armed: z
-    .object({ meetingId: MeetingIdSchema, eventId: z.string(), subject: z.string() })
+    .object({
+      meetingId: MeetingIdSchema,
+      /**
+       * Null for an **unscheduled** call — one detected by a conferencing
+       * application holding a microphone with nothing in the calendar
+       * (`core/domain/adHoc.ts`). The renderer reads the null to know there is no
+       * calendar row to point the offer at.
+       */
+      eventId: z.string().nullable(),
+      subject: z.string(),
+    })
     .nullable(),
   reason: z.string(),
 })
@@ -525,9 +535,18 @@ export const invokeChannels = {
       ok: z.boolean(),
       /**
        * Which way the panel stacks. Decided by the main process, because only
-       * it knows which display the pill is on — and answered rather than
-       * broadcast, because the renderer needs it *before* it lays the panel
-       * out or the first frame draws in the wrong place.
+       * it knows which display the pill is on — and answered here, on the reply
+       * to the renderer's own measurement, because the renderer needs it
+       * *before* it lays the panel out or the first frame draws in the wrong
+       * place.
+       *
+       * It is answered here **and** broadcast on `widget:placed`, and those are
+       * two different events rather than a duplicate: this one is « you asked,
+       * here is the answer for the layout you are about to do », and the
+       * broadcast is « the answer changed and you did not ask ». A drag across
+       * the display's midline resizes nothing, so there is no request to reply
+       * to and the renderer would otherwise go on stacking the panel off the
+       * top of the screen.
        */
       above: z.boolean(),
     }),
@@ -892,6 +911,31 @@ export const broadcastChannels = {
    * short.
    */
   'moment:marked': z.object({ meetingId: MeetingIdSchema, mark: MomentMarkSchema }),
+  /**
+   * **The widget's placement changed and the widget did not ask.**
+   *
+   * `widget:resize` answers `above` on the reply, which covers every change the
+   * renderer *caused*. Two changes it does not cause, and both were silent:
+   *
+   *   · **A display went away.** `placeWindow`'s quarter-overlap rule is the
+   *     defence against the one unrecoverable window in this product — frameless,
+   *     always on top, absent from the taskbar, nothing to alt-tab to — and it
+   *     ran nowhere but on the reply to a resize. So a rep who dragged the pill
+   *     onto a second monitor and unplugged it was rescued only when the *next
+   *     turn of the call* changed the frame's height, which is to say: never,
+   *     when transcription is the thing that has died. Measured on the shipped
+   *     `Overlay`: pill at y=1920 with the remaining work area ending at 877.
+   *   · **A drag across the display's midline.** `flex-col` becomes
+   *     `flex-col-reverse`, which moves the pill by the panel's whole height and
+   *     leaves the frame exactly `width × height` — no resize, no request, no
+   *     reply, and the renderer went on stacking the panel off the top of the
+   *     screen.
+   *
+   * So the main process owns re-placement, because only it knows about displays,
+   * and says so on a channel of its own. It carries nothing but the stacking
+   * direction: *where* the window is, the main process has already moved it to.
+   */
+  'widget:placed': z.object({ above: z.boolean() }),
   /**
    * And the other half: a mark the rep took back.
    *

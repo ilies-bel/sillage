@@ -25,7 +25,9 @@ import { history } from 'prosemirror-history'
 import { dropCursor } from 'prosemirror-dropcursor'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { schema } from './note/schema'
-import { buildKeymap } from './note/keymap'
+import { buildInputRules, buildKeymap } from './note/keymap'
+import { trailingEmptyLineClickPlugin } from './note/trailing-empty-line-click'
+import { dispatchEditorTransaction } from './transaction-guard'
 
 /** DEC-12 says "at most half a second". This is that number. */
 export const SAVE_DEBOUNCE_MS = 500
@@ -65,6 +67,25 @@ const docFrom = (raw: unknown): PMNode | null => {
   }
 }
 
+/**
+ * The last document the view held, kept across exactly one remount.
+ *
+ * `EditorErrorBoundary`'s recovery *is* a remount, and a remount reads
+ * `initialDoc` — which on the session screen is the document as it was when the
+ * screen opened, forty minutes of a call ago. So a transaction failure that the
+ * boundary handled would have redrawn the pane with the rep's page of notes
+ * missing, under a sentence promising that the recording continues. The last
+ * *good* state is still in the view when a transaction throws (`updateState` did
+ * not run), so it is handed across here.
+ *
+ * In memory and never a store write, the way the gate's `PENDING_EDITS` holds a
+ * draft: this is a handoff between two mounts of the same component, and a
+ * document stashed until Thursday would reappear over one the rep has since
+ * changed. The write to the log is the debounced save, which the same handler
+ * asks for.
+ */
+const RECOVERED = new Map<string, unknown>()
+
 export function Notepad({
   meetingId,
   initialDoc,
@@ -92,6 +113,23 @@ export function Notepad({
    */
   const [empty, setEmpty] = useState(true)
 
+  /**
+   * A transaction that threw, on its way to the error boundary.
+   *
+   * `transaction-guard.ts` was ported for this and then called by nobody, so the
+   * view applied transactions bare — and a throw inside `dispatchTransaction`
+   * happens in a ProseMirror DOM handler, which React does not see: no boundary
+   * fires, `componentDidCatch` never runs, and « L'enregistrement continue. »
+   * could not be shown for the exact failure it was written for. DEC-8 names
+   * `transaction-guard` as a reason to take raw ProseMirror at all.
+   *
+   * React state, then a throw in render, because a boundary catches renders and
+   * nothing else. The one-way path is deliberate: the state machine here is
+   * « working » → « handed to the boundary », and the way back is the remount the
+   * boundary performs.
+   */
+  const [crashed, setCrashed] = useState<unknown>(null)
+
   // Read through refs inside the effect so changing a callback prop does not
   // rebuild the editor.
   const held = useRef({ save, onSaveFailed, onReady })
@@ -101,11 +139,35 @@ export function Notepad({
     const element = mount.current
     if (!element) return
 
-    const doc = docFrom(initialDoc)
+    const recovered = RECOVERED.get(meetingId)
+    RECOVERED.delete(meetingId)
+    const doc = (recovered ? docFrom(recovered) : null) ?? docFrom(initialDoc)
     const state = EditorState.create({
       schema,
       ...(doc ? { doc } : {}),
-      plugins: [buildKeymap(), history(), dropCursor(), gapCursor()],
+      /*
+       * `buildInputRules()` first. It had never been in this list: eight tests
+       * covered it, `grep` found no caller, and typing `# `, `- `, `1. `, `> `,
+       * `**gras**` or an apostrophe into the shipped notepad produced the
+       * characters that were typed. It is what makes the block vocabulary
+       * `index.css` styles reachable without a toolbar (HR-10), together with
+       * `NOTE_SHORTCUTS`.
+       *
+       * `trailingEmptyLineClickPlugin()` is the other half of the dead pane
+       * below: the CSS makes the box receive the click, this puts the caret in a
+       * paragraph at the end of the document — a *new* one when the last block is
+       * a heading or a list item, which is the case where the browser's own
+       * answer (continue the list) is not what a rep clicking into white space
+       * asked for.
+       */
+      plugins: [
+        buildInputRules(),
+        buildKeymap(),
+        trailingEmptyLineClickPlugin(),
+        history(),
+        dropCursor(),
+        gapCursor(),
+      ],
     })
 
     const flush = async () => {
@@ -143,13 +205,31 @@ export function Notepad({
     const editor = new EditorView(element, {
       state,
       dispatchTransaction(transaction: Transaction) {
-        const next = editor.state.apply(transaction)
-        editor.updateState(next)
-        // Selection-only transactions change nothing worth persisting, and
-        // saving on them would mean a write per arrow key.
-        if (!transaction.docChanged) return
-        setEmpty(isBlank(next))
-        schedule()
+        dispatchEditorTransaction({
+          view: editor,
+          transaction,
+          // Only called when something in the batch changed the document:
+          // selection-only transactions change nothing worth persisting, and
+          // saving on them would mean a write per arrow key.
+          onDocChanged() {
+            setEmpty(isBlank(editor.state))
+            schedule()
+          },
+          onError(error) {
+            /*
+             * The last good document, then the boundary.
+             *
+             * `updateState` did not run, so `editor.state` is still the state
+             * before the failing transaction: it is worth keeping, and it is the
+             * one thing here that cannot be recovered from anywhere else. The
+             * flush is asked for by marking the work dirty — the effect's cleanup
+             * runs on the way out of this mount and writes it.
+             */
+            RECOVERED.set(meetingId, editor.state.doc.toJSON())
+            dirty.current = true
+            setCrashed(error)
+          },
+        })
       },
     })
     view.current = editor
@@ -174,13 +254,16 @@ export function Notepad({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId])
 
+  // Render, so `EditorErrorBoundary` catches it. See `crashed` above.
+  if (crashed) throw crashed
+
   return (
     // `data-scrolls`: an editor holds more than its box by definition — the rep
     // is typing into it and the caret is what decides what is on screen. It is
     // not the « clipped and looks short » failure `--scrollers` measures.
     <div
       data-scrolls
-      className="notepad relative h-full min-h-0 overflow-y-auto px-8 py-6 text-[15px] leading-[1.7]"
+      className="notepad relative h-full min-h-0 overflow-y-auto text-[15px] leading-[1.7]"
     >
       {empty && placeholder ? (
         <span
@@ -190,7 +273,24 @@ export function Notepad({
           {placeholder}
         </span>
       ) : null}
-      <div ref={mount} className="text-ink-rep min-h-full" />
+      {/*
+        `flex h-full flex-col`, and the page margin moved onto the editable in
+        `index.css`.
+
+        Both are about one thing: every pixel under « Vos notes… » has to take a
+        click. `.ProseMirror`'s `min-height: 100%` was inert for as long as it
+        existed, because a percentage min-height resolves against *this* element
+        and this element's specified height was `auto` (CSS 2.1 §10.7 reads that
+        as `auto`). Measured on an empty notepad at 1280×800: the editable was
+        **26px** tall inside a 676px wrapper in a 724px pane — 96% of the pane was
+        not the editor. A rep looks at Teams, clicks back onto their own notes and
+        gets no caret; nothing on screen says why, because a `contenteditable`
+        that is not under the pointer looks exactly like one that is.
+
+        A column flex container with a definite height is what makes the
+        percentage resolvable, and it is the editable that grows into it.
+      */}
+      <div ref={mount} className="text-ink-rep flex h-full flex-col" />
     </div>
   )
 }

@@ -45,6 +45,8 @@ import { SPEECH_FLOOR } from '../core/domain/inputLevel.ts'
 /** The trial's meter tick. The same cadence `Recording` draws a meeting's at. */
 const ESSAI_POLL_MS = 100
 import { MeetingApps } from '../modules/capture/MeetingApps.ts'
+import { getMicHoldingApps } from '../modules/capture/AudioDevices.ts'
+import { EMPTY_WINDOW, type CalendarPort } from '../core/contracts/calendar.ts'
 import { createIdentity, resolveIdentityConfig } from '../modules/identity/index.ts'
 import { GraphCalendar, calendarHealth } from '../modules/calendar/index.ts'
 import {
@@ -915,6 +917,32 @@ const manualContext = (meeting: Meeting): MeetingContext => ({
 })
 
 /**
+ * **A calendar that is always empty, so that arming no longer requires Graph.**
+ *
+ * `Agenda` used to be constructed only in the `else` of the Entra branch, and the
+ * comment there argued the gate was structural: *"`decideArming` takes an event
+ * and reads `event.sensitivity`, so arming with no event is structurally
+ * impossible rather than merely unimplemented."* That was true of every rule the
+ * product had. It is not true of `core/domain/adHoc.ts`, which decides from a
+ * microphone reading and a clock and never looks at an event — so the gate now
+ * costs the thing it was protecting.
+ *
+ * It cost it on the worst build to lose it. DEC-28 calls a demo installer with no
+ * client tenant the *first deliverable*, and a demo machine is precisely where
+ * nobody has completed an Entra registration: the configuration most reps see
+ * first was the one configuration in which nothing would ever offer to record
+ * anything.
+ *
+ * Two methods and no network. `syncedAt: 0` is honest — nothing was ever
+ * synced — and `Agenda` is given no `onHealth` in this branch, so a calendar that
+ * is *absent* is never reported as a calendar that is *well*.
+ */
+const NULL_CALENDAR: CalendarPort = {
+  window: () => EMPTY_WINDOW,
+  sync: async () => EMPTY_WINDOW,
+}
+
+/**
  * Async since DEC-34: reading the OS credential store is a real I/O hop, and
  * the answer decides which providers are configured — therefore which engine
  * the splash names, therefore what a meeting would run on. Doing it after the
@@ -1000,9 +1028,37 @@ const boot = async (): Promise<void> => {
           })
       },
       focusMain: (meetingId) => focusMainWindow(meetingId, broadcast),
+      // The stacking direction, when the renderer did not ask — a display going
+      // away, or a drag across the display's midline. See `widget:placed`.
+      placed: ({ above }) => broadcast('widget:placed', { above }),
     },
     store.appState,
   )
+
+  /**
+   * **The displays are the main process's business, and nothing was watching
+   * them.**
+   *
+   * `placeWindow`'s quarter-overlap rule exists because this one window is
+   * unrecoverable off-screen — frameless, always on top, absent from the
+   * taskbar — and there was no `display-removed` listener anywhere in `electron/`
+   * or `src/`, so it ran only at creation and on the reply to a `widget:resize`.
+   * A rep who dragged the pill onto a second monitor and closed the lid got it
+   * back when the *next turn of the call* changed the frame's height, which is
+   * never on the one failure the pill is up to report.
+   *
+   * Three events and not one. `display-removed` is the case that motivates it;
+   * `display-metrics-changed` is the same loss without an unplug — a resolution
+   * change, a scale change, or a taskbar that grew, all of which move a work
+   * area's edges under a window sitting against them; and `display-added` is the
+   * benign half that must still be heard, because the rescue is idempotent and a
+   * monitor coming back is the moment a clamped pill can go back where it was
+   * asked to be. `displaysChanged` is a no-op with no window, which is most of
+   * the time.
+   */
+  screen.on('display-removed', () => overlay.displaysChanged())
+  screen.on('display-added', () => overlay.displaysChanged())
+  screen.on('display-metrics-changed', () => overlay.displaysChanged())
 
   /**
    * There is a pill on screen exactly while a meeting is recording.
@@ -1628,6 +1684,14 @@ const boot = async (): Promise<void> => {
   let identity: MsalIdentity | null = null
   let agenda: Agenda | null = null
 
+  /*
+   * Constructed before the branch, because neither of its signals is a Graph
+   * signal. `micHolders` is the strong one — which application holds a
+   * microphone — and it is what lets the no-Entra build below still detect an
+   * unscheduled call.
+   */
+  const meetingApps = new MeetingApps({ micHolders: getMicHoldingApps })
+
   if (!identityConfig) {
     orchestrator.setHealth('calendar', {
       state: 'down',
@@ -1637,28 +1701,49 @@ const boot = async (): Promise<void> => {
        * *Réglages → Facultatifs* — and `retryable: false` because there is
        * nothing here for a *Réessayer* to do (DEC-26).
        *
-       * **And it names the second thing that is gone, which it did not.**
+       * **And what is actually lost is now one thing, not two.**
        *
-       * `Agenda` and `MeetingApps` are both constructed in the `else` of this
-       * branch, because arming is « calendar signal × process signal » and
-       * without Graph there is no calendar signal to conjoin — `decideArming`
-       * takes an event and reads `event.sensitivity`, so arming with no event is
-       * structurally impossible rather than merely unimplemented. That is a
-       * defensible design. What was not defensible is that the sentence on
-       * screen only mentioned the calendar: a rep on this build was told their
-       * calendar would be empty and left to discover on their own that **nothing
-       * will ever offer to record a call** — no *Prêt*, no 14:30 notification
-       * (DEC-46), no armed row. This is the build DEC-28 calls the first
-       * deliverable, so it is the configuration most reps will see first.
+       * This sentence has been rewritten twice, and each time the reason was that
+       * it described the wrong amount of damage. It first named only the
+       * calendar, while a rep on this build also silently lost *every* offer to
+       * record — no *Prêt*, no 14:30 notification (DEC-46), no armed row —
+       * because `Agenda` was constructed only in the `else` below. So a second
+       * clause was added saying so.
        *
-       * DEC-26 is that a degradation is stated, never silent. Two clauses,
-       * because the rep loses two things and only one of them was named.
+       * That clause is now false, and in the good direction. `Agenda` is built in
+       * both branches over `NULL_CALENDAR`, and `core/domain/adHoc.ts` needs no
+       * event: a conferencing application holding a microphone is detected, and
+       * offered, with no Microsoft account at all. What a rep on this build loses
+       * is the calendar — the five-minute anticipation, the attendees, the objet —
+       * and not the detection.
+       *
+       * DEC-26 is that a degradation is stated, never silent. It is equally that
+       * it is stated *accurately*: a sentence claiming more is gone than is gone
+       * costs the rep a feature they have.
        */
       reason:
-        'aucune application Microsoft configurée — le calendrier reste vide, ' +
-        'et aucune réunion ne sera proposée à l’enregistrement : démarrez-les avec « Démarrer une réunion »',
+        'aucune application Microsoft configurée — le calendrier reste vide ; ' +
+        'les appels en cours sont tout de même détectés et proposés à l’enregistrement, ' +
+        'sans les participants ni l’objet de l’invitation',
       since: Date.now(),
       retryable: false,
+    })
+
+    /*
+     * Arming with no calendar. Every rule that reads an event simply never
+     * fires — `nextArmable` folds an empty list — and `decideAdHoc` does all the
+     * work. No `onHealth`: the calendar's health is the `down` set just above,
+     * and a `NULL_CALENDAR` that "syncs" successfully every five minutes must
+     * never overwrite it with `ok`.
+     */
+    agenda = new Agenda({
+      calendar: NULL_CALENDAR,
+      orchestrator,
+      meetingSignal: () => meetingApps.current(),
+      refreshMeetingSignal: (wantProcessList) => meetingApps.refresh({ processList: wantProcessList }),
+      diagnostics,
+      onChanged: (snapshot) => broadcast('agenda:changed', snapshot),
+      onArmed: ({ meetingId, subject }) => announceArmed(meetingId, subject),
     })
   } else {
     identity = createIdentity({
@@ -1671,13 +1756,12 @@ const boot = async (): Promise<void> => {
     })
 
     const calendar = new GraphCalendar({ identity, state: store.appState, diagnostics })
-    const meetingApps = new MeetingApps()
 
     agenda = new Agenda({
       calendar,
       orchestrator,
-      meetingAudio: () => meetingApps.current(),
-      refreshMeetingAudio: () => meetingApps.refresh(),
+      meetingSignal: () => meetingApps.current(),
+      refreshMeetingSignal: (wantProcessList) => meetingApps.refresh({ processList: wantProcessList }),
       diagnostics,
       healthFor: calendarHealth,
       onHealth: (health) => orchestrator.setHealth('calendar', health),

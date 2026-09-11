@@ -108,7 +108,24 @@ export function Widget() {
    */
   const [turns, setTurns] = useState<TranscriptSegment[]>([])
   const [marks, setMarks] = useState<MomentMark[]>([])
-  const [said, setSaid] = useState<string | null>(null)
+  /**
+   * What just happened, and **whether it was a refusal** — which is the whole of
+   * the difference between this being announced and being drawn.
+   *
+   * A mark that worked has a receipt already: the counter on the pill moves, which
+   * is what that counter is for, and « Moment marqué. » painted over a client's
+   * face would be a second one. A mark that was *refused* had nothing — the
+   * sentence went into an `sr-only` paragraph, measured 1×1 with
+   * `clip: rect(0,0,0,0)` and no `role`, and the counter correctly did not move.
+   * So the rep pressed, saw nothing change, and had every reason to believe the
+   * moment was marked. `meeting:mark` refuses whenever the meeting is not
+   * `recording`, which `EndOfMeetingWatch` can make true with the pill still up,
+   * and on any store failure.
+   *
+   * One live region either way and never two: a visible `role="alert"` is
+   * announced, so the polite paragraph draws only what the alert does not.
+   */
+  const [said, setSaid] = useState<{ text: string; problem: boolean } | null>(null)
 
   // The marks the meeting already had when this window opened — a widget that
   // is created mid-call after a crash, or a second recording in one window.
@@ -193,9 +210,12 @@ export function Widget() {
       if (meetingId === null) return
       try {
         await invoke('meeting:mark', { meetingId, note: text, segmentId })
-        setSaid(text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`)
+        setSaid({ text: text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`, problem: false })
       } catch (error) {
-        setSaid(error instanceof Error ? error.message : 'Impossible de marquer ce moment.')
+        setSaid({
+          text: error instanceof Error ? error.message : 'Impossible de marquer ce moment.',
+          problem: true,
+        })
       }
     },
     [meetingId],
@@ -205,8 +225,8 @@ export function Widget() {
     (markId: string) => {
       if (meetingId === null) return
       void invoke('meeting:forget', { meetingId, markId })
-        .then(() => setSaid('Moment retiré.'))
-        .catch(() => setSaid('Impossible de retirer ce moment.'))
+        .then(() => setSaid({ text: 'Moment retiré.', problem: false }))
+        .catch(() => setSaid({ text: 'Impossible de retirer ce moment.', problem: true }))
     },
     [meetingId],
   )
@@ -225,6 +245,20 @@ export function Widget() {
             onToggle={() => setOpen((was) => !was)}
             onMark={() => void mark(null, '')}
           />
+          {/*
+            A refusal, where the press was.
+
+            Between the pill and the panel in the DOM, which puts it against the
+            pill whichever way the card stacks — `flex-col-reverse` reverses the
+            paint and not the order, so it is directly under the pill when the
+            panel opens downward and directly over it when the panel opens up.
+            Never *inside* the panel: the press it answers is most often the one
+            on the pill, with no panel open at all, which is the case that had
+            nowhere to appear.
+          */}
+          {said?.problem === true ? (
+            <Refus text={said.text} onDismiss={() => setSaid(null)} />
+          ) : null}
           {open && meetingId !== null ? (
             <Panel
               meetingId={meetingId}
@@ -238,12 +272,21 @@ export function Widget() {
             />
           ) : null}
           {/*
-            What just happened, for a screen reader and for a rep who pressed
-            *Marquer* on the pill with no panel open — a refusal (« aucun
-            enregistrement en cours ») would otherwise have nowhere to appear.
+            And what worked, for a screen reader only.
+
+            The receipt a sighted rep gets for a mark that landed is the counter
+            on the pill moving, which is what that counter is for — a card
+            painted over a client's face to say « Moment marqué. » would be a
+            second one, on the surface whose whole rule is that every pixel of it
+            is a pixel of Teams the rep cannot click. A refusal is the opposite
+            case and is drawn: see `Refus` above.
+
+            A refusal is left out of *this* region rather than repeated in it.
+            `role="alert"` is itself a live region, so announcing both would read
+            the same sentence twice to the one rep who cannot see either of them.
           */}
           <p aria-live="polite" className="sr-only">
-            {said ?? ''}
+            {said?.problem === false ? said.text : ''}
           </p>
         </>
       )}
@@ -282,10 +325,35 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
   const box = useRef<HTMLDivElement>(null)
   const [above, setAbove] = useState(false)
 
+  /*
+   * **The placement the renderer did not ask for.**
+   *
+   * `widget:resize` answers `above` on the reply, which covers every change this
+   * component *caused*. Two changes it does not cause, and the main process is
+   * the only thing that can see either: a display going away — the rescue that
+   * keeps this window recoverable at all — and a drag across the display's
+   * midline, which flips the stacking without changing the frame's size by a
+   * pixel. Both used to depend on a `widget:resize` being sent, and both are a
+   * broadcast now.
+   */
+  useBroadcast('widget:placed', ({ above: next }) => setAbove(next))
+
+  /**
+   * The last measurement that was sent, **outside the effect**.
+   *
+   * It was a `let` in the effect's closure, which is a duplicate guard that only
+   * guards within one arming of the effect — and the effect had no dependency
+   * array at all, so it re-armed on every render and the guard was reset every
+   * time. A ref is the same guard over the lifetime of the window, which is the
+   * scope the question « have I already told the main process this » actually
+   * has. It also absorbs `StrictMode`'s development double-mount, which is two
+   * byte-identical sends on every first paint and nothing to do with the product.
+   */
+  const last = useRef('')
+
   useLayoutEffect(() => {
     const element = box.current
     if (!element || typeof ResizeObserver === 'undefined') return
-    let last = ''
     const send = (): void => {
       const frame = element.getBoundingClientRect()
       /*
@@ -319,8 +387,8 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
       const key = `${width}×${height}×${pillTop}`
       // The observer fires on every sub-pixel change; the window may only be
       // moved for a real one, or a resize animates against itself.
-      if (width === 0 || height === 0 || key === last) return
-      last = key
+      if (width === 0 || height === 0 || key === last.current) return
+      last.current = key
       void invoke('widget:resize', {
         width,
         height,
@@ -333,17 +401,47 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
     const observer = new ResizeObserver(send)
     observer.observe(element)
     send()
+    return () => observer.disconnect()
     /*
-     * And a flip of `above` moves the pill without resizing anything, so the
-     * observer never fires for it. `send` is idempotent — the key stops a
-     * duplicate — so asking on every render of the frame costs one rect read.
+     * **`[above]`, and the missing array was the only thing keeping this window
+     * on the screen.**
+     *
+     * There was no dependency array at all. So the cleanup ran and the effect
+     * re-armed on *every* render of the frame, `last` — then a `let` in this
+     * closure — went back to `''`, and a byte-identical `widget:resize` went out:
+     * two measured in Chromium on the first paint alone, three with
+     * `StrictMode`'s development double-mount. The comment here argued that was
+     * free: « `send` is idempotent — the key stops a duplicate — so asking on
+     * every render of the frame costs one rect read. » The key does stop a
+     * duplicate; re-arming the effect destroyed the key. The key is a ref now, so
+     * the two halves of that sentence are finally about the same thing.
+     *
+     * And the duplicate was **load-bearing**, which is why adding the array is
+     * not the fix. `placeWindow`'s quarter-overlap rule — the defence against the
+     * one unrecoverable window in this product — ran nowhere but on the reply to
+     * this call, so a pill dragged onto a monitor that was then unplugged came
+     * back only because a re-render re-sent an unchanged measurement. Which means
+     * it came back only when a transcript segment arrived: it failed exactly when
+     * transcription is what has died, which is one of the two readings this pill
+     * is up to give. Driven against the shipped `Overlay`: pill at y=1920 with
+     * the work area ending at 877, rescued by a message the renderer had no
+     * reason to send. That rescue is `Overlay.displaysChanged()` now, on
+     * `display-removed` and `display-metrics-changed`, with no renderer
+     * involvement at all.
+     *
+     * What is left for the array to carry is the one thing a *size* observer
+     * genuinely cannot see. `above` flips `flex-col` to `flex-col-reverse`: the
+     * pill moves by the panel's whole height and the frame stays exactly
+     * `width × height`, so `ResizeObserver` never fires and the main process goes
+     * on holding a `pillTop` of 402 for a pill painted at 20. Re-arming on that
+     * one state — which a `requestAnimationFrame` per render used to do by
+     * accident, and only because there was no array — asks again with the new
+     * offset, and the ref then decides whether there is anything to say: a flip
+     * while the panel is *shut* moves the pill by nothing, because a single-child
+     * `flex-col-reverse` puts it at `HALO` exactly as `flex-col` does, and that
+     * one is now silent rather than byte-identical.
      */
-    const raf = requestAnimationFrame(send)
-    return () => {
-      cancelAnimationFrame(raf)
-      observer.disconnect()
-    }
-  })
+  }, [above])
 
   /*
    * The pointer over the halo hands the mouse back to whatever is underneath.
@@ -396,6 +494,71 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
       >
         {children(above)}
       </div>
+    </div>
+  )
+}
+
+/**
+ * **A refused mark, where a sighted rep can see it.**
+ *
+ * `meeting:mark` refuses whenever the meeting is not `recording` — which
+ * `EndOfMeetingWatch` can make true with the pill still floating over the call —
+ * and on any store failure. The sentence used to go into the `sr-only`
+ * paragraph at the bottom of this window: a 1×1 box with `clip: rect(0,0,0,0)`,
+ * measured, on a window with no `role="alert"` anywhere in it. The pill's
+ * counter — the only receipt a press without a note has — correctly did not
+ * move, because nothing was written. So the screen's answer to a refusal and its
+ * answer to a success were **the same screen**, and the second one is the one a
+ * rep would assume: they pressed, nothing changed, and the moment they were
+ * marking is the one they will look for at the gate. A mark is typed one-handed
+ * over a client's face precisely because a rep who is talking is not looking for
+ * a button; they are not going to look twice either.
+ *
+ * Three constraints from DEC-49, and each rules something out:
+ *
+ *  · **It must not take focus.** It is not a dialog, it has no autofocus and it
+ *    traps nothing — a rep is mid-sentence on a call, and the keyboard is
+ *    theirs. `role="alert"` announces without moving the caret; that is what the
+ *    role is.
+ *  · **It must not cover the call.** It is the width of the pill's own card and
+ *    two lines at most, adjacent to the control that was pressed, and the window
+ *    resizes to exactly it (`widget:resize`) rather than reserving room for it.
+ *  · **It must carry `data-card`.** Everything in this window that is not a card
+ *    is halo, and halo is handed to Teams with
+ *    `setIgnoreMouseEvents(…, { forward: true })` — so a notice that forgot the
+ *    attribute would draw a dismiss button the pointer goes straight through.
+ *
+ * Dismissed rather than timed out. A message that removes itself after four
+ * seconds is the `sr-only` paragraph again for a rep who was looking at the
+ * client: the whole failure here is a rep not looking at this window at the
+ * moment it had something to say. It is also replaced by whatever the next press
+ * produces, so it can never stack.
+ */
+function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
+  return (
+    <div
+      data-card
+      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+    >
+      {/*
+        `--warn` and `font-semibold` together, never colour alone: `--warn`
+        against `--text-muted` is 1.0:1 in luminance, so a deuteranope and a
+        greyscale screenshot both read this as ordinary prose if the weight is
+        not carrying it too. Same rule as `⚠ faible` at the gate.
+      */}
+      <p role="alert" className="text-warn min-w-0 flex-1 text-meta font-semibold">
+        {text}
+      </p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Masquer ce message"
+        className="no-drag text-muted hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
     </div>
   )
 }
@@ -669,9 +832,9 @@ function Panel({
         /*
           The mask is built here rather than as a class because it has four
           states and three of them are a different gradient, not a different
-          colour. `FADE_PX` is the one number: twenty is about one line's
-          ascender, which is enough for the eye to read « this continues » and
-          little enough that no whole line is ever dimmed.
+          colour. `FADE_PX` is the one number and it is measured against this
+          log's own line box — see the note on it, and `shot.mjs --fade`, which
+          is what holds the two to each other now.
         */
         style={{ maskImage: logMask(edges), WebkitMaskImage: logMask(edges) }}
         /*
@@ -881,10 +1044,32 @@ function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () =
 }
 
 /**
- * One line's ascender. Enough for the eye to read « this continues », little
- * enough that no whole line of a client's words is ever dimmed.
+ * How far the log's fade runs, in pixels, and **the number is measured against
+ * the line box rather than described as one.**
+ *
+ * It was twenty, under a comment calling that « one line's ascender … little
+ * enough that no whole line of a client's words is ever dimmed ». The line box in
+ * this log is **19.5px** — `--type-ui` is 12px and `leading-relaxed` is 1.625 —
+ * so twenty is *longer* than a whole line, and the sentence was false of the
+ * surface it was written on. Swept over every scroll position the rep can reach
+ * on the harness fixture, the worst was `scrollTop` 176, where a line box sat at
+ * the very top of the visible area entirely inside the ramp: its ink ran from
+ * alpha **0.19** at the top of the cap band to 0.79 at the bottom, on the one
+ * surface a rep reads for fifty minutes, about words a client actually said.
+ *
+ * Twelve is the same cue and it is under the line box by 7.5 pixels, which is the
+ * band of a fully-visible topmost line that stays at full strength whatever the
+ * scroll offset. Measured the same way: the worst ink alpha is 0.31 rising to 1.0
+ * across the line, and no whole line box can be inside the ramp at any scroll
+ * position — that is the property, and it is `shot.mjs --fade` that holds it
+ * rather than this comment.
+ *
+ * Nothing in this repo could see the old number. `--contrast` reads resolved
+ * colours and a mask is not one; `--scrollers` is opted out of here by
+ * `data-scrolls`, correctly, because a log is *supposed* to hold more than its
+ * box. Do not change this without re-running the check.
  */
-const FADE_PX = 20
+const FADE_PX = 12
 
 /**
  * The log's mask, by which edges are hiding something.

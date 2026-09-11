@@ -342,8 +342,16 @@ export class Projections {
    *
    * A null bound is unbounded on that side, so `listMeetings(500)` still means
    * what it always meant.
+   *
+   * **A null `limit` is unbounded too**, and it is what `history:search` asks
+   * for. DEC-25's promise is every call ever captured, and a search that reads
+   * the five hundred most recent meetings cannot keep it: the five hundred and
+   * first was unfindable and the screen said « Aucun appel ne correspond. »
+   * Unbounded here is one `SELECT` over a projection table — the cost of a
+   * search is the *per-meeting* fold the caller does next, which is why that
+   * caller runs the cheap axes first.
    */
-  listMeetings(limit = 50, range?: MeetingRange | null): Meeting[] {
+  listMeetings(limit: number | null = 50, range?: MeetingRange | null): Meeting[] {
     const from = range?.from ?? null
     const to = range?.to ?? null
     const rows = this.#log.all<MeetingRow>(
@@ -356,7 +364,9 @@ export class Projections {
       from,
       to,
       to,
-      limit,
+      // SQLite reads a negative `LIMIT` as no limit at all, which is the one
+      // spelling of « everything » that needs no second query.
+      limit ?? -1,
     )
     return rows.map(toMeeting)
   }

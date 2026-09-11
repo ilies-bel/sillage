@@ -197,6 +197,35 @@ describe('search runs in the main process', () => {
     await waitFor(() => expect(queries).toContain('TJM'))
   })
 
+  /**
+   * **The truncation says how much was searched.**
+   *
+   * The sentence is the whole of what a rep has instead of paging, and it drew
+   * « les 50 appels les plus récents » with nothing to be fifty *of* — while
+   * `scanned`, the field that answers exactly that, was shipped on every answer
+   * and read by no screen. It mattered: the scan itself stopped at five hundred
+   * meetings and `capped` reported only the *result* cap, so the one number that
+   * could have said the corpus had been cut short travelled unread.
+   */
+  test('the truncation names the corpus it is fifty of, and is silent when nothing is hidden', async () => {
+    answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: true })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    const said = await screen.findByText(/Affinez la recherche/)
+    expect(said.textContent).toMatch(/Les 50 appels les plus récents/)
+    expect(said.textContent).toMatch(/sur 812 appels parcourus/)
+
+    cleanup()
+    // Exactly fifty matches with nothing left over: no sentence at all. Telling a
+    // rep to narrow a search that is already complete is worse than saying
+    // nothing, and `capped` was `rows.length >= limit` for as long as it existed.
+    answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: false })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+    expect(screen.queryByText(/Affinez la recherche/)).toBeNull()
+  })
+
   test('the matched excerpt is shown under the row, with the surface it came from', async () => {
     answered({
       rows: [
@@ -204,6 +233,9 @@ describe('search runs in the main process', () => {
           matches: [
             { where: 'transcript', excerpt: '…plutôt sur un TJM de 520 euros…' },
             { where: 'notes', excerpt: 'penser au TJM avant la relance' },
+            // The fifth surface, and the only one the rep can write during the
+            // call: it is named here with the word the widget uses.
+            { where: 'marks', excerpt: 'prix : ils bloquent à 550' },
           ],
         }),
       ],
@@ -215,6 +247,8 @@ describe('search runs in the main process', () => {
     // French, and the same word the review gate's own tab uses.
     expect(screen.getByText('Transcription')).toBeTruthy()
     expect(screen.getByText('Mes notes')).toBeTruthy()
+    expect(screen.getByText('Moments marqués')).toBeTruthy()
+    expect(screen.getByText(/ils bloquent à 550/)).toBeTruthy()
   })
 
   test('an empty result says so rather than showing an empty box', async () => {

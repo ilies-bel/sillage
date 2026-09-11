@@ -95,7 +95,10 @@ test('inside src the renderer is an ordinary application', () => {
   // its own schema, which is not a boundary at all.
   assert.deepEqual(
     clean(
-      'src/editor/note/title-layout.ts',
+      // `title-layout.ts` was the file this named; it is deleted (see
+      // `src/editor/README.md`), and a fixture naming a file that no longer
+      // exists is a fixture nobody can check against the product.
+      'src/editor/note/keymap.ts',
       `import { schema } from './schema'
        import { tokens } from '../../design/tokens.ts'`,
     ),

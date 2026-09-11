@@ -32,5 +32,18 @@ cidre = { version = "0.11.10", features = ["ca", "cm", "av", "cat", "dispatch", 
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wasapi = "0.13.0"
-windows = { version = "0.52.0", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_System_Threading"] }
+# `Win32_Foundation`, `Win32_System_Com_StructuredStorage` and
+# `Win32_System_Variant` are what `IMMDevice::Activate` is gated on in this
+# crate — `mic_apps.rs` needs it to reach `IAudioSessionManager2`. They are
+# feature flags on a dependency that is already here, not a new dependency:
+# `wasapi` pins `windows` 0.48, a different major, so its own feature list
+# does not union with this one.
+windows = { version = "0.52.0", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_Foundation",
+] }
 tracing = "0.1.44"

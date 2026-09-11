@@ -13,8 +13,8 @@ client's CRM. A defect lives in one or the other, rarely in both, and each was
 introduced after something shipped that the other could not have caught.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--no-png] [--sans-entra]
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all four checks
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--no-png] [--sans-entra]
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all eight checks
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 
@@ -24,17 +24,33 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Six measured checks, and each exists because something shipped past a
+**Eight measured checks, and each exists because something shipped past a
 screenshot.** `--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
 the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
 because nothing counted), `--a11y` (a control whose only name is « ‹ »),
 `--contrast`, computed from resolved styles with transitions switched off —
 `getComputedStyle` returns the current *animated* value, which is how the bundled
-detector reports a resting 14:1 button as 4.0:1 — and `--scrollers`, below. All
-six run on every stage at 1280×800 *and* at 960×600 — the size `main.ts` declares
-as the minimum, where a text field was crushed to fourteen pixels while every
-check at the comfortable size passed.
+detector reports a resting 14:1 button as 4.0:1 — `--motion`, `--fade`, and
+`--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
+the size `main.ts` declares as the minimum, where a text field was crushed to
+fourteen pixels while every check at the comfortable size passed.
+
+**`--fade` measures the one thing a resolved colour cannot carry.** A fading mask
+is how every log and every reading column in this product says « there is more
+below », and the widget's transcript had its ramp at twenty pixels under a comment
+reading « little enough that no whole line of a client's words is ever dimmed ».
+The line box in that log is **19.5px** (`--type-ui` 12px × `leading-relaxed`
+1.625), so the ramp was longer than a line: swept over every scroll position, a
+whole line sat inside it with its ink at alpha 0.19. Neither of the two checks
+that could plausibly have seen it can — `--contrast` reads resolved colours and a
+mask is not one, and `--scrollers` is opted out of there by `data-scrolls`,
+correctly, because a log is *supposed* to hold more than its box. This one
+compares every **vertical** ramp against the tallest line box of the text it
+fades over; a horizontal fade hides the ends of a row rather than a line and is
+`--scrollers`' question, not this one. `.fade-below` carries a declared allowance
+pinned to its own 28 pixels — read the reason where it is written, it is a real
+finding and not an acceptable one.
 
 **`--scrollers` finds what the harness itself was hiding.** It reports any box
 inside the screen whose content is taller or wider than the box, and it exists
@@ -173,6 +189,7 @@ what `serve.mjs` drops the meta for.
 | `historique` | the reader (DEC-25): seven calls with per-intent push status, one row expanded into transcript · notes · compte-rendu · extraction · envois |
 | `reglages` | *Connecteurs*, opened where the header control lands: **Requis** with one *à vérifier*, **Facultatifs** with VerySwing down and Outlook to check, two *Réessayer*, and the VSA tenant probe |
 | `agenda-sans-entra` | the same calendar with **no Entra app registration** — see below |
+| `agenda-appel-imprevu` | an **unscheduled call** detected by a conferencing app holding a microphone, offered with no calendar entry behind it. Staged with no Entra registration on purpose: that is the build where it is the only offer there is |
 | `session-sans-entra` | a call recorded with no Microsoft account of any kind |
 | `review-sans-entra` | the gate with the Outlook intent greyed and the two VerySwing ones live |
 | `reglages-sans-entra` | *Facultatifs* with the Microsoft row inert and stating why |
@@ -189,6 +206,8 @@ what `serve.mjs` drops the meta for.
 | `agenda-empty-presentation` | the empty day's second way out: a rep who installs on Tuesday with no calls until Thursday replays first run, rather than being shown a fabricated demo |
 | `session-libre` | the same call on the free recipe (DEC-43) — a scenario, not a click, because what is worth photographing is the **rail** with no slate declared, saying so instead of drawing empty rows |
 | `session-demander` | *Demander* during… no: on the session's compte-rendu, with the question **typed** rather than chip-clicked, because the suggestion chips are the first thing 960px drops |
+| `historique-marque` | a call found by a **mark the rep typed during it** — the fifth searchable surface, and the only one a rep can write from inside the call (`core/contracts/marks.ts`). `searchableRecord` folded four and « prix : ils bloquent à 550 » was in the record with `550` finding nothing, so the surface built for a rep who is talking was write-only. « Moments marqués » is the longest of the five labels and is what the row's first column is now sized for |
+| `historique-tronque` | **the truncation, said out loud** — `--scenario historique-annees`, eighteen months of calls, the only stage where the fifty-row cap is reached. The sentence names the corpus it is fifty of (`scanned`, shipped on every answer since the channel existed and read by no screen), and it is drawn only when a row was actually hidden: `capped` was `rows.length >= limit`, so exactly fifty matches told a rep to narrow a finished search |
 | `historique-demander` | *Demander* on the reader — the screen it was written for, and the one where its citations lead somewhere, the record's own transcription being in the same box (DEC-25) |
 | `review-valider` | the same gate once **both** columns have been read to the end, which is the only way *Valider* is drawn at all |
 | `review-garde` | **not a photograph — twelve assertions.** Eight attacks the arming guard must refuse (the opening jump, an instant `scrollTo` to both bottoms, a fast flick, a resize mid-read, the Transcription tab, a window that shrinks, a payload changed after arming) and four returns it must leave **free** (re-ticking an intent, « Modifier », and back to « Lecture »). Both halves fail without the other's fix, in opposite directions |
@@ -200,12 +219,13 @@ what `serve.mjs` drops the meta for.
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 | `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
 | `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
+| `widget-refus` | **a refused mark, on the pill, with no panel open.** `meeting:mark` refuses whenever the meeting is not `recording` — `EndOfMeetingWatch` can make that true with the pill still floating over the call — and the sentence went into an `sr-only` paragraph measuring 1×1 with `clip: rect(0,0,0,0)`, on a window with no `role="alert"` in it, while the counter correctly did not move because nothing had been written. The stage measures the box, not the picture, and asserts the counter stayed put |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
-told which renderer it is by `?window=widget` (`src/main.tsx`). The three widget stages are
-photographed over the app's own canvas rather than over a video call — the six checks measure
+told which renderer it is by `?window=widget` (`src/main.tsx`). The four widget stages are
+photographed over the app's own canvas rather than over a video call — the eight checks measure
 the pill against paper, and the contrast a rep actually sees is against whatever Teams is
 painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
 the harness page has five hundred pixels of paper around the pill, so the shadow lands

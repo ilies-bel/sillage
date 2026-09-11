@@ -53,11 +53,14 @@ const CONTEXT = 40
  * spaces, which would move every excerpt offset on this screen.
  *
  * The ligatures for the same reason: `Cœur` and `coeur` are one word to a rep
- * and NFD leaves `œ` alone. `excerptFor` already handles a fold that changes
- * length.
+ * and NFD leaves `œ` alone. They are also the one step of this fold that
+ * **changes the length of the text**, which is why `foldMapped` exists.
  */
-export const fold = (text: string): string =>
-  text
+export const fold = (text: string): string => foldRun(text)
+
+/** The fold itself, applied to one piece of text. `fold` is this, whole. */
+const foldRun = (part: string): string =>
+  part
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -65,10 +68,75 @@ export const fold = (text: string): string =>
     .replace(/œ/g, 'oe')
     .replace(/æ/g, 'ae')
 
-/** The four surfaces of one call, as text. Built by the caller from the log. */
+/** The fold, plus where in the original every folded character came from. */
+interface FoldedText {
+  folded: string
+  /** `source[i]` is the index in the original of `folded[i]`. Same length as `folded`. */
+  source: number[]
+}
+
+/**
+ * The fold, with a map back into the text it was cut from.
+ *
+ * **The excerpt is sliced from the original and the hit is found in the folded
+ * copy, so the two index spaces have to be joined.** `fold` is length-preserving
+ * for every French character in NFC form *except the ligatures it folds itself*:
+ * `œ` → `oe` and `æ` → `ae` each add a character, and « mise en œuvre », « cœur
+ * de métier » and « nœud » are ordinary ESN French. One of them anywhere earlier
+ * in a surface shifted every index after it.
+ *
+ * Folding runs of ASCII whole and everything else one code point at a time is
+ * what buys the map for almost nothing: ASCII is one character to one character
+ * at every step above — `A`→`a`, the backtick → `'`, the rest untouched — so a
+ * run of it is its own map, and French text is overwhelmingly such runs.
+ *
+ * Folding piecewise is not identical to folding whole in exactly one case:
+ * lowercasing is context-sensitive for Greek (`ΑΣ` folds to `ας` whole and to
+ * `ασ` here). No French word is affected, and `matchesFor` folds the needle with
+ * *this* function so the two sides of a comparison can never disagree.
+ */
+const foldMapped = (text: string): FoldedText => {
+  let folded = ''
+  const source: number[] = []
+  let index = 0
+  while (index < text.length) {
+    let end = index
+    while (end < text.length && text.charCodeAt(end) < 0x80) end += 1
+    if (end > index) {
+      const run = foldRun(text.slice(index, end))
+      for (let k = 0; k < run.length; k += 1) source.push(index + k)
+      folded += run
+      index = end
+      continue
+    }
+    // One code point, not one unit: a surrogate pair folds as a character.
+    const char = String.fromCodePoint(text.codePointAt(index) as number)
+    const out = foldRun(char)
+    for (let k = 0; k < out.length; k += 1) source.push(index)
+    folded += out
+    index += char.length
+  }
+  return { folded, source }
+}
+
+/** The five surfaces of one call, as text. Built by the caller from the log. */
 export interface SearchableRecord {
   /** The objet and the client name — what a rep types first. */
   meeting: string
+  /**
+   * **The rep's own marks, and the one thing they can type from inside the call.**
+   *
+   * `core/contracts/marks.ts` is written one-handed over a client's face and
+   * capped at 280 characters, the widget draws it and *Historique*'s reader
+   * draws it — and no search reached it, so « prix : ils bloquent à 550 » was in
+   * the record and could not be found by typing `550`. A mark is the product's
+   * answer to « a rep who is talking is not looking for a button »; it was
+   * write-only.
+   *
+   * Only the note is text. A mark made with no note carries no words and
+   * contributes none — it is a moment, and a moment is not searchable prose.
+   */
+  marks: string
   transcript: string
   notes: string
   compteRendu: string
@@ -81,7 +149,16 @@ export interface SearchableRecord {
  * that »; a hit in four hundred lines of transcript is the weakest. The row
  * shows one excerpt per surface, so the order is what a rep reads first.
  */
-const WHERE_ORDER: readonly HistoryMatchWhere[] = ['meeting', 'transcript', 'notes', 'compteRendu']
+const WHERE_ORDER: readonly HistoryMatchWhere[] = [
+  'meeting',
+  // Second, and above the rep's own notes for the same reason `meeting` leads:
+  // a mark is one sentence the rep chose to type *while the client was talking*,
+  // so it is the least ambiguous thing in the record after the call's own name.
+  'marks',
+  'transcript',
+  'notes',
+  'compteRendu',
+]
 
 /**
  * One excerpt per surface that matched, in a fixed order.
@@ -92,7 +169,10 @@ const WHERE_ORDER: readonly HistoryMatchWhere[] = ['meeting', 'transcript', 'not
  * expanded record is where somebody reads the rest.
  */
 export const matchesFor = (record: SearchableRecord, query: string): HistoryMatch[] => {
-  const needle = fold(query.trim())
+  // `foldMapped` and not `fold`: the haystack is folded by the first and the two
+  // sides of a comparison have to be folded by the same function (see its
+  // docblock — the piecewise fold differs from the whole one for Greek).
+  const needle = foldMapped(query.trim()).folded
   if (needle.length === 0) return []
 
   const matches: HistoryMatch[] = []
@@ -106,22 +186,38 @@ export const matchesFor = (record: SearchableRecord, query: string): HistoryMatc
 /**
  * The excerpt, cut out of the **original** text rather than the folded one.
  *
- * Folding is length-preserving for every character French uses in NFC form, but
- * not in general — `ﬁ` folds to two characters and would shift every index
- * after it. So the index is found in a folded copy and applied to the original
- * only after both have been checked to be the same length; when they are not,
- * the excerpt falls back to the head of the surface, which is still true and
- * still readable.
+ * **A folded index is not an index into the text**, so it is mapped back before
+ * anything is sliced. This used to bail out instead: when the fold changed
+ * length the excerpt fell back to the first eighty characters of the surface,
+ * which is still true and is **not an excerpt** — the row exists to say *which
+ * surface matched and where*, and that rendering silently stopped doing the
+ * second half. The justification named `ﬁ` as the character that changes
+ * length, and `ﬁ` does not: its decomposition is a *compatibility* one, so the
+ * `NFD` above leaves it alone and `fold('ﬁ')` is one character. The two that do
+ * are the two this fold writes itself — `œ` → `oe` and `æ` → `ae` — and « mise
+ * en œuvre », « cœur de métier » and « nœud » are ordinary ESN French. So one
+ * « œ » anywhere in a transcript destroyed every excerpt on the surface, and a
+ * search for `TJM` answered with the opening of the call.
+ *
+ * The right reason matters more than the guard did: the wrong one is what the
+ * next edit reads.
  */
 const excerptFor = (text: string, needle: string): string | null => {
-  const folded = fold(text)
+  const { folded, source } = foldMapped(text)
   const at = folded.indexOf(needle)
   if (at < 0) return null
 
-  if (folded.length !== text.length) return ellipsise(text.slice(0, CONTEXT * 2), false, true)
+  const from = source[at] ?? 0
+  // The raw index just past the hit. `source[…]` of the character *after* it when
+  // there is one, and never before the end of the last character consumed — a
+  // needle that matched only the `o` of a folded `œ` shares one raw index with
+  // the `e`, and an empty window would drop the hit it is built around.
+  const last = source[at + needle.length - 1] ?? from
+  const after = source[at + needle.length] ?? text.length
+  const to = Math.max(after, last + 1)
 
-  const start = Math.max(0, at - CONTEXT)
-  const end = Math.min(text.length, at + needle.length + CONTEXT)
+  const start = Math.max(0, from - CONTEXT)
+  const end = Math.min(text.length, to + CONTEXT)
   return ellipsise(text.slice(start, end), start > 0, end < text.length)
 }
 

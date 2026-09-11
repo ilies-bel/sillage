@@ -354,6 +354,36 @@ export function installAppBridge(config) {
       confirmedAt: at(-14, 16, 20),
       updatedAt: at(-14, 16, 20),
     }),
+    /*
+     * **The unscheduled call, in the state the rep first sees it.**
+     *
+     * `armed`, never started — an offer, not a recording (HR-7) — with
+     * `eventId: null` because a client who rings at 11:05 put nothing in Outlook.
+     * It is the *only* row on the day in `agenda-appel-imprevu`, which is exactly
+     * the demo build's day: no calendar, and one call the app noticed anyway.
+     *
+     * Staged only for that scenario. On every other screen it would be a second
+     * armed meeting competing with `m-neovia-cadrage`, which is the « three
+     * statements about one meeting » configuration `Agenda.#arm` exists to
+     * prevent — and photographing it would make the fixture argue for a defect.
+     */
+    ...(scenario === 'agenda-appel-imprevu'
+      ? [
+          meeting({
+            id: 'm-adhoc-teams',
+            state: 'armed',
+            title: 'Appel non planifié — Teams',
+            eventId: null,
+            clientName: null,
+            scheduledStart: at(0, 11, 5),
+            createdAt: at(0, 11, 5),
+            startedAt: null,
+            endedAt: null,
+            confirmedAt: null,
+            updatedAt: at(0, 11, 5),
+          }),
+        ]
+      : []),
   ]
 
   const meetingById = (id) => MEETINGS.find((m) => m.id === id) || null
@@ -435,6 +465,15 @@ export function installAppBridge(config) {
       segmentId: null,
     },
   ]
+
+  /**
+   * The sentence `meeting:mark` is refusing with, or null while it answers.
+   *
+   * A module-level switch rather than a scenario, because it is a *state a call
+   * falls into* and not a dataset: the meeting was recording when the widget was
+   * created and stopped being so while the pill was still up. See the responder.
+   */
+  let REFUSE_MARKS = null
 
   /**
    * A speech-shaped level history for the header meter — 20 samples, which is
@@ -1329,8 +1368,9 @@ export function installAppBridge(config) {
         Four times now. `harnessFixture.test.ts` holds this pair to the source.
       */
       reason:
-        'aucune application Microsoft configurée — le calendrier reste vide, ' +
-        'et aucune réunion ne sera proposée à l’enregistrement : démarrez-les avec « Démarrer une réunion »',
+        'aucune application Microsoft configurée — le calendrier reste vide ; ' +
+        'les appels en cours sont tout de même détectés et proposés à l’enregistrement, ' +
+        'sans les participants ni l’objet de l’invitation',
       since: now - 3 * HOUR,
       retryable: false,
     },
@@ -1715,12 +1755,29 @@ export function installAppBridge(config) {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
 
+  /*
+    **The rep's own marks are in it**, because they are in the product's.
+
+    `searchableRecord` folds five surfaces and the fifth is `marks` — the only
+    thing a rep can type from inside the call. A stub that filtered on four of
+    them would photograph « Aucun appel ne correspond » for a query the shipped
+    search answers, which is the fifth way this fixture has flattered or
+    contradicted the app. Read off `RECORDS`, so the stage cannot show a mark the
+    expanded row does not also draw.
+  */
+  const markNotesOf = (meetingId) =>
+    ((RECORDS[meetingId] || {}).marks || [])
+      .map((mark) => mark.note)
+      .filter(Boolean)
+      .join(' · ')
+
   const blobOf = (row) =>
     fold(
       [
         row.meeting.title,
         row.meeting.clientName,
         row.status,
+        markNotesOf(row.meeting.id),
         row.matches.map((m) => m.excerpt).join(' '),
       ].join(' '),
     )
@@ -1735,6 +1792,41 @@ export function installAppBridge(config) {
    */
   const anchorOf = (meeting) => meeting.scheduledStart || meeting.startedAt || meeting.createdAt
 
+  /*
+    **A year and a half of calls**, for the one sentence no stage could show.
+
+    `history:search` returns fifty rows and says so, and the fixture holds nine —
+    so « Les 50 appels les plus récents qui correspondent, sur N appels
+    parcourus. » had never been drawn by anything, on the screen whose promise it
+    qualifies. It is the case the defect lived in twice over: the *result* cap was
+    reported one row early, and the *scan* cap was not reported at all.
+
+    Built from the same nine rows so nothing about a row is invented — a date, an
+    id and a client suffix per copy, which is what makes them distinct calls
+    rather than one drawn eight hundred times. Only this scenario sees them; every
+    other stage photographs the nine.
+  */
+  const CORPUS = (() => {
+    const out = []
+    for (let copy = 0; copy < 91; copy += 1) {
+      for (const row of HISTORY_ROWS) {
+        if (out.length >= 812) break
+        const id = copy === 0 ? row.meeting.id : `${row.meeting.id}-${copy}`
+        out.push({
+          ...row,
+          meeting: {
+            ...row.meeting,
+            id,
+            scheduledStart: (row.meeting.scheduledStart || row.meeting.createdAt) - copy * 7 * 24 * HOUR,
+          },
+        })
+      }
+    }
+    return out
+  })()
+
+  const corpus = () => (scenario === 'historique-annees' ? CORPUS : HISTORY_ROWS)
+
   const searchRows = (query, filter, limit) => {
     const needle = fold(query)
     /*
@@ -1747,7 +1839,7 @@ export function installAppBridge(config) {
       was in the *harness*, so the screenshots showed it while the code was
       right. A fixture that lies makes the design pass lie with it.
     */
-    let rows = HISTORY_ROWS.slice().sort((a, b) => anchorOf(b.meeting) - anchorOf(a.meeting))
+    let rows = corpus().slice().sort((a, b) => anchorOf(b.meeting) - anchorOf(a.meeting))
     if (needle) rows = rows.filter((row) => blobOf(row).indexOf(needle) !== -1)
     /*
       **The `Intitulé` match, composed rather than pre-baked.**
@@ -1767,6 +1859,20 @@ export function installAppBridge(config) {
         if (row.matches.some((m) => m.where === 'meeting')) return row
         return { ...row, matches: [{ where: 'meeting', excerpt: name }, ...row.matches] }
       })
+      /*
+        And the `Moments marqués` match, composed the same way and second, which
+        is where `WHERE_ORDER` puts it: a mark is one sentence the rep chose to
+        type while the client was talking.
+      */
+      rows = rows.map((row) => {
+        const notes = markNotesOf(row.meeting.id)
+        if (!notes || fold(notes).indexOf(needle) === -1) return row
+        if (row.matches.some((m) => m.where === 'marks')) return row
+        const lead = row.matches[0] && row.matches[0].where === 'meeting' ? 1 : 0
+        const matches = row.matches.slice()
+        matches.splice(lead, 0, { where: 'marks', excerpt: notes })
+        return { ...row, matches }
+      })
     }
     if (filter.client) rows = rows.filter((row) => row.meeting.clientName === filter.client)
     const days = PERIOD_DAYS[filter.periode]
@@ -1776,7 +1882,10 @@ export function installAppBridge(config) {
     if (filter.intention && filter.intention !== 'toutes') {
       rows = rows.filter((row) => row.intents.some((i) => i.kind === filter.intention))
     }
-    return rows.slice(0, limit)
+    // One row past the limit, the way the handler collects it: `>= limit` cannot
+    // tell « exactly fifty » from « fifty and more », and told a rep to narrow a
+    // search that was already complete.
+    return rows.slice(0, limit + 1)
   }
 
   // ── the bridge ────────────────────────────────────────────────────────────
@@ -1821,8 +1930,31 @@ export function installAppBridge(config) {
           syncedAt: 0,
           // No calendar connected means no day was asked about.
           window: { from: 0, to: 0 },
-          armed: null,
-          reason: 'Aucun calendrier connecté',
+          /*
+           * **And `armed` is no longer always null here, which it used to be by
+           * construction.**
+           *
+           * `Agenda` was built only when Entra was configured, so a no-Entra
+           * build could not arm anything and this branch was honest. It is built
+           * over a `NULL_CALENDAR` now, and `core/domain/adHoc.ts` decides from a
+           * microphone reading and a clock — so the demo build DEC-28 calls the
+           * first deliverable detects an unscheduled call and offers it, with no
+           * Microsoft account at all. A fixture that kept `null` here would go on
+           * photographing the screen the product no longer has.
+           */
+          armed:
+            scenario === 'agenda-appel-imprevu'
+              ? {
+                  meetingId: 'm-adhoc-teams',
+                  // Null is the whole point: there is no calendar row to join to.
+                  eventId: null,
+                  subject: 'Appel non planifié — Teams',
+                }
+              : null,
+          reason:
+            scenario === 'agenda-appel-imprevu'
+              ? 'Teams émet du son hors calendrier'
+              : 'Aucun calendrier connecté',
         }
 
   /** The health table this scenario reads — see `healthSnapshot` below. */
@@ -2263,16 +2395,20 @@ export function installAppBridge(config) {
     'history:search': (payload) => {
       const query = payload.query || ''
       const filter = withFilterDefaults(payload.filter)
+      const limit = payload.limit || 50
+      // One past the limit, then dropped: exactly the handler's arithmetic, so
+      // the sentence a stage photographs is the sentence a rep gets.
+      const found = searchRows(query, filter, limit)
+      const capped = found.length > limit
       return {
         query,
         filter,
-        scanned: HISTORY_ROWS.length,
+        // The whole corpus, which is what the screen prints beside « les
+        // cinquante plus récents » — and what the product's scan now reads.
+        scanned: corpus().length,
         clients: CLIENTS,
-        rows: searchRows(query, filter, payload.limit || 50),
-        // The fixture holds fewer calls than the cap, so this is always false
-        // here — stated rather than omitted, because the schema defaults it and
-        // a missing key is invisible in production (see `recordFor`).
-        capped: searchRows(query, filter, payload.limit || 50).length >= (payload.limit || 50),
+        rows: capped ? found.slice(0, limit) : found,
+        capped,
       }
     },
     'history:record': (payload) => recordFor(payload.meetingId),
@@ -2349,6 +2485,24 @@ export function installAppBridge(config) {
       },
     }),
     'meeting:mark': (payload) => {
+      /*
+        **A refusal is a thing this channel really does, so the fixture has to be
+        able to produce one.**
+
+        `app/ipc/register.ts` rejects `meeting:mark` whenever the meeting is not
+        `recording` — which `EndOfMeetingWatch` can make true with the pill still
+        floating over the call — and on any store failure. The stub answered
+        every press with a mark, so the one rendering that mattered had never been
+        drawn by any stage or measured by any check, and the refusal went into an
+        `sr-only` paragraph measuring 1×1 while the pill's counter, which is the
+        only receipt a press without a note has, correctly did not move. Fifth
+        time this fixture has been caught flattering the product, and the same
+        shape every time: it could not produce the input the defect lives on.
+
+        Set by `window.__harness.refuseMarks(reason)` — the harness's own verb,
+        so a stage says what it is staging instead of monkey-patching the bridge.
+      */
+      if (REFUSE_MARKS !== null) throw new Error(REFUSE_MARKS)
       const mark = {
         id: 'mark-' + (MARKS.length + 1),
         at: now,
@@ -2442,6 +2596,20 @@ export function installAppBridge(config) {
       for (const segment of SEGMENTS.slice(-5)) {
         harness.emit('transcript:appended', { meetingId: id, segment })
       }
+    },
+    /**
+     * The call stopped recording while the pill was still up, so `meeting:mark`
+     * refuses — the exact sentence `app/ipc/register.ts` rejects with.
+     *
+     * Reversible with `refuseMarks(null)`, because a stage that leaves the
+     * fixture broken for whatever runs next is a stage that breaks the run
+     * after it.
+     */
+    refuseMarks(reason) {
+      REFUSE_MARKS =
+        reason === undefined
+          ? 'Aucun enregistrement en cours — il n’y a pas de moment à marquer.'
+          : reason
     },
     replaySession(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'

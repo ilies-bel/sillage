@@ -734,6 +734,42 @@ machine) or in `core/domain/` — never in an IPC handler.
   attendee names out of the stub rather than restating them, and guards itself against finding
   nobody.
 
+- **A call nobody scheduled is still a call** (`core/domain/adHoc.ts`,
+  `native-module/src/mic_apps.rs`). Arming was « calendar signal × process signal », so an
+  event with attendees was *required* — and a client who rings at 11:05 about yesterday's
+  proposal has no event, which for a sales rep is a large share of the day. The second signal
+  is now « which application holds a **microphone** », which is what separates « Teams is
+  running » from « Teams is in a call » and is the one thing Granola had that this did not.
+  Five things are load-bearing. **It is not a new addon**: the rule allows one *third-party*
+  native addon and this crate is ours — `cidre` already carries
+  `kAudioHardwarePropertyProcessObjectList` and the `windows` crate already carries
+  `IAudioSessionManager2`, so the whole cost was three feature flags. **Reading the macOS
+  process list does not light the microphone indicator** — measured, `DeviceIsRunningSomewhere`
+  stays 0 across 50 polls — which is not obvious, because `abi_probe` exists precisely because
+  cpal's device *enumeration* does. **We are on that list ourselves** and genuinely hold the
+  microphone during every recording, so `mic_apps.rs` excludes its own pid; a detector that did
+  not would report a call in progress for the whole of every call it was already recording.
+  **A dwell of twenty-five seconds is the whole safety argument**: a Slack voice message, a
+  dictation and « test your microphone » all hold an input stream for a few seconds, and an
+  offer per blip is nagging during a client call. And **every branch carries its own horizon,
+  including the ones that decide nothing** — they did not, so the caller fell back to the
+  calendar's five minutes and a call starting at t=0 was offered at **t=325s** on the build
+  with no calendar; it is 55s now. The strong signal also admits what the process list never
+  could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
+  never by name, because they are open all day. Arming is still an offer (HR-7), which is what
+  makes a false positive cost a dismissible row rather than a recording.
+
+- **Detection does not require Microsoft** (DEC-28, DEC-26). `Agenda` was constructed only
+  inside the Entra branch of `main.ts`, under a comment arguing that arming with no event was
+  « structurally impossible rather than merely unimplemented ». That was true of every rule the
+  product had and is false of `adHoc.ts`, so the gate had started costing the thing it
+  protected — on the **demo build**, which DEC-28 calls the first deliverable and which is the
+  one configuration where nobody has completed an Entra registration. It is built over
+  `NULL_CALENDAR` in both branches now, with **no `onHealth` in the null one**: a calendar that
+  is absent must never be reported as a calendar that is well. The no-Entra health sentence
+  names what is actually lost — the calendar, the five-minute anticipation, the attendees, the
+  objet — and no longer claims that nothing will be offered, because that stopped being true.
+
 - **Something happens at 14:30** (DEC-46). `Agenda.onArmed` fires on the arming *edge*, never
   on the thirty-second tick, and `main.ts` raises one OS notification from it. Its click
   restores, shows and focuses the window and broadcasts `session:open` — the only thing in the

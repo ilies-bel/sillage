@@ -44,7 +44,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
 
   if (rows.length === 0) {
     return (
-      <EmptyState hint="La recherche porte sur les clients, les sujets, les transcriptions et vos notes.">
+      <EmptyState hint="La recherche porte sur les clients, les sujets, les transcriptions, vos notes, vos moments marqués et les comptes-rendus.">
         Aucun appel ne correspond.
       </EmptyState>
     )

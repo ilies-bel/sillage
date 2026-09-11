@@ -12,6 +12,16 @@ use std::time::Duration;
 use tracing::error;
 use wasapi::{get_default_device, DeviceCollection, Direction, SampleType, ShareMode, WaveFormat};
 
+/**
+ * How long the loopback capture thread may block before it notices it has been
+ * asked to stop — and therefore the longest `SystemAudioCapture::stop()` can
+ * freeze Electron's main thread.
+ *
+ * Two hundred milliseconds rather than the three seconds this waited for as
+ * long as it existed. See the wait itself for the whole argument.
+ */
+const MAX_STOP_LATENCY_MS: u32 = 200;
+
 struct WakerState {
     shutdown: bool,
 }
@@ -270,9 +280,39 @@ impl SpeakerInput {
                         }
                     }
 
-                    // Timeout is normal when no audio is playing — WASAPI loopback
-                    // doesn't fire events during silence. Just continue waiting.
-                    if h_event.wait_for_event(3000).is_err() {
+                    /*
+                     * Timeout is normal when no audio is playing — WASAPI loopback
+                     * doesn't fire events during silence. Just continue waiting.
+                     *
+                     * **And the timeout is how fast this thread can be stopped,
+                     * which is why it is no longer three seconds.**
+                     *
+                     * `shutdown` is read at the top of the loop and nowhere else,
+                     * and nothing signals `h_event` when it is set — `Drop` sets
+                     * the flag and calls `handle.join()` immediately. So the wait
+                     * below *is* the shutdown latency. `SystemAudioCapture::stop()`
+                     * is a synchronous `#[napi]` function, i.e. Electron's main
+                     * thread, so pressing *Terminer* froze the whole UI for up to
+                     * three seconds — and it was worst exactly when it happens:
+                     * the far end has hung up, the render device is silent, so no
+                     * event fires and the full timeout is paid every time. The
+                     * same cost landed on `before-quit` (which now also awaits the
+                     * outbox drain) and on the boot sweep.
+                     *
+                     * `MAX_STOP_LATENCY_MS` is what that costs now. Polling a
+                     * mutex five times a second on a dedicated thread is nothing;
+                     * a frozen main process on the primary platform is not.
+                     *
+                     * The version with no latency at all signals the event on
+                     * shutdown rather than waiting for it to time out. That needs
+                     * the event handle shared with the dropping thread and a
+                     * `SetEvent` against a handle this crate gets from `wasapi`
+                     * rather than owning — real risk on the one platform that
+                     * cannot be run from this host, to save 200 ms that nobody can
+                     * perceive. Bounding the wait is the fix; signalling it is an
+                     * optimisation.
+                     */
+                    if h_event.wait_for_event(MAX_STOP_LATENCY_MS).is_err() {
                         continue;
                     }
 

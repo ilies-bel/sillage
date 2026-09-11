@@ -123,7 +123,7 @@ export const checkFile = (file, source) => {
       case 'renderer':
         // The rule is about what the renderer may reach *into `electron/`* for.
         // Inside `src/` it is an ordinary application and imports itself
-        // freely — `src/editor/note/title-layout.ts` needs `./schema`.
+        // freely — `src/editor/note/keymap.ts` needs `./schema`.
         if (to.layer === 'renderer') break
         if (!target.startsWith('electron/core/contracts/')) {
           deny('the renderer may import core/contracts/ only', specifier)

@@ -18,6 +18,7 @@ use ringbuf::traits::Consumer;
 pub mod audio_config;
 pub mod echo_canceller;
 pub mod echo_reference;
+pub mod mic_apps;
 pub mod microphone;
 pub mod resampler;
 pub mod silence_suppression;

@@ -4,6 +4,7 @@ import {
   ARM_LEAD_MS,
   ARM_POLL_MS,
   MAX_ARMABLE_DURATION_MS,
+  OVERRUN_GRACE_MS,
   decideArming,
   nextArmable,
   type ArmableEvent,
@@ -32,6 +33,79 @@ const event = (over: Partial<ArmableEvent> = {}): ArmableEvent => ({
   attendees: [attendee('Zaiou')],
   onlineMeetingJoinUrl: 'https://teams.microsoft.com/l/meetup-join/x',
   ...over,
+})
+
+// ── The overrun case ───────────────────────────────────────────────────────
+//
+// DEC-9 says sales calls overrun constantly. The rule was `now >= scheduledEnd →
+// skip`, and `DayPane` gates its manual control on the same instant, so at 14:31
+// on a 14:00–14:30 slot a rep had neither — at the moment the conversation is
+// going well enough to run late. What they had instead was « Démarrer une
+// réunion », which drops `eventId` and with it the attendees, « Interlocuteurs »,
+// `speakerLabel`'s one chance to name the far channel after a person, and the
+// strongest signal account resolution has.
+
+test('an event one minute over, with a microphone still held, still arms', () => {
+  const over = T0 + 3_600_000 + 60_000
+  assert.equal(
+    decideArming({ event: event(), now: over, meetingAudio: 'Teams' }).action,
+    'skip',
+    'an open application is not evidence the call is still happening',
+  )
+  const kept = decideArming({ event: event(), now: over, meetingAudio: 'Teams', micHeldBy: 'Teams' })
+  assert.equal(kept.action, 'arm')
+  assert.match(kept.reason, /après l’heure prévue/)
+})
+
+test('the grace is bounded, so a Teams left connected over lunch is not this meeting', () => {
+  const end = T0 + 3_600_000
+  const held = { event: event(), meetingAudio: 'Teams', micHeldBy: 'Teams' }
+  assert.equal(decideArming({ ...held, now: end + OVERRUN_GRACE_MS - 1 }).action, 'arm')
+  assert.equal(decideArming({ ...held, now: end + OVERRUN_GRACE_MS }).action, 'skip')
+})
+
+test('an overrunning call never outranks the call the rep is actually in', () => {
+  /*
+   * Both events are armable at the same instant and the microphone is held for
+   * both — the signal cannot separate them, only the clock can. « The earlier
+   * start wins » would offer the conversation the rep has just left.
+   */
+  const early = calendarEvent('tot', { scheduledStart: T0, scheduledEnd: T0 + 3_600_000 })
+  const current = calendarEvent('maintenant', {
+    scheduledStart: T0 + 3_600_000,
+    scheduledEnd: T0 + 7_200_000,
+  })
+  const now = T0 + 3_600_000 + 120_000
+  const choice = nextArmable([early, current], now, 'Teams', 'Teams')
+  assert.equal(choice.decision.action, 'arm')
+  assert.equal(choice.event?.context.scheduledStart, T0 + 3_600_000, 'the slot containing now')
+})
+
+test('a microphone-only application arms inside the window, though it names no process', () => {
+  /*
+   * `matchMeetingApp` refuses to report a browser, Slack or Aircall — each is
+   * open all day — so those produce no `meetingAudio` at all. Round 23 priced
+   * that: a rep whose client uses Google Meet in a tab produced no signal, and
+   * the 20 s poll ran through every event window all day for nothing.
+   */
+  const inside = T0 - 60_000
+  const decision = decideArming({
+    event: event(),
+    now: inside,
+    meetingAudio: null,
+    micHeldBy: 'Navigateur',
+  })
+  assert.equal(decision.action, 'arm')
+  assert.match(decision.reason, /émet du son/)
+})
+
+test('the two signals produce different sentences, because they are different facts', () => {
+  const inside = T0 - 60_000
+  const open = decideArming({ event: event(), now: inside, meetingAudio: 'Teams' })
+  const live = decideArming({ event: event(), now: inside, meetingAudio: 'Teams', micHeldBy: 'Teams' })
+  assert.equal(open.reason, 'Teams est ouvert')
+  assert.equal(live.reason, 'Teams émet du son')
+  assert.notEqual(open.reason, live.reason)
 })
 
 // ── decideArming ───────────────────────────────────────────────────────────

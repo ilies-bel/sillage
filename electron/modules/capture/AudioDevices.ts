@@ -9,7 +9,7 @@
  * indicator in the menu bar. Calling it at import time lit that indicator at
  * app launch, with no meeting running.
  */
-import { loadNativeModule, type AudioDeviceInfo } from './nativeModule.ts'
+import { loadNativeModule, type AudioDeviceInfo, type MicApp } from './nativeModule.ts'
 
 export type { AudioDeviceInfo }
 
@@ -82,5 +82,33 @@ export const getDefaultCommunicationsDeviceId = (): string | null => {
     return result.module.getDefaultCommunicationsDeviceId() || null
   } catch {
     return null
+  }
+}
+
+/**
+ * **Which applications hold a microphone right now** — « Teams is in a call »
+ * rather than « Teams is running ».
+ *
+ * The signal `MeetingApps`'s docblock had been waiting for since it was written,
+ * and the one that makes an *unscheduled* call detectable at all
+ * (`core/domain/adHoc.ts`). macOS answers from the CoreAudio process-object list,
+ * Windows from `IAudioSessionManager2`; neither needs a permission prompt, and
+ * reading the macOS list was measured not to light the microphone indicator —
+ * see `native-module/src/mic_apps.rs`, which carries the measurement.
+ *
+ * An **empty list** is « nothing is, or we could not ask », and the two are
+ * deliberately not distinguished: a binary built before this existed, a platform
+ * with no implementation and a genuinely quiet machine all mean the same thing to
+ * every caller, which is that the process signal stands alone (DEC-45). Unlike
+ * its siblings above this returns `[]` rather than `null` for that reason —
+ * there is no caller that would branch on the difference.
+ */
+export const getMicHoldingApps = (): MicApp[] => {
+  const result = loadNativeModule()
+  if (!result.ok || typeof result.module.getMicHoldingApps !== 'function') return []
+  try {
+    return result.module.getMicHoldingApps()
+  } catch {
+    return []
   }
 }

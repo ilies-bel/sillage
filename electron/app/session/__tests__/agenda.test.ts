@@ -4,6 +4,7 @@ import { Agenda, MAX_SLEEP_MS, SYNC_INTERVAL_MS, meetingIdFor } from '../Agenda.
 import { Orchestrator } from '../Orchestrator.ts'
 import { openMemoryStore } from '../../../modules/store/index.ts'
 import { ARM_LEAD_MS, ARM_POLL_MS } from '../../../core/domain/arming.ts'
+import { AD_HOC_DWELL_MS, AD_HOC_IDLE_POLL_MS, AD_HOC_POLL_MS } from '../../../core/domain/adHoc.ts'
 import type { CalendarEvent, CalendarPort, CalendarWindow } from '../../../core/contracts/calendar.ts'
 import type { ConnectorHealth } from '../../../core/contracts/health.ts'
 import type { MeetingContext } from '../../../core/contracts/meeting.ts'
@@ -61,7 +62,11 @@ class FakeCalendar implements CalendarPort {
   }
 }
 
-const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams') => {
+const harness = (
+  events: CalendarEvent[],
+  meetingAudio: string | null = 'Teams',
+  micHeldBy: string | null = null,
+) => {
   const store = openMemoryStore()
   const orchestrator = new Orchestrator(store)
   const calendar = new FakeCalendar(events)
@@ -69,11 +74,12 @@ const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams')
   const snapshots: ReturnType<Agenda['snapshot']>[] = []
   const armed: { meetingId: string; subject: string }[] = []
   let audio = meetingAudio
+  let held = micHeldBy
 
   const agenda = new Agenda({
     calendar,
     orchestrator,
-    meetingAudio: () => audio,
+    meetingSignal: () => ({ running: audio, inCall: held }),
     clock: () => T0,
     onHealth: (h) => void health.push(h),
     onChanged: (s) => void snapshots.push(s),
@@ -89,6 +95,7 @@ const harness = (events: CalendarEvent[], meetingAudio: string | null = 'Teams')
     snapshots,
     armed,
     setAudio: (value: string | null) => void (audio = value),
+    setHeld: (value: string | null) => void (held = value),
   }
 }
 
@@ -137,7 +144,7 @@ test('a restart re-arms the meeting it already created', async () => {
   const restarted = new Agenda({
     calendar: h.calendar,
     orchestrator,
-    meetingAudio: () => 'Teams',
+    meetingSignal: () => ({ running: 'Teams', inCall: null }),
     clock: () => T0,
   })
   await restarted.tick({ now: T0 - 30_000 })
@@ -159,16 +166,65 @@ test('the offer disappears when the meeting is over', async () => {
 })
 
 test('the next wake-up is the instant the window opens, not a fixed interval', async () => {
+  /*
+   * The calendar's own horizon is still the window opening and not an interval —
+   * that is the property this test was written for, and it still holds. What it
+   * can no longer assert is that the horizon *returned* is that instant, because
+   * detection tightens it: an unscheduled call can start at any moment, including
+   * two hours before this event, and a horizon is a floor on attention rather
+   * than a ceiling on it. Measured with only the calendar deciding, the offer for
+   * a call starting at t=0 arrived at **t=325s**.
+   *
+   * So the calendar horizon is asserted as an upper bound — a tick must never
+   * sleep *past* the window opening — plus the tightening itself.
+   */
   const h = harness([event('AAA')], null)
-  const wakeAt = await h.agenda.tick({ now: T0 - 2 * 60 * 60_000 })
-  assert.equal(wakeAt, T0 - ARM_LEAD_MS)
+  const now = T0 - 2 * 60 * 60_000
+  const wakeAt = await h.agenda.tick({ now })
+  assert.ok(wakeAt <= T0 - ARM_LEAD_MS, 'never sleeps past the instant the window opens')
+  assert.ok(wakeAt <= now + AD_HOC_IDLE_POLL_MS, 'and looks for an unscheduled call meanwhile')
+  assert.ok(wakeAt > now, 'never a spin of zero-delay timers')
   h.store.close()
 })
 
-test('an empty day still schedules a re-check', async () => {
+test('an empty day still schedules a re-check — and now a much sooner one', async () => {
+  /*
+   * It used to be `SYNC_INTERVAL_MS`, five minutes, and that was the whole of the
+   * lag: an empty day is the demo build's every day, and a call starting on one
+   * was not looked for until the calendar happened to re-sync. Driving the
+   * shipped `Agenda` with a call at t=0 put the offer at **t=325s**; with the
+   * horizon taken from the detection branch too it is **t=55s**.
+   */
   const h = harness([])
   const wakeAt = await h.agenda.tick({ now: T0 })
-  assert.equal(wakeAt, T0 + SYNC_INTERVAL_MS)
+  assert.ok(wakeAt > T0, 'still schedules one')
+  assert.ok(
+    wakeAt <= T0 + AD_HOC_IDLE_POLL_MS,
+    `an empty day must still look for an unscheduled call, got ${(wakeAt - T0) / 1000}s`,
+  )
+  assert.ok(wakeAt < T0 + SYNC_INTERVAL_MS, 'sooner than a calendar re-sync')
+  h.store.close()
+})
+
+test('a call on an empty calendar is offered in under a minute, not in five', async () => {
+  /*
+   * The measurement, as a test. This is the number the feature is worth: a rep
+   * whose client rings unannounced gets the offer while they are still saying
+   * hello, and « a rep who is talking is not looking for a button ».
+   */
+  const h = harness([], null, null)
+  let now = T0
+  let next = await h.agenda.tick({ now })
+  h.setHeld('Teams')
+  let offeredAt: number | null = null
+  for (let i = 0; i < 400 && offeredAt === null; i++) {
+    now = next
+    next = await h.agenda.tick({ now })
+    if (h.agenda.snapshot().armed) offeredAt = now
+  }
+  assert.ok(offeredAt !== null, 'the call is offered at all')
+  const lag = (offeredAt! - T0) / 1000
+  assert.ok(lag <= 60, `offered ${lag}s after the call started — it was 325s before`)
   h.store.close()
 })
 
@@ -268,7 +324,7 @@ test('a listener that throws does not stop the meeting arming', async () => {
   const agenda = new Agenda({
     calendar: new FakeCalendar([event('AAA')]),
     orchestrator,
-    meetingAudio: () => 'Teams',
+    meetingSignal: () => ({ running: 'Teams', inCall: null }),
     clock: () => T0,
     onArmed: () => {
       throw new Error('pas de service de notification')
@@ -512,5 +568,231 @@ test('the offer arrives inside the five-minute lead, not at the meeting’s star
     `armed ${lead / 1000}s before the start — the offer must not arrive as the call begins`,
   )
   assert.ok(armedAt - launchedTeams <= ARM_POLL_MS * 2, `took ${(armedAt - launchedTeams) / 1000}s after Teams came up`)
+  h.store.close()
+})
+
+// ── The unscheduled call ────────────────────────────────────────────────────
+//
+// The one axis on which Granola was straightforwardly better. Sillage required a
+// calendar event as the first half of a conjunction, so a client who rings at
+// 11:05 about yesterday's proposal produced no offer at all, ever — and for a
+// sales rep that is a large share of the working day. These drive the real
+// `Agenda` over an **empty calendar**, which is the case that could not work.
+
+test('a call nobody scheduled is offered, with no calendar event at all', async () => {
+  const h = harness([], null, 'Teams')
+  // The hold starts at the first tick and has to survive the dwell.
+  await h.agenda.tick({ now: T0 })
+  assert.equal(h.agenda.snapshot().armed, null, 'not on the first sight of a microphone')
+
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const armed = h.agenda.snapshot().armed
+  assert.ok(armed, 'a hold that survived the dwell is offered')
+  assert.equal(armed?.eventId, null, 'and it says it has no calendar row')
+  assert.equal(armed?.subject, 'Appel non planifié — Teams')
+  assert.equal(h.orchestrator.stateOf(armed!.meetingId), 'armed')
+  h.store.close()
+})
+
+test('it is an offer and nothing else (HR-7)', async () => {
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const armed = h.agenda.snapshot().armed
+  assert.notEqual(h.orchestrator.stateOf(armed!.meetingId), 'recording')
+  h.store.close()
+})
+
+test('a microphone blip is never a call', async () => {
+  // A Slack voice message, a dictation, Teams' own « test your microphone ».
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + 4_000 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS * 3 })
+  assert.equal(h.agenda.snapshot().armed, null)
+  assert.equal(h.store.projections.listMeetings(10).length, 0, 'and no meeting row was written')
+  h.store.close()
+})
+
+test('one hold is one meeting, however many ticks it spans', async () => {
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  for (let i = 1; i <= 6; i++) await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS * i })
+  assert.equal(h.store.projections.listMeetings(10).length, 1)
+  h.store.close()
+})
+
+test('the OS notification fires for an unscheduled call, because nothing else can tell the rep', async () => {
+  // DEC-46's 14:30 notification tells a rep something they already knew was
+  // coming. This one is the only way they learn the app noticed at all.
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  assert.equal(h.armed.length, 1)
+  assert.equal(h.armed[0]?.subject, 'Appel non planifié — Teams')
+  h.store.close()
+})
+
+test('the offer is withdrawn when the call ends, and the machine is told', async () => {
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const meetingId = h.agenda.snapshot().armed!.meetingId
+
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 30_000 })
+  assert.equal(h.agenda.snapshot().armed, null, 'a standing Enregistrer on a finished call is a button a rep presses')
+  assert.equal(h.orchestrator.stateOf(meetingId), 'idle', 'disarmed, never left in `armed` for ever')
+  h.store.close()
+})
+
+test('a dismissed offer is not re-offered on every poll for the rest of the call', async () => {
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const first = h.agenda.snapshot().armed!.meetingId
+  h.orchestrator.dispatch(first, 'disarm', 'le commercial a refusé')
+
+  for (let i = 2; i <= 8; i++) await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS * i })
+  assert.equal(h.store.projections.listMeetings(20).length, 1, 'one offer per hold, never one per poll')
+  h.store.close()
+})
+
+test('leaving Teams for Zoom is a new call, and gets its own dwell', async () => {
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Teams')
+
+  h.setHeld('Zoom')
+  const switched = T0 + AD_HOC_DWELL_MS + 1_000
+  await h.agenda.tick({ now: switched })
+  assert.equal(
+    h.agenda.snapshot().armed?.subject,
+    'Appel non planifié — Teams',
+    'the new hold has not earned its dwell yet',
+  )
+  await h.agenda.tick({ now: switched + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Zoom')
+  h.store.close()
+})
+
+test('a calendar event beats an unscheduled call for the same instant', async () => {
+  // Two offers for one conversation is the defect `#arm`'s docblock records.
+  const h = harness([event('AAA')], 'Teams', 'Teams')
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const armed = h.agenda.snapshot().armed
+  assert.equal(armed?.meetingId, meetingIdFor('AAA'))
+  assert.equal(armed?.eventId, 'AAA', 'the calendar offer, with its attendees and objet')
+  assert.equal(h.store.projections.listMeetings(10).length, 1, 'and no second row for the same call')
+  h.store.close()
+})
+
+test('the horizon tightens while a hold is building, and never loosens', async () => {
+  const h = harness([], null, 'Teams')
+  const horizon = await h.agenda.tick({ now: T0 })
+  assert.ok(
+    horizon <= T0 + AD_HOC_POLL_MS,
+    `a hold building toward its dwell must be re-asked within ${AD_HOC_POLL_MS} ms, got ${horizon - T0}`,
+  )
+  assert.ok(horizon > T0, 'and never a spin of zero-delay timers')
+  h.store.close()
+})
+
+test('no microphone signal at all leaves the product exactly as it was', async () => {
+  // An older binary, or a platform with no implementation. `inCall` is null and
+  // nothing ad-hoc ever happens — no offer, no meeting row, no notification.
+  const h = harness([], null, null)
+  for (let i = 0; i <= 10; i++) await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS * i })
+  assert.equal(h.agenda.snapshot().armed, null)
+  assert.equal(h.store.projections.listMeetings(10).length, 0)
+  assert.equal(h.armed.length, 0)
+  h.store.close()
+})
+
+test('the agenda asks for the process signal only when an event could use it', async () => {
+  // The other half of the cost fix, asserted where the decision is made.
+  const asked: boolean[] = []
+  const build = (events: CalendarEvent[]) =>
+    new Agenda({
+      calendar: new FakeCalendar(events),
+      orchestrator: new Orchestrator(openMemoryStore()),
+      meetingSignal: () => ({ running: null, inCall: null }),
+      refreshMeetingSignal: async (want) => void asked.push(want),
+      clock: () => T0,
+    })
+
+  await build([]).tick({ now: T0 })
+  assert.deepEqual(asked, [false], 'no event in the window, no process spawn')
+
+  await build([event('AAA')]).tick({ now: T0 })
+  assert.deepEqual(asked, [false, true], 'an event in the window still gets both signals')
+})
+
+test('the unscheduled offer can actually be accepted, and the meeting is usable', async () => {
+  /*
+   * An offer nothing can accept is worse than no offer. The synthesised context
+   * has no event, no attendees and no organiser, so this asserts the meeting the
+   * rep gets is a real one all the way through the state machine — and that the
+   * projection every surface reads carries the title they pressed.
+   */
+  const h = harness([], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const meetingId = h.agenda.snapshot().armed!.meetingId
+
+  const started = h.orchestrator.dispatch(meetingId, 'start', 'le commercial a accepté')
+  assert.equal(started.ok, true, 'Enregistrer must be able to start the call it offered')
+  assert.equal(h.orchestrator.stateOf(meetingId), 'recording')
+
+  const context = h.store.projections.context(meetingId)
+  assert.ok(context, 'the meeting has a context the rest of the product can read')
+  assert.equal(context?.eventId, null)
+  assert.equal(context?.subject, 'Appel non planifié — Teams')
+
+  const row = h.store.projections.listMeetings(10).find((m) => m.id === meetingId)
+  assert.ok(row, 'and it is in the list every screen draws from')
+  assert.equal(row?.title, 'Appel non planifié — Teams')
+  h.store.close()
+})
+
+test('an unchanged snapshot is not re-broadcast on every tick', async () => {
+  /*
+   * `onChanged` fired at the end of every tick, which was defensible while a tick
+   * was a five-minute calendar re-sync. Detecting unscheduled calls made the loop
+   * run every thirty seconds — it has to, because the microphone is polled — so
+   * an unguarded publish is ten times as many renderer re-renders of a screen on
+   * which nothing moved.
+   */
+  const h = harness([], null, null)
+  await h.agenda.tick({ now: T0 })
+  const afterFirst = h.snapshots.length
+  assert.equal(afterFirst, 1, 'the first tick publishes')
+
+  for (let i = 1; i <= 9; i++) await h.agenda.tick({ now: T0 + i * 30_000 })
+  assert.equal(h.snapshots.length, afterFirst, 'nine quiet ticks publish nothing')
+
+  /*
+   * The tenth crosses `SYNC_INTERVAL_MS` and the calendar re-syncs, which moves
+   * `syncedAt` — a real change, and one the screen draws as « synchronisé il y a
+   * N minutes ». So it publishes, and that is the guard working rather than
+   * failing: what is suppressed is an identical snapshot, not a quiet one.
+   */
+  await h.agenda.tick({ now: T0 + 10 * 30_000 })
+  assert.equal(h.snapshots.length, afterFirst + 1, 'a re-sync is a change and is published')
+  h.store.close()
+})
+
+test('but a real change is published immediately', async () => {
+  const h = harness([], null, null)
+  await h.agenda.tick({ now: T0 })
+  const quiet = h.snapshots.length
+
+  h.setHeld('Teams')
+  await h.agenda.tick({ now: T0 + 30_000 })
+  await h.agenda.tick({ now: T0 + 30_000 + AD_HOC_DWELL_MS })
+  assert.ok(h.snapshots.length > quiet, 'an offer appearing is a change')
+  assert.equal(h.snapshots.at(-1)?.armed?.subject, 'Appel non planifié — Teams')
   h.store.close()
 })

@@ -84,6 +84,18 @@
  * `prefers-reduced-motion` with `emulateMedia` to measure the accessibility
  * half directly rather than inferring it.
  *
+ * It carries `--fade`, which is the same lesson at a sixth boundary. The
+ * widget's live transcript recedes at the edge it hides content behind — the
+ * right cue, and the ramp was set to twenty pixels under a comment reading
+ * « little enough that no whole line of a client's words is ever dimmed ». The
+ * line box in that log is 19.5px, so the ramp was longer than a line and the
+ * sentence was false of the surface it was written on: swept over every scroll
+ * position, a whole line sat inside the ramp with its ink at alpha 0.19. Neither
+ * of the two checks that could plausibly have seen it can: `--contrast` reads
+ * resolved colours and a mask is not one, and `--scrollers` is opted out of by
+ * `data-scrolls`, correctly, because a log is supposed to hold more than its
+ * box. This one compares every fading mask against the line box it fades over.
+ *
  * It carries `--geometry` as well, which is the other half of the same problem.
  * Ten of the compte-rendu's twenty-three gutter markers were clipped for three
  * review rounds: present in the DOM, correct in `innerText`, and a third of the
@@ -141,7 +153,7 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--scrollers', '--motion', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

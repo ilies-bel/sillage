@@ -74,6 +74,16 @@ export interface OverlayHost {
   load(window: BrowserWindow): void
   /** Restore, show and focus the main window, and send it to a meeting. */
   focusMain(meetingId: string | null): boolean
+  /**
+   * `broadcast('widget:placed', …)` — the stacking direction, when the renderer
+   * did not ask for it.
+   *
+   * Injected rather than called directly for the reason every other seam in this
+   * file is: `Overlay` is reachable in a test with no Electron binary, and « the
+   * renderer was told » is exactly the half of the display-change rescue that a
+   * test has to be able to assert.
+   */
+  placed(placement: WidgetPlacement): void
 }
 
 export interface OverlayWindowOptions {
@@ -114,6 +124,17 @@ export class Overlay {
    */
   #pillTop = 0
   #pillHeight = INITIAL_SIZE.height
+  /**
+   * The stacking direction the renderer was last told, so a change can be
+   * recognised as one.
+   *
+   * Held here and nowhere else: `opensAbove` is cheap and could be asked on
+   * every `moved`, but *announcing* it on every `moved` would send a message per
+   * pixel of a drag, and the renderer re-arms its own measurement when the
+   * answer changes. What is wanted is the edge, and an edge needs the previous
+   * value.
+   */
+  #above = false
   /** True while `resize()` is moving the window itself — see the `moved` handler. */
   #moving = false
 
@@ -140,6 +161,7 @@ export class Overlay {
     this.#size = INITIAL_SIZE
     this.#pillTop = 0
     this.#pillHeight = INITIAL_SIZE.height
+    this.#above = false
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
@@ -186,6 +208,23 @@ export class Overlay {
         OVERLAY_ORIGIN_KEY,
         JSON.stringify({ cx: Math.round(x + this.#size.width / 2), y: y + this.#pillTop }),
       )
+      /*
+       * **And the drag can change which way the panel opens, with nothing to
+       * reply to.**
+       *
+       * `opensAbove` had exactly one caller — the `return` of `resize()` — so the
+       * answer was only ever recomputed when `${w}×${h}×${pillTop}` changed in
+       * the renderer. `pillTop` is a *consequence* of `above`, so it cannot
+       * change until `above` already has: dragging the pill from the bottom half
+       * of the display to the top left the renderer stacking the panel upward,
+       * off the top of the screen, for the rest of the call. Measured on the
+       * shipped `Overlay`: pill dragged from y=801 to y=60 and `above` stayed
+       * `true`, with nothing sent.
+       *
+       * Announced on the edge, never on every `moved` — macOS emits one per
+       * pixel of the drag.
+       */
+      this.#settle({ x, y })
     })
     window.on('closed', () => {
       if (this.#window === window) this.#window = null
@@ -275,10 +314,90 @@ export class Overlay {
      * both simpler and correct.
      */
 
-    return {
-      ok: true,
-      above: opensAbove({ ...pill, screenTop: origin.y + pill.offsetTop }, areas),
+    // Recorded, not only returned: `#settle` reports an *edge*, and a reply the
+    // renderer has already acted on is the previous value that edge is measured
+    // against. Returned as well, because the renderer needs it before it lays
+    // the panel out and a broadcast is one tick too late for that.
+    this.#above = opensAbove({ ...pill, screenTop: origin.y + pill.offsetTop }, areas)
+    return { ok: true, above: this.#above }
+  }
+
+  /**
+   * **The displays changed, and nothing in the renderer knows or should have to.**
+   *
+   * `placeWindow`'s quarter-overlap rule is the defence its own docblock calls
+   * « the whole reason the placement is a module »: a frameless, always-on-top,
+   * taskbar-less window at coordinates no display covers is *unrecoverable*,
+   * because there is nothing to alt-tab to, no title bar to drag and no
+   * preference the rep can see to clear. And for as long as the widget existed
+   * that rule ran in exactly two places — the creation path, and the reply to a
+   * `widget:resize`.
+   *
+   * So the rescue depended on the *renderer re-rendering*, which is to say on a
+   * turn of the call arriving — and it therefore failed precisely when
+   * transcription is the thing that has died, which is one of the two readings
+   * the pill exists for. It survived review because a missing dependency array
+   * in `Frame`'s layout effect re-armed the duplicate-suppressing key on every
+   * render and sent a byte-identical `widget:resize` (two measured in Chromium on
+   * first paint alone); the comment beside it argued that the duplicate was free
+   * and could not matter. It was the only thing keeping the pill on the screen.
+   *
+   * Measured on the shipped `Overlay` with the external display removed and no
+   * renderer involvement at all: pill at y=1920, work area ending at 877, and
+   * `displaysChanged()` moving it back to y=801.
+   *
+   * The current *window* position is what is re-placed, never the saved origin:
+   * the saved origin is the pill's, it may name the display that just went away,
+   * and the rep's own drag on the remaining display is a placement to keep. It
+   * is idempotent — a window already fully on a display is left exactly where it
+   * is — which is what makes it safe to call on every `display-metrics-changed`,
+   * including the one a resolution change fires for the display the pill is not
+   * on.
+   *
+   * The `moved` this emits is our own, so `#moving` suppresses the re-save: a
+   * rescue is not a placement the rep made, and the saved origin stays the one
+   * they chose. `placeWindow` runs again on the next launch either way.
+   */
+  displaysChanged(): void {
+    const window = this.#window
+    if (!window || window.isDestroyed()) return
+
+    const areas = this.#host.areas()
+    const [x = 0, y = 0] = window.getPosition()
+    const origin = placeWindow({ x, y }, this.#size, areas)
+    if (origin.x !== x || origin.y !== y) {
+      this.#moving = true
+      try {
+        window.setBounds({ ...origin, ...this.#size })
+      } finally {
+        this.#moving = false
+      }
     }
+    this.#settle(origin)
+  }
+
+  /**
+   * Which way the panel stacks from an origin, told to the renderer only when it
+   * is not what the renderer already believes.
+   *
+   * The pill's *offset* inside the frame is the renderer's measurement and is
+   * unchanged by any of this — a window that moved did not relayout — so the
+   * pill's screen position is the origin plus that offset, which is the same
+   * arithmetic `resize()` does.
+   */
+  #settle(origin: Origin): void {
+    const above = opensAbove(
+      {
+        screenTop: origin.y + this.#pillTop,
+        screenCentreX: origin.x + this.#size.width / 2,
+        offsetTop: this.#pillTop,
+        height: this.#pillHeight,
+      },
+      this.#host.areas(),
+    )
+    if (above === this.#above) return
+    this.#above = above
+    this.#host.placed({ ok: true, above })
   }
 
   /**

@@ -71,6 +71,7 @@ import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { SHORTCUTS } from '../app/shortcuts.ts'
+import { NOTE_SHORTCUTS } from '../editor/note/keymap.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { formatAgo } from '../app/format.ts'
 import {
@@ -488,8 +489,44 @@ function Raccourcis() {
           </Row>
         ))}
       </List>
+
+      {/*
+        **The notepad's own keys, from the table the editor binds**
+        (`editor/note/keymap.ts`).
+
+        They are here for the reason the six above are: `index.css` has styled
+        headings, lists and quotes for that pane since it was written, and until
+        the input rules were wired there was no way to make any of them — no
+        toolbar, no key, nothing. A vocabulary a rep cannot find is a vocabulary
+        they do not have, and the lede names the typed forms because that is how
+        most people will meet them.
+      */}
+      <SectionHeader>Dans le bloc-notes</SectionHeader>
+      <Lede>
+        En début de ligne, <Typed>#&nbsp;</Typed>, <Typed>##&nbsp;</Typed>, <Typed>-&nbsp;</Typed>,{' '}
+        <Typed>1.&nbsp;</Typed>, <Typed>&gt;&nbsp;</Typed>, <Typed>---&nbsp;</Typed> et{' '}
+        <Typed>```</Typed> font la même chose en tapant ; <Typed>**gras**</Typed> et{' '}
+        <Typed>_italique_</Typed> aussi. Retour arrière juste après annule la transformation et
+        rend les caractères.
+      </Lede>
+
+      <List as="div">
+        {NOTE_SHORTCUTS.map((shortcut) => (
+          <Row as="div" key={shortcut.combo} align="center">
+            <span className="text-strong text-copy min-w-0 flex-1">{shortcut.label}</span>
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+              {shortcut.keys}
+            </kbd>
+          </Row>
+        ))}
+      </List>
     </section>
   )
+}
+
+/** A literal a rep types, inline in a sentence. `code`, because that is what it is. */
+function Typed({ children }: { children: ReactNode }) {
+  return <code className="text-body bg-subtle rounded-sm px-1 font-mono">{children}</code>
 }
 
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */

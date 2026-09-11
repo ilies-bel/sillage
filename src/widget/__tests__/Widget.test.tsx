@@ -10,8 +10,10 @@
  * recording is ended.
  *
  * jsdom measures every box as zero, so nothing here asserts a layout — the
- * `widget`, `widget-ouvert` and `widget-arret` stages do that, at both sizes,
- * under all six checks.
+ * `widget`, `widget-ouvert`, `widget-refus` and `widget-arret` stages do that, at
+ * both sizes, under all eight checks. That division is exactly why the refused
+ * mark survived: the sentence *was* in the DOM, and the only thing wrong with it
+ * was the 1×1 clipped box it was in.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -385,4 +387,94 @@ test('with nothing recording it says so and offers no controls', async () => {
 
   expect(await screen.findByText('Aucun enregistrement')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Terminer' })).toBeNull()
+})
+
+/**
+ * **A refused mark, for a rep who can see.**
+ *
+ * `meeting:mark` refuses whenever the meeting is not `recording` — which
+ * `EndOfMeetingWatch` can make true with the pill still floating over the call —
+ * and on any store failure. The sentence went into the `sr-only` paragraph at the
+ * bottom of the window: a 1×1 box with `clip: rect(0,0,0,0)`, measured, on a
+ * window carrying no `role="alert"` anywhere. The counter beside the button
+ * correctly did not move, because nothing had been written. So the screen's answer
+ * to a refusal and its answer to a success were the same screen, and a rep who
+ * presses this button one-handed over a client's face is not going to look twice.
+ *
+ * jsdom cannot measure the box — `widget-refus` does that on real layout — so what
+ * is asserted here is the thing jsdom *can* see and the thing that was wrong: the
+ * sentence is in the accessibility tree as an alert rather than only as polite
+ * text nothing draws.
+ */
+test('a refused mark is drawn, not only announced', async () => {
+  bridge.when('meeting:mark', () => {
+    throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+  })
+  render(<Widget />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+
+  const notice = await screen.findByRole('alert')
+  expect(notice.textContent).toBe('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+  // Not inside the visually-hidden region, which is the whole defect.
+  expect(notice.closest('.sr-only')).toBeNull()
+  // And inside a card: everything on this window that is not one is halo, and
+  // halo is handed to Teams with `setIgnoreMouseEvents`.
+  expect(notice.closest('[data-card]')).not.toBeNull()
+
+  // The counter does not move on a refusal. A receipt for a write that did not
+  // happen is the same failure one layer on.
+  expect(screen.getByRole('button', { name: 'Marquer ce moment' })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+/**
+ * **A mark that landed is announced and not drawn.**
+ *
+ * The other half of the rule, and it is the half that keeps the first one from
+ * becoming noise: the receipt for a mark that worked is the counter on the pill,
+ * and a card painted over a client's face to say « Moment marqué. » would be a
+ * second one on a window whose every pixel is a pixel of Teams the rep cannot
+ * click.
+ */
+test('a mark that worked raises no notice', async () => {
+  bridge.when('meeting:mark', () => ({
+    id: 'mk1',
+    at: STARTED + 1_000,
+    note: '',
+    segmentId: null,
+  }))
+  render(<Widget />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+  await waitFor(() => expect(screen.getByText('Moment marqué.')).toBeTruthy())
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+/**
+ * **The stacking direction can change without this window asking.**
+ *
+ * `above` came back on the reply to `widget:resize` and nowhere else, so it was
+ * only ever recomputed when the frame's own `width × height × pillTop` changed.
+ * Two things change it that do not change those: a display going away — the
+ * rescue that keeps this window recoverable at all — and the rep dragging the
+ * pill across the display's midline, which moves the pill by the panel's whole
+ * height and resizes nothing. `widget:placed` is the main process saying so.
+ */
+test('widget:placed flips which way the panel opens', async () => {
+  render(<Widget />)
+  await openPanel()
+  /*
+   * The stub's `widget:resize` answers `above: false`, so the panel is stacked
+   * downward and the chevron points back the way it will collapse — « the arrow
+   * points where the panel will go », which with the panel open is shut.
+   */
+  expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▴')
+
+  act(() => bridge.emit('widget:placed', { above: true }))
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▾')
+  })
 })

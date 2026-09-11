@@ -373,7 +373,38 @@
    */
   .notepad .ProseMirror {
     outline: none;
-    min-height: 100%;
+    /*
+     * **The box takes the click, not just the text.**
+     *
+     * This was `min-height: 100%`, and it drew nothing for as long as it
+     * existed: the percentage resolves against the mount element in
+     * `Notepad.tsx`, whose *specified* height was `auto`, and a percentage
+     * min-height against an auto height is treated as `auto` (CSS 2.1 §10.7).
+     * Measured on an empty notepad: the editable was **26px** tall inside a
+     * 676px wrapper in a 724px pane at 1280×800 — 698 of 724 pixels, 96% of the
+     * surface DEC-11 calls « why the app is open », did not take a caret; 476 of
+     * 502, 95%, at 960×600. The same class of invisible defect as `bg-muted/30`:
+     * a property that is spelled right, resolves to nothing, and shows up in no
+     * screenshot.
+     *
+     * The mount is a column flex container with `h-full` now — a definite height,
+     * resolved against a pane that has one — and this is the item that grows into
+     * it. `1 0 auto` and never `1 1 auto`: shrinking is what would clip the rep's
+     * own text once the notes are longer than the pane, and growing *past* the
+     * container is exactly right, because `.notepad` is the scroller.
+     */
+    flex: 1 0 auto;
+    /*
+     * The page margin lives here rather than on `.notepad`, where it was
+     * `px-8 py-6`: padding on the scroller is 48 pixels of pane that is not the
+     * editor, at the top and bottom edges a rep clicks toward when they come back
+     * from the call. `content-box` against Tailwind's global `border-box` is
+     * deliberate and is what keeps the two numbers independent — `58ch` stays a
+     * measure of *text*, and the padding does not have to be subtracted from it
+     * by hand in a second place.
+     */
+    box-sizing: content-box;
+    padding: 1.5rem 2rem;
     /* The same measure, in the same unit. See `.measure` above. */
     max-width: 58ch;
     /*
@@ -417,6 +448,24 @@
 
   .notepad .ProseMirror h3 {
     font-size: 16px;
+  }
+
+  /*
+   * h4–h6 exist because the schema parses them out of *pasted* HTML — an Outlook
+   * mail, a Confluence page, a client's own brief — and Tailwind's preflight
+   * resets every heading to the paragraph's size and weight, so without this a
+   * pasted `<h4>` was a heading drawn as prose. The keyboard stops at three
+   * levels on purpose (`note/keymap.ts`), and these are deliberately not a fourth
+   * step down: below 16px the difference from body text stops being legible, so
+   * what separates them is the weight.
+   */
+  .notepad .ProseMirror h4,
+  .notepad .ProseMirror h5,
+  .notepad .ProseMirror h6 {
+    margin: 1.1em 0 0.4em;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
   }
 
   .notepad .ProseMirror ul,
@@ -563,9 +612,36 @@
    * filter row's horizontal fade follows below, and the same `black`/`transparent`
    * mask — those are mask coverage, not colours, so no token applies.
    */
+  /*
+   * **How far a reading column's fade ramps — and why it is no longer 28px.**
+   *
+   * It was 28, and `shot.mjs --fade` measured what that costs: the line boxes
+   * this ramps over are **17.1 to 25 pixels** on `review`, `review-garde`,
+   * `review-transcription` and `historique` at both smoke sizes, so a *whole
+   * line* sat inside the ramp at alpha 0.05–0.2. On the review gate that is a
+   * line of the compte-rendu at a fifth strength under a caption reading « tout
+   * ce qui part doit avoir été affiché » — the document that goes to VerySwing,
+   * dimmed while it is being shown, which is the one thing this screen promises
+   * cannot happen.
+   *
+   * Twelve is under the smallest line box by five pixels and is the number the
+   * widget's live log arrived at independently against a 19.5px line. The fade
+   * still says « there is more below »; what it no longer does is say it by
+   * hiding a sentence.
+   *
+   * One custom property rather than eight copies: the ramp appears in four rules
+   * × two prefixes, and the previous value was written out every time, which is
+   * how a single measurement turns into eight numbers that drift apart. The
+   * horizontal fade on the filter row deliberately does **not** use it — it hides
+   * the ends of a row rather than a line, so a line box is not its constraint.
+   */
+  .fade-below {
+    --fade-reading: 12px;
+  }
+
   .fade-below[data-below="true"] {
-    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - var(--fade-reading)), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - var(--fade-reading)), transparent);
   }
 
   /*
@@ -584,23 +660,23 @@
    * gradient or one of the two fades silently wins.
    */
   .fade-below[data-above="true"] {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, black 28px);
-    mask-image: linear-gradient(to bottom, transparent, black 28px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--fade-reading));
+    mask-image: linear-gradient(to bottom, transparent, black var(--fade-reading));
   }
 
   .fade-below[data-above="true"][data-below="true"] {
     -webkit-mask-image: linear-gradient(
       to bottom,
       transparent,
-      black 28px,
-      black calc(100% - 28px),
+      black var(--fade-reading),
+      black calc(100% - var(--fade-reading)),
       transparent
     );
     mask-image: linear-gradient(
       to bottom,
       transparent,
-      black 28px,
-      black calc(100% - 28px),
+      black var(--fade-reading),
+      black calc(100% - var(--fade-reading)),
       transparent
     );
   }

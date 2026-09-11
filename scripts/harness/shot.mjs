@@ -16,6 +16,7 @@
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
  *   --motion         every transition through the tokens, and silent under reduced motion
+ *   --fade           every fading mask against the line box it fades over
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -25,7 +26,7 @@
  * agenda-client · agenda-search · session · review · review-valider ·
  * review-transcription ·
  * review-transcription-introuvable · historique · reglages ·
- * agenda-sans-entra · session-sans-entra · review-sans-entra ·
+ * agenda-appel-imprevu · agenda-sans-entra · session-sans-entra · review-sans-entra ·
  * reglages-sans-entra
  *
  * How it works: the renderer talks to the main process through `window.app`,
@@ -1228,6 +1229,56 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **A call found by a mark the rep typed during it.**
+   *
+   * `searchableRecord` folded four surfaces — the objet, the transcription, the
+   * notes and the compte-rendu — and not the fifth, which is the only one a rep
+   * can write from inside the call: a `MomentMark`'s note, typed one-handed on
+   * the widget over the client's face. « prix : ils bloquent à 550 » was in the
+   * record and `550` did not find it, so the surface the product built for a rep
+   * who is talking was write-only. Photographed here because the label is new —
+   * « Moments marqués », the widget's own word — and it is the longest of the
+   * five, which is what the row's first column is now sized for.
+   */
+  'historique-marque': {
+    scenario: 'historique',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Tout l’historique ›' }).click()
+      await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
+      await page.getByPlaceholder(/Rechercher/).first().fill('relancer les achats')
+      await page.getByText('Moments marqués').first().waitFor()
+      await page.getByText(/relancer les achats avant le 15/).first().waitFor()
+    },
+  },
+
+  /**
+   * **The truncation, said out loud, with the corpus it is fifty of.**
+   *
+   * `history:search` returns at most fifty rows, and the sentence that says so
+   * had never been drawn by any stage: the fixture held nine calls. It is the
+   * case both halves of the cap were wrong in — the *result* cap was reported one
+   * row early, so exactly fifty matches with nothing hidden still told a rep to
+   * narrow a finished search; and the *scan* cap was not reported at all, so call
+   * five hundred and one was simply unfindable while `scanned`, the field that
+   * would have said so, travelled on every answer and was read by no screen.
+   * `--scenario historique-annees` is eighteen months of calls, built from the
+   * same nine rows.
+   */
+  'historique-tronque': {
+    scenario: 'historique-annees',
+    expand: true,
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Tout l’historique ›' }).click()
+      await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
+      await page.getByPlaceholder(/Rechercher/).first().fill('TJM')
+      await page.getByText(/Affinez la recherche pour en voir d’autres/).waitFor()
+      await page.getByText(/sur 812 appels parcourus/).waitFor()
+    },
+  },
+
   /*
    * *Demander* on the reader — the screen it was written for, and the one where
    * its citations lead somewhere: the record's own transcription is in the same
@@ -1389,6 +1440,43 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The call nobody put in Outlook** — the one axis on which Granola was
+   * straightforwardly better, staged on the build where it is the only offer
+   * there is.
+   *
+   * Deliberately `entra: false`. Detection used to require a calendar event as
+   * the first half of a conjunction, and `Agenda` was constructed only when Entra
+   * was configured — so this configuration, which DEC-28 calls the first
+   * deliverable, was the one in which nothing would ever offer to record
+   * anything. What has to be on screen is an armed row with no calendar entry
+   * behind it, on a day whose grid is empty.
+   */
+  'agenda-appel-imprevu': {
+    scenario: 'agenda-appel-imprevu',
+    entra: false,
+    async drive(page) {
+      await openAgenda(page)
+      // The offer itself, named for what it is rather than for a process.
+      await page.getByText('Appel non planifié — Teams').first().waitFor()
+      /*
+       * And it is the *armed* control, which is what distinguishes an offer from
+       * a row in the history: `DayPane` draws the one filled primary on the day
+       * as « Enregistrer », and « Ouvrir » on everything else.
+       */
+      const record = page.getByRole('button', { name: 'Enregistrer', exact: true })
+      if ((await record.count()) === 0) {
+        throw new Error(
+          'no « Enregistrer » on the day — an unscheduled call was detected and the ' +
+            'screen offers no way to record it, which is the whole feature',
+        )
+      }
+      // The grid is still drawn and still empty (DEC-31): this offer did not come
+      // from a calendar, and none of the other days may claim it did.
+      await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()
+    },
+  },
+
   'session-sans-entra': {
     scenario: 'session',
     entra: false,
@@ -1497,6 +1585,64 @@ const SCREENS = {
   },
 
   /*
+   * **A refused mark, on the pill, with no panel open.**
+   *
+   * `meeting:mark` refuses whenever the meeting is not `recording` —
+   * `EndOfMeetingWatch` can make that true with the pill still floating over the
+   * call — and on any store failure. The refusal used to go into an `sr-only`
+   * paragraph: measured 1×1 with `clip: rect(0,0,0,0)`, on a window with no
+   * `role="alert"` anywhere in it, while the pill's counter correctly did not
+   * move because nothing had been written. So the screen's answer to a refusal
+   * and its answer to a success were the same screen, and the second is the one a
+   * rep assumes.
+   *
+   * Measured rather than photographed, and the measurement is the box: a control
+   * that is *not rendered* and one *crushed to nothing* are different, and this
+   * check exists because the second one shipped.
+   */
+  'widget-refus': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.refuseMarks())
+
+      const counter = page.getByRole('button', { name: /^Marquer ce moment/ })
+      const before = await counter.getAttribute('aria-label')
+      await counter.click()
+
+      // The sentence, and the box it is drawn in.
+      const notice = page.getByRole('alert')
+      await notice.waitFor()
+      const rect = await notice.boundingBox()
+      if (!rect || rect.width <= 1 || rect.height <= 1) {
+        throw new Error(
+          `le refus est dessiné dans une boîte de ${JSON.stringify(rect)} — invisible pour un ` +
+            `commercial qui voit, exactement comme le paragraphe sr-only qu’il remplace`,
+        )
+      }
+
+      /*
+       * And it is inside a card. Everything on this window that is not a card is
+       * halo, and halo is handed back to Teams with
+       * `setIgnoreMouseEvents(…, { forward: true })` — so a notice that forgot
+       * `data-card` would draw a dismiss button the pointer goes straight
+       * through.
+       */
+      const carded = await notice.evaluate((el) => el.closest('[data-card]') !== null)
+      if (!carded) throw new Error('le refus est hors carte : le halo ne prend pas la souris')
+
+      // The counter must not have moved: nothing was written, and a receipt for
+      // a write that did not happen is the failure one layer further on.
+      const after = await counter.getAttribute('aria-label')
+      if (after !== before) {
+        throw new Error(`le compteur a bougé sur un refus : « ${before} » → « ${after} »`)
+      }
+      await page.evaluate(() => window.__harness.refuseMarks(null))
+    },
+  },
+
+  /*
    * The second press. Ending a recording cannot be undone, so the widget asks
    * again — and the confirmation is a different rectangle from the label that
    * summoned it (DEC-4).
@@ -1593,6 +1739,7 @@ function parseArgs(argv) {
     a11y: false,
     contrast: false,
     motion: false,
+    fade: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -1615,6 +1762,7 @@ function parseArgs(argv) {
     else if (arg === '--contrast') flags.contrast = true
     else if (arg === '--scrollers') flags.scrollers = true
     else if (arg === '--motion') flags.motion = true
+    else if (arg === '--fade') flags.fade = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -1638,7 +1786,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion] [--fade]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -1750,6 +1898,17 @@ async function main() {
     inner = await scrollers(page)
   }
 
+  /*
+   * After `document.fonts.ready` for the reason the check itself is about: the
+   * thing it compares a fade against is a *line box*, and a line box is a
+   * different number before the webfont lands.
+   */
+  let faded = []
+  if (flags.fade) {
+    await page.evaluate(() => document.fonts.ready)
+    faded = await fades(page)
+  }
+
   let unnamed = []
   if (flags.a11y) {
     await page.evaluate(() => document.fonts.ready)
@@ -1858,6 +2017,19 @@ async function main() {
        * two lines of output.
        */
       process.exitCode = 9
+    }
+  }
+  if (flags.fade) {
+    if (faded.length === 0) console.log('  fondus: aucun ne couvre une ligne entière')
+    else {
+      console.log(`  ✗ fondus: ${faded.length} masque(s) peuvent effacer une ligne entière`)
+      for (const item of faded.slice(0, 8)) {
+        console.log(
+          `     ${item.what} — fondu ${item.fade}px sur une ligne de ${item.line}px` +
+            ` (alpha ${item.alpha} au haut des capitales) — « ${item.text} »`,
+        )
+      }
+      process.exitCode = 11
     }
   }
   if (flags.contrast) {
@@ -2403,6 +2575,107 @@ async function scrollers(page) {
       })
     }
     return out.sort((a, b) => b.hidden - a.hidden)
+  })
+}
+
+/**
+ * **A fade that can erase a whole line of a client's words.**
+ *
+ * The sixth blind spot of the same shape, and the shape is always the same: the
+ * property is real, the comment states it, and no instrument in the repo can ask
+ * the question. The widget's live transcript recedes at the edge it is hiding
+ * content behind — the cue every chat surface uses, and the right one — with the
+ * ramp set to `FADE_PX = 20` under a comment reading « little enough that no
+ * whole line of a client's words is ever dimmed ». The line box in that log is
+ * **19.5px** (`--type-ui` 12px × `leading-relaxed` 1.625), so the ramp was
+ * *longer* than a line and the sentence was false of the surface it was written
+ * on. `--contrast` reads resolved colours and a mask is not one; `--scrollers` is
+ * opted out of by `data-scrolls`, correctly, because a log is supposed to hold
+ * more than its box. Nothing measured it, for as long as it existed.
+ *
+ * So: for every element carrying a `mask-image` (or its `-webkit-` twin) that
+ * ramps **from transparent** over a pixel distance, that distance against the
+ * tallest line box of the text inside it. A ramp at least as long as a line box
+ * can put a whole line inside itself at some scroll position — and « some scroll
+ * position » is not hypothetical on a log that auto-scrolls to wherever the
+ * content happens to end.
+ *
+ * Three things are deliberate. **The ink band, not the line box**, is what the
+ * reported alpha describes: a 12px font inside a 19.5px line box paints roughly
+ * the middle 12px, so the honest number is the alpha at the top of the capitals
+ * rather than at the top of the box, which is always zero and says nothing.
+ * **Percentages are skipped**, not failed: a ramp expressed as a share of the box
+ * is a different design — it scales with the box rather than with the text — and
+ * reporting it here would be guessing at a number this check has no way to
+ * resolve.
+ *
+ * And **only a vertical ramp is measured**, which this check got wrong on its
+ * first run. `.filter-scroller` fades `to right` over a row of chips, and against
+ * a line box that reads as « 28 pixels over a 17.1-pixel line, alpha 0.05 » —
+ * which is nonsense: a horizontal fade hides the *ends* of a row, not a line, and
+ * that is the question `--scrollers` asks and exempts `text-overflow: ellipsis`
+ * from. Chromium drops the default direction from the computed value, so a
+ * gradient that still names one is either horizontal or angled and is not this
+ * check's business.
+ */
+async function fades(page) {
+  return page.evaluate(() => {
+    const out = []
+    for (const el of document.querySelectorAll('#root *')) {
+      const style = getComputedStyle(el)
+      const mask = [style.maskImage, style.webkitMaskImage].find((v) => v && v !== 'none')
+      if (!mask) continue
+      // Vertical only — see above. `to bottom` and `180deg` are the default and
+      // are not printed; anything else that is named is another axis.
+      const named = /\bto (top|right|bottom|left)|[\d.]+deg/.exec(mask)
+      if (named && !/to bottom\b|\b180deg/.test(named[0])) continue
+      /*
+       * The fade distances: every stop that follows a fully transparent one, in
+       * pixels. `transparent` resolves to `rgba(0, 0, 0, 0)`, and the opaque stop
+       * is `currentColor` resolved to an `rgb(…)` — so the pattern is « a
+       * zero-alpha colour at some offset, then a colour at a pixel offset ».
+       */
+      const ramps = [...mask.matchAll(/rgba\([^)]*,\s*0\)\s+[\d.]+px,\s*[a-z]+\([^)]*\)\s+([\d.]+)px/g)]
+      // …and the closing half of a bottom fade, `calc(100% - Npx)`, which is the
+      // same distance measured from the other end.
+      const tail = [...mask.matchAll(/calc\(100% - ([\d.]+)px\)/g)]
+      const distances = [...ramps, ...tail].map((m) => Number(m[1])).filter((n) => Number.isFinite(n))
+      if (distances.length === 0) continue
+      const fade = Math.max(...distances)
+
+      // The tallest line box of the text this mask is painted over. A mask on a
+      // box with no text in it hides nothing a reader was going to read.
+      let line = 0
+      let text = ''
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+        if ((node.textContent ?? '').trim() === '') continue
+        const parent = node.parentElement
+        if (!parent) continue
+        const lh = Number.parseFloat(getComputedStyle(parent).lineHeight)
+        if (!Number.isFinite(lh) || lh <= line) continue
+        line = lh
+        text = node.textContent.trim().slice(0, 34)
+      }
+      if (line === 0) continue
+      if (fade < line) continue
+
+
+      const size = Number.parseFloat(getComputedStyle(el).fontSize) || 12
+      out.push({
+        what:
+          el.id ||
+          el.getAttribute('aria-label') ||
+          `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}`,
+        fade: Math.round(fade * 10) / 10,
+        line: Math.round(line * 10) / 10,
+        // A line box sitting at the very top of the visible area: the alpha the
+        // ramp gives the top of its capitals.
+        alpha: Math.round(Math.min(1, (line - size) / 2 / fade) * 100) / 100,
+        text,
+      })
+    }
+    return out.sort((a, b) => b.fade - b.line - (a.fade - a.line))
   })
 }
 

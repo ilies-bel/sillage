@@ -18,6 +18,13 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import { nextArmable } from '../../core/domain/arming.ts'
+import {
+  adHocContext,
+  adHocMeetingId,
+  adHocTitle,
+  decideAdHoc,
+} from '../../core/domain/adHoc.ts'
+import type { MeetingSignal } from '../../modules/capture/MeetingApps.ts'
 import type { Orchestrator } from './Orchestrator.ts'
 
 /**
@@ -51,8 +58,15 @@ export interface AgendaSnapshot {
   syncedAt: number
   /** The days Graph was actually asked about — see the IPC schema. */
   window: { from: number; to: number }
-  /** The meeting currently offered, if any. */
-  armed: { meetingId: string; eventId: string; subject: string } | null
+  /**
+   * The meeting currently offered, if any.
+   *
+   * `eventId` is null for an **unscheduled** call — one detected by a
+   * conferencing application holding a microphone with nothing in the calendar
+   * (`core/domain/adHoc.ts`). The renderer reads the null to know there is no
+   * calendar row to point at.
+   */
+  armed: { meetingId: string; eventId: string | null; subject: string } | null
   /** Why nothing is armed, in French, for the empty state. */
   reason: string
 }
@@ -61,12 +75,23 @@ export interface AgendaOptions {
   calendar: CalendarPort
   orchestrator: Orchestrator
   /**
-   * The process signal, already sampled. Injected as a value rather than a
-   * probe so this class never learns how it is obtained.
+   * Both detection signals, already sampled. Injected as a value rather than a
+   * probe so this class never learns how either is obtained.
+   *
+   * `running` is « a conferencing app is open » and `inCall` is « one is holding
+   * a microphone ». The second is what makes an unscheduled call detectable at
+   * all; see `core/domain/adHoc.ts`.
    */
-  meetingAudio: () => string | null
-  /** Refreshes that signal. Awaited before each evaluation. */
-  refreshMeetingAudio?: () => Promise<unknown>
+  meetingSignal: () => MeetingSignal
+  /**
+   * Refreshes those signals. Awaited before each evaluation.
+   *
+   * The argument is whether the *process* half can matter — i.e. whether any
+   * calendar event is in the window at all. Nothing else can read it, and
+   * sampling it costs a process spawn, so a day with no events must not pay for
+   * one. See `MeetingApps.refresh`.
+   */
+  refreshMeetingSignal?: (wantProcessList: boolean) => Promise<unknown>
   diagnostics?: DiagRecorder
   clock?: () => number
   onHealth?: (health: ConnectorHealth) => void
@@ -97,6 +122,28 @@ export class Agenda {
   #reason = 'synchronisation du calendrier en cours…'
   #timer: ReturnType<typeof setTimeout> | null = null
   #stopped = false
+  /*
+   * The microphone hold this instance is watching.
+   *
+   * `decideAdHoc` is pure and cannot remember when a hold began, so the three
+   * facts it needs live here. They are reset together — see `#trackHold` — because
+   * a rep who leaves Teams and joins Zoom is in a *new* call, and carrying the
+   * old instant forward would offer the new one with no dwell at all.
+   */
+  #heldApp: string | null = null
+  #heldSince: number | null = null
+  #adHocOffered = false
+  /*
+   * The last snapshot actually published, so an unchanged one is not.
+   *
+   * `onChanged` fired at the end of every tick, and that was defensible while a
+   * tick was a five-minute calendar re-sync. Detecting unscheduled calls made the
+   * loop run every thirty seconds — it has to, because the microphone is polled
+   * — and an identical `agenda:changed` ten times as often is ten times as many
+   * renderer re-renders of a screen where nothing moved. The broadcast is for a
+   * *change*; saying so is cheaper than the render it avoids.
+   */
+  #published: string | null = null
 
   constructor(options: AgendaOptions) {
     this.#options = options
@@ -155,7 +202,10 @@ export class Agenda {
      */
     const armed = this.#armed
     if (!armed) throw new Error('Cette réunion ne peut plus être démarrée.')
-    this.#options.onChanged?.(this.snapshot())
+    // Through the same guard as the tick: arming changes the snapshot, so this
+    // always publishes — and a second source for « has it changed » is how the
+    // two answers drift.
+    this.#publish()
     return { meetingId: armed.meetingId }
   }
 
@@ -190,14 +240,17 @@ export class Agenda {
   async tick(options: { now?: number; force?: boolean } = {}): Promise<number> {
     const now = options.now ?? this.#clock()
     await this.#sync(now, options.force === true)
-    await this.#options.refreshMeetingAudio?.()
+    await this.#options.refreshMeetingSignal?.(this.#window.events.length > 0)
 
-    const choice = nextArmable(this.#window.events, now, this.#options.meetingAudio())
+    const signal = this.#options.meetingSignal()
+    this.#trackHold(signal.inCall, now)
+
+    const choice = nextArmable(this.#window.events, now, signal.running, signal.inCall)
     this.#reason = choice.decision.reason
 
     if (choice.decision.action === 'arm' && choice.event) {
       this.#arm(choice.event)
-    } else if (this.#armed) {
+    } else if (this.#armed && this.#armed.eventId !== null) {
       // The offer expired — the event ended, was cancelled, or the app closed.
       // Leaving it on screen would have the rep pressing Démarrer on a meeting
       // that is over.
@@ -226,11 +279,153 @@ export class Agenda {
       }
     }
 
-    this.#options.onChanged?.(this.snapshot())
+    let horizon =
+      choice.decision.action === 'wait' ? choice.decision.untilMs : now + SYNC_INTERVAL_MS
 
-    return choice.decision.action === 'wait'
-      ? choice.decision.untilMs
-      : now + SYNC_INTERVAL_MS
+    /*
+     * **The unscheduled call.**
+     *
+     * Only when the calendar has not already armed something: the scheduled
+     * offer wins outright, and two offers for one conversation is the defect
+     * `#arm`'s docblock records at length. `decideAdHoc` is told that as a fact
+     * rather than inferring it, so the rule stays readable in one place.
+     */
+    if (!(choice.decision.action === 'arm' && choice.event)) {
+      const adHoc = decideAdHoc({
+        micHeldBy: signal.inCall,
+        now,
+        heldSince: this.#heldSince,
+        calendarArmed: false,
+        offered: this.#adHocOffered,
+      })
+      /*
+       * The horizon is taken from **every** branch, including the one that
+       * decides nothing.
+       *
+       * Measured before it was: a call starting at t=0 on a build with no
+       * calendar was offered at **t=325s**, because `none` carried no horizon and
+       * the fallback was `SYNC_INTERVAL_MS`. A horizon is a floor on attention
+       * and never a ceiling on it, so this only ever tightens.
+       */
+      horizon = Math.min(horizon, adHoc.untilMs)
+
+      if (adHoc.action === 'offer') {
+        this.#armAdHoc(adHoc.app, now)
+        this.#reason = adHoc.reason
+      } else if (adHoc.action === 'wait') {
+        this.#reason = adHoc.reason
+      } else if (this.#armed?.eventId === null && signal.inCall === null) {
+        /*
+         * The hold ended, so the unscheduled offer goes with it — the same
+         * withdrawal the calendar branch above performs, for the same reason: a
+         * standing *Enregistrer* on a call that is over is a button a rep
+         * presses. `recording` is exempt because the rep accepted the offer and
+         * the call being over is exactly when they stop it themselves.
+         */
+        this.#withdrawAdHoc()
+      }
+    }
+
+    this.#publish()
+
+    return horizon
+  }
+
+  /** Publish the snapshot, but only when it differs from the last one sent. */
+  #publish(): void {
+    const snapshot = this.snapshot()
+    const key = JSON.stringify(snapshot)
+    if (key === this.#published) return
+    this.#published = key
+    this.#options.onChanged?.(snapshot)
+  }
+
+  /**
+   * Follow the current microphone hold.
+   *
+   * A *change* of application restarts the dwell rather than continuing it: the
+   * rep left one call and joined another, and the second deserves the same
+   * twenty-five seconds of evidence as the first. Losing the hold clears the
+   * « already offered » latch, which is what makes the *next* call offerable
+   * after this one was dismissed.
+   */
+  #trackHold(inCall: string | null, now: number): void {
+    if (!inCall) {
+      this.#heldApp = null
+      this.#heldSince = null
+      this.#adHocOffered = false
+      return
+    }
+    if (this.#heldApp !== inCall) {
+      this.#heldApp = inCall
+      this.#heldSince = now
+      this.#adHocOffered = false
+    }
+  }
+
+  /** Withdraw a standing unscheduled offer, and tell the machine. */
+  #withdrawAdHoc(): void {
+    const expired = this.#armed?.meetingId
+    if (expired === undefined) return
+    this.#armed = null
+    if (this.#options.orchestrator.stateOf(expired) === 'armed') {
+      this.#options.orchestrator.dispatch(expired, 'disarm', 'l’appel s’est terminé sans enregistrement')
+    }
+  }
+
+  /**
+   * Offer a call that is not in the calendar.
+   *
+   * The calendar path's shape, minus the event: a deterministic id so every tick
+   * of one hold resolves to one meeting, a synthesised context that claims
+   * nothing (`adHocContext`), and `onArmed` so the OS notification fires. That
+   * notification matters *more* here than on the calendar path — DEC-46's 14:30
+   * notification tells a rep something they already knew was coming, while this
+   * one is the only way they learn the app noticed a call nobody scheduled.
+   */
+  #armAdHoc(app: string, now: number): void {
+    const heldSince = this.#heldSince ?? now
+    const meetingId = adHocMeetingId(heldSince)
+    // Latched before anything can fail. A refusal below is not a reason to ask
+    // again on every poll for the rest of the call.
+    this.#adHocOffered = true
+
+    if (!this.#options.orchestrator.session(meetingId)) {
+      this.#options.orchestrator.create({
+        id: meetingId,
+        title: adHocTitle(app),
+        context: adHocContext(app, heldSince),
+      })
+    }
+
+    const outcome = this.#options.orchestrator.dispatch(meetingId, 'arm', `appel ${app} hors calendrier`)
+    const state = outcome.ok ? outcome.to : outcome.state
+    if (state !== 'armed' && state !== 'recording') {
+      this.#diagnostics.record({
+        severity: 'warn',
+        code: 'agenda.adhoc.refused',
+        module: 'session',
+        message: outcome.ok ? `état inattendu: ${state}` : outcome.reason,
+        detail: { meetingId, state },
+        meetingId,
+      })
+      return
+    }
+
+    this.#armed = { meetingId, eventId: null, subject: adHocTitle(app) }
+    try {
+      this.#options.onArmed?.({ meetingId, subject: adHocTitle(app) })
+    } catch {
+      // The offer is on screen either way; the notification is the extra.
+    }
+    this.#diagnostics.record({
+      severity: 'info',
+      code: 'agenda.adhoc.armed',
+      module: 'session',
+      message: `appel non planifié détecté — ${app}`,
+      detail: { meetingId, app },
+      meetingId,
+    })
   }
 
   async #sync(now: number, force: boolean): Promise<void> {

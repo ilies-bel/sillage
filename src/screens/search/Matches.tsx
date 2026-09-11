@@ -24,6 +24,10 @@ const WHERE_LABEL: Record<HistoryMatch['where'], string> = {
   // fallback, on purpose: a surface added to the contract without a French name
   // fails the typecheck instead of drawing its own key at a rep.
   meeting: 'Intitulé',
+  // The widget's own word, and the reader's: « Marquer ce moment », « Moment
+  // marqué ». A rep who typed it during the call meets it here under the name
+  // they pressed, not under a new one invented for a search result.
+  marks: 'Moments marqués',
   transcript: 'Transcription',
   notes: 'Mes notes',
   compteRendu: 'Compte-rendu',
@@ -36,7 +40,13 @@ export function Matches({ matches, className }: { matches: readonly HistoryMatch
     <ul className={className}>
       {matches.map((match) => (
         <li key={match.where} className="text-muted flex gap-2 text-meta">
-          <span className="w-24 shrink-0">{WHERE_LABEL[match.where]}</span>
+          {/*
+            `w-28` and not `w-24`: « Moments marqués » is the longest of the five
+            names and wrapped to two lines in ninety-six pixels, which put the
+            excerpt beside it out of line with every other row on the surface
+            whose whole job is « which surface matched, and where ».
+          */}
+          <span className="w-28 shrink-0">{WHERE_LABEL[match.where]}</span>
           <span className="text-body min-w-0 flex-1 italic">« {match.excerpt} »</span>
         </li>
       ))}

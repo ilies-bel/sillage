@@ -165,7 +165,7 @@ export function Historique({
           <EmptyState
             hint={
               isSearchActive(query, filter)
-                ? 'La recherche porte sur les clients, les sujets, les transcriptions, vos notes et les comptes-rendus.'
+                ? 'La recherche porte sur les clients, les sujets, les transcriptions, vos notes, vos moments marqués et les comptes-rendus.'
                 : undefined
             }
           >
@@ -198,11 +198,21 @@ export function Historique({
           search, and the chips to do it are three rows above. Telling them the
           list is truncated is what makes that a choice rather than a wrong
           belief.
+
+          **And it says what was searched**, which is `scanned` — a field the
+          channel has shipped on every answer since it existed and no screen has
+          ever read. That mattered while the scan itself stopped at five hundred
+          meetings: the sentence promised fifty *of the corpus* and the corpus was
+          being cut short two fields away, with the only number that could have
+          said so travelling unread. The scan reads everything now and this draws
+          the count, so « les cinquante plus récents » has something to be fifty
+          of. `capped` implies more than `SEARCH_LIMIT` matches, so the plural
+          here is never wrong.
         */}
         {search.result?.capped ? (
           <p className="text-muted mt-block measure text-meta">
-            Les {SEARCH_LIMIT} appels les plus récents qui correspondent. Affinez la recherche
-            pour en voir d’autres.
+            Les {SEARCH_LIMIT} appels les plus récents qui correspondent, sur{' '}
+            {search.result.scanned} appels parcourus. Affinez la recherche pour en voir d’autres.
           </p>
         ) : null}
       </main>

@@ -419,17 +419,6 @@ const manualMeetingId = (now: number): string =>
 
 // ── Historique (DEC-25) ─────────────────────────────────────────────────────
 
-/**
- * How many meetings a search reads before it stops.
- *
- * Every call ever captured is the promise (DEC-25) and a laptop's worth of them
- * is a few hundred, so this is a guard against a pathological log rather than a
- * page size. It is separate from the request's `limit`, which caps *rows
- * returned*: scanning fifty and returning fifty would mean a match on the
- * fifty-first call was unfindable, which is the one thing search may not do.
- */
-const SEARCH_SCAN_LIMIT = 500
-
 /** French, and never the machine's own vocabulary. */
 const STATE_LABEL: Record<Meeting['state'], string> = {
   idle: 'En attente',
@@ -469,7 +458,7 @@ const compteRenduOf = (store: Store, meetingId: string): string | null => {
 }
 
 /**
- * The four searchable surfaces of one call, folded from its log.
+ * The five searchable surfaces of one call, folded from its log.
  *
  * **`meeting` is the one a rep types first and the one that was missing.** The
  * other three are all *contents* of a call, so « Néovia » — the client name this
@@ -484,13 +473,38 @@ const compteRenduOf = (store: Store, meetingId: string): string | null => {
  * transcript is: an excerpt must never weld two unrelated fields into a phrase
  * nobody wrote.
  *
- * The transcript is joined with newlines rather than spaces so an excerpt never
- * silently welds the end of one speaker's sentence to the start of another's.
+ * The transcript is joined with newlines rather than spaces so a *match* can
+ * never weld the end of one speaker's sentence to the start of another's: no
+ * typed query contains a newline, so no hit spans two turns. It does not survive
+ * into the excerpt — `ellipsise` collapses every run of whitespace to one space,
+ * which is what makes a markdown excerpt one readable line — so the marks list
+ * carries a visible separator as well. It is a list of short independent notes
+ * rather than one continuous conversation, and two of them run together read as
+ * a sentence the rep never typed.
+ *
+ * **`marks` was the fifth, and it is the only thing a rep can type from inside
+ * the call.** `Projections.marks` existed, `MomentMark.note` carries the rep's
+ * own words, the widget wrote them and two readers drew them — and no search
+ * reached them, so « prix : ils bloquent à 550 », typed one-handed over a
+ * client's face, was in the record and could not be found by typing `550`. A
+ * mark taken back is already absent from that projection (`moment.forgotten`),
+ * so a retracted note is not findable either, which is what DEC-27 means here.
  */
+/** Between two marks: a newline for the match, a middle dot for the excerpt. */
+const MARK_JOIN = '\n· '
+
 const searchableRecord = (store: Store, meetingId: string) => {
   const meeting = store.projections.getMeeting(meetingId)
   return {
     meeting: [meeting?.title ?? '', meeting?.clientName ?? ''].filter((s) => s !== '').join('\n'),
+    // Notes only: a mark made with no note is a moment, not prose. Joined with
+    // the separator above, which is the one part of the join that reaches the
+    // rep's eyes.
+    marks: store.projections
+      .marks(meetingId)
+      .map((mark) => mark.note)
+      .filter((note) => note !== '')
+      .join(MARK_JOIN),
     transcript: store.projections
       .segments(meetingId)
       .map((segment) => segment.text)
@@ -503,10 +517,11 @@ const searchableRecord = (store: Store, meetingId: string) => {
 /**
  * How many client names the chips offer.
  *
- * The scanned meetings arrive newest-updated first, so this is « the clients
- * this rep has been working with », which is what a chip row is for. A rep
- * looking for a client further back than that types the name — the box beside
- * the chips searches the same corpus and is not capped by anything but `limit`.
+ * The scanned meetings arrive newest first, so this is « the clients this rep
+ * has been working with », which is what a chip row is for. A rep looking for a
+ * client further back than that types the name — the box beside the chips
+ * searches the same corpus and is not capped by anything but `limit`, which is
+ * true now that the scan reads every meeting and was not before.
  */
 const CLIENT_FACET_LIMIT = 12
 
@@ -945,6 +960,30 @@ export const handlers: Handlers = {
    * An empty query with no chip on is the default listing rather than an error
    * — that is what both screens render before anybody types, and it is the same
    * code path.
+   *
+   * **The scan reads every meeting, and it used to stop at five hundred.**
+   * `SEARCH_SCAN_LIMIT` called itself « a guard against a pathological log
+   * rather than a page size » and argued, correctly, that scanning fifty and
+   * returning fifty would make the fifty-first call unfindable — then did
+   * exactly that one order of magnitude up. Call five hundred and one answered
+   * « Aucun appel ne correspond. », under a preview screen promising
+   * « l'historique les porte tous » (DEC-25), with the *result* cap reported and
+   * the scan cap not: `capped` has always measured `rows`, and `scanned` — the
+   * only field that could have told a rep the corpus was cut short — was shipped
+   * on every answer and read by no screen. That is the `diag:appended` shape one
+   * level down, in a payload field rather than a channel, and `check:surfaces`
+   * looks for it now.
+   *
+   * What that costs is measured rather than guessed at. The corpus itself is one
+   * `SELECT` over a projection table — four milliseconds for two thousand
+   * meetings — and the expensive half is the per-meeting fold below, which is why
+   * the cheap axes run first and why the loop stops one row past `limit`. On
+   * fifty-minute calls (forty turns each), « TJM » costs 33 ms whatever the
+   * corpus, because it stops at the fifty-first match; a query that matches
+   * *nothing* reads every log, and that is 325 ms over five hundred calls and
+   * 1.2 s over two thousand, once per pause in the rep's typing. That is the
+   * price of the promise, and it is the right way round: a search that cannot
+   * find a call the product swears it keeps is not a search.
    */
   'history:search': (request, { store, clock }) => {
     const query = request.query ?? ''
@@ -952,7 +991,7 @@ export const handlers: Handlers = {
     const filter = withFilterDefaults(request.filter)
     const now = (clock ?? Date.now)()
     const searching = isSearching(query)
-    const meetings = store.projections.listMeetings(SEARCH_SCAN_LIMIT)
+    const meetings = store.projections.listMeetings(null)
     const rows: HistoryRow[] = []
 
     for (const meeting of meetings) {
@@ -963,8 +1002,14 @@ export const handlers: Handlers = {
       if (searching && matches.length === 0) continue
 
       rows.push({ meeting, status: STATE_LABEL[meeting.state], intents, matches })
-      if (rows.length >= limit) break
+      // One row **past** the limit, and the extra one never travels. `>= limit`
+      // was over-reporting by one: exactly fifty matches with nothing hidden
+      // still drew « Affinez la recherche pour en voir d'autres », which tells a
+      // rep to narrow a search that is already complete.
+      if (rows.length > limit) break
     }
+
+    const capped = rows.length > limit
 
     // Over everything scanned, not over `rows`: a facet computed after its own
     // filter offers one chip — the one already pressed — and no way back.
@@ -973,9 +1018,10 @@ export const handlers: Handlers = {
       filter,
       scanned: meetings.length,
       clients: clientFacet(meetings),
-      rows,
-      // The loop above breaks at `limit`; the screen is owed the fact.
-      capped: rows.length >= limit,
+      rows: capped ? rows.slice(0, limit) : rows,
+      // The loop above stopped one past `limit`; the screen is owed the fact,
+      // and it draws `scanned` beside it so the sentence says what was searched.
+      capped,
     }
   },
 

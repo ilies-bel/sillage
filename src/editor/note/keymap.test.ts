@@ -132,6 +132,33 @@ describe("buildInputRules", () => {
     });
   });
 
+  it("turns a hash followed by a space into a heading", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("#")]),
+    ]);
+    const { handled, state } = runTextInput(doc, " ");
+
+    expect(handled).toBe(true);
+    expect(state.doc.toJSON()).toEqual({
+      type: "doc",
+      content: [{ type: "heading", attrs: { level: 1 } }],
+    });
+  });
+
+  // Three levels, and the fourth stays the four characters that were typed.
+  // Tailwind's preflight resets every heading to the paragraph's size and
+  // weight, and `index.css` styles h1–h3 for the notepad, so an `h4` was a block
+  // the rep had made and could not see. See the note beside the rule.
+  it("leaves a fourth hash level as literal text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("####")]),
+    ]);
+    const { handled, state } = runTextInput(doc, " ");
+
+    expect(handled).not.toBe(true);
+    expect(state.doc.toJSON()).toEqual(doc.toJSON());
+  });
+
   // The task-list rule is gone, so `[]` is now just two characters. Asserting
   // it stays that way is the only guard against the rule creeping back in.
   it("leaves a typed checkbox as literal text", () => {

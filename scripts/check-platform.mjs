@@ -42,6 +42,25 @@ const SIGNALS = [
   { id: 'posix-path', re: /['"`](\/Applications|\/usr\/|\/tmp\/|\/Library\/|~\/Library)/ },
   { id: 'windows-path', re: /['"`][A-Z]:\\\\/ },
   { id: 'bundle-assumption', re: /\.app\/Contents|Program Files/ },
+  /*
+   * **The renderer's version of the same mistake, which this check could not
+   * see.**
+   *
+   * `SIGNALS` was built out of the ways *main-process* code learns what it is
+   * running on, and `src/` is in `ROOTS` — so a renderer branching on the host
+   * was scanned for signals it can never contain. `navigator.platform` (and its
+   * modern replacement `userAgentData.platform`, and the `userAgent` sniff
+   * everybody reaches for when the first two are deprecated) is exactly « a
+   * branch on the host », which this file's own reason for existing calls the
+   * mac-first mistake — and one shipped: the notepad's entire keymap hung off
+   * `if (mac)`, eight bindings deep, on the platform HR-2 says is primary and
+   * this one is not.
+   *
+   * It happened to be *correct* on Windows, which is the point. The gate is not
+   * « is this branch wrong », it is « is this branch declared », and a renderer
+   * branch was undeclarable.
+   */
+  { id: 'renderer-platform-sniff', re: /navigator\.(platform|userAgentData|userAgent)\b/ },
 ]
 
 /**

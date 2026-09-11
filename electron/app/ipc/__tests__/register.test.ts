@@ -1929,6 +1929,57 @@ test('update:status carries the stated reason there is no updater', async () => 
   cleanup()
 })
 
+/**
+ * **The fifty-row defect, one order of magnitude up.**
+ *
+ * `SEARCH_SCAN_LIMIT = 500` argued its own case correctly — « scanning fifty and
+ * returning fifty would mean a match on the fifty-first call was unfindable,
+ * which is the one thing search may not do » — and then did exactly that at five
+ * hundred. Call five hundred and one answered « Aucun appel ne correspond. »
+ * under a preview screen promising « l'historique les porte tous » (DEC-25), and
+ * the only field that could have said the *scan* had been cut short — `scanned` —
+ * was shipped on every answer and read by no screen.
+ *
+ * Five hundred and twenty meetings, seeded through the product's own
+ * `Orchestrator`, because the property is about the five hundred and first.
+ */
+test('every call ever captured is searchable, including the five hundred and first', async () => {
+  const { ipc, deps, cleanup } = open()
+  const DAY = 86_400_000
+  for (let i = 0; i < 520; i += 1) {
+    const id = `m${String(i).padStart(4, '0')}`
+    deps.orchestrator.create({
+      id,
+      title: `Point hebdomadaire ${i}`,
+      clientName: `Client ${i}`,
+      scheduledStart: NOW - i * DAY,
+    })
+    deps.orchestrator.dispatch(id, 'start', null)
+    deps.orchestrator.dispatch(id, 'end', null)
+  }
+
+  // Newest first, so this one is the five hundred and first row — the first one
+  // the old scan could not reach.
+  const beyond = deps.store.projections.listMeetings(null)
+  assert.equal(beyond[500]?.id, 'm0500')
+
+  const found = await ipc.invoke('history:search', { query: 'hebdomadaire 500' })
+  assert.deepEqual(
+    found.rows.map((row) => row.meeting.id),
+    ['m0500'],
+  )
+  // And by the client's own name, which is what a rep types first.
+  const byClient = await ipc.invoke('history:search', { query: 'Client 512' })
+  assert.deepEqual(
+    byClient.rows.map((row) => row.meeting.id),
+    ['m0512'],
+  )
+  // The corpus was read whole, and the number says so — it is what the screen
+  // prints beside « les cinquante plus récents ».
+  assert.equal(found.scanned, 520)
+  cleanup()
+})
+
 test('the search cap is reported, because the screen promises it is not there', async () => {
   /*
    * `SEARCH_LIMIT` is fifty and `history:search` simply breaks out of the loop
@@ -1947,6 +1998,80 @@ test('the search cap is reported, because the screen promises it is not there', 
   const whole = await ipc.invoke('history:search', { query: 'TJM', limit: 50 })
   assert.equal(whole.rows.length, 4)
   assert.equal(whole.capped, false, 'rien de caché, rien à annoncer')
+
+  /*
+   * **And exactly `limit` matches is not a cap.** This was `rows.length >=
+   * limit`, so four matches at a limit of four drew « Affinez la recherche pour
+   * en voir d'autres » — a screen telling a rep to narrow a search that had
+   * already returned everything. The handler collects one row past the limit and
+   * drops it, which is the only way to know the difference.
+   */
+  const exact = await ipc.invoke('history:search', { query: 'TJM', limit: 4 })
+  assert.equal(exact.rows.length, 4)
+  assert.equal(exact.capped, false, 'quatre correspondances, limite quatre : rien n’est caché')
+
+  const over = await ipc.invoke('history:search', { query: 'TJM', limit: 3 })
+  assert.equal(over.rows.length, 3, 'la ligne de dépassement ne voyage jamais')
+  assert.equal(over.capped, true)
+  cleanup()
+})
+
+/**
+ * **The one thing a rep can type from inside the call, and no search reached it.**
+ *
+ * `Projections.marks` existed, `MomentMark.note` carried the rep's own words, the
+ * widget wrote them and both readers drew them — and `searchableRecord` folded
+ * four surfaces of which this was not one. « prix : ils bloquent à 550 », typed
+ * one-handed over a client's face, was in the record and `550` did not find it.
+ * Driven through `meeting:mark`, which is the channel the widget calls.
+ */
+test('a mark the rep typed during the call is findable afterwards', async () => {
+  const { ipc, deps, cleanup } = open()
+  deps.orchestrator.create({ id: 'm1', title: 'Néovia Santé — cadrage', clientName: 'Néovia Santé' })
+  deps.orchestrator.dispatch('m1', 'start', null)
+  const mark = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'prix : ils bloquent à 550',
+    segmentId: null,
+  })
+  await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'mise en œuvre repoussée à janvier',
+    segmentId: null,
+  })
+  // The other press: the pill's button, no typing. It carries no words and
+  // contributes none — a moment is not searchable prose.
+  await ipc.invoke('meeting:mark', { meetingId: 'm1', note: '', segmentId: null })
+  deps.orchestrator.dispatch('m1', 'end', null)
+
+  for (const query of ['550', 'bloquent', 'œuvre', 'oeuvre']) {
+    const result = await ipc.invoke('history:search', { query })
+    assert.deepEqual(
+      result.rows.map((row) => row.meeting.id),
+      ['m1'],
+      `« ${query} » ne trouve rien`,
+    )
+    assert.deepEqual(
+      result.rows[0]?.matches.map((m) => m.where),
+      ['marks'],
+    )
+  }
+
+  // Two marks are two notes, and the excerpt says so: `ellipsise` collapses the
+  // newline that separates them, so the join carries a visible separator too.
+  const both = await ipc.invoke('history:search', { query: '550' })
+  assert.match(both.rows[0]?.matches[0]?.excerpt ?? '', /550 · mise en œuvre/)
+
+  /*
+   * A mark taken back is not findable, and nothing had to be written to make
+   * that true: `Projections.marks` applies `moment.forgotten` (DEC-27), so the
+   * note leaves the searchable record the moment the rep retracts it — which is
+   * the point, since it is typed over a client's face and a typo is made here
+   * more easily than anywhere else in the product.
+   */
+  await ipc.invoke('meeting:forget', { meetingId: 'm1', markId: mark.id })
+  assert.deepEqual(await ipc.invoke('history:search', { query: '550' }).then((r) => r.rows), [])
+  assert.equal((await ipc.invoke('history:search', { query: 'œuvre' })).rows.length, 1)
   cleanup()
 })
 

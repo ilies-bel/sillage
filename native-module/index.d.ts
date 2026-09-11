@@ -53,6 +53,29 @@ export interface AudioDeviceInfo {
 }
 
 /**
+ * The default **render** device on the `eCommunications` role, or `""` where
+ * the platform has no such role (macOS) or the lookup fails.
+ *
+ * This is the one measurement that can explain the most common way this product
+ * fails on its primary platform. The WASAPI loopback tap binds `eConsole` —
+ * `wasapi`'s `get_default_device` hardcodes the role, and
+ * `get_default_output_device_id` above reads the same one — while Teams, Zoom
+ * and Meet render to `eCommunications`, which Windows lets a rep configure
+ * separately in one checkbox. When the two differ the tap records an endpoint
+ * nothing is playing to: no chunks at all, not even keepalives, because the
+ * suppressor is only consulted once a full buffer exists.
+ *
+ * The watchdog already says « Rien n'arrive depuis l'audio de votre
+ * ordinateur ». What it could not say is *why*, and « votre application d'appel
+ * utilise un autre périphérique de sortie » is the difference between a rep who
+ * fixes it in one checkbox and a rep who files a bug.
+ *
+ * `""` is « we did not measure it » and is never reported as a finding
+ * (DEC-45) — which is also what macOS returns, because it has no such role.
+ */
+export declare function getDefaultCommunicationsDeviceId(): string
+
+/**
  * Returns the platform-native ID of the current default output device.
  * macOS: CoreAudio device UID. Windows: WASAPI device id (eMultimedia/eConsole role).
  * Empty string on error or unsupported platform.
@@ -65,15 +88,34 @@ export interface AudioDeviceInfo {
  */
 export declare function getDefaultOutputDeviceId(): string
 
-/**
- * The default render device on the `eCommunications` role, or `''` where the
- * platform has no such role (macOS) or the lookup fails. Windows only in
- * practice, and it is the one measurement that explains the most common way
- * capture fails there: the loopback tap binds `eConsole` and Teams renders to
- * this one.
- */
-export declare function getDefaultCommunicationsDeviceId(): string
-
 export declare function getInputDevices(): Array<AudioDeviceInfo>
 
+/**
+ * Every process holding a microphone right now, excluding this one.
+ *
+ * Empty means « nothing is, or we could not tell » — the two are deliberately
+ * not distinguished, because no caller would do anything different (DEC-45).
+ */
+export declare function getMicHoldingApps(): Array<MicApp>
+
 export declare function getOutputDevices(): Array<AudioDeviceInfo>
+
+/** One process that currently has an input stream running. */
+export interface MicApp {
+  /**
+   * The OS process id. Reported so a caller can tell two copies of the same
+   * binary apart in a diagnostic line; never used to address the process.
+   */
+  pid: number
+  /**
+   * macOS bundle id (`us.zoom.xos`, `com.microsoft.teams2`). Empty on Windows
+   * and for any macOS process with no bundle — a CLI binary has none, and
+   * `ffmpeg` recording from the terminal is the case that proved it.
+   */
+  bundleId: string
+  /**
+   * Executable name (`ms-teams.exe`, `zoom.us`, `ffmpeg`), or empty when the
+   * OS would not say. Matched case-insensitively by the caller.
+   */
+  name: string
+}

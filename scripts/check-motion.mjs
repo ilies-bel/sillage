@@ -55,6 +55,32 @@ const DECIDER = 'src/lib/scroll.ts'
 const PATTERNS = [
   { what: "behavior: 'smooth'", re: /behaviou?r\s*:\s*['"`]smooth['"`]/ },
   { what: 'scroll-behavior: smooth', re: /scroll-behaviou?r\s*:\s*smooth/ },
+  /*
+   * **Three spellings this check could not see, all measured passing it.**
+   *
+   * The two above are how the DOM and CSS document the property, and they were
+   * written as though those were the only ways to say it. They are not, and the
+   * twenty-third review round said so: a probe file containing all three of the
+   * rules below was dropped into `src/` and this check printed « motion ok ».
+   *
+   * `scroll-smooth` is a Tailwind utility — 3.4 is installed and ships it — so it
+   * is one class name away on any element, and it reads as styling rather than as
+   * behaviour, which is exactly what makes it likely. The two script forms are the
+   * same declaration reached through the CSSOM instead of through a string
+   * literal, and `setProperty` in particular takes the property name as data,
+   * where no amount of squinting at `behavior:` would find it.
+   *
+   * Nothing in the repo uses any of them today. That is the point: this check
+   * exists because six call sites wrote `behavior: 'smooth'` before anyone noticed
+   * the browser ignores `prefers-reduced-motion` for it, and a gate that only
+   * catches the spelling that has already been used is a gate for the past.
+   */
+  { what: "Tailwind's scroll-smooth utility", re: /(?:class(?:Name)?\s*=|["'`\s])scroll-smooth(?=["'`\s])/ },
+  { what: 'style.scrollBehavior = smooth', re: /scrollBehavior\s*=\s*['"`]smooth['"`]/ },
+  {
+    what: "setProperty('scroll-behavior', 'smooth')",
+    re: /setProperty\(\s*['"`]scroll-behaviou?r['"`]\s*,\s*['"`]smooth['"`]/,
+  },
 ]
 
 const files = async (dir) => {
@@ -94,7 +120,8 @@ if (found.length > 0) {
     console.error(`    ${f.text.slice(0, 110)}`)
   }
   console.error('')
-  console.error('Chromium n’arrête pas un défilement « smooth » sous prefers-reduced-motion.')
+  console.error('Chromium n’arrête pas un défilement « smooth » sous prefers-reduced-motion,')
+  console.error('quelle que soit la façon de le demander — classe Tailwind ou CSSOM comprises.')
   console.error(`Passez par scrollToCenter / scrollToTop / scrollElementTo / scrollElementBy`)
   console.error(`(${DECIDER}), qui interrogent matchMedia à chaque appel.`)
   process.exit(1)

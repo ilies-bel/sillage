@@ -41,9 +41,26 @@ export interface NativeCapture {
  * will reject every binary; that is the failure mode this file exists to
  * prevent, so keep the two in step.
  */
+/** One process with an input stream running. See `native-module/src/mic_apps.rs`. */
+export interface MicApp {
+  pid: number
+  /** macOS bundle id, or `''` on Windows and for an unbundled process. */
+  bundleId: string
+  /** Executable name (`ms-teams.exe`, `zoom.us`), or `''` when unknowable. */
+  name: string
+}
+
 export interface NativeAudioModule {
   getInputDevices(): AudioDeviceInfo[]
   getOutputDevices(): AudioDeviceInfo[]
+  /**
+   * Which applications hold a microphone right now — « Teams is in a call »
+   * rather than « Teams is running ». Optional for the same reason
+   * `getDefaultOutputDeviceId` is: a binary built before it existed answers
+   * every other name, and the absence has to degrade to the process signal
+   * alone rather than reject the module (DEC-45).
+   */
+  getMicHoldingApps?: () => MicApp[]
   /** Drives the route-change watcher during a meeting. Optional: needs a rebuild. */
   getDefaultOutputDeviceId?: () => string
   getDefaultCommunicationsDeviceId?: () => string

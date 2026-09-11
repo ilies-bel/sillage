@@ -292,15 +292,25 @@ test('the harness stub states the no-Entra degradation the product states', () =
   const main = readFileSync(path.resolve(HERE, '../../../app/main.ts'), 'utf8')
 
   /*
-   * Both files write the sentence as two adjacent literals — it is too long for
-   * one line under the formatter — so the comparison is over the *joined*
-   * text rather than over source lines.
+   * Both files write the sentence as **adjacent literals** — it is too long for
+   * one line under the formatter — so the comparison is over the *joined* text
+   * rather than over source lines.
+   *
+   * Any number of them, which is not how this was first written: the regex
+   * matched exactly two, and the first sentence to need a third was silently
+   * compared truncated. The count is a consequence of where the formatter breaks
+   * a line, so it is not a property either file should be held to — and a test
+   * that reads only part of the string it is checking fails in the direction that
+   * lets a drift through.
    */
   const joined = (source: string): string[] => {
     const out: string[] = []
-    const re = /'(aucune application Microsoft configurée[^']*)'(\s*\+\s*'([^']*)')?/g
+    const re = /'(aucune application Microsoft configurée[^']*)'((?:\s*\+\s*'[^']*')*)/g
     let match: RegExpExecArray | null
-    while ((match = re.exec(source)) !== null) out.push(match[1]! + (match[3] ?? ''))
+    while ((match = re.exec(source)) !== null) {
+      const rest = [...(match[2] ?? '').matchAll(/'([^']*)'/g)].map((m) => m[1]).join('')
+      out.push(match[1]! + rest)
+    }
     return out.sort()
   }
 
