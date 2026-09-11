@@ -55,6 +55,21 @@ export interface TranscriptFocus {
 
 interface TranscriptReaderProps {
   meetingId: string
+  /**
+   * Fired once the record has arrived — or failed to.
+   *
+   * The gate's arming guard is keyed by *what the column is showing*, and until
+   * this fires what it is showing is a placeholder. Six hundred and fifty-nine
+   * pixels of it, which fits a 1280×800 column entirely, so the guard recorded
+   * the view as read before the transcript existed. `Review.tsx` uses this to
+   * keep « chargement » and « the record » two different views, which is what
+   * they are.
+   *
+   * It fires on failure too, and it has to: what is on screen then is the error
+   * sentence, the rep has seen all of it, and refusing to count that would be a
+   * gate a failed fetch could wedge shut.
+   */
+  onLoaded?: () => void
   /** Which citation to open on, or null for the top of the call. */
   focus: TranscriptFocus | null
   /**
@@ -86,8 +101,20 @@ const transcriptText = (
     .map((s) => `${formatOffset(s.startMs)}\t${speakerLabel(s.channel, interlocuteurs)}\t${s.text}`)
     .join('\n')
 
-export function TranscriptReader({ meetingId, focus, interlocuteurs }: TranscriptReaderProps) {
+export function TranscriptReader({
+  meetingId,
+  focus,
+  interlocuteurs,
+  onLoaded,
+}: TranscriptReaderProps) {
   const loaded = useInvoke('review:transcript', { meetingId })
+  const settled = loaded.state.status !== 'loading'
+  const announced = useRef(false)
+  useEffect(() => {
+    if (!settled || announced.current) return
+    announced.current = true
+    onLoaded?.()
+  }, [settled, onLoaded])
   const segments = loaded.state.status === 'ready' ? loaded.state.value.segments : null
   const marks = loaded.state.status === 'ready' ? loaded.state.value.marks : []
 

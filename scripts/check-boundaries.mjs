@@ -60,7 +60,24 @@ if (violations.length > 0) {
  * count may fall as steps port their subject in, and it may never rise. A step
  * that ports a file lowers it; nothing else is allowed to touch it.
  */
-const RESIDUE = 42
+/*
+ * Two, and the fall from forty-two is the previous product leaving the tree.
+ *
+ * `electron/audio/`, `electron/services/`, `electron/update/`, `electron/utils/`
+ * and `electron/nativeArchGate.ts` were the real-time answer assistant this repo
+ * held before `scripts/demolish.sh` — thirty-five files reachable from neither
+ * `main.ts` nor `preload.ts`, carrying Deepgram and Google STT clients, a
+ * meeting-summary pipeline that predates the recipes, an ONNX thread-config
+ * sentinel and a `better-sqlite3` arch gate for a store that has used
+ * `node:sqlite` since it was written. They were unconstrained by the import rule
+ * *and* by `check-platform.mjs`, and they dragged twenty-odd dependencies into
+ * `build.files`, which ships `node_modules` whole.
+ *
+ * What is left is `electron/lib/nativeArch.{mjs,cjs}`, which is genuinely live:
+ * `scripts/verify-native-arch.js` imports it at install time to check that the
+ * native addons were rebuilt for the right hardware arch.
+ */
+const RESIDUE = 2
 
 if (skipped > RESIDUE) {
   console.error(

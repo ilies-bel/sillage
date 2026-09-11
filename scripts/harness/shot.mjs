@@ -553,6 +553,59 @@ const SCREENS = {
    * *Valider* takes one press per column, and the primary slot names which one
    * it is showing each time.
    */
+  /*
+   * **The ninth attack, and it needed its own gate.**
+   *
+   * `review-garde` above is one rep in one sitting, so by the time it reaches
+   * its eighth attack that rep has legitimately read both columns end to end —
+   * and coverage is a *set*, so going back is free and correct. This one has to
+   * start clean, because what it is about is a column that was counted as read
+   * **before its content existed**.
+   *
+   * One click on *Transcription*, nothing else. `TranscriptReader` fetches its
+   * own record and draws « Chargement… » until it lands, and that placeholder
+   * fills the column — `scrollHeight === clientHeight`, so it is « covered » the
+   * instant it paints. The transcript then replaced it, nothing re-measured (a
+   * scroller's own box does not change when its content grows, and nobody
+   * scrolls when content appears), and four presses of the rail's page turn put
+   * *Valider* on screen with the compte-rendu at `scrollTop` 0 and seventeen
+   * hundred pixels of transcript never shown. That press writes the VerySwing
+   * task, and `POST /v1/crm/tasks` has no idempotency key.
+   *
+   * Held by three things now, and the stage is here because none of them is
+   * visible in a unit test: the coverage set remembers the **content** height
+   * it was covered at, the view key says « chargement » until the record lands,
+   * and the observer watches the column's content and not only its box.
+   */
+  'review-garde-transcription': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+      await page.getByRole('button', { name: 'Transcription', exact: true }).click()
+      await page.waitForTimeout(900)
+      /*
+       * The rail's own page turns, pressed the way a rep presses them — and only
+       * the rail's. A working guard eventually offers the *document* a turn
+       * instead, which is the refusal; a broken one runs the rail out and puts
+       * the decision in the slot.
+       */
+      for (let i = 0; i < 20; i++) {
+        const turn = page.getByRole('button', { name: /ce qui part/ })
+        if ((await turn.count()) === 0) break
+        await turn.first().click()
+        await page.waitForTimeout(250)
+      }
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) > 0) {
+        throw new Error(
+          'le gate s’arme après un simple clic sur « Transcription » : la colonne a été comptée lue pendant son chargement',
+        )
+      }
+      // And it names what is still unread, in the column's own words.
+      await page.getByRole('button', { name: /la suite de la transcription/ }).first().waitFor()
+    },
+  },
+
   'review-valider': {
     scenario: 'review',
     async drive(page) {

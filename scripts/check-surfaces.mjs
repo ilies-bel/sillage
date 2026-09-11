@@ -86,7 +86,16 @@ const isTest = (file) => /__tests__|\.test\./.test(file)
 const CONTRACT = 'electron/core/contracts/ipc.ts'
 const contract = text.get(CONTRACT)
 const split = contract.indexOf('Main → renderer')
-const channelsIn = (slice) => [...slice.matchAll(/^ {2}'([a-zA-Z:]+)':/gm)].map((m) => m[1])
+/*
+ * The channel keys, as the contract spells them.
+ *
+ * `[a-zA-Z:]+` was the first version and it could not see a digit, a hyphen or
+ * an underscore — so `'models:v2progress'` would have been invisible to every
+ * rule below and passed in silence, which is the failure mode this whole file
+ * exists to end. The class is now everything a JavaScript key can hold short of
+ * a quote.
+ */
+const channelsIn = (slice) => [...slice.matchAll(/^ {2}'([^']+)':/gm)].map((m) => m[1])
 const invokeChannels = channelsIn(contract.slice(0, split))
 const broadcastChannels = channelsIn(contract.slice(split))
 
@@ -99,14 +108,33 @@ if (split < 0 || invokeChannels.length === 0 || broadcastChannels.length === 0) 
   )
 }
 
-/** Files that mention the channel's literal, excluding the contract and tests. */
+/**
+ * Strip line and block comments, crudely and deliberately.
+ *
+ * A mention is supposed to be a *call*, and this check was satisfied by the
+ * channel name appearing anywhere at all — including in a comment. In a
+ * codebase whose comments name every channel they reason about, that is not a
+ * theoretical hole: `// TODO: re-wire 'transcript:appended'` on its own kept the
+ * build green while nothing subscribed. Stripping comments is not parsing, and
+ * it does not need to be: a string literal containing `//` survives because the
+ * quote comes first, and the worst case of getting it wrong is a false *failure*
+ * that somebody reads.
+ */
+const code = (source) =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:'"\`\\])\/\/[^\n]*/g, '$1')
+
+const bodies = new Map(files.map((file) => [file, code(text.get(file))]))
+
+/** Files that *call* the channel, excluding the contract, tests and comments. */
 const mentions = (channel, where) =>
   files.filter(
     (file) =>
       file !== CONTRACT &&
       !isTest(file) &&
       where(file) &&
-      text.get(file).includes(`'${channel}'`),
+      (bodies.get(file) ?? '').includes(`'${channel}'`),
   )
 
 const excused = (subject) => UNREACHED.find((entry) => entry.subject === subject)

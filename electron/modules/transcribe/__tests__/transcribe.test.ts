@@ -576,6 +576,19 @@ test('an unrecognised 200 is told apart from a silent chunk', () => {
   assert.equal(whisper.extractTranscript({ text: 'bonjour' }), 'bonjour')
   assert.equal(whisper.extractTranscript({ error: { message: 'rate limited' } }), null)
   assert.equal(whisper.extractTranscript({}), null)
+
+  /*
+   * **And a bare string, which is the one that mattered.**
+   *
+   * This helper answered `data` directly for a string, so axios handing back the
+   * raw body of any non-JSON 200 — a corporate proxy's interstitial, a gateway's
+   * plain-text error, a captive-portal login page — put that page into the
+   * transcript as something the client had said. These providers are all asked
+   * for JSON and all answer an object; a string is not this API answering.
+   */
+  assert.equal(whisper.extractTranscript('<html><body>Access denied</body></html>'), null)
+  assert.equal(whisper.extractTranscript('Gateway timeout'), null)
+  assert.equal(whisper.extractTranscript(''), null)
 })
 
 test('a 200 the adapter cannot read is recorded and fails the chunk', async () => {

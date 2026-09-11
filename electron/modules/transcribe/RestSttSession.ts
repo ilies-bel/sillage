@@ -86,7 +86,20 @@ interface RestProviderBuild {
  * transcription.
  */
 const text = (data: unknown): string | null => {
-  if (typeof data === 'string') return data
+  /*
+   * **A string is not a transcript, whatever it says.**
+   *
+   * This line answered `data` directly, under a docblock promising the opposite
+   * — and axios hands back the raw string for *any* non-JSON 200. So a corporate
+   * proxy's HTML interstitial, a gateway's plain-text error, a login page: all of
+   * it was emitted verbatim as something the client had said, into the transcript
+   * the compte-rendu is folded from and `[source ▸]` reads. The fix one commit
+   * earlier closed every object-shaped case and left the one its own reasoning
+   * named, which made the failure louder rather than quieter.
+   *
+   * These three providers all set `response_format: json` and answer an object.
+   * A string body is not this API answering.
+   */
   if (data && typeof data === 'object' && 'text' in data) {
     const value = (data as { text?: unknown }).text
     return typeof value === 'string' ? value : null

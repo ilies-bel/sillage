@@ -95,6 +95,31 @@ type Column = 'document' | 'rail'
 const SHRINK_SLACK = 64
 
 /**
+ * How much the *content* of a column may grow before what was covered stops
+ * counting.
+ *
+ * The mirror of `SHRINK_SLACK`: that one notices the window getting smaller,
+ * this one notices the document getting bigger, and both mean the same thing —
+ * there is more below the fold than there was when the rep read it.
+ *
+ * A hundred, because *Lecture* and *Modifier* are one view sixty-eight pixels
+ * of textarea chrome apart (see `viewOf`), and charging a second traversal for
+ * that is the behaviour the coverage set exists to prevent. Anything bigger is
+ * content that was not on screen: the case this was written for grew by a
+ * thousand, when a « Chargement… » placeholder that fits a 1280×800 column was
+ * replaced by the transcript it was standing in for.
+ */
+const GROWTH_SLACK = 100
+
+/** A view that has been shown end to end: the box, and what was in it. */
+interface Covered {
+  /** The narrowest box it has been covered at. */
+  client: number
+  /** The tallest content it has been covered at. */
+  content: number
+}
+
+/**
  * How long the *Ce qui sera créé* rows lag the field being typed into.
  *
  * Short enough that the rep never sees the old account name while looking at
@@ -342,9 +367,21 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * So coverage is a **set**, keyed by what the column was showing. A view never
    * shown stays unread; going back to one already shown is free. The value is the
    * height it was covered at, because a box that has since shrunk has more below
-   * the fold than the one that was read (`SHRINK_SLACK`).
+   * the fold than the one that was read (`SHRINK_SLACK`) — **and the height of
+   * the content it was covering**, because content that has since *grown* has
+   * more below the fold too, and that half was missing.
+   *
+   * It was missing in the way that matters. `TranscriptReader` fetches its own
+   * record and draws « Chargement… » until it lands; that placeholder is six
+   * hundred and fifty-nine pixels tall, which at 1280×800 **fits the column
+   * entirely**. So one click on *Transcription* covered the view before the
+   * transcript existed, the latch held when seventeen hundred pixels of record
+   * replaced it, and four rail presses later *Valider* shipped to the CRM with
+   * the compte-rendu at `scrollTop` 0. At 960×600 the placeholder does not fit,
+   * so the guard held — the defect was on the **larger** window, which is the
+   * one every screenshot review and every gate stage runs at.
    */
-  const covered = useRef<Record<Column, Map<string, number>>>({
+  const covered = useRef<Record<Column, Map<string, Covered>>>({
     document: new Map(),
     rail: new Map(),
   })
@@ -383,14 +420,41 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * that payload is unread until it has been shown — and putting the tick back
    * returns to a payload already read, which is free.
    */
+  /**
+   * Whether the transcript reader has its record yet.
+   *
+   * Part of the view key, because a column drawing « Chargement… » is not
+   * showing the transcript — and the placeholder is short enough to be covered
+   * in one glance on any ordinary laptop. See `covered` above: this is the
+   * precise half of that fix, and the `GROWTH_SLACK` rule is the general net
+   * behind it.
+   */
+  const [transcriptLoaded, setTranscriptLoaded] = useState(false)
+  // Stable, so it is not a new prop on every render of a column that is
+  // measured on every scroll tick.
+  const onTranscriptLoaded = useCallback(() => setTranscriptLoaded(true), [])
+  /*
+   * And it is forgotten on the way out of the tab.
+   *
+   * The reader is mounted by the tab and unmounted by leaving it, so every
+   * return fetches again and paints the placeholder again. A flag latched once
+   * would make the *second* visit stamp « transcription » over a column showing
+   * « Chargement… », which is the defect this exists to prevent, one visit later.
+   */
+  useEffect(() => {
+    if (mode !== 'transcription') setTranscriptLoaded(false)
+  }, [mode])
+
   const viewOf = useCallback(
     (column: Column) =>
       column === 'rail'
         ? `rail:${payload}:${sent}`
         : mode === 'transcription'
-          ? 'transcription'
+          ? transcriptLoaded
+            ? 'transcription'
+            : 'transcription:chargement'
           : `compte-rendu:${sent}`,
-    [mode, payload, sent],
+    [mode, payload, sent, transcriptLoaded],
   )
 
   const measure = useCallback(() => {
@@ -462,6 +526,28 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       const at = covered.current[column].get(view)
       if (at !== undefined) {
         /*
+         * **Content that grew is content nobody has seen.**
+         *
+         * The box-shrink rule below says the same thing about the *window*; this
+         * says it about what is in it. The two are one property — « is there
+         * more below the fold than there was when this was read » — and only
+         * half of it was written.
+         *
+         * `GROWTH_SLACK` is what keeps *Modifier* free. It is the same view as
+         * *Lecture* (the same string, a textarea's chrome apart) and the chrome
+         * is about sixty-eight pixels, so a growth allowance under that would
+         * charge a rep a second traversal to fix a typo — the behaviour this
+         * whole set exists to prevent. A hundred is two lines of it. Anything
+         * larger is content that was not there, and the case this caught was a
+         * thousand.
+         */
+        if (el.scrollHeight > at.content + GROWTH_SLACK) {
+          covered.current[column].delete(view)
+          shownAs.current[column] = { view, height: el.clientHeight }
+          seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
+          return false
+        }
+        /*
          * `SHRINK_SLACK`, and it is not a fudge.
          *
          * The pinned decision footer reflows on its own: the sub-line under it
@@ -476,7 +562,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
          * A taller box only ever has *less* below the fold than the one that was
          * read, so growth is never invalidating.
          */
-        if (el.clientHeight >= at - SHRINK_SLACK) return true
+        if (el.clientHeight >= at.client - SHRINK_SLACK) return true
         /*
          * The window shrank under a view that had been read: the text reflowed,
          * there is more below the fold than there was, and that part is unread.
@@ -500,7 +586,15 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
        * a rep who read the column in a cramped window has read it in every
        * roomier one, and `Math.min` is what carries that forward.
        */
-      if (done) covered.current[column].set(view, Math.min(at ?? Infinity, el.clientHeight))
+      if (done) {
+        covered.current[column].set(view, {
+          client: Math.min(at?.client ?? Infinity, el.clientHeight),
+          // The **tallest** content it has been covered at, for the mirror of
+          // the reason the box keeps its narrowest: covering taller content is
+          // the stronger statement, so it is the one to carry forward.
+          content: Math.max(at?.content ?? 0, el.scrollHeight),
+        })
+      }
       return done
     }
     const readToEnd = {
@@ -614,8 +708,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(measure)
-    if (docRef.current) observer.observe(docRef.current)
-    if (railRef.current) observer.observe(railRef.current)
+    /*
+     * **The box and what is in it, because they are different sizes.**
+     *
+     * A scroller is a fixed-height flex child: its own box does not change when
+     * its content grows, so an observer on the column alone never fires for the
+     * thing the guard is actually about. That is not theoretical — it is how a
+     * transcript arriving *after* its placeholder had been counted as read went
+     * unnoticed: the view was stamped, the content tripled, nothing re-measured,
+     * and `Valider` stayed armed on a column at `scrollTop` 0.
+     *
+     * `onScroll` cannot cover it either: nobody scrolls when content appears.
+     */
+    for (const el of [docRef.current, railRef.current]) {
+      if (!el) continue
+      observer.observe(el)
+      if (el.firstElementChild) observer.observe(el.firstElementChild)
+    }
     return () => observer.disconnect()
   }, [measure, staged])
 
@@ -1070,6 +1179,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 meetingId={meetingId}
                 focus={focus}
                 interlocuteurs={panel.interlocuteurs}
+                onLoaded={onTranscriptLoaded}
               />
             ) : mode === 'lecture' ? (
               /*
@@ -1270,6 +1380,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           */}
           <div
             ref={railRef}
+            data-rail
             onScroll={measure}
             /*
               `pb-block` on top of `py-row`, and it is not decoration.

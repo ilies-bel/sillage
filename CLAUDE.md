@@ -238,6 +238,26 @@ machine) or in `core/domain/` — never in an IPC handler.
   eight attacks that must be refused and four returns that must be free, all driven
   against real layout — jsdom measures every box as zero, so the renderer's tests
   can only assert that an unmeasurable column fails **open**.
+- **A column is not read until its content has arrived, and the guard has to be told when
+  it does.** One click on *Transcription* armed *Valider* at 1280×800 with the compte-rendu at
+  `scrollTop` 0 — `TranscriptReader` fetches its own record and draws a placeholder that
+  **fills the column** (`scrollHeight === clientHeight`), so the view was covered the instant it
+  painted; the transcript then replaced it and nothing re-measured, because a scroller's own box
+  does not change when its content grows and nobody scrolls when content appears. Four presses
+  of the rail's page turn and the press that writes the VerySwing task was on screen. It held at
+  960×600, where the placeholder does not fit — so the defect was on the **larger** window, the
+  one every screenshot review and every gate stage runs at. Three rules state the one property
+  now, and each is enough on its own: coverage remembers the **content** height it was covered
+  at (`GROWTH_SLACK`, a hundred, because *Lecture* and *Modifier* are one view sixty-eight
+  pixels of textarea chrome apart); the view key says « chargement » until the record lands, and
+  is forgotten on the way out of the tab so the *second* visit cannot stamp over a placeholder
+  either; and the `ResizeObserver` watches each column's **first child** as well as the column,
+  because that is the box that changes. `review-garde-transcription` is the proof and it needed
+  its own stage: `review-garde` is one rep in one sitting, and by its eighth attack that rep has
+  legitimately read both columns, so nothing appended to it can reproduce this.
+  **And the harness fixture was the reason no stage could ever see it**: every responder in
+  `bridge-stub.mjs` resolved in the same microtask, so no loading state ever painted. A fixture
+  faster than the product hides every one of them; `review:transcript` now answers after a tick.
 - **Nothing hides inside the columns the guard measures.** The gate's guard
   measures two boxes and withholds *Valider* until both have been shown, under a
   caption that says so; a scroller *nested* in one of them is a hole in that
@@ -662,6 +682,12 @@ machine) or in `core/domain/` — never in an IPC handler.
   interstitial. The adapters returned `''` for all of it — which is exactly what a genuinely
   silent chunk returns — so nothing was emitted, nothing was recorded, and `transcribe` health
   stayed `ok`: a meeting with no transcript from an app saying everything was fine.
+  **A string body is not a transcript either**, and that one shipped for a commit: the helper
+  answered `data` directly when axios handed back a raw string, which it does for *any* non-JSON
+  200 — so a corporate proxy's interstitial, a gateway's plain-text error or a captive-portal
+  login page was emitted verbatim as something the client had said, into the transcript the
+  compte-rendu is folded from and `[source ▸]` reads. These providers are all asked for JSON and
+  all answer an object.
   `extractTranscript` answers `string | null` now, `null` meaning « not a body I know », and
   the session throws on it so the failure lands on the path that already counts errors, moves
   the connector's health and fails a provider over. **Azure's envelope is what is recognised,

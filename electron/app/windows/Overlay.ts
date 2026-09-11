@@ -104,16 +104,16 @@ export class Overlay {
   #window: BrowserWindow | null = null
   #size: Size = INITIAL_SIZE
   /**
-   * Where the pill is, and how far down the frame it sits.
+   * How far down the frame the pill sits, and how tall it is.
    *
    * The window's own origin is not the interesting number: the pill is what the
    * rep is looking at and pressing, and it is drawn inside a frame whose height
-   * changes by three hundred pixels when the panel opens. Kept here so a resize
-   * can put the window wherever leaves the pill exactly where it was.
+   * changes by three hundred pixels when the panel opens. Its *screen* position
+   * is never stored — it is read off the window at the moment it is needed, so a
+   * drag the app did not hear about cannot make it stale.
    */
   #pillTop = 0
   #pillHeight = INITIAL_SIZE.height
-  #pillScreenTop: number | null = null
 
   constructor(host: OverlayHost, kv: KeyValueStore) {
     this.#host = host
@@ -139,7 +139,6 @@ export class Overlay {
     this.#pillTop = 0
     this.#pillHeight = INITIAL_SIZE.height
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
-    this.#pillScreenTop = origin.y
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
 
@@ -152,10 +151,6 @@ export class Overlay {
     window.on('moved', () => {
       if (window.isDestroyed()) return
       const [x = 0, y = 0] = window.getPosition()
-      // The pill moved with the window the rep dragged. Recording it here is
-      // what makes the *next* resize hold it still rather than snap it back to
-      // wherever it was before the drag.
-      this.#pillScreenTop = y + this.#pillTop
       this.#kv.set(OVERLAY_ORIGIN_KEY, JSON.stringify({ x, y }))
     })
     window.on('closed', () => {
@@ -197,7 +192,17 @@ export class Overlay {
     const areas = this.#host.areas()
     const [x = 0, y = 0] = window.getPosition()
     const pill: Pill = {
-      screenTop: this.#pillScreenTop ?? y + this.#pillTop,
+      /*
+       * **Read from the window now, never remembered.**
+       *
+       * This was cached and refreshed on `moved`, which is a promise about an
+       * event: the pill is dragged by an `-webkit-app-region` region, so the
+       * window is moved by the OS, and a cache that misses one of those events
+       * teleports the widget back to where the pill *used* to be the next time a
+       * turn of the call changes its height. The window's own position is the
+       * fact, it costs one call, and it cannot be stale.
+       */
+      screenTop: y + this.#pillTop,
       screenCentreX: x + this.#size.width / 2,
       offsetTop: Math.round(box.pillTop),
       // The renderer's number when it sent one, else the last one it sent — a
@@ -210,22 +215,30 @@ export class Overlay {
     this.#size = to
     this.#pillTop = pill.offsetTop
     this.#pillHeight = pill.height
-    this.#pillScreenTop = origin.y + pill.offsetTop
 
     // One call, so the move and the resize cannot be observed apart — two calls
     // draw a frame of the new size at the old origin, which over a video call
     // reads as a flinch.
     window.setBounds({ ...origin, ...to })
     /*
-     * Any resize resets the pass-through: the pointer is not where the renderer
-     * last saw it once the window has moved under it, and a widget stuck
-     * ignoring its own mouse is a widget nothing can close.
+     * **The pass-through survives a resize, and that took a bug to learn.**
+     *
+     * This used to reset it — `setIgnoreMouseEvents(false)` on every resize, on
+     * the reasoning that the pointer is not where the renderer last saw it once
+     * the window has moved under it. The renderer caches what it last asked for,
+     * so it would not ask again until the pointer crossed the card's edge — and
+     * the widget resizes *every time a turn of the call arrives*. A rep with the
+     * pointer resting over the halo had it silently reclaimed a few seconds
+     * later, and every click in that band stopped reaching Teams.
+     *
+     * The state belongs to where the pointer is, which only the renderer knows,
+     * and it re-asserts on the next `pointermove` either way. Leaving it alone is
+     * both simpler and correct.
      */
-    window.setIgnoreMouseEvents(false)
 
     return {
       ok: true,
-      above: opensAbove({ ...pill, screenTop: this.#pillScreenTop }, areas),
+      above: opensAbove({ ...pill, screenTop: origin.y + pill.offsetTop }, areas),
     }
   }
 

@@ -2185,7 +2185,23 @@ export function installAppBridge(config) {
       in the product they are the same rows — one projection, read by two
       screens.
     */
-    'review:transcript': () => ({ segments: SEGMENTS, marks: MARKS }),
+    /*
+      **Answered after a tick, and the tick is the point.**
+
+      Every other responder here resolves in the same microtask, so a screen's
+      loading state never paints — and the gate's arming guard is keyed by *what
+      the column is showing*, which while this is in flight is a placeholder.
+      With an instant fixture the placeholder does not exist, so no stage could
+      ever reach the defect it caused: one click on *Transcription* covered the
+      column before the transcript did, and *Valider* armed on a compte-rendu at
+      `scrollTop` 0.
+
+      A real answer is a preload hop, a SQLite read and a Zod parse — a few
+      milliseconds, and a painted frame either way. A hundred and fifty is that
+      frame, made reliable enough to drive.
+    */
+    'review:transcript': () =>
+      new Promise((resolve) => setTimeout(() => resolve({ segments: SEGMENTS, marks: MARKS }), 150)),
 
     /*
       **A confirmation that changes nothing is a fixture showing the product
