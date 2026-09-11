@@ -384,6 +384,23 @@ export const invokeChannels = {
   },
 
   /**
+   * **A mark the rep takes back.**
+   *
+   * It is typed one-handed into a box floating over a client's face and sent on
+   * `Enter`, so a mistake is made here more easily than anywhere else in the
+   * product — and until this existed there was no way to correct one, on a note
+   * the rep reads again at the gate in their own words.
+   *
+   * Not restricted to a recording, unlike `meeting:mark`: « ce moment » has no
+   * referent once the call is over, but « that one was a typo » has one for as
+   * long as the mark does.
+   */
+  'meeting:forget': {
+    request: z.object({ meetingId: MeetingIdSchema, markId: z.string().min(1) }),
+    response: z.object({ forgotten: z.boolean() }),
+  },
+
+  /**
    * **What the widget draws** (`app/windows/Overlay.ts`).
    *
    * One read on open, then kept current by `session:changed`, `audio:level`,
@@ -431,7 +448,43 @@ export const invokeChannels = {
     request: z.object({
       width: z.number().int().positive().max(1000),
       height: z.number().int().positive().max(1000),
+      /**
+       * Where the pill is inside the frame, and how tall it is.
+       *
+       * Measured and sent rather than agreed as a constant: the shadow margin
+       * around the card belongs to the renderer, and a number two files have to
+       * keep equal is a number that will stop being equal. It is what lets the
+       * main process put the window wherever leaves the **pill** exactly where
+       * it was — the first version anchored a window edge, which moved the
+       * control the rep had just pressed by the height of the panel.
+       */
+      pillTop: z.number().int().nonnegative().max(1000).default(0),
+      pillHeight: z.number().int().nonnegative().max(1000).default(0),
     }),
+    response: z.object({
+      ok: z.boolean(),
+      /**
+       * Which way the panel stacks. Decided by the main process, because only
+       * it knows which display the pill is on — and answered rather than
+       * broadcast, because the renderer needs it *before* it lays the panel
+       * out or the first frame draws in the wrong place.
+       */
+      above: z.boolean(),
+    }),
+  },
+
+  /**
+   * **The halo is not the widget.**
+   *
+   * The card draws a shadow, and a shadow needs pixels outside the card to land
+   * on — which on a transparent always-on-top window are pixels of the call
+   * underneath that the rep cannot click. The renderer says when the pointer is
+   * over that margin and the window stops taking the mouse
+   * (`setIgnoreMouseEvents(…, { forward: true })`), which still delivers mouse
+   * *moves* so it can notice the pointer coming back and switch it off again.
+   */
+  'widget:passThrough': {
+    request: z.object({ through: z.boolean() }),
     response: z.object({ ok: z.boolean() }),
   },
 
@@ -687,17 +740,6 @@ export const invokeChannels = {
   },
 
   /**
-   * What is downloading right now.
-   *
-   * Exists because the panel can be unmounted and remounted while bytes are
-   * arriving — closing the settings overlay mid-download and reopening it. The
-   * old implementation had no such channel: the remounted panel started from
-   * zero state and showed an empty progress bar forever, while the worker
-   * carried on downloading behind it.
-   */
-  'models:state': { request: z.object({}), response: ModelSectionSchema },
-
-  /**
    * What screen 0 draws (DEC-30).
    *
    * A channel *and* a broadcast, for the same reason `agenda:snapshot` and
@@ -775,6 +817,17 @@ export const broadcastChannels = {
    * short.
    */
   'moment:marked': z.object({ meetingId: MeetingIdSchema, mark: MomentMarkSchema }),
+  /**
+   * And the other half: a mark the rep took back.
+   *
+   * Both of these are **the only way** the widget's list changes — it does not
+   * insert what it just asked for. That was worth fixing rather than
+   * decorating: an optimistic insert draws a mark that may not have been
+   * written, and it leaves the broadcast doing nothing, which is how a channel
+   * ends up declared and unreached (`scripts/check-surfaces.mjs`). One path, and
+   * the row on screen is the row in the log.
+   */
+  'moment:forgotten': z.object({ meetingId: MeetingIdSchema, markId: z.string().min(1) }),
   /**
    * The input meter, ten times a second while a meeting records.
    *

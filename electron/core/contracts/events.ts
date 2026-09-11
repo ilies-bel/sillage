@@ -141,6 +141,16 @@ export const MeetingEventSchema = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('moment.marked'), mark: MomentMarkSchema }),
 
+  /**
+   * A mark the rep took back.
+   *
+   * An event and not a delete — DEC-27 leaves exactly one delete in this
+   * codebase and it is the diagnostics purge. The fold drops the pair, so every
+   * reader stops showing it, and the log still says that a moment was marked at
+   * 14:32 and unmarked at 14:33, which is a true thing about the call.
+   */
+  z.object({ type: z.literal('moment.forgotten'), markId: z.string().min(1) }),
+
   z.object({ type: z.literal('extraction.started'), attempt: z.number().int().positive() }),
   z.object({
     type: z.literal('extraction.completed'),

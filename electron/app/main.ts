@@ -356,6 +356,25 @@ const createOverlayWindow = (options: OverlayWindowOptions): BrowserWindow => {
   })
   window.setAlwaysOnTop(true, 'screen-saver')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  /*
+   * **Out of the screen share.**
+   *
+   * This window floats above everything, on every Space, including a
+   * full-screen call — which is also, exactly, what a rep is sharing when they
+   * share their screen. What is on it is the client's own name, a live
+   * transcript of what that client is saying, and the rep's private commercial
+   * notes (« prix bloqué à 550 »). An ESN rep sharing CVs or a deck in the
+   * middle of a negotiation is an ordinary call, and before this window existed
+   * the product put nothing on screen during one, so this exposure is entirely
+   * new.
+   *
+   * `setContentProtection` excludes the window from capture on both of this
+   * product's platforms — macOS and Windows — and costs the one thing it should
+   * cost: a demo of Sillage over a screen share does not show the widget.
+   * Weighed against a client reading their own transcript in a shared window,
+   * that is not close.
+   */
+  window.setContentProtection(true)
   return window
 }
 
@@ -804,17 +823,28 @@ const boot = async (): Promise<void> => {
   const dbPath = join(app.getPath('userData'), DB_FILENAME)
   const store = new Store(dbPath)
 
-  const diagnostics = new Diagnostics(store, { environment: environment() })
-  recorder = diagnostics
-  // Rolling purge, on boot. Diagnostics only — the WHERE clause in the store
-  // makes it impossible for this to reach meeting content (DEC-27).
-  const purged = diagnostics.purge()
-
+  // Declared before the recorder that uses it, and that order is the fix: a
+  // `const` referenced from a callback that could run first is a temporal dead
+  // zone, and the callback here is « record a diagnostic », which is precisely
+  // what runs when something goes wrong during boot.
   const broadcast: Broadcaster = (channel, payload) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(channel, payload)
     }
   }
+
+  const diagnostics = new Diagnostics(store, {
+    environment: environment(),
+    // `diag:appended` was declared in the contract and subscribed to by
+    // Réglages, and published by nobody — so the pane read its two hundred rows
+    // on mount and then sat still while the thing the rep was watching for
+    // happened. See `DiagnosticsOptions.onRecorded`.
+    onRecorded: (event) => broadcast('diag:appended', { event }),
+  })
+  recorder = diagnostics
+  // Rolling purge, on boot. Diagnostics only — the WHERE clause in the store
+  // makes it impossible for this to reach meeting content (DEC-27).
+  const purged = diagnostics.purge()
 
   /**
    * Bring the window forward and open the meeting — the OS notification's click
@@ -2076,10 +2106,12 @@ const boot = async (): Promise<void> => {
     // create a window, cannot close one, and cannot move itself anywhere it
     // was not dragged.
     widget: {
-      resize: (width, height) => overlay.resize(width, height),
+      resize: (box) => overlay.resize(box),
+      passThrough: (through) => overlay.passThrough(through),
       focusMain: (meetingId) => overlay.focusMain(meetingId),
     },
     broadcastMark: (meetingId, mark) => broadcast('moment:marked', { meetingId, mark }),
+    broadcastForget: (meetingId, markId) => broadcast('moment:forgotten', { meetingId, markId }),
   })
 
   diagnostics.record({

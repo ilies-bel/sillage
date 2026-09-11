@@ -389,10 +389,15 @@ export class Projections {
    */
   marks(meetingId: string): MomentMark[] {
     const out: MomentMark[] = []
+    const forgotten = new Set<string>()
     for (const { event } of this.#log.read(meetingId)) {
       if (event.type === 'moment.marked') out.push(event.mark)
+      // A mark taken back (`moment.forgotten`). Collected in the same pass and
+      // applied after it, so the order of the two events in the log cannot
+      // matter — a re-marked id would otherwise come back from the dead.
+      if (event.type === 'moment.forgotten') forgotten.add(event.markId)
     }
-    return out.sort((a, b) => a.at - b.at)
+    return out.filter((mark) => !forgotten.has(mark.id)).sort((a, b) => a.at - b.at)
   }
 
   signals(meetingId: string): Signal[] {

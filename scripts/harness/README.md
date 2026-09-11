@@ -195,7 +195,7 @@ what `serve.mjs` drops the meta for.
 | `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 | `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
-| `widget-ouvert` | the same window opened: the live transcript, the rep's own marks in place, the note field and the two ways out. The only surface in the product that draws an **interim** transcription — muted, with an ellipsis, and never the record |
+| `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
@@ -203,8 +203,12 @@ is the widget: the app has one window with no routes in its URL, and the second 
 told which renderer it is by `?window=widget` (`src/main.tsx`). The three widget stages are
 photographed over the app's own canvas rather than over a video call — the six checks measure
 the pill against paper, and the contrast a rep actually sees is against whatever Teams is
-painting. The shadow is what carries that separation, and it is the one thing a screenshot
-cannot verify.
+painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
+the harness page has five hundred pixels of paper around the pill, so the shadow lands
+beautifully whether or not the *window* has room for it. It did not, for a round — the window
+was sized to the card and `getBoundingClientRect` excludes a `box-shadow` — and the same blind
+spot is what `--expand` did to eleven clipped textareas. What holds it now is the halo in
+`Widget.tsx`, not this picture.
 
 ## `--sans-entra` — the configuration the first demo ships in
 

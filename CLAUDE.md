@@ -82,11 +82,40 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **The widget may draw the transcript; the session screen still may not** (DEC-49, DEC-38).
   The clause DEC-38 wrote is « do not reintroduce a live transcript *to prove the tool is
   working* », and that job now belongs to an instrument. The meter is on the pill whether the
-  panel is open or not; the transcript is behind a press, names the side (DEC-47), and draws
-  an **interim** result muted, with an ellipsis, replaced in place — the only rendering in
-  this product of text that is not the record. `transcript:appended` had been broadcast for
-  every segment of every meeting since the orchestrator was written and subscribed to by
-  nobody; this is the surface that keeps that promise.
+  panel is open or not; the transcript is behind a press and names the side (DEC-47).
+  `transcript:appended` had been broadcast for every segment of every meeting since the
+  orchestrator was written and subscribed to by nobody; this is the surface that keeps that
+  promise. **The window collects it, never the panel** — the panel is mounted by a press and
+  unmounted by the next one, so a transcript held there began at the press and was destroyed
+  by the one that closed it, which is the feature not working on precisely its own use case.
+  And **no provisional text**: a draft drew interim results muted and called that a difference
+  over Granola, and `isFinal: false` cannot occur — `LocalWhisperSession` and `RestSttSession`
+  both emit `true` and every row in `STT_PROVIDERS` declares `streaming: false`. It was a
+  rendering no run of this product could produce, covered by a test that fed it a fixture and
+  by a harness stub that manufactured the input. A non-final segment is dropped in one line.
+- **The halo is not the widget, and the widget is not in the screen share** (DEC-49).
+  `getBoundingClientRect` does not include a `box-shadow`, so sizing the window to the card
+  clipped the shadow to nothing — and the shadow is the only thing separating a pale card from
+  the video call underneath, which `tokens.css` says itself. Every harness screenshot showed it
+  perfectly, against five hundred pixels of the app's own paper: the same blind spot as
+  `--expand`. The frame reserves the shadow's extent and gives those pixels back with
+  `widget:passThrough` → `setIgnoreMouseEvents(…, { forward: true })`, which still delivers
+  moves so the pointer coming back over the card can switch it off. And the window carries
+  `setContentProtection(true)`: it floats above everything on every Space, which is exactly
+  what a rep shares when they share their screen, and what is on it is the client's name,
+  their words and the rep's own commercial notes.
+- **The pill's anchor is the pill** (DEC-49, `overlayPlacement.ts`). The first version
+  anchored a window *edge* — bottom edge in the bottom half of the display, like a menu — and
+  the pill is drawn at the **top** of the content with the panel under it, so holding the
+  bottom still moved the control the rep had just pressed by the height of the panel:
+  **333 pixels, on the default placement, on the first press of the first call.** The docblock
+  argued the rule at length and the unit test asserted it faithfully, and neither could see it,
+  because they measured rectangles and never asked what is drawn at the top of one. The
+  renderer now reports where the pill sits inside the frame (`pillTop`, measured, never a
+  constant two files must keep equal) and the main process answers with `above` — which way
+  the panel stacks — because only it knows which display the pill is on, and the renderer needs
+  it *before* it lays the panel out. `scripts/e2e.mjs` measures the pill's screen position
+  across an open and a close on the real window, which is the only place a window has one.
 - **A mark is the rep's, and it is never inferred onto a sentence** (`core/contracts/marks.ts`).
   A turn is written down *after* it is spoken — `modules/transcribe` stamps a segment with its
   arrival and says a batch provider cannot report acoustic time — so « the turn nearest the
@@ -96,7 +125,14 @@ machine) or in `core/domain/` — never in an IPC handler.
   `interleaveMarks` is in `contracts` for the reason `speakerLabel` and `meetingAnchor` are:
   three surfaces draw it — the widget's live list, the gate's reader, *Historique*'s — and
   `src/*` may import nothing else. A mark survives a call with **no transcript at all**, which
-  is the case that needs it most and the one both readers used to swallow.
+  is the case that needs it most and the one both readers used to swallow. A mark can be
+  **taken back** — it is typed one-handed over a client's face and sent on `Enter`, so a typo is
+  made here more easily than anywhere else in the product and is read again at the gate in the
+  rep's own words — and taking one back is an event (`moment.forgotten`), never a delete
+  (DEC-27). **The broadcast is the only way the widget's list changes**: it does not insert
+  what `meeting:mark` returned, because an optimistic insert draws a row whose write may not
+  have happened *and* leaves the broadcast doing nothing, which is how a channel ends up
+  declared and unreached.
 - **Proof of life is the input meter, not a live transcript** (DEC-38). The transcript pane
   was removed: it was seconds late, blank through every pause, and looked identical whether
   the room was quiet or the microphone was too quiet to transcribe — which is a meeting that
@@ -514,7 +550,7 @@ machine) or in `core/domain/` — never in an IPC handler.
 - **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
-  renamed on one side of the bridge would ship. **Thirty-four** steps under Playwright's
+  renamed on one side of the bridge would ship. **Thirty-seven** steps under Playwright's
   Electron driver on a throwaway `--user-data-dir`, which is also the only way first run is
   reachable — and five of them are the review gate, seeded through the product's own `Store`
   with the app closed, because `review:confirm` is the one thing here that writes into a
@@ -603,6 +639,37 @@ machine) or in `core/domain/` — never in an IPC handler.
   today: `attachTranscript` and `createContact` both *write into the client's
   systems* and belong in the gate's intent list as a decision, not as a side
   effect of extraction.
+- **And the same question, asked at every boundary where « declared » and « reached » are
+  different files** (`npm run check:surfaces`). The fifteenth round said the check above was
+  right and its *scope* was the problem, and named the general form: the repo's prose is being
+  trusted as if it were wiring. Four more were found by hand and all four are one shape —
+  `transcript:appended` broadcast for every segment of every meeting and subscribed to by no
+  window; `diag:appended` subscribed to by Réglages and published by nobody, so the diagnostics
+  pane never moved while a rep watched it; `models:state`, an invoke channel with a paragraph
+  explaining the bug it was written to fix, called by no renderer and answering exactly what
+  `settings:snapshot` already answers; and `vad.rs`, a hundred and forty lines of Rust
+  mentioning Google STT and a Swift implementation, never named by a `mod` and therefore never
+  compiled since the previous product was demolished. The check is three greps: an invoke
+  channel with no caller under `src/`, a broadcast with no publisher under `electron/` **or**
+  no subscriber under `src/` — both halves, and they fail differently: no publisher is a screen
+  that never updates, no subscriber is work done for nobody — and a `.rs` file no `mod`
+  declares. `UNREACHED` is empty today and that is the point: every one of those four was wired
+  or deleted rather than excused.
+- **A 200 that is not a transcription is a failure, not a silence**
+  (`modules/transcribe/RestSttSession.ts`). Every cloud provider here answers `200` with a JSON
+  envelope, and every one of them can answer `200` with an envelope that is not a transcript: a
+  quota or moderation object, a field renamed between API versions, a corporate proxy's HTML
+  interstitial. The adapters returned `''` for all of it — which is exactly what a genuinely
+  silent chunk returns — so nothing was emitted, nothing was recorded, and `transcribe` health
+  stayed `ok`: a meeting with no transcript from an app saying everything was fine.
+  `extractTranscript` answers `string | null` now, `null` meaning « not a body I know », and
+  the session throws on it so the failure lands on the path that already counts errors, moves
+  the connector's health and fails a provider over. **Azure's envelope is what is recognised,
+  not its field**: `NoMatch` legitimately carries no `DisplayText`, so a body with
+  `RecognitionStatus` is understood whether or not it has text. The `upload` test seam answers
+  the **body** rather than a finished string, which is what puts every test in the repo through
+  the same reading the product does — it was the other way round, and that is precisely where
+  this defect lived.
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
@@ -798,7 +865,7 @@ but the running main process holds the session in memory and never re-reads it.
 
 ```
 npm test                  # the suite. prints which tests are deferred, and why
-npm run check             # typecheck + boundaries + CRM containment + platform + French + ports
+npm run check             # typecheck ×2 + boundaries + CRM + tokens + platform + French + ports + surfaces
 npm run test:e2e          # builds, then walks the real application under Electron
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```

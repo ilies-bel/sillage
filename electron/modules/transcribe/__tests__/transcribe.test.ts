@@ -465,6 +465,11 @@ test('silence is not uploaded, speech is', () => {
 // protecting is the pair of properties the guard was reaching for, and both are
 // observable without reading the file.
 
+/*
+ * The seam answers the provider's **body**, so these go through the same
+ * `extractTranscript` a real call does — Azure's envelope, here, because that
+ * is the provider the session is built for.
+ */
 const restSession = (uploads: Buffer[], responses: string[] = []) => {
   let n = 0
   return new RestSttSession('azure-fr', {
@@ -472,7 +477,7 @@ const restSession = (uploads: Buffer[], responses: string[] = []) => {
     language: 'fr-FR',
     upload: async (wav: Buffer) => {
       uploads.push(wav)
-      return responses[n++] ?? 'texte'
+      return { RecognitionStatus: 'Success', DisplayText: responses[n++] ?? 'texte' }
     },
   })
 }
@@ -525,4 +530,95 @@ test('a stopped session never re-arms its safety-net timer', async () => {
   // may be pending at all — if the handle survived, the process would not exit.
   await new Promise((resolve) => setTimeout(resolve, 30))
   assert.equal(uploads.length, 0)
+})
+
+/**
+ * **A 200 that is not a transcription is a failure, not a silence.**
+ *
+ * Every provider in this table answers `200` with a JSON envelope, and every
+ * one of them can answer `200` with an envelope that is *not* a transcript: a
+ * quota or moderation object, a field renamed between API versions, a corporate
+ * proxy's HTML interstitial. The adapters returned `''` for all of it — which
+ * is exactly what a genuinely silent chunk returns — so the session emitted
+ * nothing, recorded nothing, and left `transcribe` health `ok`. The rep got a
+ * meeting with no transcript from an app that said everything was fine.
+ *
+ * The boundary is the pair below: silence is `''` and is ordinary; an
+ * unrecognised body is `null` and becomes a thrown error on the path that
+ * already moves the connector's health.
+ */
+test('an unrecognised 200 is told apart from a silent chunk', () => {
+  const azure = PROVIDERS['azure-fr'].build({
+    apiKey: 'k',
+    region: 'francecentral',
+    language: 'fr-FR',
+    prompt: undefined,
+  })
+
+  // Azure's real answer for a chunk with nothing intelligible in it: the
+  // envelope is there and `DisplayText` is not. Ordinary, and empty.
+  assert.equal(azure.extractTranscript({ RecognitionStatus: 'NoMatch' }), '')
+  assert.equal(azure.extractTranscript({ RecognitionStatus: 'Success', DisplayText: 'bonjour' }), 'bonjour')
+
+  // Not this API answering: no envelope at all.
+  assert.equal(azure.extractTranscript({ error: 'quota exceeded' }), null)
+  assert.equal(azure.extractTranscript('<html>proxy</html>'), null)
+  assert.equal(azure.extractTranscript(null), null)
+
+  const whisper = PROVIDERS['openai-whisper'].build({
+    apiKey: 'k',
+    region: undefined,
+    language: 'fr-FR',
+    prompt: undefined,
+  })
+  // `text` present and empty is a silent chunk; absent is a body we do not know.
+  assert.equal(whisper.extractTranscript({ text: '' }), '')
+  assert.equal(whisper.extractTranscript({ text: 'bonjour' }), 'bonjour')
+  assert.equal(whisper.extractTranscript({ error: { message: 'rate limited' } }), null)
+  assert.equal(whisper.extractTranscript({}), null)
+})
+
+test('a 200 the adapter cannot read is recorded and fails the chunk', async () => {
+  const recorded: string[] = []
+  const session = new RestSttSession('openai-whisper', {
+    apiKey: 'k',
+    language: 'fr-FR',
+    diagnostics: {
+      record: (event) => {
+        recorded.push(event.code)
+        return { ...event, id: 'x', ts: 0, detail: event.detail ?? {}, meetingId: null }
+      },
+    },
+    // The seam answers a body, and this one is a body no adapter here knows —
+    // which is what a quota envelope, a renamed field or a proxy page all look
+    // like from in here.
+    upload: async () => ({ error: 'quota' }),
+  })
+
+  const heard: string[] = []
+  const failures: string[] = []
+  session.on('transcript', (result: { text: string }) => heard.push(result.text))
+  /*
+   * `error` is where this lands, and listening for it is not test ceremony:
+   * `TranscribeSession` listens for exactly this, counts consecutive ones and
+   * moves the `transcribe` connector's health off `ok` — which is the whole
+   * point of throwing rather than answering an empty string.
+   */
+  session.on('error', (error: unknown) =>
+    failures.push(error instanceof Error ? error.message : String(error)),
+  )
+  session.start()
+  session.write(speech(), 16_000)
+  await session.stop()
+
+  assert.deepEqual(heard, [], 'rien ne doit être émis pour un corps illisible')
+  assert.equal(failures.length, 1)
+  // The body's top-level keys, which is what tells « the API changed » from
+  // « the key is out of quota » in a diagnostics bundle — and is a property of
+  // the vendor's envelope, never of anything the client said.
+  assert.match(failures[0] ?? '', /réponse inattendue de openai-whisper \(error\)/)
+  assert.ok(
+    recorded.includes('transcribe.upload.failed'),
+    `attendu transcribe.upload.failed, obtenu ${recorded.join(', ')}`,
+  )
 })

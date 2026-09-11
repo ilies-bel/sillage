@@ -129,3 +129,66 @@ test('the redacted bundle is the one the default button writes', () => {
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+/**
+ * **Every event, as it is written**, so the *Diagnostics* pane can be live.
+ *
+ * `diag:appended` was in the IPC contract and subscribed to by Réglages, and
+ * published by nothing: the pane read two hundred rows on mount and then sat
+ * still, so the one moment that surface exists for — « refais-le, je regarde »
+ * on a support call — was the one moment it did not work. `check-surfaces.mjs`
+ * is what now fails the build on the shape; this is what holds the wiring.
+ *
+ * The order is the assertion. The callback runs **after** the append, so a
+ * listener can never be told about an event the log does not have — a renderer
+ * that reloads on this broadcast would otherwise race the write it is reacting
+ * to and redraw the list without the row in it.
+ */
+test('every recorded event is announced, after it is in the log', () => {
+  const store = new Store(':memory:')
+  const seen: Array<{ code: string; inLog: number }> = []
+  const diagnostics = new Diagnostics(store, {
+    environment,
+    onRecorded: (event) =>
+      seen.push({ code: event.code, inLog: store.log.readDiagnostics({ limit: 10 }).length }),
+  })
+
+  const first = diagnostics.record({
+    severity: 'error',
+    code: 'capture.device.lost',
+    module: 'capture',
+    message: 'micro débranché',
+    detail: {},
+  })
+  diagnostics.record({
+    severity: 'info',
+    code: 'app.boot',
+    module: 'app',
+    message: 'démarrage',
+    detail: {},
+  })
+
+  assert.deepEqual(seen, [
+    { code: 'capture.device.lost', inLog: 1 },
+    { code: 'app.boot', inLog: 2 },
+  ])
+  // The event handed to the listener is the one that was stored, id and all.
+  assert.equal(store.log.readDiagnostics({ limit: 10 }).at(-1)?.id, first.id)
+  store.close()
+})
+
+/** A sink with no listener is the ordinary case, and must not throw. */
+test('no listener is not a failure', () => {
+  const store = new Store(':memory:')
+  const diagnostics = new Diagnostics(store, { environment })
+  assert.ok(
+    diagnostics.record({
+      severity: 'info',
+      code: 'app.boot',
+      module: 'app',
+      message: 'démarrage',
+      detail: {},
+    }).id,
+  )
+  store.close()
+})

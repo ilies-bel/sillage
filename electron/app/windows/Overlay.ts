@@ -42,10 +42,12 @@
 import type { BrowserWindow } from 'electron'
 import type { KeyValueStore } from '../../core/contracts/kv.ts'
 import {
+  opensAbove,
+  placeAroundPill,
   placeWindow,
-  resizePlacement,
   type Area,
   type Origin,
+  type Pill,
   type Size,
 } from './overlayPlacement.ts'
 
@@ -81,11 +83,37 @@ export interface OverlayWindowOptions {
   y: number
 }
 
+/** What the renderer measured, and what the main process answers it with. */
+export interface WidgetBox {
+  width: number
+  height: number
+  /** The pill's offset inside the frame — the shadow margin is above it. */
+  pillTop: number
+  pillHeight: number
+}
+
+export interface WidgetPlacement {
+  ok: boolean
+  /** True when the panel must stack above the pill rather than below it. */
+  above: boolean
+}
+
 export class Overlay {
   #host: OverlayHost
   #kv: KeyValueStore
   #window: BrowserWindow | null = null
   #size: Size = INITIAL_SIZE
+  /**
+   * Where the pill is, and how far down the frame it sits.
+   *
+   * The window's own origin is not the interesting number: the pill is what the
+   * rep is looking at and pressing, and it is drawn inside a frame whose height
+   * changes by three hundred pixels when the panel opens. Kept here so a resize
+   * can put the window wherever leaves the pill exactly where it was.
+   */
+  #pillTop = 0
+  #pillHeight = INITIAL_SIZE.height
+  #pillScreenTop: number | null = null
 
   constructor(host: OverlayHost, kv: KeyValueStore) {
     this.#host = host
@@ -108,7 +136,10 @@ export class Overlay {
     if (this.#window && !this.#window.isDestroyed()) return
 
     this.#size = INITIAL_SIZE
+    this.#pillTop = 0
+    this.#pillHeight = INITIAL_SIZE.height
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
+    this.#pillScreenTop = origin.y
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
 
@@ -121,6 +152,10 @@ export class Overlay {
     window.on('moved', () => {
       if (window.isDestroyed()) return
       const [x = 0, y = 0] = window.getPosition()
+      // The pill moved with the window the rep dragged. Recording it here is
+      // what makes the *next* resize hold it still rather than snap it back to
+      // wherever it was before the drag.
+      this.#pillScreenTop = y + this.#pillTop
       this.#kv.set(OVERLAY_ORIGIN_KEY, JSON.stringify({ x, y }))
     })
     window.on('closed', () => {
@@ -143,25 +178,73 @@ export class Overlay {
   }
 
   /**
-   * The renderer telling us how big it has become.
+   * The renderer telling us how big it has become, and where its pill is.
    *
-   * Returns false when there is no window, which is not an error: the meeting
-   * can end between the renderer measuring itself and the message arriving, and
-   * the widget is the only thing that can tell whether its request landed.
+   * Answers `above`, which is the direction the panel must stack — decided here
+   * because only the main process knows which display the pill is on and where
+   * in it. The renderer needs it *before* it lays the panel out, so it is a
+   * reply and not a broadcast.
+   *
+   * `ok: false` when there is no window, which is not an error: the meeting can
+   * end between the renderer measuring itself and the message arriving, and the
+   * widget is the only thing that can tell whether its request landed.
    */
-  resize(width: number, height: number): boolean {
+  resize(box: WidgetBox): WidgetPlacement {
+    const window = this.#window
+    if (!window || window.isDestroyed()) return { ok: false, above: false }
+
+    const to: Size = { width: Math.round(box.width), height: Math.round(box.height) }
+    const areas = this.#host.areas()
+    const [x = 0, y = 0] = window.getPosition()
+    const pill: Pill = {
+      screenTop: this.#pillScreenTop ?? y + this.#pillTop,
+      screenCentreX: x + this.#size.width / 2,
+      offsetTop: Math.round(box.pillTop),
+      // The renderer's number when it sent one, else the last one it sent — a
+      // measurement of zero comes back from a frame laid out before fonts have
+      // settled, and a pill of no height is in no half of any display.
+      height: Math.round(box.pillHeight) || this.#pillHeight,
+    }
+
+    const origin = placeAroundPill(pill, to, areas)
+    this.#size = to
+    this.#pillTop = pill.offsetTop
+    this.#pillHeight = pill.height
+    this.#pillScreenTop = origin.y + pill.offsetTop
+
+    // One call, so the move and the resize cannot be observed apart — two calls
+    // draw a frame of the new size at the old origin, which over a video call
+    // reads as a flinch.
+    window.setBounds({ ...origin, ...to })
+    /*
+     * Any resize resets the pass-through: the pointer is not where the renderer
+     * last saw it once the window has moved under it, and a widget stuck
+     * ignoring its own mouse is a widget nothing can close.
+     */
+    window.setIgnoreMouseEvents(false)
+
+    return {
+      ok: true,
+      above: opensAbove({ ...pill, screenTop: this.#pillScreenTop }, areas),
+    }
+  }
+
+  /**
+   * **The halo is not the widget.**
+   *
+   * The card draws a shadow, and a shadow needs pixels outside the card to land
+   * on — but this window is transparent and always on top, so those pixels are
+   * pixels of the call underneath that the rep cannot click. Electron's own
+   * answer is `setIgnoreMouseEvents(true, { forward: true })`: the window stops
+   * taking clicks and still receives mouse *moves*, which is what lets the
+   * renderer notice the pointer coming back over the card and switch it off
+   * again. Windows and macOS both support the forwarding, which is both of this
+   * product's platforms.
+   */
+  passThrough(through: boolean): boolean {
     const window = this.#window
     if (!window || window.isDestroyed()) return false
-    const to: Size = { width: Math.round(width), height: Math.round(height) }
-    if (to.width === this.#size.width && to.height === this.#size.height) return true
-
-    const [x = 0, y = 0] = window.getPosition()
-    const origin = resizePlacement({ x, y }, this.#size, to, this.#host.areas())
-    this.#size = to
-    // One call, so the move and the resize cannot be observed apart — two
-    // calls draw a frame of the new size at the old origin, which over a video
-    // call reads as a flinch.
-    window.setBounds({ ...origin, ...to })
+    window.setIgnoreMouseEvents(through, { forward: true })
     return true
   }
 

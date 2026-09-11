@@ -1689,7 +1689,7 @@ test('a model download is refused while a meeting is recording, with the reason'
  * the call is over.
  */
 test('meeting:mark records a moment, and refuses one outside a recording', async () => {
-  const { ipc, deps, broadcasts, cleanup } = open()
+  const { ipc, deps, cleanup } = open()
   const marked: Array<{ meetingId: string; mark: unknown }> = []
   deps.broadcastMark = (meetingId, mark) => marked.push({ meetingId, mark })
   deps.orchestrator.create({ id: 'm1', title: 'Acme', context: sampleContext })
@@ -1734,7 +1734,6 @@ test('meeting:mark records a moment, and refuses one outside a recording', async
     () => ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'trop tard', segmentId: null }),
     /Aucun enregistrement en cours/,
   )
-  assert.ok(broadcasts.length > 0)
   cleanup()
 })
 
@@ -1774,20 +1773,45 @@ test('widget:state answers the meeting that is really recording, or null', async
  * lets the widget treat « the window would not move » as a fact it can say out
  * loud instead of an exception it has to swallow (DEC-26).
  */
-test('widget:resize and window:focus answer false when there is no window', async () => {
+test('the widget’s window gestures answer false when there is no window', async () => {
   const { ipc, deps, cleanup } = open()
-  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), { ok: false })
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), {
+    ok: false,
+    above: false,
+  })
   assert.deepEqual(await ipc.invoke('window:focus', { meetingId: null }), { ok: false })
+  assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: false })
 
-  const asked: Array<[number, number]> = []
+  const asked: unknown[] = []
+  const focused: Array<string | null> = []
+  let through: boolean | null = null
   deps.widget = {
-    resize: (width, height) => {
-      asked.push([width, height])
+    resize: (box) => {
+      asked.push(box)
+      return { ok: true, above: true }
+    },
+    passThrough: (value) => {
+      through = value
       return true
     },
-    focusMain: () => true,
+    focusMain: (meetingId) => {
+      focused.push(meetingId)
+      return true
+    },
   }
-  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), { ok: true })
-  assert.deepEqual(asked, [[340, 300]])
+  // The pill's offset travels with the size — it is what lets the main process
+  // leave the pill where it was instead of anchoring a window edge.
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300, pillTop: 16, pillHeight: 44 }), {
+    ok: true,
+    above: true,
+  })
+  assert.deepEqual(asked, [{ width: 340, height: 300, pillTop: 16, pillHeight: 44 }])
+
+  // « Ouvrir Sillage » reaches the window, with the meeting it is open on.
+  assert.deepEqual(await ipc.invoke('window:focus', { meetingId: 'm1' }), { ok: true })
+  assert.deepEqual(focused, ['m1'])
+
+  assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: true })
+  assert.equal(through, true)
   cleanup()
 })

@@ -124,46 +124,72 @@ export const placeWindow = (
 }
 
 /**
- * Where the window goes when its own content changes size.
+ * **Where the window goes when its content changes size — measured from the
+ * pill, which is the thing that must not move.**
  *
- * The widget has two shapes — a pill, and a card with the controls and the
- * marks in it — and the rep opens one into the other with a press. Resizing a
- * frameless window from its top-left corner would make that press *move* the
- * thing being pressed, which is the defect DEC-4 states at the review gate for
- * a worse reason: the one control that ships must never be the rectangle the
- * rep just pressed. Here nothing ships, but the pill sliding out from under a
- * finger mid-call is still the app moving while it is being used.
+ * The first version of this anchored an *edge*: bottom edge in the bottom half
+ * of the display, top edge in the top half, like a menu. The docblock argued it
+ * well and the test asserted it faithfully, and it was aimed at the wrong
+ * thing. The pill is drawn at the **top** of the content and the panel opens
+ * under it, so holding the bottom edge still moves the pill — the control the
+ * rep just pressed — by the entire height of the panel. Measured on the default
+ * placement, which is where every widget starts: **333 pixels, on the first
+ * press of the first call.** A test over rectangles could not see it, because
+ * rectangles do not know what is drawn at the top of one.
  *
- * So the press holds an edge still, and which edge is decided by where the
- * widget is — the same rule a menu follows. In the bottom half of the display
- * the card grows upward, in the top half downward, and horizontally it always
- * grows about its own centre because the pill is centred in the card. The
- * clamp in `placeWindow` then does the rest, which is what covers the case the
- * anchor cannot: a widget dragged half off the bottom expands into a display
- * that has no room below it.
+ * So the anchor is the pill itself, reported by the renderer as its offset
+ * inside the frame (`pillTop`) — measured rather than shared as a constant,
+ * because the shadow margin around the card is the renderer's business and a
+ * number agreed by two files is a number that will disagree.
+ *
+ * The direction the panel opens is decided here and *returned* to the renderer,
+ * rather than being read off the layout afterwards: the renderer has to know
+ * which way to stack **before** it lays the panel out, or the first frame draws
+ * in the wrong place. It is decided from the pill's own position — bottom half
+ * of the display, the panel opens upward — and the pill's position does not
+ * change when the panel opens, so the answer is stable across the press.
  */
-export const resizePlacement = (
-  current: Origin,
-  from: Size,
-  to: Size,
-  areas: readonly Area[],
-): Origin => {
-  const rect: Area = { ...current, ...from }
-  let best = areas[0] ?? { x: current.x, y: current.y, width: from.width, height: from.height }
-  let bestOverlap = -1
-  for (const area of areas) {
-    const seen = overlap(rect, area)
-    if (seen > bestOverlap) {
-      best = area
-      bestOverlap = seen
-    }
-  }
+export interface Pill {
+  /** The pill's top edge, in screen coordinates. What must not move. */
+  screenTop: number
+  /** The pill's horizontal centre, in screen coordinates. */
+  screenCentreX: number
+  /** The pill's offset inside the frame, as the renderer has just laid it out. */
+  offsetTop: number
+  height: number
+}
 
-  const centre = current.y + from.height / 2
-  const inTopHalf = centre < best.y + best.height / 2
-  const anchored: Origin = {
-    x: Math.round(current.x + (from.width - to.width) / 2),
-    y: inTopHalf ? current.y : Math.round(current.y + from.height - to.height),
+export const placeAroundPill = (pill: Pill, to: Size, areas: readonly Area[]): Origin => {
+  const wanted: Origin = {
+    x: Math.round(pill.screenCentreX - to.width / 2),
+    y: Math.round(pill.screenTop - pill.offsetTop),
   }
-  return placeWindow(anchored, to, areas)
+  /*
+   * Clamped like any other placement, which is what covers the case the anchor
+   * cannot: a pill dragged against the top of the screen with a panel that does
+   * not fit above **or** below it. The pill moves then, and it has to — the
+   * alternative is a card half off the display.
+   */
+  return placeWindow(wanted, to, areas)
+}
+
+/**
+ * Which way the panel opens.
+ *
+ * The pill's own half of the display, not the window's: they are the same thing
+ * while the widget is collapsed and they stop being the same the moment it is
+ * not, which is precisely when this is asked.
+ */
+export const opensAbove = (pill: Pill, areas: readonly Area[]): boolean => {
+  const point = { x: pill.screenCentreX, y: pill.screenTop + pill.height / 2 }
+  const area =
+    areas.find(
+      (candidate) =>
+        point.x >= candidate.x &&
+        point.x < candidate.x + candidate.width &&
+        point.y >= candidate.y &&
+        point.y < candidate.y + candidate.height,
+    ) ?? areas[0]
+  if (!area) return false
+  return point.y > area.y + area.height / 2
 }

@@ -241,7 +241,13 @@ export interface IpcDeps {
    * thing that can notice.
    */
   widget?: {
-    resize(width: number, height: number): boolean
+    resize(box: {
+      width: number
+      height: number
+      pillTop: number
+      pillHeight: number
+    }): { ok: boolean; above: boolean }
+    passThrough(through: boolean): boolean
     focusMain(meetingId: string | null): boolean
   } | null
   /**
@@ -251,6 +257,8 @@ export interface IpcDeps {
    * and this file has no `BrowserWindow` in it — the same shape `drain` has.
    */
   broadcastMark?: (meetingId: string, mark: MomentMark) => void
+  /** The other half of the same wiring: a mark the rep took back. */
+  broadcastForget?: (meetingId: string, markId: string) => void
 }
 
 /** What a build with no updater reports, in one place so the French matches. */
@@ -981,6 +989,24 @@ export const handlers: Handlers = {
   },
 
   /**
+   * A mark taken back. Appended, never deleted (DEC-27).
+   *
+   * Idempotent and quiet about an id it does not know: the widget removes the
+   * row optimistically and a refusal would put back a line the rep has already
+   * watched go, for a mark that is not there either way.
+   */
+  'meeting:forget': ({ meetingId, markId }, deps) => {
+    const { store } = deps
+    const meeting = store.projections.getMeeting(meetingId)
+    if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
+    const known = store.projections.marks(meetingId).some((mark) => mark.id === markId)
+    if (!known) return { forgotten: false }
+    store.append(meetingId, { type: 'moment.forgotten', markId })
+    deps.broadcastForget?.(meetingId, markId)
+    return { forgotten: true }
+  },
+
+  /**
    * What the widget draws, in one read (`app/windows/Overlay.ts`).
    *
    * `liveIds()` and not the projection: the widget exists for the duration of a
@@ -1006,8 +1032,16 @@ export const handlers: Handlers = {
     }
   },
 
-  'widget:resize': ({ width, height }, { widget }) => ({
-    ok: widget?.resize(width, height) ?? false,
+  'widget:resize': ({ width, height, pillTop, pillHeight }, { widget }) =>
+    widget?.resize({
+      width,
+      height,
+      pillTop: pillTop ?? 0,
+      pillHeight: pillHeight ?? 0,
+    }) ?? { ok: false, above: false },
+
+  'widget:passThrough': ({ through }, { widget }) => ({
+    ok: widget?.passThrough(through) ?? false,
   }),
 
   'window:focus': ({ meetingId }, { widget }) => ({
@@ -1218,17 +1252,6 @@ export const handlers: Handlers = {
     await deps.models.cancel(modelId)
     return deps.models.section()
   },
-
-  /**
-   * What is downloading right now.
-   *
-   * Answered from the download manager rather than from the settings tables so
-   * a panel remounting mid-download gets the live figure without the cost of
-   * re-reading every provider's credential. This is the channel whose absence
-   * left the old panel showing an empty progress bar forever after the settings
-   * overlay was closed and reopened.
-   */
-  'models:state': (_request, deps) => deps.models?.section() ?? tablesOf(deps).models,
 
   'boot:state': (_request, { bootState }) => bootState?.() ?? NO_BOOT_STATE,
 

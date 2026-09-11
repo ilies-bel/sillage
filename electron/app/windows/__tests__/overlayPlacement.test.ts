@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { defaultOrigin, placeWindow, resizePlacement } from '../overlayPlacement.ts'
+import { defaultOrigin, opensAbove, placeAroundPill, placeWindow } from '../overlayPlacement.ts'
 
 const SIZE = { width: 200, height: 50 }
 /** A 1920×1080 laptop with a 40px taskbar, which is what `workArea` reports. */
@@ -53,36 +53,105 @@ test('a position mostly on a display is pulled fully onto it', () => {
   assert.deepEqual(origin, { x: 1720, y: 500 })
 })
 
-test('growing from the bottom half keeps the bottom edge still', () => {
-  // The pill is at the bottom; opening the panel must not slide the control the
-  // rep just pressed out from under their pointer.
-  const from = { width: 200, height: 50 }
-  const to = { width: 340, height: 300 }
-  const origin = resizePlacement({ x: 860, y: 966 }, from, to, [LAPTOP])
-  assert.equal(origin.y + to.height, 966 + from.height)
-  // And it grows about its own centre horizontally, because the pill is centred
-  // in the card.
-  assert.equal(origin.x + to.width / 2, 860 + from.width / 2)
+/**
+ * **The pill is the anchor, and the first version anchored a window edge.**
+ *
+ * The pill is drawn at the *top* of the content and the panel opens under it,
+ * so « keep the bottom edge still » moved the control the rep had just pressed
+ * by the entire height of the panel — 333 pixels on the default placement,
+ * which is where every widget starts. The test that was here asserted the old
+ * rule faithfully and could not see the defect, because it measured rectangles
+ * and never asked what is drawn at the top of one. These measure the pill.
+ */
+const pillAt = (screenTop: number, offsetTop = 16, height = 44) => ({
+  screenTop,
+  screenCentreX: 960,
+  offsetTop,
+  height,
 })
 
-test('growing from the top half keeps the top edge still', () => {
-  const from = { width: 200, height: 50 }
-  const to = { width: 340, height: 300 }
-  const origin = resizePlacement({ x: 860, y: 40 }, from, to, [LAPTOP])
-  assert.equal(origin.y, 40)
+/**
+ * The renderer, in three lines.
+ *
+ * `opensAbove` decides the stacking and the renderer lays out accordingly, so
+ * the pill's offset inside the frame is a *consequence* of that answer. Modelled
+ * here rather than asserted in isolation, because the property that matters —
+ * the pill does not move — is a property of the two halves together, and either
+ * one alone can be right while the pair is wrong. That is exactly how the first
+ * version passed its own test and moved the pill 333 pixels.
+ */
+const MARGIN = 16
+const PILL_H = 44
+const laidOut = (screenTop: number, height: number, areas: readonly { x: number; y: number; width: number; height: number }[]) => {
+  const collapsed = pillAt(screenTop)
+  const above = opensAbove(collapsed, areas)
+  const offsetTop = above ? height - MARGIN - PILL_H : MARGIN
+  const pill = { ...collapsed, offsetTop }
+  return { pill, origin: placeAroundPill(pill, { width: 340, height }, areas), above }
+}
+
+test('opening the panel leaves the pill exactly where it was, either way up', () => {
+  // Bottom half: the panel stacks above, so the pill keeps its screen position.
+  const low = laidOut(900, 380, [LAPTOP])
+  assert.equal(low.above, true)
+  assert.equal(low.origin.y + low.pill.offsetTop, 900)
+  // And centred on it, because the pill is centred in the card.
+  assert.equal(low.origin.x + 340 / 2, low.pill.screenCentreX)
+
+  // Top half: the panel stacks below, and the pill still does not move.
+  const high = laidOut(60, 380, [LAPTOP])
+  assert.equal(high.above, false)
+  assert.equal(high.origin.y + high.pill.offsetTop, 60)
 })
 
-test('growing into a display with no room below it is clamped, not pushed off', () => {
-  const tiny = { x: 0, y: 0, width: 800, height: 300 }
-  const origin = resizePlacement({ x: 300, y: 40 }, { width: 200, height: 50 }, { width: 340, height: 280 }, [tiny])
-  assert.equal(origin.y, 20)
-  assert.ok(origin.y + 280 <= tiny.y + tiny.height)
+test('the pill does not move at any height the rep can drag it to', () => {
+  // The whole travel of the display, every twenty pixels. The defect this
+  // replaces was invisible at one position and 333 pixels at another.
+  /*
+   * From one halo's width inside the top edge to one inside the bottom. The
+   * shadow margin is part of the window, so a pill pressed against the very
+   * edge of a display is a window whose halo would hang off it — the clamp
+   * moves it back by those sixteen pixels, correctly, and that is the only
+   * place in the travel where the pill shifts at all.
+   */
+  for (let top = LAPTOP.y + MARGIN; top < LAPTOP.y + LAPTOP.height - PILL_H - MARGIN; top += 20) {
+    const { pill, origin } = laidOut(top, 380, [LAPTOP])
+    assert.equal(
+      origin.y + pill.offsetTop,
+      top,
+      `la pastille a bougé depuis ${top}`,
+    )
+  }
 })
 
-test('a display smaller than the widget puts it at the top left rather than off it', () => {
-  // `Math.max` last in the clamp. A work area of nothing is reachable while a
-  // full-screen application transitions, and a negative range computed the
-  // other way round puts the window at a negative offset.
-  const nothing = { x: 0, y: 0, width: 100, height: 20 }
-  assert.deepEqual(placeWindow({ x: 500, y: 500 }, SIZE, [nothing]), { x: 0, y: 0 })
+test('collapsing it leaves the pill where it was too', () => {
+  const pill = pillAt(900)
+  const origin = placeAroundPill(pill, { width: 232, height: 76 }, [LAPTOP])
+  assert.equal(origin.y + pill.offsetTop, 900)
+})
+
+test('the pill only moves when the panel cannot fit on the display at all', () => {
+  // Hard against the top, with a panel taller than the room above and below.
+  const origin = placeAroundPill(pillAt(4), { width: 340, height: 1200 }, [LAPTOP])
+  assert.equal(origin.y, LAPTOP.y)
+})
+
+test('the panel opens upward from the bottom half and downward from the top', () => {
+  assert.equal(opensAbove(pillAt(900), [LAPTOP]), true)
+  assert.equal(opensAbove(pillAt(40), [LAPTOP]), false)
+})
+
+test('the half is the pill’s own display, not the primary one', () => {
+  // On the left-hand monitor, near its bottom. Measuring against the primary
+  // display's height would answer for a screen the pill is not on.
+  const pill = { screenTop: 1000, screenCentreX: -960, offsetTop: 16, height: 44 }
+  assert.equal(opensAbove(pill, [LAPTOP, LEFT]), true)
+  assert.equal(opensAbove({ ...pill, screenTop: 40 }, [LAPTOP, LEFT]), false)
+})
+
+test('a pill on no display at all still answers, rather than throwing', () => {
+  // Reachable for the frame between a monitor being unplugged and the clamp
+  // moving the window back — `placeAroundPill` is what fixes it, and this must
+  // not be the thing that throws in between.
+  assert.equal(opensAbove(pillAt(9_000), [LAPTOP]), true)
 })

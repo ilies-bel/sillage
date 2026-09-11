@@ -234,15 +234,100 @@ try {
     await widget.getByLabel('Durée d’enregistrement').waitFor({ timeout: 15_000 })
   })
 
+  await step('the pill marks a moment with nothing open', async () => {
+    // The one-press bookmark, which is what a pill floating over a client's
+    // face is for. Three files described this button before it existed.
+    await widget.getByRole('button', { name: 'Marquer ce moment' }).click()
+    await widget
+      .getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })
+      .waitFor({ timeout: 15_000 })
+  })
+
+  await step('opening the panel does not move the pill', async () => {
+    /*
+     * **The regression the sixteenth adversarial round found by executing the
+     * shipped function**: the placement anchored a *window edge*, and the pill
+     * is drawn at the top of the content — so opening the panel threw the
+     * control the rep had just pressed 333 pixels up the screen, on the default
+     * placement, on the first press of the first call.
+     *
+     * Measured here and nowhere else it can be: the unit test models the
+     * renderer, the harness has no window, and only a real `BrowserWindow` has
+     * a screen position at all. Screen coordinates = the window's own origin
+     * plus where the pill sits inside it.
+     */
+    const pillScreenTop = async () => {
+      const bounds = await app.evaluate(async ({ BrowserWindow }) => {
+        const found = BrowserWindow.getAllWindows().find((window) =>
+          window.webContents.getURL().includes('window=widget'),
+        )
+        return found ? found.getBounds() : null
+      })
+      if (!bounds) throw new Error('la fenêtre widget a disparu')
+      const offset = await widget.evaluate(() => {
+        const pill = document.querySelector('[data-pill]')
+        return pill ? Math.round(pill.getBoundingClientRect().top) : null
+      })
+      if (offset === null) throw new Error('la pastille est introuvable')
+      return bounds.y + offset
+    }
+
+    const before = await pillScreenTop()
+    await widget.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+    await widget.getByPlaceholder('Noter ce moment…').waitFor({ timeout: 15_000 })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const opened = await pillScreenTop()
+    if (Math.abs(opened - before) > 2) {
+      throw new Error(`la pastille a bougé de ${opened - before} px en ouvrant le panneau`)
+    }
+
+    await widget.getByRole('button', { name: 'Replier le panneau' }).click()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const closed = await pillScreenTop()
+    if (Math.abs(closed - before) > 2) {
+      throw new Error(`la pastille a bougé de ${closed - before} px en repliant le panneau`)
+    }
+  })
+
   await step('a moment marked from the widget is written to the real store', async () => {
     await widget.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
     const note = widget.getByPlaceholder('Noter ce moment…')
     await note.click()
     await note.type('à vérifier avec les achats')
     await note.press('Enter')
-    // Drawn back from the *broadcast*, not from local state: the row appears
-    // because the main process appended the event and told every window.
-    await widget.getByText('à vérifier avec les achats').waitFor({ timeout: 15_000 })
+    /*
+     * Drawn back from the **broadcast** and from nothing else: the widget does
+     * not insert what `meeting:mark` returned, so this row on screen is proof
+     * that the main process appended the event and told every window. It used
+     * to be an optimistic local insert, and this assertion passed with
+     * `broadcastMark` entirely unwired.
+     */
+    // In the list, not in the `aria-live` line that also says it — the row is
+    // what the broadcast drew.
+    await widget
+      .locator('li')
+      .getByText('à vérifier avec les achats')
+      .waitFor({ timeout: 15_000 })
+  })
+
+  await step('a mark can be taken back, and the log says both things happened', async () => {
+    // Typed one-handed over a client's face and sent on Enter, so a typo is
+    // made here more easily than anywhere else in the product.
+    // The row that carries the note, not « the first remove button there is »:
+    // there are two marks on this call — the pill's, with no note — and taking
+    // back the wrong one is a test that passes while the product forgets
+    // something the rep wanted to keep.
+    await widget
+      .locator('li')
+      .filter({ hasText: 'à vérifier avec les achats' })
+      .getByRole('button', { name: 'Retirer ce moment marqué' })
+      .click()
+    await widget
+      .locator('li')
+      .getByText('à vérifier avec les achats')
+      .waitFor({ state: 'detached', timeout: 15_000 })
+    // And the one made from the pill is still there — removing is not a purge.
+    await widget.getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ }).waitFor()
   })
 
   await step('the rep’s notepad takes what they type (DEC-5)', async () => {
@@ -359,8 +444,21 @@ try {
      * worth asserting: a headless run records no audio, and a reader that drew
      * marks only when there were segments to interleave them with would have
      * swallowed every one of them on exactly the meeting a rep marks most.
+     *
+     * The one still standing is the pill's, with no note — the typed one was
+     * taken back during the call, and « retiré » has to mean retired here too
+     * or the gate would hand a rep back a sentence they deleted.
      */
-    await page.getByText('à vérifier avec les achats').first().waitFor({ timeout: 20_000 })
+    /*
+     * The mark still standing is the pill's, made with no note — so the reader
+     * draws the sentence it uses for one, which is also the assertion that a
+     * mark with nothing typed in it is not an empty row.
+     */
+    await page.getByText('Marqué pendant l’appel.').first().waitFor({ timeout: 20_000 })
+    // And the one taken back is gone from the record, not merely from the widget.
+    if ((await page.getByText('à vérifier avec les achats').count()) > 0) {
+      throw new Error('un moment retiré pendant l’appel est réapparu dans le compte-rendu relu')
+    }
   })
 
   await step('the empty day can replay first run', async () => {

@@ -1215,8 +1215,18 @@ const SCREENS = {
     scenario: 'session',
     query: 'window=widget',
     async drive(page) {
-      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+      /*
+        The replay comes **first**, and the order is the assertion: the widget
+        collects the call whether or not anybody is looking, so opening the
+        panel has to show a conversation that arrived while it was shut. It was
+        the other way round for one round — replay *after* the click — because
+        the state lived in the panel and the stage photographed an empty box
+        otherwise. A stage that has to be driven in an unnatural order is a
+        stage describing a defect.
+      */
+      await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
       await page.getByPlaceholder('Noter ce moment…').waitFor()
       await page.waitForTimeout(120)
     },
@@ -1231,8 +1241,9 @@ const SCREENS = {
     scenario: 'session',
     query: 'window=widget',
     async drive(page) {
-      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+      await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
       await page.getByRole('button', { name: 'Terminer' }).click()
       await page.getByRole('button', { name: 'Arrêter l’enregistrement' }).waitFor()
     },

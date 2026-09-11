@@ -1041,6 +1041,24 @@ export function installAppBridge(config) {
   const RECORDS = {
     'm-lefort-decouverte': {
       meeting: meetingById('m-lefort-decouverte'),
+      /*
+        The rep's own marks on a call they have already had (DEC-49).
+
+        Here rather than only on the live one, because *Historique*'s reader is
+        the surface a mark is *for*: it was made one-handed during the call and
+        is read weeks later beside the compte-rendu. That rendering had never
+        been drawn by anything — the stage existed, the fixture had no marks,
+        and the first screenshot of it was the one that white-screened.
+      */
+      marks: [
+        { id: 'lefort-mark-1', at: at(-14, 15, 6) + 4_000, note: '', segmentId: 'rec-lefort-4' },
+        {
+          id: 'lefort-mark-2',
+          at: at(-14, 15, 7),
+          note: 'relancer les achats avant le 15',
+          segmentId: null,
+        },
+      ],
       segments: [
         {
           id: 'rec-lefort-1',
@@ -1139,13 +1157,29 @@ export function installAppBridge(config) {
     ],
   }
 
+  /*
+    A record, as `history:record` answers it.
+
+    `marks` is spread **first** and on every branch, which is not tidiness: the
+    real channel is Zod-parsed on the way out and `HistoryRecordSchema.marks`
+    carries `.default([])`, so a missing key is invisible in production and a
+    hard crash here — `interleaveMarks` iterates it. That is exactly what
+    happened: adding marks to the reader white-screened two stages, and the
+    suite could not see it because no unit test renders `Historique`. A fixture
+    that is missing a field the schema fills in is a fixture that is *stricter*
+    than production, and this file has now been caught flattering the product
+    three times and failing it once.
+  */
   const recordFor = (meetingId) => {
     const known = RECORDS[meetingId]
-    if (known) return { interlocuteurs: INTERLOCUTEURS[meetingId] || [], ...known }
+    if (known) {
+      return { marks: [], interlocuteurs: INTERLOCUTEURS[meetingId] || [], ...known }
+    }
     const m = meetingById(meetingId)
     return {
       meeting: m || meeting({ id: meetingId }),
       interlocuteurs: INTERLOCUTEURS[meetingId] || [],
+      marks: MARKS,
       segments: SEGMENTS.slice(0, 6),
       notes: 'Rien de particulier à signaler sur cet appel.',
       compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',
@@ -2232,7 +2266,6 @@ export function installAppBridge(config) {
       )
       return SETTINGS.models
     },
-    'models:state': () => SETTINGS.models,
 
     /*
       The in-meeting widget (`src/widget/Widget.tsx`).
@@ -2261,10 +2294,20 @@ export function installAppBridge(config) {
       harness.emit('moment:marked', { meetingId: payload.meetingId, mark })
       return mark
     },
+    'meeting:forget': (payload) => {
+      const index = MARKS.findIndex((mark) => mark.id === payload.markId)
+      if (index < 0) return { forgotten: false }
+      MARKS.splice(index, 1)
+      harness.emit('moment:forgotten', { meetingId: payload.meetingId, markId: payload.markId })
+      return { forgotten: true }
+    },
     // The two window gestures. They move a window and answer a boolean; there
     // is no window here, and `false` would be a lie about a request that was
     // made and honoured everywhere it is real.
-    'widget:resize': () => ({ ok: true }),
+    // No window here, so no placement: `above: false` is the honest answer for
+    // a pill drawn in a page rather than floating over a display.
+    'widget:resize': () => ({ ok: true, above: false }),
+    'widget:passThrough': () => ({ ok: true }),
     'window:focus': () => ({ ok: true }),
   }
 
@@ -2291,11 +2334,15 @@ export function installAppBridge(config) {
      */
     /**
      * What the widget's panel draws: the meter, then the last turns of the
-     * call arriving on the broadcast, then one interim line.
+     * call arriving on the broadcast.
      *
-     * The interim is the half of this surface no other screen in the product
-     * has ever drawn — it is the only rendering of text that is *not* the
-     * record — so a fixture without one photographs the easy half.
+     * It carried an *interim* line for one round, and that fixture was the only
+     * thing in the world that could produce one: every shipped provider is
+     * batch, so `isFinal: false` never occurs, and the stub was manufacturing
+     * the input for a rendering the product cannot reach. Exactly the shape
+     * `harnessFixture.test.ts` exists to catch, in the other direction — a
+     * fixture flattering the product by feeding it something real life does not
+     * contain.
      */
     replayWidget(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'
@@ -2303,19 +2350,6 @@ export function installAppBridge(config) {
       for (const segment of SEGMENTS.slice(-5)) {
         harness.emit('transcript:appended', { meetingId: id, segment })
       }
-      harness.emit('transcript:appended', {
-        meetingId: id,
-        segment: {
-          id: 'seg-interim-far',
-          channel: 'far',
-          text: 'Sur le plafond, il faudrait qu’on revienne vers les achats',
-          startMs: 0,
-          endMs: 0,
-          isFinal: false,
-          provider: 'local-whisper',
-          receivedAt: now,
-        },
-      })
     },
     replaySession(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'

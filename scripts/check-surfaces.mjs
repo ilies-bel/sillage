@@ -1,0 +1,193 @@
+/**
+ * **A surface that is declared and never reached.**
+ *
+ * `check-ports.mjs` asks this question about one interface, `CrmPort`, because
+ * that is where it was first asked — four declared verbs, implemented and unit
+ * tested, called by nothing, and the VerySwing opportunity was therefore
+ * structurally impossible on every meeting the product had ever produced.
+ *
+ * The fifteenth adversarial round said the check was right and its scope was
+ * the problem, and gave the general form of the defect: **the repo's prose is
+ * being trusted as if it were wiring.** A docblock is evidence of intent and
+ * never of behaviour, and this codebase's docblocks are good enough to be
+ * convincing — so the failures that survive here are exactly the ones where a
+ * beautifully argued comment describes a path nothing walks. Four were found by
+ * hand in that round and all four are the same shape:
+ *
+ *   · `transcript:appended` — broadcast for every segment of every meeting
+ *     since the orchestrator was written, subscribed to by **no window**;
+ *   · `diag:appended` — subscribed to by Réglages, published by **nobody**, so
+ *     the diagnostics pane never moved while a rep watched it;
+ *   · `models:state` — an invoke channel with a paragraph explaining the bug it
+ *     was written to fix, called by **no renderer**, and answering exactly what
+ *     `settings:snapshot` already answers;
+ *   · `vad.rs` — a hundred and forty lines of Rust, referring to Google STT and
+ *     a Swift implementation, never declared as a module and therefore never
+ *     compiled since the day the previous product was demolished.
+ *
+ * So this is that grep, run for you, across the three boundaries where
+ * « declared » and « reached » are different files:
+ *
+ *   1. an **invoke channel** with no caller under `src/` — the renderer is the
+ *      only thing that may call one;
+ *   2. a **broadcast channel** with no publisher under `electron/`, or no
+ *      subscriber under `src/`. Both halves matter and they fail differently:
+ *      no publisher is a screen that never updates, no subscriber is work the
+ *      main process does for nobody;
+ *   3. a **Rust source file** that no `mod` declaration names, which does not
+ *      compile and cannot be reached however good its contents are.
+ *
+ * Same shape as `check-platform.mjs` and `check-ports.mjs`, including the half
+ * that matters most: an allowance whose subject has since disappeared also
+ * fails, so `UNREACHED` cannot rot into a blanket exemption.
+ */
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import path from 'node:path'
+import process from 'node:process'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * Declared, unreached, and deliberately so — each with the reason.
+ *
+ * Empty today, and that is the point: every entry the fifteenth round found has
+ * been wired or deleted rather than excused. A channel that belongs here is one
+ * whose consumer is a decision nobody has taken yet, stated as such.
+ */
+const UNREACHED = []
+
+const files = []
+const walk = (dir) => {
+  for (const entry of readdirSync(dir)) {
+    if (['node_modules', 'dist', 'dist-electron', 'target', 'vendor'].includes(entry)) continue
+    const full = path.join(dir, entry)
+    if (statSync(full).isDirectory()) walk(full)
+    else if (/\.(ts|tsx|mjs|rs)$/.test(entry)) files.push(path.relative(ROOT, full))
+  }
+}
+for (const dir of ['electron', 'src', 'scripts', 'native-module/src']) {
+  walk(path.join(ROOT, dir))
+}
+
+const text = new Map(files.map((file) => [file, readFileSync(path.join(ROOT, file), 'utf8')]))
+const isTest = (file) => /__tests__|\.test\./.test(file)
+
+/**
+ * Where the two channel lists are, and how they are told apart.
+ *
+ * The contract declares them in one file as two object literals, so the split
+ * is the comment between them — which is fragile and is checked: if either
+ * list comes back empty, this exits rather than reporting that nothing is
+ * unreached, because a check that silently measures nothing is worse than no
+ * check (the `--contrast` graphic pass shipped green for a round doing exactly
+ * that).
+ */
+const CONTRACT = 'electron/core/contracts/ipc.ts'
+const contract = text.get(CONTRACT)
+const split = contract.indexOf('Main → renderer')
+const channelsIn = (slice) => [...slice.matchAll(/^ {2}'([a-zA-Z:]+)':/gm)].map((m) => m[1])
+const invokeChannels = channelsIn(contract.slice(0, split))
+const broadcastChannels = channelsIn(contract.slice(split))
+
+const problems = []
+
+if (split < 0 || invokeChannels.length === 0 || broadcastChannels.length === 0) {
+  problems.push(
+    `${CONTRACT}: aucun canal lu (invoke=${invokeChannels.length}, broadcast=${broadcastChannels.length}) — ` +
+      'ce contrôle ne mesure plus rien et doit être mis à jour.',
+  )
+}
+
+/** Files that mention the channel's literal, excluding the contract and tests. */
+const mentions = (channel, where) =>
+  files.filter(
+    (file) =>
+      file !== CONTRACT &&
+      !isTest(file) &&
+      where(file) &&
+      text.get(file).includes(`'${channel}'`),
+  )
+
+const excused = (subject) => UNREACHED.find((entry) => entry.subject === subject)
+
+for (const channel of invokeChannels) {
+  const callers = mentions(channel, (file) => file.startsWith('src/'))
+  if (callers.length === 0 && !excused(channel)) {
+    problems.push(
+      `le canal « ${channel} » est déclaré et n’est appelé par aucun écran — ` +
+        'câble-le, supprime-le, ou déclare-le dans UNREACHED avec la raison.',
+    )
+  }
+  if (callers.length > 0 && excused(channel)) {
+    problems.push(`« ${channel} » est déclaré inatteignable et pourtant appelé (${callers[0]}).`)
+  }
+}
+
+for (const channel of broadcastChannels) {
+  // The preload forwards every channel generically, so it is not a publisher.
+  const publishers = mentions(
+    channel,
+    (file) => file.startsWith('electron/') && !file.includes('preload'),
+  )
+  const subscribers = mentions(channel, (file) => file.startsWith('src/'))
+  if (excused(channel)) {
+    if (publishers.length > 0 && subscribers.length > 0) {
+      problems.push(`« ${channel} » est déclaré inatteignable et pourtant câblé des deux côtés.`)
+    }
+    continue
+  }
+  if (publishers.length === 0) {
+    problems.push(
+      `la diffusion « ${channel} » n’est émise par personne — un écran qui l’écoute ne bougera jamais.`,
+    )
+  }
+  if (subscribers.length === 0) {
+    problems.push(
+      `la diffusion « ${channel} » n’est écoutée par aucun écran — c’est du travail fait pour personne.`,
+    )
+  }
+}
+
+const rust = files.filter((file) => file.endsWith('.rs'))
+const declared = new Set()
+for (const file of rust) {
+  for (const match of text.get(file).matchAll(/^\s*(?:pub )?mod ([a-z_0-9]+)\s*;/gm)) {
+    declared.add(match[1])
+  }
+}
+for (const file of rust) {
+  const base = path.basename(file, '.rs')
+  // A crate root and a directory's own `mod.rs` are declarations, not modules.
+  if (['lib', 'main', 'mod', 'build'].includes(base)) continue
+  if (!declared.has(base) && !excused(file)) {
+    problems.push(
+      `${file} n’est déclaré par aucun \`mod\` — il n’est pas compilé, quoi qu’il contienne.`,
+    )
+  }
+}
+
+for (const entry of UNREACHED) {
+  const known =
+    invokeChannels.includes(entry.subject) ||
+    broadcastChannels.includes(entry.subject) ||
+    files.includes(entry.subject)
+  if (!known) {
+    problems.push(
+      `UNREACHED mentionne « ${entry.subject} », qui n’existe plus — ` +
+        'une dispense dont le sujet a disparu est une dispense qui pourrit.',
+    )
+  }
+}
+
+if (problems.length > 0) {
+  console.error(`\nsurfaces déclarées et jamais atteintes (${problems.length}):\n`)
+  for (const line of problems) console.error(`  ${line}`)
+  console.error('')
+  process.exit(1)
+}
+
+console.log(
+  `surfaces ok — ${invokeChannels.length} canal(aux), ${broadcastChannels.length} diffusion(s), ` +
+    `${rust.length} fichier(s) Rust, ${UNREACHED.length} dispense(s) déclarée(s)`,
+)

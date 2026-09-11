@@ -55,7 +55,7 @@ const recording = (marks: MomentMark[] = []) => ({
 beforeEach(() => {
   bridge = fakeBridge()
   bridge.when('widget:state', () => recording())
-  bridge.when('widget:resize', () => ({ ok: true }))
+  bridge.when('widget:resize', () => ({ ok: true, above: false }))
   bridge.when('window:focus', () => ({ ok: true }))
   uninstall = installBridge(bridge)
 })
@@ -89,7 +89,22 @@ test('the pill draws the recording and the meter, and names no client on it', as
   expect(screen.getByRole('button', { name: /Néovia Santé/ })).toBeTruthy()
 })
 
-test('an interim result is replaced in place and marked as provisional', async () => {
+/**
+ * **A provisional result is not drawn at all.**
+ *
+ * An early draft drew interims muted, with an ellipsis, and the repo's own
+ * documentation called that a difference over Granola's widget. It could not
+ * happen: `LocalWhisperSession` and `RestSttSession` both emit `isFinal: true`
+ * and every row in `STT_PROVIDERS` declares `streaming: false`, so the branch
+ * was unreachable and the test that covered it fed the component a fixture —
+ * proving a renderer *can* draw a value, never that one arrives, which is the
+ * failure this repo has now written down five times.
+ *
+ * The one line that remains is the drop, and this is what holds it: the day a
+ * streaming provider ships, the widget shows the record until somebody decides
+ * otherwise, rather than silently starting to show guesses.
+ */
+test('a provisional segment is dropped rather than drawn', async () => {
   render(<Widget />)
   await openPanel()
 
@@ -99,33 +114,17 @@ test('an interim result is replaced in place and marked as provisional', async (
       segment: segment('i1', 'far', 'On est plutôt sur du 550', false),
     })
   })
-  expect(await screen.findByText(/On est plutôt sur du 550/)).toBeTruthy()
-  expect(screen.getByText('(en cours de transcription)')).toBeTruthy()
-
-  // The next interim on the same channel replaces it. Appending would grow the
-  // panel by a line per round trip and re-say the same half-sentence.
-  act(() => {
-    bridge.emit('transcript:appended', {
-      meetingId: 'm1',
-      segment: segment('i2', 'far', 'On est plutôt sur du 550 euros', false),
-    })
-  })
   await waitFor(() => {
-    expect(screen.queryByText('On est plutôt sur du 550')).toBeNull()
+    expect(screen.getByText('Rien n’a encore été transcrit.')).toBeTruthy()
   })
-  expect(screen.getByText(/On est plutôt sur du 550 euros/)).toBeTruthy()
 
-  // And the final one takes its place rather than sitting beside it.
   act(() => {
     bridge.emit('transcript:appended', {
       meetingId: 'm1',
       segment: segment('f1', 'far', 'On est plutôt sur du 550 euros pour un confirmé.'),
     })
   })
-  await waitFor(() => {
-    expect(screen.queryByText('(en cours de transcription)')).toBeNull()
-  })
-  expect(screen.getByText('On est plutôt sur du 550 euros pour un confirmé.')).toBeTruthy()
+  expect(await screen.findByText('On est plutôt sur du 550 euros pour un confirmé.')).toBeTruthy()
 })
 
 test('a segment from another meeting is not drawn', async () => {
@@ -143,7 +142,17 @@ test('a segment from another meeting is not drawn', async () => {
   })
 })
 
-test('a note is marked on the meeting and drawn where the rep made it', async () => {
+/**
+ * **The row appears because the main process said so, not because we asked.**
+ *
+ * This used to insert the mark the `invoke` returned, which draws a row whose
+ * write may not have happened and leaves `moment:marked` — a declared broadcast
+ * — doing nothing at all. The test then passed with the broadcast entirely
+ * unwired, which is the exact shape `scripts/check-surfaces.mjs` exists to
+ * fail. So the answer is deliberately withheld here: nothing is drawn until the
+ * broadcast arrives.
+ */
+test('a note is marked on the meeting and drawn when the log says so', async () => {
   let asked: unknown = null
   bridge.when('meeting:mark', (payload) => {
     asked = payload
@@ -159,9 +168,125 @@ test('a note is marked on the meeting and drawn where the rep made it', async ()
   await waitFor(() => {
     expect(asked).toEqual({ meetingId: 'm1', note: 'plafond achats', segmentId: null })
   })
-  expect(await screen.findByText('plafond achats')).toBeTruthy()
   // Cleared, so the next thing the rep types is not appended to the last mark.
   expect((field as HTMLInputElement).value).toBe('')
+  // Not drawn yet — the answer to the invoke is not evidence of a write.
+  expect(screen.queryByText('plafond achats')).toBeNull()
+
+  act(() => {
+    bridge.emit('moment:marked', {
+      meetingId: 'm1',
+      mark: { id: 'mk1', at: STARTED + 90_000, note: 'plafond achats', segmentId: null },
+    })
+  })
+  expect(await screen.findByText('plafond achats')).toBeTruthy()
+})
+
+/**
+ * A mark can be taken back.
+ *
+ * It is typed one-handed into a box floating over a client's face and sent on
+ * `Enter`, so a typo is made here more easily than anywhere else in the
+ * product — and it is read again at the gate, in the rep's own words.
+ */
+test('a mark can be taken back, and the list follows the log', async () => {
+  const asked: unknown[] = []
+  bridge.when('meeting:forget', (payload) => {
+    asked.push(payload)
+    return { forgotten: true }
+  })
+  render(<Widget />)
+  await openPanel()
+
+  act(() => {
+    bridge.emit('moment:marked', {
+      meetingId: 'm1',
+      mark: { id: 'mk1', at: STARTED + 1_000, note: 'plafnod achats', segmentId: null },
+    })
+  })
+  fireEvent.click(await screen.findByRole('button', { name: 'Retirer ce moment marqué' }))
+  await waitFor(() => {
+    expect(asked).toEqual([{ meetingId: 'm1', markId: 'mk1' }])
+  })
+  // Still there: the row goes when the log says it went, not when we asked.
+  expect(screen.getByText('plafnod achats')).toBeTruthy()
+
+  act(() => {
+    bridge.emit('moment:forgotten', { meetingId: 'm1', markId: 'mk1' })
+  })
+  await waitFor(() => {
+    expect(screen.queryByText('plafnod achats')).toBeNull()
+  })
+})
+
+/**
+ * **The pill can mark, without opening anything.**
+ *
+ * Three files described this button before it existed. A rep who wanted to
+ * bookmark a moment had to open a 340-pixel card over the client's face first,
+ * which is the opposite of what a one-press bookmark is for.
+ */
+test('the pill marks a moment with the panel closed, and counts them', async () => {
+  const asked: unknown[] = []
+  bridge.when('meeting:mark', (payload) => {
+    asked.push(payload)
+    return { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null }
+  })
+  render(<Widget />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+  await waitFor(() => {
+    expect(asked).toEqual([{ meetingId: 'm1', note: '', segmentId: null }])
+  })
+
+  // The count is the receipt: a press with no note and no panel changes nothing
+  // else on screen, so without it the rep pressed a button that did nothing.
+  act(() => {
+    bridge.emit('moment:marked', {
+      meetingId: 'm1',
+      mark: { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null },
+    })
+  })
+  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()
+})
+
+/**
+ * **Collapsing the panel must not destroy the call.**
+ *
+ * The transcript and the marks were held by the panel, which is mounted by a
+ * press and unmounted by the next one — so a rep who opened the widget to check
+ * a number, closed it off the client's face and opened it again got an empty
+ * box, on precisely the use case the feature exists for. The subscription lives
+ * in the window now, not in the panel.
+ */
+test('what arrived while the panel was shut is there when it opens', async () => {
+  render(<Widget />)
+  // The window has to know which meeting it is on before a broadcast about
+  // that meeting means anything — `widget:state` is one round trip, and in
+  // production it resolves long before the first turn of a call arrives.
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  // Collapsed the whole time.
+  act(() => {
+    bridge.emit('transcript:appended', {
+      meetingId: 'm1',
+      segment: segment('f1', 'far', 'Le plafond achats est à 550.'),
+    })
+    bridge.emit('moment:marked', {
+      meetingId: 'm1',
+      mark: { id: 'mk1', at: STARTED + 1_000, note: 'à revoir', segmentId: null },
+    })
+  })
+
+  await openPanel()
+  expect(await screen.findByText('Le plafond achats est à 550.')).toBeTruthy()
+  expect(screen.getByText('à revoir')).toBeTruthy()
+
+  // And closing it does not throw any of it away.
+  fireEvent.click(screen.getByRole('button', { name: 'Replier le panneau' }))
+  await openPanel()
+  expect(await screen.findByText('Le plafond achats est à 550.')).toBeTruthy()
+  expect(screen.getByText('à revoir')).toBeTruthy()
 })
 
 test('marking a turn names that turn, so the reader does not have to guess', async () => {

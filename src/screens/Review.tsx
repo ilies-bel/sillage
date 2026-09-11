@@ -1213,10 +1213,24 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */}
             {below === 'document' && !busy ? (
               <PageTurn
+                /*
+                  **Named after what is in the column, not after the column.**
+
+                  The label was the compte-rendu's on both tabs, so a rep
+                  turning the page of the *transcription* was offered « Lire la
+                  suite du compte-rendu » over a page of transcript. The guard
+                  measures the two as different views for exactly this reason —
+                  they are different documents — and the one control that moves
+                  between them was the only thing that had not been told.
+                */
                 what={
-                  unreadIsAbove('document')
-                    ? 'Remonter dans le compte-rendu'
-                    : 'Lire la suite du compte-rendu'
+                  mode === 'transcription'
+                    ? unreadIsAbove('document')
+                      ? 'Remonter dans la transcription'
+                      : 'Lire la suite de la transcription'
+                    : unreadIsAbove('document')
+                      ? 'Remonter dans le compte-rendu'
+                      : 'Lire la suite du compte-rendu'
                 }
                 onTurn={() => turn('document')}
               />

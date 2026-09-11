@@ -2,7 +2,7 @@
  * **The in-meeting widget** — the product, on top of the call.
  *
  * For fifty minutes the Sillage window is behind Teams, and everything this
- * app knows about the call it is recording is on the other side of it. That is
+ * app knows about the call it is recording was on the other side of it. That is
  * the whole gap this screen closes. It is a second *window*, never a second
  * product: every reading on it is a broadcast the main window already
  * subscribes to, and every control is a channel the main window already calls.
@@ -13,7 +13,7 @@
  * they are the proof of life, and they are the one thing here that must never
  * be behind a press. `variant="pill"` is the same instrument at the size the
  * pill has: same scale, same floor, same two channels mirrored about a
- * baseline, without the two-word key a 220-pixel pill cannot afford.
+ * baseline, without the two-word key a 232-pixel pill cannot afford.
  *
  * **The live transcript**, and this is the one that needs an argument, because
  * DEC-38 removed a live transcript pane and this repo's rules say not to
@@ -27,13 +27,14 @@
  * never on the pill, and the meter is on screen either way — so at no point is
  * a rep watching text to find out whether they are being heard.
  *
- * Two things it does that the pane DEC-38 removed did not. It **names the
- * side**, by `speakerLabel` and therefore by the same rule as every other
- * transcript in the product (DEC-47) — and where the calendar settles it, by
- * the client's first name. And it **says what is provisional**: an interim
- * result is drawn muted with an ellipsis and replaced in place, so a rep never
- * reads a half-heard sentence as the record. Granola's widget shows the same
- * stream with neither distinction.
+ * **It is collected by this component and not by the panel**, which is the
+ * difference between the feature working and not. The panel is mounted by a
+ * press and unmounted by the next one, so a transcript held there began at the
+ * press and was destroyed by the one that closed it — a rep who opened the
+ * widget to check a number, closed it off the client's face, and opened it
+ * again had an empty box, on the exact use case the paragraph above describes.
+ * The subscription lives here, for the life of the window, whether anybody is
+ * looking or not.
  *
  * **The mark** (`core/contracts/marks.ts`). One press — on the pill for a
  * moment, on a line for that turn — with an optional note. It is the only thing
@@ -52,6 +53,16 @@
  * version of what that decision forbids. DEC-4 keeps the one confirmation on a
  * screen the rep goes to deliberately, with the document in front of them —
  * nothing here can reach a client's CRM, and nothing here confirms anything.
+ *
+ * And **no provisional text**. An early draft drew interim results muted, with
+ * an ellipsis, and claimed that as a difference over Granola's widget: every
+ * shipped provider is batch — `LocalWhisperSession` and `RestSttSession` both
+ * emit `isFinal: true` and every row in `STT_PROVIDERS` declares
+ * `streaming: false` — so `isFinal: false` cannot occur, and what was written
+ * was a rendering no run of this product could produce, proved by a test that
+ * fed it a fixture. A non-final segment is dropped here rather than drawn, in
+ * one line, so the day a streaming provider ships the widget shows the record
+ * and not a guess until somebody decides otherwise.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
@@ -86,40 +97,122 @@ export function Widget() {
   const [open, setOpen] = useState(false)
 
   /*
-   * A transition re-reads the whole state. The widget is destroyed when the
-   * recording ends, so the case this actually covers is the other one: a
-   * meeting that starts while the window is still open from the last one, on a
-   * rep who records two calls back to back.
+   * **Everything live is collected here, not in the panel.**
+   *
+   * The panel is mounted by a press. State held there begins at that press and
+   * is destroyed by the one that closes it — which for the transcript is the
+   * feature not working, and for the marks is a rep's own presses disappearing
+   * from a list they are looking at. `widget:state` is read once, at window
+   * creation, and nothing re-reads it during a recording: `session:changed`
+   * fires on transitions and a recording has none.
    */
+  const [turns, setTurns] = useState<TranscriptSegment[]>([])
+  const [marks, setMarks] = useState<MomentMark[]>([])
+  const [said, setSaid] = useState<string | null>(null)
+
+  // The marks the meeting already had when this window opened — a widget that
+  // is created mid-call after a crash, or a second recording in one window.
+  const loadedMarks = meeting?.marks
+  useEffect(() => {
+    if (loadedMarks) setMarks((was) => (was.length === 0 ? [...loadedMarks] : was))
+  }, [loadedMarks])
+
   useBroadcast('session:changed', () => state.reload())
 
+  /*
+   * The turns arrive on the broadcast nothing had ever subscribed to.
+   *
+   * `transcript:appended` has been emitted for every segment of every meeting
+   * since the orchestrator was written, and was read by no window — the session
+   * screen draws the meter instead (DEC-38) and the gate reads the stored
+   * record. A broadcast with no subscriber is a promise the product is not
+   * keeping; this is the surface that keeps it.
+   */
+  useBroadcast('transcript:appended', (payload) => {
+    if (payload.meetingId !== meetingId) return
+    // Batch providers only, today — see the header. A provisional result is
+    // dropped rather than drawn: this surface shows the record.
+    if (!payload.segment.isFinal) return
+    setTurns((was) => [...was, payload.segment].slice(-KEPT_TURNS))
+  })
+
+  /*
+   * **The broadcast is the only way this list changes.**
+   *
+   * Not an optimistic insert from what `meeting:mark` returned, which is what
+   * this did: that draws a mark whose write may not have happened, and it
+   * leaves the broadcast doing nothing at all — the shape
+   * `scripts/check-surfaces.mjs` now fails the build on. One path, so the row
+   * on screen is the row in the log.
+   */
+  useBroadcast('moment:marked', (payload) => {
+    if (payload.meetingId !== meetingId) return
+    setMarks((was) =>
+      was.some((mark) => mark.id === payload.mark.id) ? was : [...was, payload.mark],
+    )
+  })
+
+  useBroadcast('moment:forgotten', (payload) => {
+    if (payload.meetingId !== meetingId) return
+    setMarks((was) => was.filter((mark) => mark.id !== payload.markId))
+  })
+
+  const mark = useCallback(
+    async (segmentId: string | null, text: string) => {
+      if (meetingId === null) return
+      try {
+        await invoke('meeting:mark', { meetingId, note: text, segmentId })
+        setSaid(text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`)
+      } catch (error) {
+        setSaid(error instanceof Error ? error.message : 'Impossible de marquer ce moment.')
+      }
+    },
+    [meetingId],
+  )
+
+  const forget = useCallback(
+    (markId: string) => {
+      if (meetingId === null) return
+      void invoke('meeting:forget', { meetingId, markId })
+        .then(() => setSaid('Moment retiré.'))
+        .catch(() => setSaid('Impossible de retirer ce moment.'))
+    },
+    [meetingId],
+  )
+
   return (
-    <Frame>
-      {meeting === null ? (
-        <Pill
-          title={null}
-          startedAt={null}
-          meetingId={null}
-          open={false}
-          onToggle={() => undefined}
-        />
-      ) : (
+    <Frame open={open}>
+      {(above) => (
         <>
           <Pill
-            title={meeting.clientName ?? (meeting.title || null)}
-            startedAt={meeting.startedAt}
-            meetingId={meeting.meetingId}
+            title={meeting?.clientName ?? (meeting?.title || null)}
+            startedAt={meeting?.startedAt ?? null}
+            meetingId={meetingId}
+            marks={marks.length}
             open={open}
+            above={above}
             onToggle={() => setOpen((was) => !was)}
+            onMark={() => void mark(null, '')}
           />
           {open && meetingId !== null ? (
             <Panel
               meetingId={meetingId}
-              heading={meeting.clientName ?? meeting.title}
-              initialMarks={meeting.marks}
+              heading={meeting?.clientName ?? meeting?.title ?? ''}
+              turns={turns}
+              marks={marks}
+              onMark={mark}
+              onForget={forget}
               onClose={() => setOpen(false)}
             />
           ) : null}
+          {/*
+            What just happened, for a screen reader and for a rep who pressed
+            *Marquer* on the pill with no panel open — a refusal (« aucun
+            enregistrement en cours ») would otherwise have nowhere to appear.
+          */}
+          <p aria-live="polite" className="sr-only">
+            {said ?? ''}
+          </p>
         </>
       )}
     </Frame>
@@ -127,36 +220,69 @@ export function Widget() {
 }
 
 /**
- * The window is the size of what is in it.
+ * The halo, and the measurement.
  *
- * Everything around the card is a rectangle of somebody else's screen that the
- * rep cannot click — the window is transparent and always on top, so an
- * oversized one is a hole punched in the call. The measurement is the
- * renderer's because the renderer is the only thing that knows: the pill's
- * width depends on the elapsed time and on French strings, and the panel's
- * height depends on how much has been said.
+ * Two jobs, and they are the same job. The window is transparent and always on
+ * top, so it is exactly as big as the renderer says it is — and
+ * `getBoundingClientRect` does not include a `box-shadow`, so the first version
+ * reported the card's own box and the shadow was clipped to nothing. The
+ * shadow is the only thing separating a pale card from the video call
+ * underneath (`--shadow-overlay` says so in `tokens.css`), so on a real call
+ * the rep got a white rectangle cut into the picture, while every harness
+ * screenshot showed the shadow beautifully against five hundred pixels of the
+ * app's own paper. Same blind spot as `--expand` hiding clipped textareas for
+ * thirteen rounds: the instrument was measuring the wrong box.
+ *
+ * So the frame reserves the shadow's own extent, and those pixels are given
+ * back: `widget:passThrough` turns the window's mouse off while the pointer is
+ * over the halo (`setIgnoreMouseEvents(…, { forward: true })`, which still
+ * delivers moves so it can be turned on again), so the halo is a place the rep
+ * can click *through* into Teams rather than a hole punched in the call.
  *
  * `ResizeObserver` and not an effect on the state that opened it: the content
  * also changes height when a turn arrives, when a mark is made and when the
- * health line appears, and an effect per cause is a list that will be one short.
+ * health line appears, and an effect per cause is a list that will be one
+ * short.
  */
-function Frame({ children }: { children: React.ReactNode }) {
+const HALO = 20
+
+function Frame({ open, children }: { open: boolean; children: (above: boolean) => React.ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
+  const [above, setAbove] = useState(false)
 
   useLayoutEffect(() => {
     const element = box.current
     if (!element || typeof ResizeObserver === 'undefined') return
     let last = ''
     const send = (): void => {
-      const rect = element.getBoundingClientRect()
-      const width = Math.ceil(rect.width)
-      const height = Math.ceil(rect.height)
+      const frame = element.getBoundingClientRect()
+      /*
+       * The pill, found in the DOM rather than held in a ref.
+       *
+       * It was a ref on a wrapper carrying `display: contents` — which has no
+       * box at all, so every measurement came back zero and the anchor the
+       * whole placement is built on was « the top of the frame », silently. A
+       * `data-` attribute on the element that actually paints cannot be wrong
+       * in that way.
+       */
+      const anchor = element.querySelector('[data-pill]')?.getBoundingClientRect()
+      const width = Math.ceil(frame.width)
+      const height = Math.ceil(frame.height)
       const key = `${width}×${height}`
       // The observer fires on every sub-pixel change; the window may only be
       // moved for a real one, or a resize animates against itself.
       if (width === 0 || height === 0 || key === last) return
       last = key
-      void invoke('widget:resize', { width, height }).catch(() => undefined)
+      void invoke('widget:resize', {
+        width,
+        height,
+        // Where the pill is inside the frame, which is what lets the main
+        // process leave *the pill* where it was rather than a window edge.
+        pillTop: Math.max(0, Math.round((anchor?.top ?? frame.top) - frame.top)),
+        pillHeight: Math.round(anchor?.height ?? height),
+      })
+        .then((placement) => setAbove(placement.above))
+        .catch(() => undefined)
     }
     const observer = new ResizeObserver(send)
     observer.observe(element)
@@ -164,16 +290,56 @@ function Frame({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect()
   }, [])
 
+  /*
+   * The pointer over the halo hands the mouse back to whatever is underneath.
+   *
+   * On `pointermove` rather than `mouseenter`/`mouseleave` on two elements: once
+   * the window is ignoring the mouse it receives *moves* and nothing else, so a
+   * `mouseenter` on the card would never arrive and the widget would be
+   * unclickable until it resized. One handler, one question — is the pointer
+   * over the card — asked on every move.
+   */
+  const through = useRef<boolean | null>(null)
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const cards = box.current?.querySelectorAll('[data-card]')
+    if (!cards || cards.length === 0) return
+    // Any card, not one: the pill and the panel are two rounded rectangles with
+    // a gap between them, and the gap is halo like any other edge.
+    const inside = [...cards].some((card) => {
+      const rect = card.getBoundingClientRect()
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      )
+    })
+    if (through.current === !inside) return
+    through.current = !inside
+    void invoke('widget:passThrough', { through: !inside }).catch(() => undefined)
+  }
+
   return (
-    <div className="flex h-full w-full items-end justify-center bg-transparent">
+    <div
+      className="flex h-full w-full items-start justify-center bg-transparent"
+      onPointerMove={onPointerMove}
+    >
       {/*
         `w-max`: the frame is measured, so it must be exactly as wide as its
         content and never as wide as the window it is in — otherwise the first
         measurement reports the window's own size back to the window and it
         never shrinks again.
+
+        `flex-col-reverse` when the panel opens upward. The DOM order never
+        changes, so the tab order is always pill first, and only the paint
+        flips.
       */}
-      <div ref={box} className="w-max">
-        {children}
+      <div
+        ref={box}
+        style={{ padding: `${HALO}px` }}
+        className={`flex w-max ${above && open ? 'flex-col-reverse' : 'flex-col'}`}
+      >
+        {children(above)}
       </div>
     </div>
   )
@@ -183,8 +349,11 @@ interface PillProps {
   title: string | null
   startedAt: number | null
   meetingId: string | null
+  marks: number
   open: boolean
+  above: boolean
   onToggle: () => void
+  onMark: () => void
 }
 
 /**
@@ -198,9 +367,22 @@ interface PillProps {
  * the time » is the worst version of the dead control DEC-26 forbids, because
  * the rep cannot even tell it is broken.
  */
-function Pill({ title, startedAt, meetingId, open, onToggle }: PillProps) {
+function Pill({
+  title,
+  startedAt,
+  meetingId,
+  marks,
+  open,
+  above,
+  onToggle,
+  onMark,
+}: PillProps) {
   return (
-    <div className="drag-region bg-card border-card shadow-overlay flex items-center gap-2 rounded-lg border py-1.5 pl-2.5 pr-1.5">
+    <div
+      data-pill
+      data-card
+      className="drag-region bg-card border-card shadow-overlay flex items-center gap-2 rounded-lg border py-1.5 pl-2.5 pr-1.5"
+    >
       {/*
         Recording, said the way the rest of the product says it: orange, which
         VISION.md §6 gives exactly one meaning — armed or recording — and a
@@ -219,6 +401,39 @@ function Pill({ title, startedAt, meetingId, open, onToggle }: PillProps) {
 
       <Elapsed since={startedAt} />
 
+      {/*
+        **Marking, without opening anything.**
+
+        Three files described this button before it existed, which is the defect
+        this repo has now been caught committing more than once: the contract
+        says « null is the other press — the button on the pill », and the pill
+        had exactly one control on it, the chevron. A rep who wanted to mark a
+        moment had to open a 340-pixel card over the client's face first, which
+        is the opposite of what a one-press bookmark is for.
+
+        The count beside it is the receipt. A press with no note produces no
+        visible change anywhere — the panel may be closed, and is — so without
+        it the rep would have pressed a button that, as far as the screen is
+        concerned, did nothing.
+      */}
+      {meetingId === null ? null : (
+        <button
+          type="button"
+          onClick={onMark}
+          aria-label={
+            marks === 0 ? 'Marquer ce moment' : `Marquer ce moment (${marks} déjà marqués)`
+          }
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-1 rounded-sm px-1 transition"
+        >
+          <Bookmark />
+          {marks > 0 ? (
+            <span aria-hidden className="tabular-nums text-meta leading-none">
+              {marks}
+            </span>
+          ) : null}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={onToggle}
@@ -227,12 +442,16 @@ function Pill({ title, startedAt, meetingId, open, onToggle }: PillProps) {
           Named, not decorated. « ▸ » is a shape and a screen reader reads it as
           nothing; the check that measures every control's accessible name is
           what caught the last one of these in this product.
+
+          The arrow points where the panel will go, which is the direction the
+          main process answered with — a chevron that always pointed up while
+          the card opened downward would be the widget lying about itself.
         */
         aria-label={open ? 'Replier le panneau' : `Ouvrir le panneau${title ? ` — ${title}` : ''}`}
         className="no-drag text-muted hover:bg-subtle hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
       >
         <span aria-hidden className="text-ui leading-none">
-          {open ? '▾' : '▴'}
+          {open === above ? '▾' : '▴'}
         </span>
       </button>
     </div>
@@ -259,47 +478,16 @@ interface PanelProps {
   meetingId: string
   /** The client, else the objet, else nothing — never an invented name. */
   heading: string
-  initialMarks: readonly MomentMark[]
+  turns: readonly TranscriptSegment[]
+  marks: readonly MomentMark[]
+  onMark: (segmentId: string | null, note: string) => void
+  onForget: (markId: string) => void
   onClose: () => void
 }
 
-function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
-  const [turns, setTurns] = useState<TranscriptSegment[]>([])
-  const [interim, setInterim] = useState<Record<'rep' | 'far', TranscriptSegment | null>>({
-    rep: null,
-    far: null,
-  })
-  const [marks, setMarks] = useState<MomentMark[]>([...initialMarks])
+function Panel({ meetingId, heading, turns, marks, onMark, onForget, onClose }: PanelProps) {
   const [note, setNote] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
-  const [said, setSaid] = useState<string | null>(null)
-
-  /*
-   * The turns arrive on the broadcast nothing had ever subscribed to.
-   *
-   * `transcript:appended` has been emitted for every segment of every meeting
-   * since the orchestrator was written, and was read by no window — the session
-   * screen draws the meter instead (DEC-38) and the gate reads the stored
-   * record. A broadcast with no subscriber is a promise the product is not
-   * keeping; this is the surface that keeps it.
-   */
-  useBroadcast('transcript:appended', (payload) => {
-    if (payload.meetingId !== meetingId) return
-    const segment = payload.segment
-    if (segment.isFinal) {
-      setInterim((was) => ({ ...was, [segment.channel]: null }))
-      setTurns((was) => [...was, segment].slice(-KEPT_TURNS))
-    } else {
-      // Replaced in place, per channel. Appending them would make the panel
-      // grow by a line per round trip and re-say the same half-sentence.
-      setInterim((was) => ({ ...was, [segment.channel]: segment }))
-    }
-  })
-
-  useBroadcast('moment:marked', (payload) => {
-    if (payload.meetingId !== meetingId) return
-    setMarks((was) => (was.some((mark) => mark.id === payload.mark.id) ? was : [...was, payload.mark]))
-  })
 
   /*
    * The transcription's own health, and nothing else's.
@@ -316,32 +504,12 @@ function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
     setTrouble(health.state === 'ok' ? null : (health.reason ?? null))
   })
 
-  const mark = useCallback(
-    async (segmentId: string | null, text: string) => {
-      try {
-        const made = await invoke('meeting:mark', { meetingId, note: text, segmentId })
-        setMarks((was) => (was.some((m) => m.id === made.id) ? was : [...was, made]))
-        setSaid('Moment marqué.')
-      } catch (error) {
-        setSaid(error instanceof Error ? error.message : 'Impossible de marquer ce moment.')
-      }
-    },
-    [meetingId],
-  )
-
   /*
    * Everything said, in order, with the rep's own marks in place — one helper
    * in `core/contracts/marks.ts`, shared with the two readers in the app, so
    * the widget and the gate cannot disagree about where a mark sits.
-   *
-   * The interim lines ride at the end and are never given to the interleave:
-   * they are not in the record, they cannot be marked, and a mark placed
-   * against one would point at a sentence that is about to be replaced.
    */
   const rows = useMemo(() => interleaveMarks(turns, marks), [turns, marks])
-  const pending = [interim.rep, interim.far].filter(
-    (segment): segment is TranscriptSegment => segment !== null && segment.text.trim() !== '',
-  )
 
   /*
    * Follow the conversation, unless the rep has scrolled up.
@@ -356,19 +524,20 @@ function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
   useLayoutEffect(() => {
     const element = scroller.current
     if (element && stuck.current) element.scrollTop = element.scrollHeight
-  }, [rows.length, pending.length])
+  }, [rows.length])
 
   return (
-    <div className="bg-card border-card shadow-overlay mt-1.5 w-[340px] rounded-lg border">
+    <div data-card className="bg-card border-card shadow-overlay my-1.5 w-[340px] rounded-lg border">
       {/*
         Which call this is.
 
         The pill deliberately does not carry it — a name floating over a video
         call is the one thing on this window that would be read by everybody in
         the room if the rep is sharing their screen, and the pill is the state
-        that is always up. Here it is behind a press the rep made, and it is
-        worth the line: a widget that says « recording » and not *what* is one a
-        rep has to open the app to trust.
+        that is always up. Here it is behind a press the rep made, and the
+        window is excluded from screen capture entirely
+        (`setContentProtection`), which is what makes putting it here defensible
+        at all.
 
         `Réunion en cours` is the honest fallback. The objet is typed during or
         after the call (DEC-31), so at minute two there is often nothing to
@@ -391,41 +560,25 @@ function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
         ref={scroller}
         onScroll={(event) => {
           const element = event.currentTarget
-          stuck.current =
-            element.scrollHeight - element.scrollTop - element.clientHeight < 24
+          stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
         }}
         className="max-h-[220px] overflow-y-auto px-3 py-2"
       >
-        {rows.length === 0 && pending.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-muted text-ui">{NOTHING_YET}</p>
         ) : (
           <ul className="space-y-1.5">
             {rows.map((row) =>
               row.kind === 'mark' ? (
-                <MarkRow key={row.key} mark={row.mark} />
+                <MarkRow key={row.key} mark={row.mark} onForget={onForget} />
               ) : (
-                <TurnRow key={row.key} segment={row.segment} onMark={() => void mark(row.segment.id, '')} />
+                <TurnRow
+                  key={row.key}
+                  segment={row.segment}
+                  onMark={() => onMark(row.segment.id, '')}
+                />
               ),
             )}
-            {pending.map((segment) => (
-              <li key={`interim-${segment.channel}`} className="flex gap-2">
-                <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
-                  {speakerLabel(segment.channel, [])}
-                </span>
-                {/*
-                  Muted and ended with an ellipsis, because it is not the
-                  record: an interim result is never persisted (DEC-12), can
-                  never be cited (DEC-21), and is routinely wrong about the end
-                  of the sentence. The rep is told which half of what they are
-                  reading is provisional; Granola's widget draws the same stream
-                  and does not.
-                */}
-                <span className="text-muted min-w-0 flex-1 text-ui leading-relaxed">
-                  {segment.text} <span aria-hidden>…</span>
-                  <span className="sr-only">(en cours de transcription)</span>
-                </span>
-              </li>
-            ))}
           </ul>
         )}
       </div>
@@ -439,18 +592,22 @@ function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
             event.preventDefault()
             const text = note.trim()
             setNote('')
-            void mark(null, text)
+            onMark(null, text)
           }}
           maxLength={MARK_NOTE_MAX}
           aria-label="Noter ce moment"
           placeholder="Noter ce moment…"
           className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-2 py-1 text-ui"
         />
-        <Button variant="nav" className="no-drag px-1" onClick={() => {
-          const text = note.trim()
-          setNote('')
-          void mark(null, text)
-        }}>
+        <Button
+          variant="nav"
+          className="no-drag px-1"
+          onClick={() => {
+            const text = note.trim()
+            setNote('')
+            onMark(null, text)
+          }}
+        >
           Marquer
         </Button>
       </div>
@@ -501,22 +658,33 @@ function Panel({ meetingId, heading, initialMarks, onClose }: PanelProps) {
             </Button>
           </span>
         ) : (
-          <Button variant="text" className="no-drag text-danger hover:text-danger px-1" onClick={() => setConfirmEnd(true)}>
+          <Button
+            variant="text"
+            className="no-drag text-danger hover:text-danger px-1"
+            onClick={() => setConfirmEnd(true)}
+          >
             Terminer
           </Button>
         )}
       </div>
-
-      {/*
-        What just happened, for a screen reader and for a rep who pressed
-        *Marquer* and needs to know it landed — the list above may be scrolled
-        away from the new mark, and a refusal (« aucun enregistrement en
-        cours ») has nowhere else to appear.
-      */}
-      <p aria-live="polite" className="sr-only">
-        {said ?? ''}
-      </p>
     </div>
+  )
+}
+
+/**
+ * The mark, drawn rather than typed.
+ *
+ * A glyph would have been one character and it was wrong twice over: `⌁` is not
+ * in Inter, so it fell through to whatever the system had and rendered as an
+ * arrow — a shape that means *go* on a control that means *remember this* — and
+ * a fallback is invisible to every check in this repo, because the accessible
+ * name and the box are both correct. Sixteen pixels of path has no fallback.
+ */
+function Bookmark() {
+  return (
+    <svg aria-hidden width="10" height="12" viewBox="0 0 10 12" fill="currentColor">
+      <path d="M1 0h8a1 1 0 0 1 1 1v10.2a.5.5 0 0 1-.77.42L5 8.9l-4.23 2.72A.5.5 0 0 1 0 11.2V1a1 1 0 0 1 1-1Z" />
+    </svg>
   )
 }
 
@@ -554,26 +722,9 @@ function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () =
   )
 }
 
-/**
- * The mark, drawn rather than typed.
- *
- * A glyph would have been one character and it was wrong twice over: `⌁` is not
- * in Inter, so it fell through to whatever the system had and rendered as an
- * arrow — a shape that means *go* on a control that means *remember this* — and
- * a fallback is invisible to every check in this repo, because the accessible
- * name and the box are both correct. Sixteen pixels of path has no fallback.
- */
-function Bookmark() {
+function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
   return (
-    <svg aria-hidden width="10" height="12" viewBox="0 0 10 12" fill="currentColor">
-      <path d="M1 0h8a1 1 0 0 1 1 1v10.2a.5.5 0 0 1-.77.42L5 8.9l-4.23 2.72A.5.5 0 0 1 0 11.2V1a1 1 0 0 1 1-1Z" />
-    </svg>
-  )
-}
-
-function MarkRow({ mark }: { mark: MomentMark }) {
-  return (
-    <li className="flex gap-2">
+    <li className="group flex gap-2">
       <span className="text-brand-700 flex w-12 shrink-0 items-center gap-1 text-meta font-semibold leading-relaxed">
         <Bookmark />
         marqué
@@ -581,6 +732,30 @@ function MarkRow({ mark }: { mark: MomentMark }) {
       <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2 text-ui leading-relaxed">
         {mark.note === '' ? 'Moment marqué.' : mark.note}
       </span>
+      {/*
+        **A mark can be taken back.**
+
+        It is typed one-handed, into a box floating over a client's face, and
+        sent on `Enter` — so a mistake is made here more easily than anywhere
+        else in the product, and until this control existed there was no way to
+        correct one: no channel, no event, nothing. It would have sat in the
+        reader at the gate, in the rep's own words, permanently.
+
+        A removal is an **event**, not a delete (DEC-27 leaves exactly one
+        delete in this codebase and it is the diagnostics purge): `moment.forgotten`
+        is appended and the fold drops the pair, so the log still says what
+        happened and when.
+      */}
+      <button
+        type="button"
+        onClick={() => onForget(mark.id)}
+        aria-label="Retirer ce moment marqué"
+        className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
     </li>
   )
 }
