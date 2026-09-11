@@ -730,7 +730,15 @@ Read `docs/reference/vsa-api.md` before starting. It has the real shapes and thr
       outage into a dropped compte-rendu. `available: false` is a different thing and still
       disables: it means there is nothing to send at all (no opportunity in the extraction, no
       recipient for a draft), which no amount of reconnecting fixes.
-- [x] Attach the raw transcript via `POST /v1/crm/tasks/{id}/attach`.
+- [ ] Attach the raw transcript via `POST /v1/crm/tasks/{id}/attach`. **Implemented on
+      the adapter, deliberately not wired** — `attachTranscript` exists and is tested,
+      and nothing calls it. Putting the verbatim transcript of a client call into a
+      shared VerySwing task is a *disclosure*, not an enhancement: the transcript is
+      the evidence this product keeps (DEC-12 discards only the audio), and pushing it
+      into the client's CRM changes who can read it. That earns a fourth intent in the
+      gate's list — visible, uncheckable, never checked by default (DEC-4, DEC-20) —
+      and the decision has not been taken. `npm run check:ports` holds the claim to the
+      call site so this cannot silently read as done again.
 
 **Done when:** *Valider* produces a visible task, opportunity and contacts in the sandbox plus
 a draft in Outlook — and killing VSA mid-push still ships the draft and leaves the row

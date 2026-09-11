@@ -561,8 +561,15 @@ machine) or in `core/domain/` — never in an IPC handler.
   the only *guarded* rule in the transition table, and no caller — so no meeting
   ever reached `done`. The suites were green throughout, `IMPLEMENTATION.md`
   marked the step `[x]`, and the screenshot harness photographed a gate whose
-  button promised three things of which one could happen. **When a step is marked
-  done, grep for a call site outside the module that declares it.**
+  button promised three things of which one could happen. **`npm run check:ports`
+  is that grep, run for you**: every method on a port declared in
+  `core/contracts/` must be called from outside the module that implements it, or
+  be listed in `UNWIRED` with the reason and what wiring it would cost — the
+  `check-platform.mjs` shape, including the half that matters most, which is that
+  an allowance whose method has since disappeared also fails. Two are listed
+  today: `attachTranscript` and `createContact` both *write into the client's
+  systems* and belong in the gate's intent list as a decision, not as a side
+  effect of extraction.
 - **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
   account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
 - **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
@@ -657,7 +664,7 @@ but the running main process holds the session in memory and never re-reads it.
 
 ```
 npm test                  # the suite. prints which tests are deferred, and why
-npm run check             # typecheck + boundaries + CRM containment + platform + French
+npm run check             # typecheck + boundaries + CRM containment + platform + French + ports
 npm run test:e2e          # builds, then walks the real application under Electron
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```
