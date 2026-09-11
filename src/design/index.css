@@ -170,10 +170,21 @@
    * the one moment the rep is certainly watching it, because the ordinary way it
    * ends is the rep pressing its own *Terminer*.
    *
-   * The tokens and nothing else: `--motion`, `--ease-out`, opacity plus a 3px
+   * The tokens and nothing else: `--motion`, `--ease-in`, opacity plus a 3px
    * translate, which is `riseIn` run backwards. No scale — a card scaling away
    * over a video call is the kind of motion VISION.md §6 rules out, and this one
    * is on top of everything on every Space.
+   *
+   * **`--ease-in`, and it shipped as `--ease-out` for one round.** There was one
+   * curve and VISION.md §6 said « ease-out » flat, so the exit wore the entering
+   * curve — `cubic-bezier(0.22, 1, 0.36, 1)`, an expo-out, which spends 73% of its
+   * change in the first 35ms. That is precisely right for something arriving and a
+   * **blink** for something leaving: measured on this element, opacity above 0.05
+   * for 62 of the 150ms, the translate spent entirely below 25% opacity, and then
+   * 88ms of a fully transparent always-on-top window still over the call. The
+   * reasoning that shipped it was « the curve difference is imperceptible at
+   * 150ms », which is what reasoning instead of measuring looks like on a project
+   * whose method is to measure the shipped box.
    *
    * `will-change` is deliberately absent. It would promote the layer for the
    * hundred and fifty milliseconds this class exists, and this window is
@@ -191,8 +202,8 @@
     opacity: 0;
     transform: translateY(3px);
     transition:
-      opacity var(--motion) var(--ease-out),
-      transform var(--motion) var(--ease-out);
+      opacity var(--motion) var(--ease-in),
+      transform var(--motion) var(--ease-in);
   }
 
   /*

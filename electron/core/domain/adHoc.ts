@@ -158,12 +158,30 @@ export interface AdHocInput {
    */
   meetingLive: boolean
   /**
-   * This hold has already produced an offer.
+   * **This conversation has been decided** — offered, or live while the product
+   * was already working on a meeting.
    *
-   * Without it, a rep who dismisses the offer is asked again on the next poll
-   * for the rest of the call. One offer per hold; the next hold is a new call.
+   * Two facts, and they are one fact, which is what took three rounds to see.
+   * Without the first, a rep who dismisses the offer is asked again on the next
+   * poll for the rest of the call. Without the second, `meetingLive` is a *pause*:
+   * « press *Terminer* while still on the call » — which the widget's own docblock
+   * calls an ordinary thing for a client to ask — moves the meeting out of the
+   * states the caller counts, and the detector offers to record the conversation it
+   * has **just recorded**, with an OS notification that navigates the rep off
+   * whatever they are reading.
+   *
+   * The unit is the **hold**, not the instant and not the meeting. One offer per
+   * hold; the next hold is a new call, because a conferencing application releases
+   * the microphone when its call ends. That is what keeps this a horizon rather
+   * than a park: « end one call, take another » arrives as a different `heldSince`
+   * and is offered.
+   *
+   * Deliberately not inferred from a wider `meetingLive`: `ended` and `extracting`
+   * persist indefinitely when no model is configured (DEC-39), which is every
+   * meeting on the demo build DEC-28 calls the first deliverable, so counting them
+   * would disable detection permanently.
    */
-  offered: boolean
+  spent: boolean
 }
 
 /**
@@ -182,7 +200,7 @@ export type AdHocDecision =
   | { action: 'none'; untilMs: number; reason: string }
 
 export const decideAdHoc = (input: AdHocInput): AdHocDecision => {
-  const { micHeldBy, now, heldSince, meetingLive, offered } = input
+  const { micHeldBy, now, heldSince, meetingLive, spent } = input
 
   if (!micHeldBy) {
     return {
@@ -220,7 +238,7 @@ export const decideAdHoc = (input: AdHocInput): AdHocDecision => {
     }
   }
 
-  if (offered) {
+  if (spent) {
     // A live hold, so the *end* of it is what is being watched for now — that is
     // what withdraws the offer — and that deserves the tight interval.
     return {

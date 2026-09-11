@@ -691,7 +691,15 @@ Rules:
 - Radius 10–14px. Borders 1px, `--border-subtle`. Shadows barely there (`0 1px 2px rgb(0 0 0 / 8%)`).
 - Section headers: short accent rule + uppercase, letterspaced, muted label.
 - Rows, not cards, for lists. Density over decoration.
-- Motion: ≤150ms, ease-out, opacity and 2–4px translate only. Nothing bounces.
+- Motion: ≤150ms, opacity and 2–4px translate only. Nothing bounces. **Ease-out on the
+  way in, ease-in on the way out** — this said « ease-out » flat, and the one exit in the
+  product took it: `--ease-out` is `cubic-bezier(0.22, 1, 0.36, 1)`, an expo curve that
+  spends 73% of its change in the first 35ms, which is what makes something *arriving* feel
+  instant and then settle. Applied to the widget leaving the screen it is a **blink**
+  followed by 81ms of an invisible always-on-top window — measured on the shipped element:
+  opacity above 0.05 for 62 of the 150ms, and the 3px translate spent entirely below 25%
+  opacity, where nobody can see it. Two tokens, and the rule is which end of the motion the
+  slow part belongs to.
 - No illustration inside the app. The calm comes from the palette, not from art. The one
   exception is a paper grain (`--grain`, a 64px tiled noise image at most −9/255 of
   luminance) on quiet surfaces only — splash, empty transcript pane, empty signal rail,

@@ -322,6 +322,27 @@ export function Widget() {
 const HALO = 20
 
 /**
+ * How long the frame waits for its own webfont before reporting a size.
+ *
+ * The main process does not show this window until the renderer has said how big it
+ * is (`FIRST_FRAME_MS` in `Overlay.ts`), which is what stopped a card appearing
+ * clipped and sliding into place. The measurement itself then has to be worth
+ * waiting for — and measured on the shipped renderer it was not: the first frame is
+ * laid out in the **fallback** face, so the pill reported 239 px, Inter then loaded
+ * and it became 276, and `placeAroundPill` holds the pill's *centre*, so those 37 px
+ * moved the window sideways by eighteen. Before the window was deferred that jump
+ * was the third of three; after, it would have been the only one left, and the one
+ * still visible.
+ *
+ * Inter is bundled (`src/font/`), so `document.fonts.status` is almost always
+ * `'loaded'` already and this costs nothing. The deadline is for the case that is
+ * not true, and it is deliberately **shorter** than `FIRST_FRAME_MS`: silence here
+ * is a pill that does not appear until the main process gives up on us, so the
+ * renderer must always answer first, with a worse number if that is all it has.
+ */
+const FONT_DEADLINE_MS = 120
+
+/**
  * How long this element's own transition will take, in milliseconds — read off
  * the resolved style and never written down twice.
  *
@@ -414,10 +435,23 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
    */
   const last = useRef('')
 
+  /**
+   * Whether the box being measured is drawn in the face it will keep.
+   *
+   * A ref and not state: flipping it must not re-render, and it has to survive the
+   * effect re-arming on `above` — the question « has this window ever been legible »
+   * belongs to the window, like `last` beside it.
+   */
+  const legible = useRef(false)
+
   useLayoutEffect(() => {
     const element = box.current
     if (!element || typeof ResizeObserver === 'undefined') return
     const send = (): void => {
+      // Nothing is reported in the fallback face — see `FONT_DEADLINE_MS`. The
+      // observer fires on the initial observe too, so the guard has to be here and
+      // not only on the first call.
+      if (!legible.current) return
       const frame = element.getBoundingClientRect()
       /*
        * The pill, found in the DOM rather than held in a ref.
@@ -463,8 +497,78 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
     }
     const observer = new ResizeObserver(send)
     observer.observe(element)
-    send()
-    return () => observer.disconnect()
+
+    /*
+     * **Speak once the type is settled, and always speak.** Both halves matter: the
+     * main process is holding the window off screen until we do, so every path out of
+     * here ends in a `send()` — a font that never arrives costs the rep a worse
+     * measurement, never a missing pill (DEC-26).
+     */
+    let deadline: ReturnType<typeof setTimeout> | null = null
+    const speak = (): void => {
+      if (legible.current) return
+      legible.current = true
+      if (deadline !== null) clearTimeout(deadline)
+      deadline = null
+      send()
+    }
+    const fonts = typeof document === 'undefined' ? undefined : document.fonts
+    if (legible.current) send()
+    else if (!fonts) speak()
+    else {
+      /*
+       * **Three of this API's four obvious answers are wrong here**, and each was
+       * measured before being discarded — the whole point of this fix is that the
+       * numbers are the argument.
+       *
+       * `fonts.status === 'loaded'` is true whenever nothing is *pending*, and a
+       * bundled face no box has asked for yet is not pending: the first attempt took
+       * that path, reported **239 px** in the fallback face and swapped to 281 exactly
+       * as before. `fonts.ready` has the same shape — it resolves when the current set
+       * of loads is done, which at this instant can be none. And `fonts.check(…)` on
+       * the computed shorthand answers **true**, correctly and uselessly: the question
+       * it asks is whether the text can be rendered with the *list*, and
+       * `-apple-system` at the end of that list always can.
+       *
+       * So the face has to be asked for by name — the family's first entry, read off
+       * the element rather than written down here — and then the set awaited, because
+       * `load('1em Inter')` triggers the family while the pill draws two weights of it
+       * (measured: two `Inter` faces, one `loaded` and one `unloaded`) and only
+       * `ready` covers the second.
+       *
+       * `speak` on rejection as well: a face that fails is a measurement in the
+       * fallback, which is the honest answer and never a reason to withhold the
+       * window (DEC-26).
+       */
+      const primary = getComputedStyle(element).fontFamily.split(',')[0]?.trim()
+      if (!primary) speak()
+      else {
+        void fonts
+          .load(`1em ${primary}`)
+          .then(() => fonts.ready)
+          /*
+           * One frame after the set settles, because `ready` resolves before the
+           * layout it caused has run: measured, the first report was 276 px and the
+           * box was 281 a frame later. Five pixels is two and a half of window x —
+           * `placeAroundPill` holds the pill's centre — which is not much, and it is
+           * the difference between a card that appears and one that appears and then
+           * twitches.
+           */
+          .then(
+            () =>
+              new Promise<void>((settled) => {
+                requestAnimationFrame(() => settled())
+              }),
+          )
+          .then(speak, speak)
+        deadline = setTimeout(speak, FONT_DEADLINE_MS)
+      }
+    }
+
+    return () => {
+      if (deadline !== null) clearTimeout(deadline)
+      observer.disconnect()
+    }
     /*
      * **`[above]`, and the missing array was the only thing keeping this window
      * on the screen.**

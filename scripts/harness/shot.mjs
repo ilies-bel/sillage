@@ -1536,6 +1536,42 @@ const SCREENS = {
   },
 
   /*
+   * **The pill leaving the screen — the only exit animation in the product, and
+   * nothing had ever measured it.**
+   *
+   * `Overlay.dismiss()` broadcasts `widget:leave`, the renderer applies
+   * `.widget-leaving`, and the main process destroys the window after the duration
+   * the renderer resolved. No stage emitted that broadcast, so on 104 stagings and
+   * eight checks the class was visited by none of them — and it shipped for a round
+   * wearing `--ease-out`, the *entering* curve, which spends 73% of its change in
+   * the first 35ms: a blink, then 88ms of a fully transparent always-on-top window
+   * still over the rep's call. Measured, opacity above 0.05 for 62 of 150ms.
+   *
+   * **The picture is not the point, and cannot be.** An exit ends at opacity zero,
+   * so any screenshot taken after the checks have run is a blank card — which is
+   * why this stage is worth having anyway: `smoke.mjs` drives every stage with
+   * `--no-png`, and what it takes from this one is `--motion`, which now asks which
+   * end of the motion the slow part belongs to. The assertion below is the class
+   * being applied, so the stage is held together by a real property of the product
+   * rather than by a photograph of nothing.
+   */
+  'widget-sortie': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.emit('widget:leave', {}))
+      /*
+       * Waited for rather than assumed: the class arrives through a React state
+       * update, and a stage that measured the frame before it landed would report
+       * « rien à mesurer » and pass — which is exactly the shape of check this
+       * repo has shipped three times.
+       */
+      await page.waitForSelector('.widget-leaving', { timeout: 5_000 })
+    },
+  },
+
+  /*
    * The same window, opened: the live transcript, the rep's own marks in place,
    * the note field and the two ways out. This is the state the widget spends
    * most of a call in once a rep has opened it, and it is the only surface in
@@ -2025,7 +2061,7 @@ async function main() {
     ` })
     await page.waitForTimeout(120)
   }
-  let motionOff = { undeclared: [], persisting: [], seen: 0 }
+  let motionOff = { undeclared: [], backwards: [], persisting: [], seen: 0 }
   if (flags.motion) {
     await page.evaluate(() => document.fonts.ready)
     motionOff = await motion(page)
@@ -2155,16 +2191,26 @@ async function main() {
     }
   }
   if (flags.motion) {
-    const { undeclared, persisting, seen } = motionOff
-    if (undeclared.length === 0 && persisting.length === 0) {
+    const { undeclared, backwards, persisting, seen } = motionOff
+    if (undeclared.length === 0 && backwards.length === 0 && persisting.length === 0) {
       console.log(
-        `  mouvement: ${seen} élément(s) animé(s), tous par les jetons, tous muets sous prefers-reduced-motion`,
+        `  mouvement: ${seen} élément(s) animé(s), tous par les jetons, dans le bon sens, ` +
+          'tous muets sous prefers-reduced-motion',
       )
     } else {
       if (undeclared.length > 0) {
         console.log(`  ✗ mouvement: ${undeclared.length} élément(s) hors jetons`)
         for (const item of undeclared.slice(0, 8)) {
           console.log(`     ${item.what} — ${item.dur} / ${item.ease}`)
+        }
+      }
+      if (backwards.length > 0) {
+        console.log(
+          `  ✗ mouvement à contresens: ${backwards.length} élément(s) qui s’en vont ` +
+            'portent la courbe d’arrivée',
+        )
+        for (const item of backwards.slice(0, 8)) {
+          console.log(`     ${item.what} — ${item.dur} / ${item.wrongWay} (attendu: --ease-in)`)
         }
       }
       if (persisting.length > 0) {
@@ -3075,6 +3121,9 @@ async function motion(page) {
       const root = getComputedStyle(document.documentElement)
       const durations = new Set(['0s', '0ms'])
       const easings = new Set()
+      // The entering curve by name, so the direction rule below compares against
+      // the token rather than against a literal `cubic-bezier` copied into here.
+      const enterCurve = root.getPropertyValue('--ease-out').trim().replace(/\s+/g, '')
       for (const name of root) {
         if (name.startsWith('--motion')) durations.add(root.getPropertyValue(name).trim())
         else if (name.startsWith('--ease')) easings.add(root.getPropertyValue(name).trim())
@@ -3127,12 +3176,39 @@ async function motion(page) {
             el.getAttribute('aria-label') ||
             `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`) +
           (pseudo ?? '')
+        /*
+         * **Which end of the motion the slow part belongs to** — the half this
+         * check could not see, and the reason it reported green over a blink.
+         *
+         * Every curve in `:root` is an allowed curve, by design, so a new token is
+         * honoured the moment it is declared. What that can never ask is whether
+         * this element is arriving or leaving. There was one curve for a year, and
+         * VISION.md §6 said « ease-out » flat, so the single exit in this product —
+         * the widget, the one surface drawn over another application — wore the
+         * *entering* curve: `--ease-out` is an expo-out that spends 73% of its
+         * change in the first 35ms, which is what makes an arrival feel instant and
+         * then settle, and on a departure is a blink followed by 88ms of a fully
+         * transparent always-on-top window still over the rep's call. Measured:
+         * opacity above 0.05 for 62 of 150ms.
+         *
+         * So an element that says it is leaving must not carry an easing whose slow
+         * end is the start. Read from the class name, because that is where a
+         * leaving state is declared in this codebase and the alternative — guessing
+         * from the target opacity — would fire on anything fading for any reason.
+         * `--ease-in` is `--ease-out` mirrored through the diagonal, so the test is
+         * simply « is this the entering token », and `linear` is nobody's mistake.
+         */
+        const names = (el.className || '').toString()
+        const leaving = /(^|[\s-])(leaving|exit|leave|out)(\s|-|$)/.test(names)
+        const entering = allowedEase.has(enterCurve)
         return {
           what: label,
           dur: [...new Set(durations)].map((n) => `${n}ms`).join(' '),
           ease: [...new Set(normalised)].join(' '),
           offToken: durations.some((n) => !allowedMs.has(n)),
           offCurve: normalised.some((e) => e !== 'linear' && !allowedEase.has(e)),
+          wrongWay:
+            leaving && entering && normalised.some((e) => e === enterCurve) ? enterCurve : null,
         }
       }
       for (const el of document.querySelectorAll('#root *')) {
@@ -3158,6 +3234,7 @@ async function motion(page) {
 
   return {
     undeclared: live.filter((m) => m.offToken || m.offCurve),
+    backwards: live.filter((m) => m.wrongWay),
     persisting: reduced,
     /*
      * **How many elements were actually looked at**, printed even when the

@@ -134,6 +134,34 @@ machine) or in `core/domain/` — never in an IPC handler.
   animation is a courtesy, and a pill that outlives the call it reports is worse than a pill
   that pops. `scripts/e2e.mjs` asserts the window is gone within three seconds rather than
   fifteen — a tolerance that would pass on a handshake nothing completed.
+- **And the entrance, which was worse than the exit and had never been looked at**
+  (`FIRST_FRAME_MS`, `FONT_DEADLINE_MS`). Polishing the exit is what exposed it: the pill
+  faded out beautifully and *arrived* as a card **clipped by 49 pixels** that then settled in
+  three steps. `INITIAL_SIZE` is 232×52 and its own docblock calls it « a starting guess and
+  never the truth »; the shipped renderer asks for **281×78**, and `showInactive()` fired on
+  `ready-to-show`, before anything had measured anything. `placeAroundPill` holds the pill's
+  *centre*, so each correction slid the window sideways by half the width delta — measured,
+  three asks (239 → 276 → 281) and about 25 px of drift, over the face of the person on the
+  call, at the instant the rep presses *Enregistrer*.
+  Two halves, both failing open. The window now waits for the renderer's own measurement
+  before its first show, with `FIRST_FRAME_MS` as a **deadline and never a requirement** —
+  DEC-26, and a widget that does not appear is worse than one that appears wrong, because the
+  rep has no taskbar entry and nothing to alt-tab to. And the renderer does not report a size
+  measured in the *fallback* face, which is where the largest single jump came from (239 → 276
+  when Inter loads, 37 px, 18 of window x).
+  **Three of that API's four obvious answers are wrong here, and each was measured before
+  being discarded.** `fonts.status === 'loaded'` is true whenever nothing is *pending*, and a
+  bundled face no box has asked for yet is not pending. `fonts.ready` has the same shape: it
+  resolves when the current set of loads is done, which at that instant can be none. And
+  `fonts.check(<computed shorthand>)` answers **true**, correctly and uselessly, because the
+  question it asks is whether the *list* can render the text and `-apple-system` at the end of
+  it always can. The face has to be asked for by name — the family's first entry, read off the
+  element so no font name is written twice — then the set awaited, because `load('1em Inter')`
+  triggers the family while the pill draws two weights of it, and then **one frame**, because
+  `ready` resolves before the layout it caused has run. 3 asks → **1**, at the right size.
+  Result: one measurement, and the first frame the rep sees is the real pill in its real place.
+  The `Overlay` test asserts the *order* — bounds before show — because a counter of
+  `showInactive` calls cannot tell a correct first frame from a clipped one sliding into place.
 - **The pill's anchor is the pill** (DEC-49, `overlayPlacement.ts`). The first version
   anchored a window *edge* — bottom edge in the bottom half of the display, like a menu — and
   the pill is drawn at the **top** of the content with the panel under it, so holding the
@@ -788,25 +816,75 @@ machine) or in `core/domain/` — never in an IPC handler.
   could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
   never by name, because they are open all day.
 
-- **One conversation, one offer** (`AdHocInput.meetingLive`). The detector had the signal and
-  no *arbitration*, and the field that was supposed to supply it — `calendarArmed` — was
-  passed a hard-coded `false`, so the rule it named was never applied at all. Three paths went
-  through the hole and all three were driven: a calendar call **being recorded** that runs past
-  its slot, where `OVERRUN_GRACE_MS` keeps the microphone held; a rep who pressed « Démarrer
-  une réunion », which is the existing route for an unscheduled call and the *fast* one; and a
-  one-poll microphone drop during an ad-hoc recording. Each armed a second meeting over a live
-  one, put a second row on the day wearing the screen's one filled *Enregistrer*, and raised
-  « La réunion commence » mid-call — whose click broadcasts `session:open` and navigates the
-  rep **off their live recording**. That is verbatim the defect `Agenda.#arm`'s docblock
-  records (« Three statements about one meeting, two of them false, on one screen »), fixed on
-  the calendar path and reintroduced one branch over. The guard is « is this product already
-  doing something about a meeting », read from `liveStates()`, and it is a **horizon rather
-  than a park**: a rep who ends one call and takes another immediately still gets the second
-  offer. Two halves of the same rule — a change of held application **withdraws the standing
-  offer** before the new dwell begins, because `#armAdHoc` mints its id from `heldSince`, so
-  leaving Teams for Zoom used to strand the Teams meeting in `armed`, which is in
-  `UPDATE_BLOCKING_STATES` and therefore refused every installer for the rest of the session,
-  about a call that had ended.
+- **One conversation, one offer — and the unit is the *hold*, not the state and not the
+  meeting** (`AdHocInput.spent`, `Agenda.#adHocArmed`). This rule has been the finding in
+  **three consecutive rounds**, and the pattern in the three failures is worth more than any
+  of them: every fix reached for the *predicate*, and the predicate was never the problem.
+  Round 23 found the horizon. Round 24 found that `calendarArmed` was passed a hard-coded
+  `false`, so the rule it named was never applied at all. Round 25 found it broken in two
+  more places, both structural.
+
+  **The withdrawal must not read its target out of the field being overwritten.**
+  `#withdrawAdHoc` took the meeting id from `#armed`, and `#arm(event)` *overwrites* `#armed`.
+  So a rep pressing *Enregistrer* on an upcoming calendar row while a call was detected left
+  the ad-hoc meeting `armed` with nothing in the product able to name it again, and that cost
+  three things for the life of the process: `armed` is in `UPDATE_BLOCKING_STATES`, so **every
+  installer was refused** with a sentence that was false about a call that had ended;
+  `meetingLive` read that row and answered `none` for every subsequent call, so **the detector
+  turned itself off for the rest of the working day**, looking exactly like it deciding not to
+  offer; and the row sat in *À venir* wearing « Prêt », past `listMeetings`'s filter, which
+  deliberately keeps a standing ad-hoc offer because one wants attention. Verbatim the harm
+  `#trackHold`'s docblock says it ended for the Teams→Zoom case, reintroduced one caller over.
+  `#adHocArmed` is its own field for that reason, and `#arm` withdraws before it overwrites.
+
+  **Suppression is a decision about the conversation, not a pause keyed on an instant.**
+  `meetingLive` counted `armed` and `recording`, so the guard held during a recording and
+  *released* at `ended` — with the microphone still held by the same call. « Press *Terminer*
+  while still on the call », which the widget's own docblock calls an ordinary thing for a
+  client to ask, made the detector offer to record the conversation it had **just recorded**,
+  with an OS notification whose click navigates the rep off the compte-rendu; the same held at
+  `awaiting_confirmation`, the one screen DEC-4 protects. `#adHocSpent` marks the hold at the
+  moment the product starts working on a meeting, and it stays marked, because it is the same
+  conversation whatever happens to the meeting afterwards.
+
+  **And the obvious fix — widen the state set — is a worse defect than the finding.** The
+  round proposed `!['idle','done','aborted'].includes(state)`, which is the list `Agenda`'s
+  own comment named, and that comment was the thing that was wrong. `ended` and `extracting`
+  persist **indefinitely** when no language model is configured: DEC-39 says the app states
+  the case and waits, and that is every meeting on the demo build DEC-28 calls the first
+  deliverable — so counting them turns detection off permanently after the first call, which
+  is the stranding above by another route, on the build that ships first. It is driven as a
+  test (« but a meeting waiting for ever on a model does not deafen the detector »). What
+  closes the window is *when* it closes, not how wide it is.
+
+  The horizon survives all of this, and the reason is the unit: a genuinely new call is a new
+  **hold**. `#trackHold` clears the latch on a lost hold and on a change of application, and a
+  conferencing application releases the microphone when its call ends, so « end one call, take
+  another » arrives as a different `heldSince` and is offered. The other half is unchanged — a
+  change of held application withdraws the standing offer before the new dwell begins, because
+  `#armAdHoc` mints its id from `heldSince`.
+
+- **Ease-out on the way in, ease-in on the way out — and every curve in `:root` being a valid
+  curve is why no check could see it** (`--ease-in`, `shot.mjs --motion`, VISION.md §6).
+  There was one curve and §6 said « ease-out » flat, so the one exit in the product took it.
+  `--ease-out` is `cubic-bezier(0.22, 1, 0.36, 1)`, an expo-out that spends 73% of its change
+  in the first 35 ms — exactly what makes something *arriving* feel instant and then settle,
+  and on something *leaving* a **blink**: measured on the shipped `.widget-leaving`, opacity
+  above 0.05 for **62 of the 150 ms**, the 3 px translate spent entirely below 25% opacity
+  where there is nothing left to see moving, and then 88 ms of a fully transparent, frameless,
+  always-on-top window still holding its place over the rep's call. `--ease-in` is `--ease-out`
+  mirrored through the diagonal, so the two are one curve read in two directions and there is
+  no second piece of taste to keep consistent. 62 ms → **147 ms** after the swap.
+  Two instrument gaps let it through and both are closed. `--motion` validated that a curve
+  *is* a token — and builds that set from `:root`, deliberately, so a new token is honoured the
+  moment it is declared — which can never ask which end of the motion the slow part belongs to;
+  it now fails an element whose class says it is leaving while it carries the entering curve.
+  And **no stage emitted `widget:leave`**, so `.widget-leaving` was visited by none of the eight
+  checks on any of the 104 stagings: `widget-sortie` is that stage, and its picture is a blank
+  card by construction, because an exit ends at opacity zero and `smoke.mjs` drives every stage
+  with `--no-png` anyway. The reasoning that shipped the wrong curve was « the difference is
+  imperceptible at 150 ms », which is what reasoning instead of measuring looks like on a
+  project whose method is to measure the shipped box.
 
 - **A synthesised end is not a scheduled end** (`Orchestrator.#startEndWatch`). `graceFor`
   shortens the end-of-meeting grace from 75 s to 25 s once the silence begins past

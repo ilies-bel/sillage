@@ -31,8 +31,13 @@ the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
 because nothing counted), `--a11y` (a control whose only name is « ‹ »),
 `--contrast`, computed from resolved styles with transitions switched off —
 `getComputedStyle` returns the current *animated* value, which is how the bundled
-detector reports a resting 14:1 button as 4.0:1 — `--motion`, `--fade`, and
-`--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
+detector reports a resting 14:1 button as 4.0:1 — `--motion` (every duration and
+curve from a token, silent under `prefers-reduced-motion`, **and the slow end of the
+motion at the end the element is actually going** — the one exit in the product wore
+the *entering* curve for a round, an expo-out spending 73% of its change in the first
+35 ms, which is a blink followed by 88 ms of a transparent always-on-top window over
+the rep's call, and every curve in `:root` being an allowed curve is precisely why the
+check could not see it), `--fade`, and `--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
@@ -244,6 +249,7 @@ what `serve.mjs` drops the meta for.
 | `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 | `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
+| `widget-sortie` | **the pill leaving** — `widget:leave`, the broadcast `Overlay.dismiss()` sends so the one surface drawn over another application fades instead of vanishing between two frames. Its picture is a blank card by construction (an exit ends at opacity zero), which is the point: `smoke.mjs` drives every stage with `--no-png` and what it takes from this one is `--motion`, which asks which end of the motion the slow part belongs to. `.widget-leaving` had been visited by none of the eight checks on any of the 104 stagings, and shipped for a round wearing the *entering* curve — a blink, then 88 ms of a fully transparent always-on-top window over the rep's call |
 | `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
 | `widget-refus` | **a refused mark, on the pill, with no panel open.** `meeting:mark` refuses whenever the meeting is not `recording` — `EndOfMeetingWatch` can make that true with the pill still floating over the call — and the sentence went into an `sr-only` paragraph measuring 1×1 with `clip: rect(0,0,0,0)`, on a window with no `role="alert"` in it, while the counter correctly did not move because nothing had been written. The stage measures the box, not the picture, and asserts the counter stayed put |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |

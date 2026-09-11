@@ -42,50 +42,173 @@ const SIGNALS = [
   { id: 'posix-path', re: /['"`](\/Applications|\/usr\/|\/tmp\/|\/Library\/|~\/Library)/ },
   { id: 'windows-path', re: /['"`][A-Z]:\\\\/ },
   { id: 'bundle-assumption', re: /\.app\/Contents|Program Files/ },
-  /*
-   * **The renderer's version of the same mistake, which this check could not
-   * see.**
-   *
-   * `SIGNALS` was built out of the ways *main-process* code learns what it is
-   * running on, and `src/` is in `ROOTS` — so a renderer branching on the host
-   * was scanned for signals it can never contain. `navigator.platform` (and its
-   * modern replacement `userAgentData.platform`, and the `userAgent` sniff
-   * everybody reaches for when the first two are deprecated) is exactly « a
-   * branch on the host », which this file's own reason for existing calls the
-   * mac-first mistake — and one shipped: the notepad's entire keymap hung off
-   * `if (mac)`, eight bindings deep, on the platform HR-2 says is primary and
-   * this one is not.
-   *
-   * It happened to be *correct* on Windows, which is the point. The gate is not
-   * « is this branch wrong », it is « is this branch declared », and a renderer
-   * branch was undeclarable.
-   *
-   * **And the first spelling of this signal caught the deprecated form and
-   * missed the modern one.** It was `navigator\.(platform|userAgentData|userAgent)`
-   * — anchored on the *object*, spelled literally, immediately before the dot.
-   * Measured: a probe with `navigator.platform` and `navigator.userAgent` fails
-   * correctly, and
-   *
-   *     (navigator as any).userAgentData?.platform === 'macOS'
-   *
-   * exits 0 — because the cast puts `any)` between `navigator` and the property.
-   * That is the spelling a TypeScript renderer has to use, since
-   * `userAgentData` is not in the DOM lib, so the check caught the form nobody
-   * writes any more and let through the only form that compiles. Every other
-   * indirection had the same hole: `nav.userAgentData`, `const { platform } =
-   * navigator`, `globalThis.navigator.userAgent`.
-   *
-   * So the signal is anchored on the *property* instead of the object. Two
-   * alternatives, each sufficient on its own: `userAgentData`, which has no
-   * meaning but a platform sniff; and `navigator` together with `platform` or
-   * `userAgent` anywhere on the line, in either order, which is what covers a
-   * cast, a destructure and an alias. `navigator.clipboard` in `src/lib/
-   * clipboard.ts` is the one other `navigator` in the repo and mentions neither,
-   * which is what keeps this from being a ban on the object.
-   */
+]
+
+const NAVIGATOR = /\bnavigator\b/
+const SNIFFED_PROPERTY = /\b(?:platform|userAgent)\b/
+const MODERN_SNIFF = /\buserAgentData\b/
+
+/**
+ * **Signals that need more than one line to see.**
+ *
+ * `SIGNALS` is matched a line at a time, which is right for every one of them:
+ * each is a single contiguous token — `process.platform`, `'darwin'`, `sysctl`,
+ * `C:\`. The renderer's platform sniff is not, and that is the whole story of
+ * this signal, which has now been wrong twice in the same direction.
+ *
+ * **What it is for.** `SIGNALS` was built out of the ways *main-process* code
+ * learns what it is running on, and `src/` is in `ROOTS` — so a renderer
+ * branching on the host was scanned for signals it can never contain.
+ * `navigator.platform` (and its modern replacement `userAgentData.platform`, and
+ * the `userAgent` sniff everybody reaches for when the first two are deprecated)
+ * is exactly « a branch on the host », which this file's own reason for existing
+ * calls the mac-first mistake — and one shipped: the notepad's entire keymap hung
+ * off `if (mac)`, eight bindings deep, on the platform HR-2 says is primary and
+ * this one is not. It happened to be *correct* on Windows, which is the point.
+ * The gate is not « is this branch wrong », it is « is this branch declared », and
+ * a renderer branch was undeclarable.
+ *
+ * **Round 24: anchored on the object, so the only form that compiles got
+ * through.** It was `navigator\.(platform|userAgentData|userAgent)` — the object,
+ * spelled literally, immediately before the dot — and
+ *
+ *     (navigator as any).userAgentData?.platform === 'macOS'
+ *
+ * exited 0, because the cast puts `any)` between the object and the property.
+ * That is the spelling a TypeScript renderer *has* to use, since `userAgentData`
+ * is not in the DOM lib: the check caught the form nobody writes any more and let
+ * through the only form that compiles. So it was re-anchored on the **property**,
+ * as two same-line alternatives.
+ *
+ * **Round 25: same hole, one indirection out.** Requiring both tokens on one line
+ * left the check defeated by a single intermediate binding — which is what
+ * TypeScript makes you write anyway:
+ *
+ *     const nav = window.navigator
+ *     export const isMac = nav.userAgent.includes('Mac')
+ *
+ * Measured: `platform ok — 211 files scanned`, on an undeclared mac-first keymap
+ * branch. A destructure (`const { userAgent } = navigator`), a sniff wrapped over
+ * three lines and `globalThis.navigator` with the `.platform` read further down
+ * were all equally invisible. **Line granularity bought a nicer error message and
+ * cost the check**, so the pairing is evaluated over the *file* now and the
+ * message is paid for instead: the hit is reported on the property line, which is
+ * the branch, with the nearest `navigator` line named beside it.
+ *
+ * The scope stays the file's **code** lines — the same documentation filter the
+ * per-line scan uses — and that is what keeps this from being a ban on the
+ * object. `src/lib/clipboard.ts` uses `navigator.clipboard` and mentions
+ * `platform` only in a comment; `src/editor/note/keymap.ts` mentions
+ * `navigator.platform` only in the comment recording its removal. Both stay
+ * silent, measured. The residual cost of file granularity is a `navigator` in one
+ * function and an unrelated `platform` identifier in another; there is no such
+ * pair in the repo today, and if one appears the answer is to name the variable
+ * something else, not to go back to counting newlines.
+ *
+ * **`platform-destructure` is here for the same reason, and it was written
+ * line-anchored first — the very hole, one signal over.** `platform` taken off
+ * `process` or `node:os` *by name* is the same branch `platform-branch` is and the
+ * same regex cannot see it: `const { platform } = process` contains neither
+ * `process.platform` nor `os.platform()`. `darwin-literal` is the backstop and a
+ * good one — a platform branch has to compare against a platform name somewhere —
+ * but only when that name is spelled *in this file*, so a `WINDOWS` constant
+ * imported from a shared module escapes both. The first spelling of this signal
+ * was one line, and prettier's own output defeated it:
+ *
+ *     const {
+ *       platform,
+ *     } = process
+ *
+ * exited 0, measured. So it is matched over the joined code, where `[^}]*` spans
+ * newlines and the absence of a closing brace is what bounds it. The alias form
+ * (`const p = process`, then `p.platform` two hundred lines down) is out of reach
+ * of a grep in any granularity and is left to `darwin-literal`, stated rather than
+ * implied.
+ */
+const PLATFORM_BY_NAME = [
+  /\{[^}]*\bplatform\b[^}]*\}\s*=\s*(?:process|os)\b/g,
+  /\bimport\s*\{[^}]*\bplatform\b[^}]*\}\s*from\s*['"](?:node:)?os['"]/g,
+]
+
+/**
+ * The file's code lines as one string, with a way back from an offset to the
+ * original line number — the per-line scan's numbers are what a developer reads.
+ */
+const joinCode = (code) => {
+  const starts = []
+  let text = ''
+  for (const entry of code) {
+    starts.push({ offset: text.length, line: entry.line, text: entry.text })
+    text += `${entry.text}\n`
+  }
+  return { text, starts }
+}
+
+const lineAt = (starts, offset) => {
+  let found = starts[0]
+  for (const start of starts) {
+    if (start.offset > offset) break
+    found = start
+  }
+  return found
+}
+
+const FILE_SIGNALS = [
   {
     id: 'renderer-platform-sniff',
-    re: /(?=.*\bnavigator\b)(?=.*\b(?:platform|userAgent)\b)|\buserAgentData\b/,
+    /** @param {{ text: string, line: number }[]} code */
+    find: (code) => {
+      /** @type {Map<number, { line: number, text: string, note?: string }>} */
+      const hits = new Map()
+      const record = (entry, note) => {
+        const existing = hits.get(entry.line)
+        if (existing) existing.note ??= note
+        else hits.set(entry.line, { line: entry.line, text: entry.text.trim(), note })
+      }
+
+      // `userAgentData` has no meaning but a platform sniff, wherever it appears.
+      for (const entry of code) if (MODERN_SNIFF.test(entry.text)) record(entry)
+
+      const objects = code.filter((entry) => NAVIGATOR.test(entry.text))
+      if (objects.length === 0) return [...hits.values()]
+
+      for (const entry of code) {
+        if (!SNIFFED_PROPERTY.test(entry.text)) continue
+        const nearest = objects.reduce((best, candidate) =>
+          Math.abs(candidate.line - entry.line) < Math.abs(best.line - entry.line) ? candidate : best,
+        )
+        record(entry, nearest.line === entry.line ? undefined : `navigator is on line ${nearest.line}`)
+      }
+      return [...hits.values()]
+    },
+  },
+  {
+    id: 'platform-destructure',
+    /** @param {{ text: string, line: number }[]} code */
+    find: (code) => {
+      const { text, starts } = joinCode(code)
+      if (starts.length === 0) return []
+      const hits = []
+      for (const re of PLATFORM_BY_NAME) {
+        re.lastIndex = 0
+        let match
+        while ((match = re.exec(text)) !== null) {
+          // Report the `platform` token, which is the name the branch will read.
+          const inside = match[0].search(/\bplatform\b/)
+          const name = lineAt(starts, match.index + Math.max(inside, 0))
+          const source = lineAt(starts, match.index + match[0].length - 1)
+          hits.push({
+            line: name.line,
+            text: name.text.trim(),
+            note:
+              source.line === name.line
+                ? undefined
+                : `taken off process/node:os on line ${source.line}`,
+          })
+        }
+      }
+      return hits
+    },
   },
 ]
 
@@ -158,13 +281,21 @@ for (const file of files) {
   const rel = path.relative(ROOT, file)
   const source = readFileSync(file, 'utf8')
   const hits = []
-  source.split('\n').forEach((line, index) => {
-    // A line that only talks about a platform is documentation, not a branch.
-    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return
+  // A line that only talks about a platform is documentation, not a branch.
+  const code = source
+    .split('\n')
+    .map((text, index) => ({ text, line: index + 1 }))
+    .filter(({ text }) => !/^\s*(\/\/|\*|\/\*)/.test(text))
+  for (const { text, line } of code) {
     for (const signal of SIGNALS) {
-      if (signal.re.test(line)) hits.push({ signal: signal.id, line: index + 1, text: line.trim() })
+      if (signal.re.test(text)) hits.push({ signal: signal.id, line, text: text.trim() })
     }
-  })
+  }
+  // The file-scoped signals see what no single line can: an indirection.
+  for (const signal of FILE_SIGNALS) {
+    for (const hit of signal.find(code)) hits.push({ signal: signal.id, ...hit })
+  }
+  hits.sort((a, b) => a.line - b.line)
   if (hits.length === 0) continue
   if (ALLOWED.has(rel)) {
     seen.add(rel)
@@ -185,7 +316,8 @@ if (violations.length === 0 && stale.length === 0) {
 for (const { rel, hits } of violations) {
   console.error(`\n✗ ${rel} — undeclared platform branch (HR-2: Windows is the primary platform)`)
   for (const hit of hits.slice(0, 4)) {
-    console.error(`    ${rel}:${hit.line}  [${hit.signal}]  ${hit.text.slice(0, 96)}`)
+    const where = hit.note ? `  (${hit.note})` : ''
+    console.error(`    ${rel}:${hit.line}  [${hit.signal}]  ${hit.text.slice(0, 96)}${where}`)
   }
   if (hits.length > 4) console.error(`    … and ${hits.length - 4} more`)
 }

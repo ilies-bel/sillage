@@ -81,6 +81,26 @@ export const INITIAL_SIZE: Size = { width: 232, height: 52 }
  */
 export const EXIT_FALLBACK_MS = 500
 
+/**
+ * How long the window waits to be told its real size before showing itself anyway.
+ *
+ * `INITIAL_SIZE` is a guess and the guess is **49 px narrow and 26 px short** —
+ * measured on the shipped renderer, which asks for 281×78 where this file guesses
+ * 232×52. So `showInactive()` on `ready-to-show` put a *clipped* card on screen and
+ * then slid it: `placeAroundPill` holds the pill's centre, so a 49 px width
+ * correction moves the window's x by 25 px, and the renderer asks three times
+ * (239 → 276 → 281) as Inter loads and the elapsed time renders. That is a card
+ * appearing cut off and settling in three steps over the face of the person on the
+ * call, at the instant the rep presses *Enregistrer*.
+ *
+ * So the first show waits for the renderer's own measurement, and this is the
+ * deadline on that wait — never a requirement, because DEC-26 says everything fails
+ * open and a widget that does not appear is worse than one that appears wrong. A
+ * renderer that crashes, or a font that never loads, costs the rep 200 ms and then
+ * the guess, which is exactly what they used to get immediately.
+ */
+export const FIRST_FRAME_MS = 200
+
 export interface OverlayHost {
   /** `new BrowserWindow(...)`, injected so this file is reachable in a test. */
   create(options: OverlayWindowOptions): BrowserWindow
@@ -165,6 +185,19 @@ export class Overlay {
   /** True while `resize()` is moving the window itself — see the `moved` handler. */
   #moving = false
   /**
+   * The three facts the first `showInactive()` waits on — see `FIRST_FRAME_MS`.
+   *
+   * `#painted` is `ready-to-show`, which is the renderer having drawn once and is
+   * the condition Electron itself documents. `#measured` is the renderer having told
+   * us how big it really is. Both, because showing on the measurement alone can
+   * reveal a window that has not painted, and showing on the paint alone is the
+   * clipped card this exists to end.
+   */
+  #painted = false
+  #measured = false
+  #shown = false
+  #reveal: ReturnType<typeof setTimeout> | null = null
+  /**
    * Windows playing their exit, with the timer that will destroy each one.
    *
    * A set rather than one, and adopted by `hide()`, because the two are
@@ -203,6 +236,9 @@ export class Overlay {
     this.#pillTop = 0
     this.#pillHeight = INITIAL_SIZE.height
     this.#above = false
+    this.#painted = false
+    this.#measured = false
+    this.#shown = false
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
@@ -274,9 +310,23 @@ export class Overlay {
     this.#host.load(window)
     window.once('ready-to-show', () => {
       if (window.isDestroyed()) return
-      // `showInactive`, never `show`. See the note above: this window must not
-      // take the keyboard away from the call it is floating over.
-      window.showInactive()
+      this.#painted = true
+      /*
+       * The deadline is armed here rather than at creation: before the first paint
+       * there is nothing worth showing, so counting from `load()` would spend the
+       * budget on the renderer booting and reveal the guess on a slow machine —
+       * which is the machine this matters on. See `FIRST_FRAME_MS`.
+       */
+      this.#reveal ??= setTimeout(() => {
+        /*
+         * Cleared **before** the call, not by it: `#show` treats a live timer as « the
+         * wait is still running » and would refuse the very deadline that fired it. An
+         * expired timer holds a reference that is no longer a promise about anything.
+         */
+        this.#reveal = null
+        this.#show(window)
+      }, FIRST_FRAME_MS)
+      this.#show(window)
     })
   }
 
@@ -295,6 +345,10 @@ export class Overlay {
   hide(): void {
     const window = this.#window
     this.#window = null
+    if (this.#reveal !== null) {
+      clearTimeout(this.#reveal)
+      this.#reveal = null
+    }
     for (const [leaving, timer] of this.#leaving) {
       clearTimeout(timer)
       if (!leaving.isDestroyed()) leaving.destroy()
@@ -340,6 +394,10 @@ export class Overlay {
       return
     }
     this.#window = null
+    if (this.#reveal !== null) {
+      clearTimeout(this.#reveal)
+      this.#reveal = null
+    }
 
     try {
       window.setIgnoreMouseEvents(true, { forward: false })
@@ -380,6 +438,26 @@ export class Overlay {
       this.#leaving.set(window, setTimeout(() => this.#reap(window), wait))
     }
     return true
+  }
+
+  /**
+   * Show the window once, and only when there is something right to show.
+   *
+   * `showInactive`, never `show`: this window must not take the keyboard away from
+   * the call it is floating over — and on Windows `show()` would also pull the call
+   * out of full screen. Idempotent, because three things can call it: the paint, the
+   * first measurement, and the deadline.
+   */
+  #show(window: BrowserWindow): void {
+    if (this.#shown || window.isDestroyed()) return
+    if (!this.#painted) return
+    if (!this.#measured && this.#reveal !== null) return
+    this.#shown = true
+    if (this.#reveal !== null) {
+      clearTimeout(this.#reveal)
+      this.#reveal = null
+    }
+    window.showInactive()
   }
 
   #reap(window: BrowserWindow): void {
@@ -457,6 +535,15 @@ export class Overlay {
      * and it re-asserts on the next `pointermove` either way. Leaving it alone is
      * both simpler and correct.
      */
+
+    /*
+     * **The first measurement is also the cue to become visible** — see
+     * `FIRST_FRAME_MS`. Placed after `setBounds` so the frame the rep first sees is
+     * already the right size in the right place, rather than the guess sliding into
+     * it.
+     */
+    this.#measured = true
+    this.#show(window)
 
     // Recorded, not only returned: `#settle` reports an *edge*, and a reply the
     // renderer has already acted on is the previous value that edge is measured

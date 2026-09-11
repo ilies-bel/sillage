@@ -975,3 +975,154 @@ test('a flicker under a standing offer replaces it rather than stacking on it', 
   assert.equal(live.length, 1, `exactly one offer may stand, got ${JSON.stringify(live)}`)
   h.store.close()
 })
+
+// ── round 25: « one conversation, one offer », for the third time ─────────────
+//
+// Round 23 found the horizon. Round 24 found `calendarArmed: false`, hard-coded,
+// so the rule was never applied at all. Round 25 found the same rule broken in two
+// more places, and both are below. The pattern is worth naming: every previous fix
+// reached for the *predicate*, and the predicate was never the problem — the
+// withdrawal read its target out of the field being overwritten, and the
+// suppression was keyed on an instant instead of on a conversation.
+
+test('arming a calendar row over a standing offer does not strand the offer for ever', async () => {
+  /*
+   * **The rep's own gesture, and it cost three things for the life of the process.**
+   *
+   * `#withdrawAdHoc` read its target out of `#armed`, and `#arm(event)` overwrites
+   * `#armed`. So the moment a rep pressed *Enregistrer* on an upcoming row while an
+   * unscheduled call was detected, nothing in the product could name the ad-hoc
+   * meeting again: it stayed `armed`, which is in `UPDATE_BLOCKING_STATES`, so
+   * **every installer was refused** with a sentence that was false about a call that
+   * had ended; `meetingLive` read that row and answered `none` for every subsequent
+   * call, so **the detector turned itself off for the rest of the working day**; and
+   * the row sat in *À venir* wearing « Prêt », past `listMeetings`'s filter, which
+   * deliberately keeps a standing ad-hoc offer because one wants attention.
+   *
+   * Verbatim the harm `#trackHold`'s docblock says it ended for the Teams→Zoom case,
+   * reintroduced one caller over.
+   */
+  const upcoming = event('AAA', { scheduledStart: T0 + 30 * 60_000, scheduledEnd: T0 + 90 * 60_000 })
+  const h = harness([upcoming], null, 'Teams')
+
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  const adHoc = h.agenda.snapshot().armed?.meetingId
+  assert.ok(adHoc, 'the unscheduled call was offered')
+  assert.equal(h.orchestrator.stateOf(adHoc), 'armed')
+
+  // The rep presses *Enregistrer* on the upcoming calendar row.
+  await h.agenda.armNow('AAA')
+
+  assert.equal(
+    h.orchestrator.stateOf(adHoc),
+    'idle',
+    'the unscheduled offer was withdrawn rather than stranded in `armed`',
+  )
+  const rows = h.store.projections.listMeetings(null).map((m) => `${m.state}:${m.id}`)
+  assert.ok(
+    !rows.some((row) => row === `armed:${adHoc}`),
+    `no phantom armed row on the day, got ${JSON.stringify(rows)}`,
+  )
+
+  /*
+   * And the feature under review is still alive — which is the cost that was
+   * invisible, because it looks like the detector simply deciding not to offer.
+   */
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 })
+  h.setHeld('Zoom')
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 6_000 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 6_000 + AD_HOC_DWELL_MS })
+  const second = h.agenda.snapshot().armed
+  assert.equal(second?.subject, 'Appel non planifié — Zoom', 'a later unscheduled call is still offered')
+  h.store.close()
+})
+
+test('a conversation already recorded is not offered again when the recording ends', async () => {
+  /*
+   * **« Press *Terminer* while still on the call »** — which the widget's own
+   * docblock calls an ordinary thing for a client to ask, and which is one of the
+   * three paths round 24 named.
+   *
+   * `meetingLive` counted `armed` and `recording`, so the guard held during the
+   * recording and *released* at `ended`, with Teams still holding the microphone.
+   * The detector then offered to record the conversation it had just recorded: a
+   * second row on the day, and an OS notification whose click broadcasts
+   * `session:open` and navigates the rep off the screen they are reading.
+   *
+   * The suppression is a decision about the conversation now, not a pause: the hold
+   * is spent the moment the product is already working on a meeting.
+   */
+  const h = harness([], null, 'Teams')
+  h.orchestrator.create({ id: 'man-1', title: 'Appel Sodexial', context: null })
+  h.orchestrator.dispatch('man-1', 'start', 'le commercial a démarré')
+
+  await h.agenda.tick({ now: T0 + 30_000 })
+  assert.equal(h.agenda.snapshot().armed, null, 'the guard holds during the recording')
+
+  h.orchestrator.dispatch('man-1', 'end', 'le commercial a terminé')
+  await h.agenda.tick({ now: T0 + 20 * 60_000 })
+
+  assert.equal(h.agenda.snapshot().armed, null, 'the call just recorded is not offered again')
+  assert.deepEqual(h.armed, [], 'and no notification takes the rep off the compte-rendu')
+  h.store.close()
+})
+
+test('nor while the rep is at the gate, which is the one screen DEC-4 protects', async () => {
+  // The same hold, carried through to `awaiting_confirmation`. A notification here
+  // navigates the rep off a screen holding edits they have not confirmed.
+  const h = harness([], null, 'Teams')
+  h.orchestrator.create({ id: 'man-2', title: 'Appel Sodexial', context: null })
+  h.orchestrator.dispatch('man-2', 'start', 'le commercial a démarré')
+  await h.agenda.tick({ now: T0 + 30_000 })
+  h.orchestrator.dispatch('man-2', 'end', 'le commercial a terminé')
+  h.orchestrator.dispatch('man-2', 'extract', 'rédaction')
+  h.orchestrator.dispatch('man-2', 'extractionSucceeded', 'compte-rendu rédigé')
+
+  await h.agenda.tick({ now: T0 + 25 * 60_000 })
+  assert.equal(h.orchestrator.stateOf('man-2'), 'awaiting_confirmation')
+  assert.equal(h.agenda.snapshot().armed, null)
+  assert.deepEqual(h.armed, [])
+  h.store.close()
+})
+
+test('but a meeting waiting for ever on a model does not deafen the detector', async () => {
+  /*
+   * **The fix the round suggested, and why it is not the one here.**
+   *
+   * Round 25 proposed widening the live set to everything but `idle`, `done` and
+   * `aborted` — the list `Agenda`'s own comment named. That is a worse defect than
+   * the finding. `ended` and `extracting` persist **indefinitely** when no language
+   * model is configured: DEC-39 says the app states the case and waits, and that is
+   * every meeting on the demo build DEC-28 calls the first deliverable. So counting
+   * them would turn meeting detection off permanently after the very first call —
+   * the stranding above, by another route, on the build that ships first.
+   *
+   * What closes the window is *when* it closes, not how wide it is.
+   */
+  const h = harness([], null, 'Teams')
+  h.orchestrator.create({ id: 'man-3', title: 'Appel Sodexial', context: null })
+  h.orchestrator.dispatch('man-3', 'start', 'le commercial a démarré')
+  await h.agenda.tick({ now: T0 + 60_000 })
+  h.orchestrator.dispatch('man-3', 'end', 'le commercial a terminé')
+
+  // An hour later, with no model: still `ended`, and it always will be.
+  await h.agenda.tick({ now: T0 + 60 * 60_000 })
+  assert.equal(h.orchestrator.stateOf('man-3'), 'ended')
+
+  // A genuinely new call — the rep left Teams, and Zoom rings three hours later.
+  h.setHeld(null)
+  await h.agenda.tick({ now: T0 + 3 * 60 * 60_000 })
+  h.setHeld('Zoom')
+  await h.agenda.tick({ now: T0 + 3 * 60 * 60_000 + 1_000 })
+  await h.agenda.tick({ now: T0 + 3 * 60 * 60_000 + 1_000 + AD_HOC_DWELL_MS })
+
+  assert.equal(
+    h.agenda.snapshot().armed?.subject,
+    'Appel non planifié — Zoom',
+    'an unscheduled call three hours later is still offered',
+  )
+  assert.equal(h.orchestrator.stateOf('man-3'), 'ended', 'and the waiting meeting cost nothing')
+  h.store.close()
+})

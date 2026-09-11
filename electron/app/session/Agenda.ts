@@ -132,7 +132,58 @@ export class Agenda {
    */
   #heldApp: string | null = null
   #heldSince: number | null = null
-  #adHocOffered = false
+  /**
+   * **The ad-hoc meeting this agenda armed, tracked here and never inferred.**
+   *
+   * `#withdrawAdHoc` used to read its target out of `#armed` — and `#arm(event)`
+   * *overwrites* `#armed`. So the moment a rep pressed *Enregistrer* on an
+   * upcoming calendar row while an unscheduled offer was standing, nothing in the
+   * product could ever name that ad-hoc meeting again: it stayed `armed` for the
+   * life of the process, which is in `UPDATE_BLOCKING_STATES`, so **every
+   * installer was refused** with « une réunion est sur le point de démarrer »
+   * about a call that had ended; `meetingLive` then read that row and answered
+   * `none` for every subsequent call, so **the detector turned itself off for the
+   * rest of the working day**; and the row sat in *À venir* wearing « Prêt », past
+   * `Projections.listMeetings`'s filter, which deliberately keeps an `armed`
+   * ad-hoc row because a standing offer wants attention.
+   *
+   * That is verbatim the harm `#trackHold`'s docblock below says it ended for the
+   * Teams→Zoom case, reintroduced one caller over — the *third* consecutive round
+   * in which this rule was the finding. Reading the withdrawal target out of the
+   * field being overwritten was the whole bug, and a field of its own is the only
+   * shape that cannot be wrong that way.
+   */
+  #adHocArmed: string | null = null
+  /**
+   * **This conversation has been decided** — offered, or live while the product
+   * was already working on a meeting.
+   *
+   * It was `#adHocOffered`, a latch set only when *we* minted an ad-hoc meeting,
+   * and `meetingLive` was a *pause*: suppressed while something was live, and
+   * offerable again the moment that something left the two states the guard
+   * counted. So « press *Terminer* while still on the call » — which the widget's
+   * own docblock calls an ordinary thing for a client to ask — took the meeting to
+   * `ended`, released the guard, and the detector offered to record the
+   * conversation it had **just recorded**: a second row on the day, and an OS
+   * notification whose click broadcasts `session:open` and navigates the rep off
+   * the screen they are reading. The same held at `awaiting_confirmation`, which is
+   * the one screen DEC-4 protects.
+   *
+   * The fix is not a wider state set, and that matters: `ended` and `extracting`
+   * can persist **indefinitely** by design — DEC-39 says a meeting with no model
+   * configured waits for one, which on the demo build (DEC-28) is every meeting —
+   * so counting them would disable detection permanently, which is finding 1's
+   * harm by another route. What closes the window is *when* it closes: a hold that
+   * was live-suppressed is spent at that moment and stays spent, because it is the
+   * same conversation whatever happens to the meeting afterwards.
+   *
+   * The horizon property survives, and it is worth saying why: a genuinely new
+   * call is a new **hold**. `#trackHold` clears this on a lost hold and on a change
+   * of application, and a conferencing app releases the microphone when its call
+   * ends, so « end one call, take another » arrives here as a different
+   * `heldSince` and is offered.
+   */
+  #adHocSpent = false
   /*
    * The last snapshot actually published, so an unchanged one is not.
    *
@@ -294,25 +345,47 @@ export class Agenda {
       /*
        * **Is this product already doing something about a meeting?**
        *
-       * `liveStates()` is every session this process holds — created or
-       * rehydrated this run — so anything recording, extracting, awaiting
-       * confirmation or draining counts. `idle` and `done` do not: a meeting that
-       * finished is not a reason to refuse the next call.
+       * `liveStates()` is every session this process holds, created or rehydrated
+       * this run — and the two states counted are **deliberately** the two, not
+       * the six. This comment used to claim « anything recording, extracting,
+       * awaiting confirmation or draining counts », the code counted two, and the
+       * twenty-fifth round found the gap by pressing *Terminer* mid-call. Widening
+       * the set is the obvious fix and the wrong one: `ended` and `extracting`
+       * persist **for ever** when no model is configured (DEC-39), which is every
+       * meeting on the demo build DEC-28 calls the first deliverable, so counting
+       * them would turn the detector off permanently — finding 1's harm by another
+       * route.
+       *
+       * What closes that window is `#adHocSpent`, which makes the suppression a
+       * decision about the *conversation* instead of a pause keyed on an instant.
+       * These two states are the ones where a second armed meeting would put a
+       * second filled *Enregistrer* on the day, which is the screen-level harm
+       * `#arm`'s docblock records.
        *
        * The field this replaces was `calendarArmed: false`, hard-coded, so the
-       * rule it named was never applied. See `AdHocInput.meetingLive` for the
-       * three paths that went through the hole.
+       * rule it named was never applied at all. See `AdHocInput.spent` for the
+       * paths that went through that hole and this one.
        */
       const live = this.#options.orchestrator
         .liveStates()
         .some((state) => state === 'armed' || state === 'recording')
+      /*
+       * **Suppression is a decision, not a delay** — see `#adHocSpent`.
+       *
+       * Marked here rather than inside `decideAdHoc`, which is pure and answers
+       * the same question for the same input every time. What the domain rule
+       * cannot know is that the *hold* outlives the meeting: this is the caller's
+       * fact about its own state, and the one line that makes « one conversation,
+       * one offer » true of a conversation rather than of an instant.
+       */
+      if (live) this.#adHocSpent = true
 
       const adHoc = decideAdHoc({
         micHeldBy: signal.inCall,
         now,
         heldSince: this.#heldSince,
         meetingLive: live,
-        offered: this.#adHocOffered,
+        spent: this.#adHocSpent,
       })
       /*
        * The horizon is taken from **every** branch, including the one that
@@ -369,7 +442,7 @@ export class Agenda {
     if (!inCall) {
       this.#heldApp = null
       this.#heldSince = null
-      this.#adHocOffered = false
+      this.#adHocSpent = false
       return
     }
     if (this.#heldApp !== inCall) {
@@ -389,7 +462,7 @@ export class Agenda {
       this.#withdrawAdHoc()
       this.#heldApp = inCall
       this.#heldSince = now
-      this.#adHocOffered = false
+      this.#adHocSpent = false
     }
   }
 
@@ -403,12 +476,22 @@ export class Agenda {
    * branch in `tick` that owns the calendar decision.
    */
   #withdrawAdHoc(): void {
-    const standing = this.#armed
-    if (!standing || standing.eventId !== null) return
-    if (this.#options.orchestrator.stateOf(standing.meetingId) !== 'armed') return
-    this.#armed = null
+    const meetingId = this.#adHocArmed
+    if (meetingId === null) return
+    /*
+     * **The id comes from `#adHocArmed`, never from `#armed`.** `#arm(event)`
+     * overwrites `#armed`, so a target read from there is unreachable the instant
+     * a calendar row is armed over a standing offer — see `#adHocArmed`.
+     *
+     * `#armed` is still cleared, but only when it is *this* meeting: after a
+     * calendar arm it names the event's meeting, and taking that off the screen
+     * would withdraw the offer the rep just accepted.
+     */
+    if (this.#armed?.meetingId === meetingId) this.#armed = null
+    this.#adHocArmed = null
+    if (this.#options.orchestrator.stateOf(meetingId) !== 'armed') return
     this.#options.orchestrator.dispatch(
-      standing.meetingId,
+      meetingId,
       'disarm',
       'l’appel s’est terminé sans enregistrement',
     )
@@ -429,7 +512,7 @@ export class Agenda {
     const meetingId = adHocMeetingId(heldSince)
     // Latched before anything can fail. A refusal below is not a reason to ask
     // again on every poll for the rest of the call.
-    this.#adHocOffered = true
+    this.#adHocSpent = true
 
     if (!this.#options.orchestrator.session(meetingId)) {
       this.#options.orchestrator.create({
@@ -458,6 +541,9 @@ export class Agenda {
     }
 
     this.#armed = { meetingId, eventId: null, subject: adHocTitle(app) }
+    // Tracked in its own field, so a calendar arm overwriting `#armed` cannot
+    // strand this meeting in `armed` for the life of the process.
+    this.#adHocArmed = meetingId
     try {
       this.#options.onArmed?.({ meetingId, subject: adHocTitle(app) })
     } catch {
@@ -580,6 +666,14 @@ export class Agenda {
       return
     }
 
+    /*
+     * **Withdraw the unscheduled offer before overwriting the field that names
+     * it.** Without this, a rep pressing *Enregistrer* on an upcoming row while a
+     * call was detected left the ad-hoc meeting `armed` with nothing able to reach
+     * it: every installer refused, the detector off for the session, a phantom row
+     * on the day. See `#adHocArmed`.
+     */
+    this.#withdrawAdHoc()
     this.#armed = { meetingId, eventId: event.id, subject: event.context.subject }
     // After the state is set and before the diagnostic, so a listener that
     // throws cannot leave the agenda armed-but-unrecorded — and it is wrapped,

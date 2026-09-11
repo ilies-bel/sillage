@@ -27,7 +27,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BrowserWindow } from 'electron'
 import { memoryKeyValueStore } from '../../../core/contracts/kv.ts'
-import { EXIT_FALLBACK_MS, Overlay, type OverlayHost, type WidgetPlacement } from '../Overlay.ts'
+import {
+  EXIT_FALLBACK_MS,
+  FIRST_FRAME_MS,
+  INITIAL_SIZE,
+  Overlay,
+  type OverlayHost,
+  type WidgetPlacement,
+} from '../Overlay.ts'
 
 /** A 1512×877 laptop work area — a MacBook with its menu bar and Dock taken off. */
 const LAPTOP = { x: 0, y: 0, width: 1512, height: 877 }
@@ -53,12 +60,21 @@ const fakeWindow = (x: number, y: number, width: number, height: number) => {
     bounds: 0,
     /** Every `setIgnoreMouseEvents` this window was given, in order. */
     mouse: [] as { through: boolean; forward: boolean | undefined }[],
+    /**
+     * Every call that changes what the rep can see, **in order**.
+     *
+     * The order is the assertion for the first frame: `showInactive` before any
+     * `setBounds` is the clipped card sliding into place, which is what
+     * `FIRST_FRAME_MS` exists to end. A counter could not tell those apart.
+     */
+    seen: [] as string[],
   }
   const window = {
     isDestroyed: () => state.destroyed,
     getPosition: () => [state.x, state.y],
     setBounds: (box: { x: number; y: number; width: number; height: number }) => {
       state.bounds += 1
+      state.seen.push(`bounds ${box.width}×${box.height}@${box.x},${box.y}`)
       const moved = box.x !== state.x || box.y !== state.y
       Object.assign(state, box)
       if (moved) for (const fn of handlers.get('moved') ?? []) fn()
@@ -68,17 +84,21 @@ const fakeWindow = (x: number, y: number, width: number, height: number) => {
       return window
     },
     once: (event: string, fn: () => void) => window.on(event, fn),
-    showInactive: () => {},
+    showInactive: () => void state.seen.push('show'),
     destroy: () => void (state.destroyed = true),
     setIgnoreMouseEvents: (through: boolean, options?: { forward?: boolean }) =>
       void state.mouse.push({ through, forward: options?.forward }),
+  }
+  /** What Electron does when the renderer has painted for the first time. */
+  const paint = () => {
+    for (const fn of handlers.get('ready-to-show') ?? []) fn()
   }
   /** What the OS does when the rep drags a frameless window by its pill. */
   const drag = (to: { x: number; y: number }) => {
     Object.assign(state, to)
     for (const fn of handlers.get('moved') ?? []) fn()
   }
-  return { window: window as unknown as BrowserWindow, state, drag }
+  return { window: window as unknown as BrowserWindow, state, drag, paint }
 }
 
 type Fake = ReturnType<typeof fakeWindow>
@@ -411,4 +431,109 @@ test('renvoyer une durée quand rien ne s’en va n’est pas une erreur', () =>
   staging.overlay.dismiss()
   staging.overlay.dismiss()
   assert.equal(staging.overlay.window, null)
+})
+
+// ── the first frame the rep sees ──────────────────────────────────────────────
+//
+// `INITIAL_SIZE` is documented as « a starting guess and never the truth », and the
+// guess is 232×52 where the shipped renderer asks for **281×78** — measured. So
+// `showInactive()` on `ready-to-show` put a card on screen **clipped by 49 px** and
+// then slid it: `placeAroundPill` holds the pill's centre, so a 49 px width
+// correction moves the window's x by 25, and the renderer asked three times
+// (239 → 276 → 281) as Inter loaded and the clock rendered. A card appearing cut off
+// and settling in three steps over the face of the person on the call, at the instant
+// the rep presses *Enregistrer*, on the one surface drawn over another application.
+
+test('the window is not shown until it knows how big it is', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  assert.deepEqual(staging.window.state.seen, [], 'shown before anything knew its size')
+
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+
+  /*
+   * **The order is the property.** Bounds first, then shown: the first frame the rep
+   * sees is already the right size in the right place. Reversed, this is the clipped
+   * card sliding, and a counter of `showInactive` calls could not tell the difference.
+   */
+  assert.deepEqual(staging.window.state.seen, ['bounds 281×78@616,781', 'show'])
+})
+
+test('a renderer that never measures still gets a pill, late and wrong', (t) => {
+  /*
+   * DEC-26: everything fails open. A widget that does not appear is worse than one
+   * that appears at the guess — the rep has no taskbar entry, nothing to alt-tab to,
+   * and the pill's largest control is what ends the recording. So the wait has a
+   * deadline and the deadline is not a requirement.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  t.mock.timers.tick(FIRST_FRAME_MS - 1)
+  assert.deepEqual(staging.window.state.seen, [], 'gave up before the deadline')
+
+  t.mock.timers.tick(1)
+  assert.deepEqual(staging.window.state.seen, ['show'], 'no pill at all after the deadline')
+  // At the guess, which is the honest degraded answer and the one it used to give
+  // immediately.
+  assert.equal(staging.window.state.width, INITIAL_SIZE.width)
+})
+
+test('and it is shown exactly once, whichever of the three gets there first', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+  // The deadline still fires, and the renderer goes on resizing for the whole call —
+  // every turn of the conversation changes the frame's height.
+  t.mock.timers.tick(FIRST_FRAME_MS * 2)
+  staging.overlay.resize({ width: 340, height: 402, pillTop: 20, pillHeight: 38 })
+
+  assert.equal(
+    staging.window.state.seen.filter((what) => what === 'show').length,
+    1,
+    `showInactive was called more than once: ${JSON.stringify(staging.window.state.seen)}`,
+  )
+})
+
+test('a measurement before the first paint does not reveal an unpainted window', (t) => {
+  /*
+   * The renderer's layout effect runs *before* the browser paints, so the measurement
+   * can genuinely arrive first — and `ready-to-show` is Electron's own answer to « is
+   * there anything drawn in there ». Both, or neither.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+  assert.ok(
+    !staging.window.state.seen.includes('show'),
+    'shown before the renderer had painted anything',
+  )
+  staging.window.paint()
+  assert.ok(staging.window.state.seen.includes('show'))
+})
+
+test('a meeting that ends inside the wait leaves no timer behind', (t) => {
+  /*
+   * `hide()` is called one line before `store.close()`, and a deadline that fired
+   * after it would be `showInactive` on a destroyed window. The same for `dismiss()`,
+   * which is the ordinary path: a recording can stop while the pill is still waiting
+   * to be shown — a call that lasted two seconds, or a capture that failed at t=0.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  for (const teardown of ['hide', 'dismiss'] as const) {
+    const staging = staged([LAPTOP])
+    staging.window.paint()
+    staging.overlay[teardown]()
+    t.mock.timers.tick(FIRST_FRAME_MS * 4)
+    assert.ok(
+      !staging.window.state.seen.includes('show'),
+      `${teardown}() left the reveal armed`,
+    )
+  }
 })

@@ -217,6 +217,40 @@ export function installAppBridge(config) {
       over,
     )
 
+  /**
+   * **The 14:30 call is not being recorded on the day the app offers an
+   * unscheduled one — because the product cannot do both.**
+   *
+   * `agenda-appel-imprevu` exists to photograph meeting *detection*, and it was
+   * photographing the one configuration detection is built to make impossible.
+   * `m-neovia-cadrage` had no branch for this scenario, so it fell through to
+   * `recording` and sat on the same day as the armed ad-hoc row: a filled
+   * *Enregistrer* directly above « En cours ». `Agenda`'s arbitration reads
+   * `liveStates()` and counts exactly two states — `armed` and `recording`,
+   * deliberately those two and not the six — so a real build would have answered
+   * `action: 'none'`, « une réunion est déjà en cours ou proposée », and there
+   * would have been no offer to photograph at all. The row four lines below this
+   * one already said so in its own docblock (« photographing it would make the
+   * fixture argue for a defect ») and was wrong about being the only row on the
+   * day. Fourth time this fixture has flattered the app; the comment is a check
+   * now, in `harnessFixture.test.ts`.
+   *
+   * `idle` rather than `done`, and the difference is the clock. `now` is pinned
+   * at 14:35 Paris and this call is scheduled at 14:30, so every *after the
+   * call* state — `ended`, `awaiting_confirmation`, `done` — stages a cadrage
+   * call that ran, was analysed, was read at the gate and was pushed to
+   * VerySwing inside five minutes, which is a fixture faster than the product.
+   * `aborted` is producible in no time at all but means something specific here:
+   * `Orchestrator` dispatches it for « capture indisponible » and « aucun
+   * fournisseur de transcription », so it would stage a failed start on the
+   * screen that exists to show detection working. `idle` costs nothing and is
+   * exactly what this build produces: no Entra registration, so no calendar, so
+   * nothing arms the 14:30 invite. The row draws « En attente » and an outline
+   * *Ouvrir*, inside `OVERRUN_GRACE_MS` of its slot, and the screen's one filled
+   * primary is the unscheduled call — which is the thing the stage is for.
+   */
+  const NEOVIA_UNARMED = scenario === 'agenda-appel-imprevu'
+
   const MEETINGS = [
     meeting({
       id: 'm-sodexial-staffing',
@@ -258,16 +292,21 @@ export function installAppBridge(config) {
           ? 'awaiting_confirmation'
           : scenario === 'enhancement-attente' || scenario === 'enhancement-echec'
             ? 'ended'
-            : 'recording',
+            : NEOVIA_UNARMED
+              ? 'idle'
+              : 'recording',
       title: 'Néovia Santé — cadrage renfort data',
       eventId: 'evt-neovia-cadrage',
       clientName: 'Néovia Santé',
       scheduledStart: at(0, 14, 30),
       createdAt: at(0, 14, 28),
-      startedAt: now - 22 * MIN,
+      // An `idle` meeting has never been recorded, so it has no start instant.
+      // A state and a timestamp that contradict each other is the same class of
+      // lie as the state itself.
+      startedAt: NEOVIA_UNARMED ? null : now - 22 * MIN,
       endedAt: null,
       confirmedAt: null,
-      updatedAt: now - 20 * MIN,
+      updatedAt: NEOVIA_UNARMED ? at(0, 14, 28) : now - 20 * MIN,
     }),
     meeting({
       id: 'm-marechal-erp',
@@ -358,14 +397,33 @@ export function installAppBridge(config) {
      * **The unscheduled call, in the state the rep first sees it.**
      *
      * `armed`, never started — an offer, not a recording (HR-7) — with
-     * `eventId: null` because a client who rings at 11:05 put nothing in Outlook.
-     * It is the *only* row on the day in `agenda-appel-imprevu`, which is exactly
-     * the demo build's day: no calendar, and one call the app noticed anyway.
+     * `eventId: null` because a client who rings mid-afternoon put nothing in
+     * Outlook. It is staged only for `agenda-appel-imprevu`, which is exactly the
+     * demo build's day: no calendar, and one call the app noticed anyway. On
+     * every other screen it would be a second armed meeting competing with
+     * `m-neovia-cadrage`, which is the « three statements about one meeting »
+     * configuration `Agenda.#arm` exists to prevent.
      *
-     * Staged only for that scenario. On every other screen it would be a second
-     * armed meeting competing with `m-neovia-cadrage`, which is the « three
-     * statements about one meeting » configuration `Agenda.#arm` exists to
-     * prevent — and photographing it would make the fixture argue for a defect.
+     * **It sits minutes before `now`, not at 11:05, and that was the second half
+     * of the same lie.** `adHocContext` writes `scheduledStart: heldSince` — the
+     * instant the conferencing application took the microphone — and
+     * `decideAdHoc` offers one `AD_HOC_DWELL_MS` later, so an offer still
+     * standing is minutes old, not the three and a half hours `at(0, 11, 5)` was
+     * against a `now` pinned at 14:35. Worse, 11:05 is *inside* `m-lefort-cv`,
+     * which ran 11:02 → 12:04: the fixture staged an offer minted while another
+     * meeting was recording, which is the same arbitration rule broken one axis
+     * over, in a way no single frame could show. Six minutes is past the dwell,
+     * and `#adHocSpent` is what keeps the offer standing until the rep acts on
+     * it rather than re-asking on every poll.
+     *
+     * It is deliberately *before* the 14:30 row rather than after it. This is the
+     * one row on the screen that animates (`riseIn`, 150 ms — `DayPane` explains
+     * why), and `shot.mjs` measures while it is still running: staged last in its
+     * list, the in-flight `translateY` puts three pixels past the bottom of a
+     * 128-pixel box and `--scrollers` reports content hidden that settles to
+     * nothing a frame later. Nothing is clipped — measured at 130/128 mid-flight
+     * and 128/128 after — but the harness cannot tell those apart, and the
+     * fixture is not the place to fix that.
      */
     ...(scenario === 'agenda-appel-imprevu'
       ? [
@@ -375,12 +433,12 @@ export function installAppBridge(config) {
             title: 'Appel non planifié — Teams',
             eventId: null,
             clientName: null,
-            scheduledStart: at(0, 11, 5),
-            createdAt: at(0, 11, 5),
+            scheduledStart: now - 6 * MIN,
+            createdAt: now - 6 * MIN,
             startedAt: null,
             endedAt: null,
             confirmedAt: null,
-            updatedAt: at(0, 11, 5),
+            updatedAt: now - 6 * MIN,
           }),
         ]
       : []),

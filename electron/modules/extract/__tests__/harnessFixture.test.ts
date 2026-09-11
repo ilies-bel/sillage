@@ -325,3 +325,111 @@ test('the harness stub states the no-Entra degradation the product states', () =
     'the harness fixture states a different degradation from the one the product emits',
   )
 })
+
+/**
+ * **No scenario stages an `armed` meeting beside a `recording` one — because the
+ * product cannot produce that day, and the fixture was photographing it.**
+ *
+ * The fourth lie, and the first one about the *calendar* rather than about the
+ * compte-rendu. `agenda-appel-imprevu` exists to photograph meeting detection
+ * (`core/domain/adHoc.ts`), and `m-neovia-cadrage` had no branch for it, so it
+ * fell through to `recording` and sat on the same day: the screen's one filled
+ * *Enregistrer* directly above a row reading « En cours ». That is verbatim the
+ * configuration `Agenda.#arm` and `AdHocInput.meetingLive` exist to prevent —
+ * « three statements about one meeting, two of them false, on one screen » —
+ * staged on the screen a reviewer looks at to judge the feature. A real build
+ * reads `liveStates()`, counts exactly these two states, and answers « une
+ * réunion est déjà en cours ou proposée »: there would have been no offer to
+ * photograph at all.
+ *
+ * The row's own docblock said « photographing it would make the fixture argue
+ * for a defect » and was simply wrong about being the only row on the day. That
+ * is the third comment in this file written to keep the fixture honest and
+ * ignored; a comment is not a check.
+ *
+ * The two states are `armed` and `recording` and deliberately not the six —
+ * `Agenda` explains why at length, and widening the set here would make this
+ * test disagree with the rule it is about.
+ *
+ * Scenarios are read out of the stub, never restated, so a fixture that gains
+ * one gains the check with it; `__inconnu__` stands for every stage whose name
+ * the stub does not branch on and which therefore gets the default day. And it
+ * guards itself twice, because this property is the kind that passes by finding
+ * nothing: the enumeration must find scenarios, and at least one of them must
+ * actually stage an `armed` meeting — otherwise every day trivially satisfies a
+ * rule about two states, one of which never occurs.
+ */
+test('no harness scenario stages an armed meeting beside a recording one', async () => {
+  const source = readFileSync(STUB, 'utf8')
+
+  const scenarios = [
+    ...new Set([...source.matchAll(/scenario [!=]== '([^']+)'/g)].map((m) => m[1] as string)),
+    // Every stage the stub has no branch for lands on the same default day.
+    '__inconnu__',
+  ].sort()
+  assert.ok(
+    scenarios.length >= 8,
+    `l’énumération des scénarios n’en a trouvé que ${scenarios.length} — le stub a changé de ` +
+      'forme et ce test ne regarde plus rien',
+  )
+
+  const installAppBridge = await loadStub()
+  const globals = globalThis as { window?: unknown }
+  const before = globals.window
+
+  /** Every meeting the stub stages for one scenario, by state. */
+  const dayOf = async (scenario: string, entra: boolean): Promise<{ id: string; state: string }[]> => {
+    globals.window = { addEventListener: () => {} }
+    try {
+      installAppBridge({ scenario, now: Date.now(), entra })
+      const bridge = (globals.window as { app: { invoke: (c: string, p: unknown) => unknown } }).app
+      return (await bridge.invoke('meeting:list', {})) as { id: string; state: string }[]
+    } finally {
+      globals.window = before
+    }
+  }
+
+  const offences: string[] = []
+  let everArmed = 0
+
+  for (const scenario of scenarios) {
+    // Both halves of the axis: `entra: false` is the build DEC-28 ships first,
+    // and it is the one this defect was found on.
+    for (const entra of [true, false]) {
+      const meetings = await dayOf(scenario, entra)
+      const armed = meetings.filter((m) => m.state === 'armed')
+      const recording = meetings.filter((m) => m.state === 'recording')
+      if (armed.length > 0) everArmed += 1
+      if (armed.length > 0 && recording.length > 0) {
+        offences.push(
+          `${scenario} (entra: ${entra}) : ${armed.map((m) => m.id).join(', ')} ` +
+            `armé(s) pendant que ${recording.map((m) => m.id).join(', ')} enregistre`,
+        )
+      }
+      // And one armed meeting at most: `core/domain/arming.ts` picks the
+      // earliest, and `DayPane` gives the armed row the day's single filled
+      // primary. Two would be two of them.
+      if (armed.length > 1) {
+        offences.push(
+          `${scenario} (entra: ${entra}) : ${armed.length} réunions armées à la fois ` +
+            `(${armed.map((m) => m.id).join(', ')})`,
+        )
+      }
+    }
+  }
+
+  assert.ok(
+    everArmed > 0,
+    'aucun scénario ne met en scène de réunion armée — ce test passerait sur une propriété ' +
+      'que rien ne peut violer',
+  )
+
+  assert.deepEqual(
+    offences,
+    [],
+    'le fixture met en scène une réunion armée à côté d’une réunion en cours : le produit ' +
+      'refuse cette journée (Agenda.#arm, AdHocInput.meetingLive — « une réunion est déjà en ' +
+      'cours ou proposée »), donc la capture montre deux boutons primaires pour une seule ' +
+      'conversation et fait plaider le fixture pour un défaut.',
+  )
+})

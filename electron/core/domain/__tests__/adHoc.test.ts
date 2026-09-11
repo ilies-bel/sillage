@@ -17,7 +17,7 @@ const input = (over: Partial<Parameters<typeof decideAdHoc>[0]> = {}) => ({
   now: T0,
   heldSince: T0,
   meetingLive: false,
-  offered: false,
+  spent: false,
   ...over,
 })
 
@@ -77,7 +77,7 @@ test('and it is re-asked, so the call after the live one is still offered', () =
 })
 
 test('one offer per hold — a dismissed offer is not re-offered on every poll', () => {
-  const decision = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, offered: true }))
+  const decision = decideAdHoc(input({ now: T0 + AD_HOC_DWELL_MS, spent: true }))
   assert.equal(decision.action, 'none')
 })
 
