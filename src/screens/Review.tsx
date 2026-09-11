@@ -121,23 +121,45 @@ const GROWTH_SLACK = 100
  * subtree says so with `data-unmeasured` and the measurement stops where it
  * starts.
  *
- * Where the unmeasured part *starts*, not the scroller's height minus its
- * height: what matters is where the shipped content ends, and the unmeasured
- * part is always last. A column with none is its own `scrollHeight`, which is
- * every other case.
+ * **And the unmeasured part is not always last, which is what this had to
+ * learn.** It took the *offset* of the first marked subtree, which is right for
+ * *Demander* — a pane under the document — and wrong for the rail, where
+ * `[source ▸]` opens a panel **inline, inside the row it belongs to**. So the
+ * rail had no marked subtree at all, and opening five sources — which is the
+ * gesture DEC-21 exists to invite — grew its content past `GROWTH_SLACK` and
+ * took *Valider* off the screen:
  *
- * Measured from the rects and the scroll position rather than from `offsetTop`:
- * `offsetTop` is relative to the nearest *positioned* ancestor, which on this
- * screen is not the scroller, so it would answer a number from another
- * coordinate system and be wrong by whatever the header happens to be tall.
+ *     baseline: 7 page turns -> armed
+ *       after opening source #4: armed=false  ["Remonter dans ce qui part"]
+ *     after closing all five:    armed=false  (the screen is pixel-identical)
+ *     re-arming cost: 2 page turns at 1280x800, 5 at 960x600
+ *
+ * That is the third instance of one shape — *Demander* inside the measurement,
+ * then the transcript as a measured view, now the inline source — and all three
+ * are the same sentence: **the guard measures what ships, and evidence does not
+ * ship.** A provenance panel is the transcript by another route; the rep
+ * pressed it, it appeared under their pointer, and it leaves the machine no more
+ * than the reader does.
+ *
+ * So the height is the content **minus** every marked subtree, wherever they
+ * sit. Subtracting rather than truncating keeps the arithmetic honest for the
+ * scroll range too: an expansion in the middle pushes the rest down by exactly
+ * what is subtracted, so a column covered before it opened is still covered.
+ *
+ * Measured from the rects rather than from `offsetTop`: `offsetTop` is relative
+ * to the nearest *positioned* ancestor, which on this screen is not the
+ * scroller, so it would answer a number from another coordinate system.
  */
 const shippedHeight = (el: HTMLElement): number => {
-  const rest = el.querySelector<HTMLElement>('[data-unmeasured]')
-  if (!rest) return el.scrollHeight
-  const top = rest.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+  let height = el.scrollHeight
+  for (const part of el.querySelectorAll<HTMLElement>('[data-unmeasured]')) {
+    // A nested mark would be counted twice, and the outer one already covers it.
+    if (part.parentElement?.closest('[data-unmeasured]')) continue
+    height -= part.getBoundingClientRect().height
+  }
   // A subtree with no box yet (a first paint, a hidden pane) measures zero, and
   // a column whose shipped part is « nothing » would arm on an empty read.
-  return top > 0 ? top : el.scrollHeight
+  return height > 0 ? height : el.scrollHeight
 }
 
 /** A view that has been shown end to end: the box, and what was in it. */
@@ -1856,7 +1878,22 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
       )}
 
       {open ? (
-        <div className="mt-1">
+        /*
+          `data-unmeasured`: this is provenance, and provenance does not ship.
+
+          The guard's caption says « tout ce qui part doit avoir été affiché »,
+          and what leaves here is the field above — never the quote under it,
+          which is the transcript by another route (DEC-25, `attachTranscript`
+          is `UNWIRED`). Inside the measurement it was 200-odd pixels of content
+          arriving after the column had been read, so opening five sources — the
+          gesture DEC-21 exists to invite — deleted the coverage and took
+          *Valider* off a screen that was otherwise pixel-identical to the armed
+          one. Closing them again did not give it back.
+
+          The same mark *Demander* carries, for the same reason, in the other
+          column.
+        */
+        <div data-unmeasured className="mt-1">
           <p className="text-muted text-meta italic">
             {field.span
               ? `« ${field.span.quote} »${

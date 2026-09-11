@@ -268,6 +268,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   `tailwind.config.js` — same failure as `bg-muted/30`: a name that is right, a rule that does
   not exist, an element simply unstyled. The splash's « Audio » row had a hole where the other
   two rows have a dot.
+- **The guard measures what *ships*, and evidence does not ship — three times now.**
+  `data-unmeasured` marks what a column holds but does not send, and `shippedHeight`
+  **subtracts every marked subtree wherever it sits** rather than truncating at the first: it
+  took the first one's *offset*, which is right for *Demander* — a pane under the document —
+  and blind to the rail, where `[source ▸]` opens a panel **inline, inside the row**. So
+  opening five sources, which is a rep checking the evidence on five of eleven rows, grew the
+  rail past `GROWTH_SLACK`, deleted the coverage and took *Valider* off the screen; closing
+  them left the screen pixel-identical to the armed one and still refused, at a cost of two
+  page turns at 1280×800 and five at 960×600. Subtracting rather than truncating also keeps the
+  scroll arithmetic honest: an expansion in the middle pushes the rest down by exactly what is
+  subtracted. `review-garde-sources` is the proof and it **passes at 1440×900** either way —
+  run the guard stages at the smoke sizes. The three instances are one sentence: *Demander*
+  inside the measurement, the transcript as a measured view, the inline source panel. Each time
+  the one feature this product has over a general-purpose notetaker was the only thing on the
+  screen being punished for being used.
 - **The guard measures what *ships*, and `data-unmeasured` is how a column says what does
   not.** *Demander*'s answer sits under the compte-rendu, where it belongs — and it is a read
   over the record that writes nothing and confirms nothing (DEC-25). Inside the measurement it

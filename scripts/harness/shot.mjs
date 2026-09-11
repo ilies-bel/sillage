@@ -652,6 +652,52 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The eleventh attack, and the third instance of one shape.**
+   *
+   * Read both columns, arm *Valider*, then open five `[source ▸]` panels — which
+   * is a rep checking the evidence on five of eleven rows, and the behaviour
+   * DEC-21 exists to produce. It used to cost the arming: the panels open
+   * *inline*, inside the rail the guard measures, so the content grew past
+   * `GROWTH_SLACK` and the coverage was deleted. Closing them again left the
+   * screen pixel-identical to the armed one and still refused — two page turns
+   * to recover at 1280×800, five at 960×600.
+   *
+   * *Demander* was the first (`data-unmeasured`, in the other column) and the
+   * transcript was the second. The sentence is the same each time: the guard
+   * measures what ships, and evidence does not ship.
+   */
+  'review-garde-sources': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS['review-valider'].drive(page)
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
+
+      const sources = page.getByRole('button', { name: /^source/ })
+      const count = Math.min(5, await sources.count())
+      for (let i = 0; i < count; i++) {
+        await sources.nth(i).click()
+        await page.waitForTimeout(150)
+      }
+      await page.waitForTimeout(400)
+
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
+        const asked = await page.getByRole('button', { name: /(la suite|Remonter)/ }).allInnerTexts()
+        throw new Error(
+          `ouvrir ${count} sources a désarmé « Valider » — le gate demande ${JSON.stringify(asked)}`,
+        )
+      }
+
+      // And closing them is free too: the screen is the one that was armed.
+      for (let i = count - 1; i >= 0; i--) {
+        await sources.nth(i).click()
+        await page.waitForTimeout(120)
+      }
+      await page.waitForTimeout(400)
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
+    },
+  },
+
   'review-valider': {
     scenario: 'review',
     async drive(page) {
