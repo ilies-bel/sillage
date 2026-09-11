@@ -184,7 +184,26 @@ test('the CRM being unreachable still ships the Outlook draft (DEC-26)', async (
   store.close()
 })
 
-test('a terminal failure blocks its dependants and nothing else', async () => {
+test('a terminal failure costs its own row and nothing else — the compte-rendu still ships', async () => {
+  /*
+   * **This asserted the defect, in the words of the rule it came from.**
+   *
+   * « a dependency that failed terminally blocks its dependants » — and
+   * `blocked` had no exit: `drainable()` is `state = 'pending'`, so no boot
+   * re-drain ever named the row again, `allIntentsSettled` never counted it, the
+   * meeting stayed in `pushing` for the life of the database, and
+   * `updateReadiness` refused every installer from that moment on. One VSA 500
+   * on the *opportunity* — an enrichment — permanently cost the **compte-rendu**,
+   * which is the product's primary deliverable into the client's CRM, and
+   * *Historique* drew « en attente d'un autre envoi » over it, which was false.
+   *
+   * The ordering exists to carry the opportunity's remote id into the task, and
+   * `#withDependencyRef` already handles a dependency that did not drain: the
+   * reference stays null and `VsaCrm.link()` falls through to the company. A
+   * compte-rendu linked to the account beats no compte-rendu at all, and DEC-26
+   * says as much. What blocking protects is untouched — the task is never sent
+   * before the opportunity is *decided*, only after it is decided either way.
+   */
   const store = seed()
   const crm = crmStub({ opportunity: async () => terminal('champ obligatoire manquant') })
   const mail = mailStub()
@@ -193,11 +212,18 @@ test('a terminal failure blocks its dependants and nothing else', async () => {
   const entries = await outbox.drain(MEETING)
 
   assert.equal(stateOf(entries, 'i-opportunity'), 'failed')
-  assert.equal(stateOf(entries, 'i-task'), 'blocked')
+  assert.equal(stateOf(entries, 'i-task'), 'drained', 'le compte-rendu part quand même')
   assert.equal(stateOf(entries, 'i-mail'), 'drained')
   assert.equal(rowOf(store, 'i-opportunity')?.lastError, 'champ obligatoire manquant')
   // One attempt only: a terminal failure is not retried, by the app or by this pass.
   assert.equal(crm.calls.filter((c) => c === 'opportunity').length, 1)
+  // And it ships with no reference rather than with an invented one (DEC-7).
+  assert.equal(crm.seenCompteRendu[0]?.opportunityRef, null)
+  // Nothing is left non-terminal, so the meeting can reach `done`.
+  assert.deepEqual(
+    entries.filter((e) => e.state !== 'drained' && e.state !== 'failed'),
+    [],
+  )
   store.close()
 })
 
@@ -364,6 +390,59 @@ test('a quit waits for a push already on the wire, and never for ever', async ()
   await pass
   assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'drained')
   store.close()
+})
+
+test('every row is terminal after a pass, so the meeting can leave pushing', async () => {
+  /*
+   * **The property `allIntentsSettled` needs and nothing guaranteed.**
+   *
+   * It counts `drained` and `failed`; `blocked` was neither, and there was no
+   * path out of it. So a meeting whose opportunity failed sat in `pushing` for
+   * the life of the database — and because `Orchestrator.session()` caches the
+   * rehydrated session, `liveStates()` carried `pushing` from boot onwards and
+   * `updateGate` refused every installer for ever, on the primary platform.
+   *
+   * Asserted over the three ways a dependency can be decided, because the guard
+   * is about all of them and the old test only ever drove one.
+   */
+  for (const [label, behaviour] of [
+    ['terminal', async () => terminal('champ obligatoire manquant')],
+    ['retryable, then exhausted', async () => retryable('502')],
+    ['clean', null],
+  ] as const) {
+    const store = seed()
+    const crm = crmStub(behaviour ? { opportunity: behaviour } : {})
+    const outbox = new Outbox({
+      journal: store,
+      crm: crm.port,
+      mail: mailStub().port,
+      sleep: nowhere,
+    })
+
+    const entries = await outbox.drain(MEETING)
+    const settled = (id: string): boolean => {
+      const state = entries.find((e) => e.intentId === id)?.state
+      return state === 'drained' || state === 'failed'
+    }
+    /*
+     * `blocked` is legitimate only while a dependency is genuinely undecided.
+     * A row blocked behind a *settled* dependency is the state with no exit:
+     * `drainable()` never names it, `allIntentsSettled` never counts it, and
+     * nothing in the product can move it again.
+     */
+    const stuck = entries.filter(
+      (entry) =>
+        entry.state === 'blocked' &&
+        (store.projections.intents(MEETING).find((i) => i.id === entry.intentId)?.dependsOn ?? [])
+          .every(settled),
+    )
+    assert.deepEqual(
+      stuck.map((e) => [e.kind, e.state]),
+      [],
+      `${label} : une dépendante bloquée derrière une dépendance décidée`,
+    )
+    store.close()
+  }
 })
 
 test('a push interrupted mid-POST is reclaimed by the next launch', async () => {

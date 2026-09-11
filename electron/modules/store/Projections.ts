@@ -253,10 +253,38 @@ export class Projections {
   }
 
   /**
-   * Re-evaluates the DAG (DEC-20). An intent is drainable once every dependency
-   * has drained; a dependency that failed terminally blocks its dependants and
-   * **nothing else** — which is what keeps the Outlook draft shipping while VSA
-   * is down (DEC-26).
+   * Re-evaluates the DAG (DEC-20). `blocked` means **a dependency has not
+   * settled yet** — and it used to mean « or has failed », which was a terminal
+   * state with no exit and no sentence.
+   *
+   * One VSA 500 on the opportunity left the compte-rendu task `blocked` for the
+   * life of the database. Driven end to end:
+   *
+   *     OUTBOX: [['i-task','blocked',null], ['i-opp','failed','VSA: 500']]
+   *     MEETING STATE: pushing
+   *     updateReadiness: { safe: false, reason: 'un envoi vers VerySwing est en cours' }
+   *     --- next launch ---
+   *     drainable(): []   interrupted(): []   -> nothing ever names it again
+   *
+   * `drainable()` is `state = 'pending'`, so no boot re-drain reached it; there
+   * was no path from `blocked` at all. The compte-rendu — the product's primary
+   * deliverable into the client's CRM — was **never attempted, ever**, while
+   * *Historique* drew « en attente d'un autre envoi », which was false and
+   * quieter than the `failed` row beside it. `allIntentsSettled` counts only
+   * `drained`/`failed`, so the meeting never reached `done`; and because
+   * `Orchestrator.session()` caches the rehydrated session, `liveStates()`
+   * carried `pushing` from boot onwards and **the app could never install an
+   * update again**, on the primary platform.
+   *
+   * So a dependency that has settled — either way — releases its dependants.
+   * The ordering exists to carry the opportunity's remote id into the task
+   * (`#withDependencyRef`), and that function already handles a dependency that
+   * did not drain: the reference stays null, and `VsaCrm.link()` falls through
+   * to the company. A compte-rendu linked to the account is worth incomparably
+   * more than no compte-rendu at all, and DEC-26 says in as many words that
+   * nothing downstream may cost the thing upstream. What blocking was written
+   * to protect is untouched: a dependant is never sent *before* its dependency
+   * is decided, and an intent whose dependency is still in flight still waits.
    */
   #recomputeBlocked(meetingId: string, ts: number): void {
     const log = this.#log
@@ -266,7 +294,10 @@ export class Projections {
     for (const row of rows) {
       if (row.state === 'drained' || row.state === 'failed' || row.state === 'draining') continue
       const deps = JSON.parse(row.depends_on) as string[]
-      const ready = deps.every((d) => byId.get(d)?.state === 'drained')
+      const ready = deps.every((d) => {
+        const state = byId.get(d)?.state
+        return state === 'drained' || state === 'failed'
+      })
       const next = ready ? 'pending' : 'blocked'
       if (next !== row.state) {
         log.run(

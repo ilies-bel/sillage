@@ -484,7 +484,20 @@ const silentFarChannel = async (options: {
   const session = new CaptureSession({ tickMs: 2, clock: () => (now += 900), ...options })
   session.on('health', (h: ConnectorHealth) => health.push(h))
   await session.start()
-  await new Promise((resolve) => setTimeout(resolve, 80))
+  /*
+   * Waited *for the event*, not for a duration. A fixed sleep passed alone and
+   * failed inside the full suite: the watchdog is a real `setInterval`, and on a
+   * loaded machine it fires a handful of times in eighty milliseconds rather
+   * than forty. A test whose verdict depends on how busy the machine is has no
+   * verdict at all.
+   */
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (health.some((h) => /Rien n’arrive depuis l’audio de votre ordinateur/.test(reasonOf(h)))) {
+      break
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
   await session.stop()
   // The far channel's, specifically: `rep` is the microphone and this sentence
   // is only ever about the system tap (DEC-45).

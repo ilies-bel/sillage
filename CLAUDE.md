@@ -224,6 +224,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   with no description, on the row, in French ». It did not: `taskPossible` read the *name*.
   « Select all, delete, validate » put an empty `taskDescription` into the client's system of
   record, where there is no idempotency key and no delete verb.
+- **`blocked` means a dependency has not settled *yet*, never that it failed.** It meant
+  « or has failed » for as long as the DAG existed, and that was a terminal state with no
+  exit: `drainable()` is `state = 'pending'`, so no boot re-drain ever named the row again,
+  `allIntentsSettled` never counted it, and there was no path out of `blocked` anywhere in the
+  product. One VSA 500 on the *opportunity* — an enrichment — permanently cost the
+  **compte-rendu**, which is the whole reason this product pushes to a CRM; the meeting sat in
+  `pushing` for the life of the database, *Historique* drew « en attente d'un autre envoi »
+  over a row nothing would ever attempt, and because `Orchestrator.session()` caches the
+  rehydrated session, `liveStates()` carried `pushing` from boot onwards and **the app could
+  never install an update again**, on the primary platform. The ordering exists to carry the
+  opportunity's remote id into the task, and `#withDependencyRef` already handles a dependency
+  that did not drain — the reference stays null and `VsaCrm.link()` falls through to the
+  company, which is worth incomparably more than nothing. What blocking protects is untouched:
+  a dependant is never sent before its dependency is *decided*, only after it is decided either
+  way.
 - **A row that was on the wire is reclaimed, and a quit waits for one that still is.**
   `Outbox.#reclaim` settles a row left `draining` by a dead process — « envoi interrompu —
   vérifiez dans l'outil distant avant de relancer » — and it runs as the first line of

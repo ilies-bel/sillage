@@ -102,8 +102,19 @@ test('draining a dependency unblocks its dependant and records the remote id', (
   store.close()
 })
 
-test('a failed dependency blocks its dependants and nothing else', () => {
+test('a settled dependency releases its dependants — decided, either way', () => {
+  /*
+   * `blocked` means « a dependency has not settled yet », and it used to mean
+   * « or has failed » — a terminal state with no exit. `drainable()` is
+   * `state = 'pending'`, so no boot re-drain named the row again and the
+   * compte-rendu task was never attempted, ever, while the meeting sat in
+   * `pushing` for the life of the database and `updateReadiness` refused every
+   * installer. One 503 on an *enrichment* permanently cost the product's
+   * primary deliverable.
+   */
   const store = seeded()
+  assert.equal(stateOf(store, 'i-task'), 'blocked', 'en vol : la dépendance n’est pas décidée')
+
   store.append('m1', { type: 'push.attempted', intentId: 'i-oppy', attempt: 1 })
   store.append('m1', {
     type: 'push.settled',
@@ -111,9 +122,20 @@ test('a failed dependency blocks its dependants and nothing else', () => {
   })
 
   assert.equal(stateOf(store, 'i-oppy'), 'failed')
-  assert.equal(stateOf(store, 'i-task'), 'blocked')
+  assert.equal(stateOf(store, 'i-task'), 'pending', 'décidée : la dépendante repart')
   // DEC-26: a VSA outage must never stop the Outlook draft from shipping.
   assert.equal(stateOf(store, 'i-mail'), 'pending')
+  store.close()
+})
+
+test('a dependency still in flight keeps its dependants blocked', () => {
+  // The half the rule above exists for, and the half that is untouched: a task
+  // sent before its opportunity is decided would carry no reference when one
+  // was about to exist.
+  const store = seeded()
+  store.append('m1', { type: 'push.attempted', intentId: 'i-oppy', attempt: 1 })
+  assert.equal(stateOf(store, 'i-oppy'), 'draining')
+  assert.equal(stateOf(store, 'i-task'), 'blocked')
   store.close()
 })
 
