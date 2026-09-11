@@ -149,6 +149,7 @@ const signedOut = () =>
     .when('agenda:snapshot', () => ({
       events: [],
       syncedAt: 0,
+      window: { from: 0, to: 0 },
       armed: null,
       reason: 'application Entra non configurée',
     }))
@@ -212,6 +213,7 @@ describe('the calendar is drawn on a day with nothing in it', () => {
       .when('agenda:snapshot', () => ({
         events: [],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: 'aucune réunion dans la fenêtre de synchronisation',
       }))
@@ -287,6 +289,7 @@ describe('a rep can select any day and see it', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10), event('e2', 'Nordis — suivi', 14, tomorrow)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: '',
       }))
@@ -307,6 +310,7 @@ describe('a rep can select any day and see it', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
         reason: '',
       }))
@@ -329,6 +333,7 @@ describe('a rep can select any day and see it', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e2', 'Nordis — suivi', 14, elsewhere)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: '',
       }))
@@ -371,7 +376,7 @@ describe('meetings already held are reachable from the calendar', () => {
     const yesterday = addDays(today(), -1)
     bridge
       .when('auth:state', () => ({ status: 'signedIn', account: account() }))
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: Date.now(), armed: null, reason: '' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: Date.now(), window: { from: 0, to: 0 }, armed: null, reason: '' }))
       .when('meeting:list', () => [
         meeting('m-past', {
           title: 'Acme — restitution',
@@ -402,6 +407,7 @@ describe('meetings already held are reachable from the calendar', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: '',
       }))
@@ -436,6 +442,7 @@ describe('meetings already held are reachable from the calendar', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
         reason: '',
       }))
@@ -479,7 +486,7 @@ describe('with no calendar the product still works', () => {
     const opened: string[] = []
     bridge
       .when('auth:state', () => ({ status: 'signedOut' }))
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: '' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, window: { from: 0, to: 0 }, armed: null, reason: '' }))
       .when('meeting:create', () => meeting('man-1'))
       .when('session:command', () => ({ ok: true, state: 'recording' }))
 
@@ -514,7 +521,7 @@ describe('with no calendar the product still works', () => {
     const opened: string[] = []
     bridge
       .when('auth:state', () => ({ status: 'signedOut' }))
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: '' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, window: { from: 0, to: 0 }, armed: null, reason: '' }))
       .when('meeting:create', () => meeting('man-1'))
       .when('session:command', () => {
         throw new Error('canal indisponible')
@@ -538,6 +545,7 @@ describe('armed is an offer, never a recording (HR-7)', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
         reason: 'Teams émet du son',
       }))
@@ -557,6 +565,7 @@ describe('armed is an offer, never a recording (HR-7)', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10), event('e2', 'Nordis — suivi', 14)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
         reason: '',
       }))
@@ -587,6 +596,7 @@ describe('armed is an offer, never a recording (HR-7)', () => {
       .when('agenda:snapshot', () => ({
         events: [event('e1', 'Acme — cadrage', 10)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
         reason: '',
       }))
@@ -603,7 +613,7 @@ describe('the agenda is pushed, not polled', () => {
   test('an agenda:changed broadcast replaces the list', async () => {
     bridge
       .when('auth:state', () => ({ status: 'signedOut' }))
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: 'rien' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, window: { from: 0, to: 0 }, armed: null, reason: 'rien' }))
 
     render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
       onOnboarding={() => {}} />)
@@ -613,6 +623,7 @@ describe('the agenda is pushed, not polled', () => {
       bridge.emit('agenda:changed', {
         events: [event('e9', 'Réunion arrivée par diffusion', 11)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: '',
       })
@@ -628,6 +639,7 @@ describe('the agenda is pushed, not polled', () => {
       .when('agenda:snapshot', () => ({
         events: [cancelled, event('e4', 'Maintenue', 15)],
         syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
         armed: null,
         reason: '',
       }))

@@ -157,6 +157,7 @@ what `serve.mjs` drops the meta for.
 |---|---|
 | `splash` | screen 0 (DEC-30): base locale ready (« ouverte · sur cette machine », the phrase `main.ts` really publishes), audio still pending, the first-run model download at 42 % with its size and its remaining time under the bar |
 | `agenda` | *Calendrier* on a full day — month grid with marks, two calls ahead, one **Prêt** (armed, HR-7), two under *Passées*, the search bar with client chips, `Tout fonctionne` in the header |
+| `agenda-hors-fenetre` | a month the calendar was **never asked about** — the sync window is eight days and the grid draws six weeks, so *Mois* asserted « Aucune réunion ce jour-là. » about thirty-four of forty-two days, explained by the *arming* reason (« Teams émet du son » accounting for an empty Thursday three weeks out) |
 | `agenda-empty` | DEC-31's own case: a day with nothing on it, grid and search bar still drawn. The day is found by its accessible name, not by date, so the shot does not expire |
 | `agenda-semaine` | the same day in the **Semaine** view |
 | `agenda-liste` | the same day in the **Liste** view |

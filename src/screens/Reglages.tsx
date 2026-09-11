@@ -1620,7 +1620,24 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
       <SectionHeader as="h3" className="mb-2">
         Erreurs récentes
       </SectionHeader>
-      {errors.length === 0 ? (
+      {recent.state.status !== 'ready' ? (
+        /*
+          **« Aucune erreur récente. » was asserted when the log could not be
+          read at all.**
+
+          `events` collapses `loading` and `failed` to `[]`, and the sentence
+          below reads that as « nothing broke ». So the one pane a support
+          engineer opens — on DEC-27's own evidence trail — stated positively
+          that the app was healthy at the exact moment it could not tell. An
+          absence of evidence drawn as evidence of absence, on the screen whose
+          whole job is evidence.
+        */
+        <p className={recent.state.status === 'failed' ? 'text-warn text-ui' : 'text-muted text-ui'}>
+          {recent.state.status === 'failed'
+            ? 'Le journal n’a pas pu être lu — ceci ne veut pas dire qu’il est vide.'
+            : 'Lecture du journal…'}
+        </p>
+      ) : errors.length === 0 ? (
         <p className="text-muted text-ui">Aucune erreur récente.</p>
       ) : (
         <List>

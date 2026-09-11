@@ -49,6 +49,8 @@ export const meetingIdFor = (eventId: string): string =>
 export interface AgendaSnapshot {
   events: CalendarEvent[]
   syncedAt: number
+  /** The days Graph was actually asked about — see the IPC schema. */
+  window: { from: number; to: number }
   /** The meeting currently offered, if any. */
   armed: { meetingId: string; eventId: string; subject: string } | null
   /** Why nothing is armed, in French, for the empty state. */
@@ -107,6 +109,10 @@ export class Agenda {
     return {
       events: this.#window.events,
       syncedAt: this.#window.syncedAt,
+      // The bounds the cursor was earned over. They have always been on the
+      // window and never left the main process, so the calendar asserted
+      // « Aucune réunion ce jour-là » about days Graph was never asked about.
+      window: { from: this.#window.from, to: this.#window.to },
       armed: this.#armed,
       reason: this.#reason,
     }

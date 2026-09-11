@@ -49,6 +49,22 @@ interface DayPaneProps {
    * rep somewhere to press.
    */
   action?: ReactNode
+  /**
+   * **True when the range on screen is outside the days Graph was asked about.**
+   *
+   * `modules/calendar/delta.ts` syncs yesterday through a week ahead — eight
+   * days — and `Agenda.tsx` draws a six-week grid. So *Mois* and *Liste* said
+   * « Aucune réunion ce jour-là. » about **thirty-four of forty-two days** on
+   * which nothing had been looked up, and the `reason` beneath explained that
+   * emptiness with the *arming* reason: an empty Thursday three weeks out was
+   * accounted for by « Teams émet du son ».
+   *
+   * Nobody can widen the window for free — a delta link bakes its range in and
+   * keeps answering for it forever — so the honest move is to say which days the
+   * answer covers. An absence of evidence is not evidence of absence, and this
+   * is a calendar: being trusted about what is on it is the whole job.
+   */
+  unsynced?: boolean
   onOpen: (meetingId: string) => void
 }
 
@@ -59,6 +75,7 @@ export function DayPane({
   showDay,
   when,
   action,
+  unsynced = false,
   onOpen,
 }: DayPaneProps) {
   const upcoming = entries.filter((entry) => !entry.past)
@@ -77,7 +94,7 @@ export function DayPane({
       ) : (
         <EmptyState
           action={action}
-          reason={reason || undefined}
+          reason={unsynced ? undefined : reason || undefined}
           hint={
             signedOut
               ? 'Le calendrier est facultatif — vous pouvez créer une réunion sur n’importe quel jour.'
@@ -93,11 +110,13 @@ export function DayPane({
             Monday, and « enregistrée » answers whether anything was *recorded*
             when the rep asked whether anything was *in the calendar*.
           */}
-          {when === 'today'
-            ? 'Plus aucune réunion aujourd’hui.'
-            : showDay
-              ? 'Aucune réunion sur cette période.'
-              : 'Aucune réunion ce jour-là.'}
+          {unsynced
+            ? 'Ces jours sont hors de la période synchronisée — le calendrier n’a pas été interrogé dessus. Vous pouvez quand même y créer une réunion.'
+            : when === 'today'
+              ? 'Plus aucune réunion aujourd’hui.'
+              : showDay
+                ? 'Aucune réunion sur cette période.'
+                : 'Aucune réunion ce jour-là.'}
         </EmptyState>
       )}
 

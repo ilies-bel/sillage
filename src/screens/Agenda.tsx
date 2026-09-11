@@ -224,6 +224,37 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
     return entries.filter((entry) => monthOf(entry.day) === monthOf(month))
   }, [entries, view, selected, month])
 
+  /**
+   * **Whether the range on screen is one Graph was actually asked about.**
+   *
+   * The sync window is yesterday through a week ahead — eight days — and this
+   * grid draws six weeks. So an empty Thursday three weeks out was reported as
+   * « Aucune réunion ce jour-là. », which is a claim about the calendar the app
+   * has no basis for, under the *arming* reason, which accounted for it with
+   * « Teams émet du son ». Thirty-four of forty-two days.
+   *
+   * Only when the **whole** visible range is outside the window: a week that
+   * straddles the edge has been half answered, and « nothing here » is true of
+   * the half that was asked. A day inside the window with nothing on it is an
+   * empty day and says so.
+   */
+  const unsynced = useMemo(() => {
+    const bounds = snapshot?.window
+    if (!bounds || bounds.to === 0) return false
+    const days =
+      view === 'liste'
+        ? []
+        : view === 'jour'
+          ? [selected]
+          : view === 'semaine'
+            ? weekOf(selected)
+            : monthMatrix(month).flat().filter((day) => monthOf(day) === monthOf(month))
+    if (days.length === 0) return false
+    const from = dayKeyOf(bounds.from)
+    const to = dayKeyOf(bounds.to)
+    return days.every((day) => day < from || day > to)
+  }, [snapshot, view, selected, month])
+
   const select = useCallback((day: DayKey) => {
     setSelected(day)
     setMonth(day)
@@ -463,6 +494,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
               signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
               when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
+              unsynced={unsynced}
               /*
                 The header's *Ajouter au …* again, this time where the rep is
                 looking. Same component and therefore the same form, the same

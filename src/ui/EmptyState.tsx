@@ -50,8 +50,15 @@ export function EmptyState({
         className,
       )}
     >
-      <p className="text-body text-copy">{children}</p>
-      {reason ? <p className="text-muted mt-1.5 text-ui">{reason}</p> : null}
+      {/*
+        `.measure` on both, because an empty state is prose and some of these
+        sentences are long: « Ces jours sont hors de la période synchronisée… »
+        rendered eighty-nine characters a line before this, and the class goes on
+        the element that holds the text — `ch` resolves against its own font
+        size, so the two here need it separately.
+      */}
+      <p className="measure text-body text-copy">{children}</p>
+      {reason ? <p className="measure text-muted mt-1.5 text-ui">{reason}</p> : null}
       {hint ? <p className="text-muted mt-4 text-ui">{hint}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>

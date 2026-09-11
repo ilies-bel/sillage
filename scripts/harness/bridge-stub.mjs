@@ -1717,6 +1717,14 @@ export function installAppBridge(config) {
       ? {
           events: EVENTS,
           syncedAt: now - 4 * MIN,
+          /*
+            The days Graph was actually asked about: yesterday through a week
+            ahead, which is what `modules/calendar/delta.ts` syncs. The grid
+            draws six weeks, so a fixture with a wide-open window would go on
+            photographing « Aucune réunion ce jour-là. » on thirty-four days
+            nothing had been looked up — the claim this field exists to stop.
+          */
+          window: { from: now - 24 * HOUR, to: now + 7 * 24 * HOUR },
           armed:
             scenario === 'review'
               ? null
@@ -1727,7 +1735,14 @@ export function installAppBridge(config) {
                 },
           reason: '',
         }
-      : { events: [], syncedAt: 0, armed: null, reason: 'Aucun calendrier connecté' }
+      : {
+          events: [],
+          syncedAt: 0,
+          // No calendar connected means no day was asked about.
+          window: { from: 0, to: 0 },
+          armed: null,
+          reason: 'Aucun calendrier connecté',
+        }
 
   /** The health table this scenario reads — see `healthSnapshot` below. */
   const healthBase = () =>

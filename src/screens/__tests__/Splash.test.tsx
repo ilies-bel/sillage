@@ -153,7 +153,7 @@ describe('what the splash holds the window for', () => {
   const openApp = () => {
     // Whatever Aujourd'hui needs once the splash lets go.
     bridge
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: '' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, window: { from: 0, to: 0 }, armed: null, reason: '' }))
       .when('auth:state', () => ({ status: 'signedOut' as const }))
       .when('meeting:list', () => [])
       .when('health:snapshot', () => ({

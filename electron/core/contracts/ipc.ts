@@ -50,6 +50,23 @@ import { OnboardingStateSchema } from './onboarding.ts'
 export const AgendaSnapshotSchema = z.object({
   events: z.array(CalendarEventSchema),
   syncedAt: TimestampSchema,
+  /**
+   * **What Graph was actually asked about**, so the calendar can stop asserting
+   * things about days it never queried.
+   *
+   * `modules/calendar/delta.ts` syncs yesterday through a week ahead — eight
+   * days — while `Agenda.tsx` draws a six-week grid. *Mois* and *Liste*
+   * therefore said « Aucune réunion ce jour-là. » about **thirty-four of
+   * forty-two days** on which nothing had been looked up, and explained that
+   * emptiness with `reason` — which is the *arming* reason, so an empty Thursday
+   * three weeks out was accounted for by « Teams émet du son ».
+   *
+   * Nobody can widen the window for free: a delta link bakes its range in and
+   * keeps answering for that range forever. So the honest fix is to say which
+   * days the answer covers and let the empty state distinguish « nothing that
+   * day » from « not asked ».
+   */
+  window: z.object({ from: TimestampSchema, to: TimestampSchema }),
   armed: z
     .object({ meetingId: MeetingIdSchema, eventId: z.string(), subject: z.string() })
     .nullable(),

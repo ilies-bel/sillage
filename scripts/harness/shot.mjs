@@ -173,16 +173,79 @@ const SCREENS = {
    * and the search bar. The day is found by its accessible name rather than by
    * date, so the shot does not expire the moment the fixtures move.
    */
+  /*
+   * **A month the calendar was never asked about.**
+   *
+   * `modules/calendar/delta.ts` syncs yesterday through a week ahead — eight
+   * days — while the grid draws six weeks, so *Mois* asserted « Aucune réunion
+   * ce jour-là. » about thirty-four of forty-two days on which nothing had been
+   * looked up, and explained that emptiness with the **arming** reason: an empty
+   * Thursday three weeks out was accounted for by « Teams émet du son ». Nobody
+   * can widen the window for free — a delta link bakes its range in — so the
+   * honest move is to say which days the answer covers.
+   */
+  'agenda-hors-fenetre': {
+    scenario: 'agenda',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Mois', exact: true }).last().click()
+      // Two months on, which no sync window reaches.
+      await page.getByRole('button', { name: 'Mois suivant' }).click()
+      await page.waitForTimeout(200)
+      await page.getByRole('button', { name: 'Mois suivant' }).click()
+      await page.waitForTimeout(400)
+      await page.getByText(/hors de la période synchronisée/).first().waitFor()
+    },
+  },
+
   'agenda-empty': {
     scenario: 'agenda',
     async drive(page) {
       await openAgenda(page)
-      await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
+      /*
+       * A day **inside** the sync window, which is what DEC-31 is about: the
+       * grid is drawn and usable on a day with nothing on it. A day the calendar
+       * was never asked about is a different sentence and its own stage
+       * (`agenda-hors-fenetre`) — conflating them is exactly the claim the
+       * window field was added to stop.
+       */
+      /*
+       * The first empty day that is also **inside the sync window** — which is
+       * what DEC-31 is about: the grid drawn and usable on a day with nothing on
+       * it. A day the calendar was never asked about says something different
+       * and has its own stage (`agenda-hors-fenetre`); conflating the two is the
+       * claim the window field was added to stop, so the stage steps forward
+       * until it finds the case it is here to photograph rather than accepting
+       * whichever sentence turns up.
+       */
+      const days = page.getByRole('button', { name: /aucune réunion$/ })
+      const said = page.getByText(
+        /Aucune réunion ce jour-là|Aucune réunion sur cette période|Plus aucune réunion/,
+      )
+      /*
+       * Re-anchored on *Aujourd'hui* between attempts, and that is not belt and
+       * braces. A month grid draws the trailing days of the previous month, so
+       * the first empty cell is usually one of those — and clicking it moves the
+       * grid to that month, where every later cell is also outside the window.
+       * One stray click and the scan could never reach the days it is looking
+       * for. The fixture's free days are four to seven ahead.
+       */
+      const total = await days.count()
+      let found = false
+      for (let i = 0; i < Math.min(total, 42); i += 1) {
+        await page.getByRole('button', { name: 'Aujourd’hui' }).click()
+        await page.waitForTimeout(120)
+        await days.nth(i).click()
+        await page.waitForTimeout(220)
+        if ((await said.count()) > 0) {
+          found = true
+          break
+        }
+      }
+      if (!found) throw new Error('aucun jour vide dans la fenêtre synchronisée')
       // Whichever of the three the range calls for — a past day does not say
       // « à venir » about itself, which is the whole point of the copy.
-      await page
-        .getByText(/Aucune réunion ce jour-là|Aucune réunion sur cette période|Plus aucune réunion/)
-        .waitFor()
+      await said.first().waitFor()
     },
   },
 

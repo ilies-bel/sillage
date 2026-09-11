@@ -281,11 +281,19 @@ const authState = (identity: IdentityPort | null | undefined): AuthState => {
   return account ? { status: 'signedIn', account } : SIGNED_OUT
 }
 
-const EMPTY_AGENDA = { events: [], syncedAt: 0, armed: null, reason: 'Aucun calendrier connecté' }
+const EMPTY_AGENDA = {
+  events: [],
+  syncedAt: 0,
+  // An empty window rather than a wide one: with no calendar connected, no day
+  // has been asked about, and the empty state must not claim otherwise.
+  window: { from: 0, to: 0 },
+  armed: null,
+  reason: 'Aucun calendrier connecté',
+}
 
 /**
  * Which accounts this call could belong to, for the picker under *Client*.
-   *
+ *
  * Never throws and never blocks the gate: VerySwing is optional (DEC-26), and
  * a confirmation screen that will not open because a lookup timed out is worse
  * than one that opens with no suggestions — the *Client* row already says the
