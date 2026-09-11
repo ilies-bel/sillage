@@ -1853,6 +1853,13 @@ export function installAppBridge(config) {
 
     'agenda:snapshot': agendaSnapshot,
     'agenda:refresh': agendaSnapshot,
+    /*
+      *Enregistrer* on an upcoming invite. The real handler reaches `Agenda`'s
+      own arm path, so the meeting it returns carries the event's id — and the
+      stub answers the id the product would compose, not a fresh one, because a
+      stage that clicks this then asserts the session it lands on.
+    */
+    'agenda:arm': ({ eventId }) => ({ meetingId: `evt-${eventId}` }),
 
     'meeting:list': () => MEETINGS,
     /*

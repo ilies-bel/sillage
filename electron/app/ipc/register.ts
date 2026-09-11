@@ -727,6 +727,15 @@ export const handlers: Handlers = {
 
   'agenda:snapshot': (_request, { agenda }) => agenda?.snapshot() ?? EMPTY_AGENDA,
 
+  /*
+   * No agenda means no fold, so there is no event to name and nothing to arm.
+   * The sentence is the rep's, not a stack: DEC-26 says a refusal is stated,
+   * and `preload.ts` strips the `Error invoking remote method` prefix.
+   */
+  'agenda:arm': (_request, { agenda }) => {
+    if (!agenda) throw new Error('Le calendrier n’est pas connecté.')
+    return agenda.armNow(_request.eventId)
+  },
   'agenda:refresh': async (_request, { agenda }) => {
     if (!agenda) return EMPTY_AGENDA
     await agenda.tick({ force: true })

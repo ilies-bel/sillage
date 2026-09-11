@@ -305,6 +305,43 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
     [meetings, onOpen, select],
   )
 
+  /**
+   * *Enregistrer* on an upcoming invite: arm it now, then open it.
+   *
+   * The arming is the **same** one the clock performs — `agenda:arm` reaches
+   * `Agenda.armNow`, which calls the private `#arm` that `decideArming` calls —
+   * so the meeting carries the invite's `eventId`, its subject and its
+   * attendees. That is the whole reason this exists rather than reusing
+   * *Démarrer une réunion*, whose meeting has `eventId: null` by design.
+   *
+   * It opens the session but does **not** start recording: HR-7 says arming is
+   * an offer a human accepts, and the rep pressing a row is asking to be taken
+   * to the call, not to have capture begin behind a list. *Enregistrer* on the
+   * session screen is the second press, and it is the same second press an
+   * automatically armed meeting asks for.
+   *
+   * A refusal is shown rather than swallowed — `#arm` declines an event whose
+   * meeting has already been held, and « rien ne se passe » on a button is the
+   * dead control DEC-26 forbids. `preload.ts` has already stripped Electron's
+   * `Error invoking remote method` prefix, so what surfaces is our sentence.
+   */
+  const armNow = useCallback(
+    async (eventId: string) => {
+      setBusy(true)
+      try {
+        const { meetingId } = await invoke('agenda:arm', { eventId })
+        agenda.set(await invoke('agenda:snapshot', {}))
+        meetings.reload()
+        onOpen(meetingId)
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [agenda, meetings, onOpen],
+  )
+
   const refresh = useCallback(async () => {
     setBusy(true)
     try {
@@ -489,6 +526,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             />
           ) : (
             <DayPane
+              onArm={armNow}
               entries={inRange}
               reason={snapshot?.reason ?? null}
               signedOut={authState?.status !== 'signedIn'}

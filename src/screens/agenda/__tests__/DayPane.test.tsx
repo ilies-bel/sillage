@@ -18,6 +18,7 @@ const entry = (past: boolean): AgendaEntry => ({
   title: 'Groupe Maréchal — qualification besoin ERP',
   subtitle: 'Groupe Maréchal',
   meetingId: 'm1',
+  eventId: null,
   armed: false,
   state: 'done',
   past,
@@ -33,7 +34,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced={false}
-        onOpen={() => {}}
+        onOpen={() => {}} onArm={() => {}}
       />,
     )
 
@@ -56,7 +57,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced
-        onOpen={() => {}}
+        onOpen={() => {}} onArm={() => {}}
       />,
     )
 
@@ -74,7 +75,7 @@ describe('DayPane — the day it is describing', () => {
         showDay={false}
         unsynced={false}
         action={<button type="button">Ajouter au 4 août</button>}
-        onOpen={() => {}}
+        onOpen={() => {}} onArm={() => {}}
       />,
     )
 
@@ -90,7 +91,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced={false}
-        onOpen={() => {}}
+        onOpen={() => {}} onArm={() => {}}
       />,
     )
 
@@ -106,7 +107,7 @@ describe('DayPane — the day it is describing', () => {
         when="today"
         showDay={false}
         unsynced={false}
-        onOpen={() => {}}
+        onOpen={() => {}} onArm={() => {}}
       />,
     )
 

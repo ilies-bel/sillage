@@ -118,6 +118,47 @@ export class Agenda {
     }
   }
 
+  /**
+   * Arm a scheduled event because the rep asked, not because the clock did.
+   *
+   * `#tick` reaches `#arm` through `decideArming`, which is a *guess* at when
+   * the rep would want this — a five-minute window around the event × a
+   * conferencing process running. Until this existed the guess was the only way
+   * in, and an upcoming event that had produced no meeting yet therefore had no
+   * control on its row at all (`src/screens/agenda/DayPane.tsx` renders inside
+   * `{meetingId ? … : null}`). A call that starts ten minutes early left the rep
+   * with only « Démarrer une réunion », which creates a meeting with
+   * `eventId: null` and loses every deterministic fact the invite carries.
+   *
+   * **The same `#arm` the clock uses**, deliberately: the meeting id, the
+   * subject and `MeetingContext` are composed in one place, so a rep-armed
+   * meeting and a clock-armed one cannot drift. `decideArming` is not consulted
+   * — the detector guesses, the rep has said — and `#arm` still re-checks the
+   * meeting's own state, so an event that has already been recorded and
+   * confirmed is refused there rather than here.
+   *
+   * Bounded by the fold. `eventId` arrives from the renderer, so it is matched
+   * against the events this agenda actually holds; an id from anywhere else
+   * refuses rather than creating a meeting for an event nobody can see.
+   */
+  armNow(eventId: string): { meetingId: string } {
+    const event = this.#window.events.find((candidate) => candidate.id === eventId)
+    if (!event) throw new Error('Cet événement n’est plus dans le calendrier affiché.')
+    this.#arm(event)
+    /*
+     * Read back rather than returned from `#arm`: `#arm` has three exits — a
+     * standing offer it keeps, a fresh arming, and a refusal that clears
+     * `#armed` — and the id the *renderer* should open is whatever the agenda
+     * now says is armed. Composing it here from `meetingIdFor` would be a second
+     * source for one fact, and would happily name a meeting the dispatch just
+     * refused.
+     */
+    const armed = this.#armed
+    if (!armed) throw new Error('Cette réunion ne peut plus être démarrée.')
+    this.#options.onChanged?.(this.snapshot())
+    return { meetingId: armed.meetingId }
+  }
+
   /** Runs a tick now, then keeps ticking until `stop()`. */
   start(): void {
     this.#stopped = false

@@ -285,6 +285,40 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **Every upcoming invite can be started, not only the armed one.**
+   *
+   * The row's control used to render inside `{meetingId ? … : null}`, and an
+   * upcoming calendar event that has produced no meeting yet has none — so four
+   * of the five upcoming rows on this very screen had no control at all, and the
+   * row is not clickable either. A sales call that starts ten minutes early left
+   * the rep with the header's *Démarrer une réunion*, which creates a meeting
+   * with `eventId: null` and drops the attendees, the subject, and with them
+   * « Interlocuteurs », `speakerLabel`'s one chance to name the far channel, and
+   * the strongest signal account resolution has.
+   *
+   * The stage asserts the *count*, because that is the thing that regressed and
+   * the thing a screenshot cannot state: one filled primary on the armed row
+   * (HR-7 — there is at most one, and it owns the screen's weight), and a
+   * bordered *Enregistrer* on each remaining upcoming row. Photographing a
+   * screen with buttons on it would pass either way.
+   */
+  'agenda-demarrer-tot': {
+    scenario: 'agenda',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Semaine' }).click()
+      await page.getByText('Banque Delcourt — négociation du cadre tarifaire 2026').first().waitFor()
+      const armable = page.getByRole('button', { name: 'Enregistrer', exact: true })
+      const count = await armable.count()
+      if (count < 2) {
+        throw new Error(
+          `only ${count} « Enregistrer » on the week — an upcoming invite with no meeting must still be startable`,
+        )
+      }
+    },
+  },
+
   /* One client chip pressed — the filter path, not the typed-query path. */
   'agenda-client': {
     scenario: 'agenda',

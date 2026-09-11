@@ -31,10 +31,32 @@ export interface AgendaEntry {
   /** Attendees, or the client the rep named. Never both. */
   subtitle: string | null
   /**
-   * Non-null ⇒ there is a session to open. An entry without one is
-   * information and carries no button (DEC-26).
+   * Non-null ⇒ there is a session to *open*.
+   *
+   * This used to say « an entry without one is information and carries no
+   * button (DEC-26) », and that reading was too broad by exactly one case. A
+   * past event the app never recorded is information, and a dead *Ouvrir* on it
+   * would indeed be the control DEC-26 forbids. An **upcoming** event is not
+   * information: it is a call that has not started yet, and the rep can start
+   * it. Both fell into the same `null` and the whole upcoming list went inert —
+   * four of five rows with no control at all, and the row is not clickable
+   * either. `eventId` is what separates them.
    */
   meetingId: string | null
+  /**
+   * The invite this row came from, when it came from one.
+   *
+   * Null for a meeting the app created itself (*Démarrer une réunion*), which
+   * by construction has no invite — `meeting:create`'s docblock is explicit
+   * that `eventId: null` is the normal case there, not a fallback.
+   *
+   * It is here so an upcoming calendar row can offer *Enregistrer* through
+   * `agenda:arm`, which reaches `Agenda`'s own arm path and therefore keeps the
+   * attendees and the subject. Without it the only way to record a call
+   * starting early is the header's *Démarrer*, which drops the invite and with
+   * it every deterministic fact DEC-7 keeps away from the model.
+   */
+  eventId: string | null
   /** The offer, never a recording (HR-7). */
   armed: boolean
   /** Null for a calendar event the app has never opened. */
@@ -113,6 +135,7 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
       title: event.context.subject || 'Sans objet',
       subtitle: attendeesOf(event),
       meetingId,
+      eventId: event.id,
       armed: isArmed,
       state,
       past: isPast({ state, end: event.context.scheduledEnd, now }),
@@ -134,6 +157,10 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
       title: meeting.title || 'Sans objet',
       subtitle: meeting.clientName,
       meetingId: meeting.id,
+      // The app's own record. It may *carry* an `eventId` — a meeting armed
+      // from an invite whose event has since fallen out of the sync window —
+      // but it already has a meeting, so there is nothing here left to arm.
+      eventId: null,
       armed: armed?.meetingId === meeting.id,
       state: meeting.state,
       past: isPast({ state: meeting.state, end: meeting.endedAt ?? start, now }),

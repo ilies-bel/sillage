@@ -10,9 +10,12 @@
  *
  *  · **Armed is an offer, never a recording** (HR-7). The dot means the app
  *    *would* record; a human still presses. Nothing here starts anything.
- *  · **A row with no session carries no button** (DEC-26). An invite the app
- *    has never opened is information; a dead *Ouvrir* on it would be the exact
- *    dead control that decision forbids.
+ *  · **A row with no session carries no *Ouvrir*** (DEC-26) — a *past* invite
+ *    the app never opened is information, and a dead *Ouvrir* on it would be the
+ *    exact dead control that decision forbids. An **upcoming** one is not
+ *    information: it is a call that can be started, and it carries *Enregistrer*
+ *    instead. Reading the rule as « no meeting, no button » left four of the
+ *    five upcoming rows with nothing on them at all.
  *  · **An empty range says why it is empty**, in the calendar's own words, and
  *    never as a failure of the app (DEC-26, DEC-32). Graph being unreachable is
  *    a line in this pane, not a banner over the product.
@@ -66,6 +69,15 @@ interface DayPaneProps {
    */
   unsynced?: boolean
   onOpen: (meetingId: string) => void
+  /**
+   * Start a scheduled call now, keeping the invite it came from.
+   *
+   * Separate from `onOpen` because they are different acts on different things:
+   * one opens a meeting that exists, the other asks `agenda:arm` to bring one
+   * into being from a calendar event — which is the same path the clock takes,
+   * so the attendees and the subject survive.
+   */
+  onArm: (eventId: string) => void
 }
 
 export function DayPane({
@@ -77,6 +89,7 @@ export function DayPane({
   action,
   unsynced = false,
   onOpen,
+  onArm,
 }: DayPaneProps) {
   const upcoming = entries.filter((entry) => !entry.past)
   // Newest first: the call a rep wants after a meeting is the one that just
@@ -111,7 +124,7 @@ export function DayPane({
       {upcoming.length > 0 ? (
         <List>
           {upcoming.map((entry) => (
-            <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} />
+            <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} onArm={onArm} />
           ))}
         </List>
       ) : suppressed ? null : (
@@ -148,7 +161,7 @@ export function DayPane({
           <SectionHeader>Passées</SectionHeader>
           <List>
             {past.map((entry) => (
-              <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} />
+              <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} onArm={onArm} />
             ))}
           </List>
           {/*
@@ -170,9 +183,11 @@ interface EntryRowProps {
   entry: AgendaEntry
   showDay: boolean
   onOpen: (meetingId: string) => void
+  /** Start a scheduled call now, keeping the invite (`agenda:arm`). */
+  onArm: (eventId: string) => void
 }
 
-function EntryRow({ entry, showDay, onOpen }: EntryRowProps) {
+function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
 
   return (
@@ -225,6 +240,34 @@ function EntryRow({ entry, showDay, onOpen }: EntryRowProps) {
       {meetingId ? (
         <Button variant={entry.armed ? 'primary' : 'bordered'} onClick={() => onOpen(meetingId)}>
           {entry.armed ? 'Enregistrer' : 'Ouvrir'}
+        </Button>
+      ) : entry.eventId !== null && !entry.past ? (
+        /*
+          **A call that has not started yet is not information.**
+
+          The rule this slot was written to — « an entry with no meeting is
+          information and carries no button (DEC-26) » — is right about a *past*
+          event the app never recorded, where an *Ouvrir* would open nothing.
+          It was applied to the upcoming half as well, and there it is the
+          opposite of DEC-26: not a dead control, a **missing** one. Four of the
+          five upcoming rows on the default agenda had nothing on them at all,
+          and the row is not clickable either.
+
+          Sales calls start early. The only control the rep had was the header's
+          « Démarrer une réunion », which `meeting:create` describes as a meeting
+          the calendar knows nothing about — so taking it drops `eventId`, and
+          with it the attendees, « Interlocuteurs » on the compte-rendu header,
+          `speakerLabel`'s one chance to name the far channel after a person
+          instead of « Client », and the strongest signal account resolution has.
+          The rep pays that for being on time.
+
+          `bordered`, not `primary`. There is at most one armed meeting and it
+          owns the screen's single filled button (HR-7); a row of blue
+          *Enregistrer*s down the upcoming list would take that weight away from
+          the call that is actually starting now.
+        */
+        <Button variant="bordered" onClick={() => onArm(entry.eventId as string)}>
+          Enregistrer
         </Button>
       ) : null}
     </Row>

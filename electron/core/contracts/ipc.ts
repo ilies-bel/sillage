@@ -156,6 +156,49 @@ export const invokeChannels = {
    * subject from Graph, and letting this overwrite that would make the calendar
    * and the app disagree about the same event.
    */
+  /**
+   * Arm a scheduled event **now**, because the rep said so.
+   *
+   * `core/domain/arming.ts` decides this on its own — a five-minute window
+   * around the event × a conferencing process running — and that decision is a
+   * *guess at what the rep would want*. Everything else on the agenda row
+   * assumed the guess was the only way in, and the cost of that was a screen
+   * with nothing on it: an upcoming event the calendar knows about but which has
+   * produced no meeting yet has `meetingId === null`, and
+   * `src/screens/agenda/DayPane.tsx` renders its control inside
+   * `{meetingId ? … : null}`. **Four of five upcoming rows were inert** — no
+   * button, and the row is not clickable either.
+   *
+   * A sales call starting ten minutes early is an ordinary Tuesday, and the only
+   * control the rep had was « Démarrer une réunion » in the header, which
+   * `meeting:create`'s own docblock describes as « a meeting the calendar knows
+   * nothing about ». Taking it costs `eventId`, and with it every deterministic
+   * fact DEC-7 says may not come from a model: the attendees, so the
+   * compte-rendu's « Interlocuteurs » line is empty and `speakerLabel` can never
+   * resolve « exactly one interlocutor on the far side means the far channel
+   * *is* that person » — every turn reads « Client » for the rest of the call —
+   * and the strongest signal VerySwing account resolution has.
+   *
+   * So the rep gets the same door the clock has, and it is the **same door**:
+   * this reaches `Agenda`'s own arm path, so the meeting id, the subject and
+   * `MeetingContext` are composed exactly as an automatic arming composes them.
+   * A second way to create a calendar-linked meeting would be a second thing to
+   * keep equal.
+   *
+   * It is bounded by the fold: only an event the current agenda actually holds
+   * can be named, so this is not a verb for arming an arbitrary string. And it
+   * does not consult `decideArming` — that is the point. The detector exists to
+   * guess; the rep has said. Same shape as DEC-45, where the dry run's verdict
+   * outranks the boot probe because one is a measurement and the other is an
+   * inference.
+   */
+  'agenda:arm': {
+    request: z.object({ eventId: z.string().min(1).max(512) }),
+    response: z.object({
+      /** The meeting now armed, ready for the renderer to open. */
+      meetingId: MeetingIdSchema,
+    }),
+  },
   'meeting:rename': {
     request: z.object({
       meetingId: MeetingIdSchema,

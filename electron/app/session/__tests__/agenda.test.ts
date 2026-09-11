@@ -372,3 +372,87 @@ test('an offer that expires *during* a recording leaves the recording alone', as
   assert.equal(h.orchestrator.stateOf(meetingId), 'recording')
   h.store.close()
 })
+
+/*
+ * `armNow` — the rep asking, where the clock would not have.
+ *
+ * These are written against the case `decideArming` **refuses**, deliberately.
+ * A test that armed a meeting the detector was already going to arm would pass
+ * whether or not `armNow` bypassed it, which is the fixture-cannot-exercise-the-
+ * property shape this repo keeps finding. With no conferencing process running,
+ * the clock never arms — the test directly above proves that — so anything armed
+ * here was armed because a human asked.
+ */
+test('armNow arms an event the detector would refuse', async () => {
+  const h = harness([event('AAA')], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  // The clock has had its chance and declined.
+  assert.equal(h.agenda.snapshot().armed, null)
+
+  const { meetingId } = h.agenda.armNow('AAA')
+
+  assert.equal(meetingId, meetingIdFor('AAA'))
+  assert.equal(h.orchestrator.stateOf(meetingId), 'armed')
+  assert.equal(h.agenda.snapshot().armed?.eventId, 'AAA')
+  h.store.close()
+})
+
+test('armNow keeps the invite, which is the whole reason it exists', async () => {
+  /*
+   * The alternative on screen was « Démarrer une réunion », which `meeting:create`
+   * describes as a meeting the calendar knows nothing about — `eventId: null`,
+   * no attendees, no subject. Everything DEC-7 keeps away from the model comes
+   * off the invite, so this is the assertion that makes the feature worth having.
+   */
+  const h = harness([event('AAA', { subject: 'Néovia — cadrage' })], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+
+  const { meetingId } = h.agenda.armNow('AAA')
+  /*
+   * Read back through `Projections.context`, which is the projection every
+   * other surface reads — the compte-rendu's « Interlocuteurs » line,
+   * `speakerLabel`, account resolution — rather than off the in-memory session.
+   * A session object that happened to hold the right fields would prove nothing
+   * about what the *store* fold carries across a restart.
+   */
+  const context = h.store.projections.context(meetingId)
+
+  assert.ok(context, 'the arming stored the invite')
+  assert.equal(context.eventId, 'AAA')
+  assert.equal(context.subject, 'Néovia — cadrage')
+  assert.equal(context.attendees.length, 1)
+  h.store.close()
+})
+
+test('armNow is still an offer — it never starts recording (HR-7)', async () => {
+  const h = harness([event('AAA')], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const { meetingId } = h.agenda.armNow('AAA')
+  assert.notEqual(h.orchestrator.stateOf(meetingId), 'recording')
+  h.store.close()
+})
+
+test('armNow refuses an event the fold does not hold', async () => {
+  /*
+   * The id crosses the bridge from the renderer, so it is matched against the
+   * events this agenda actually has. Without this it would happily create a
+   * meeting for an event nobody can see, named by a string from anywhere.
+   */
+  const h = harness([event('AAA')], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  assert.throws(() => h.agenda.armNow('BBB'), /calendrier/)
+  assert.equal(h.agenda.snapshot().armed, null)
+  h.store.close()
+})
+
+test('armNow publishes a snapshot, so the row redraws without a poll', async () => {
+  const h = harness([event('AAA')], null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const before = h.snapshots.length
+
+  h.agenda.armNow('AAA')
+
+  assert.ok(h.snapshots.length > before, 'a snapshot was published')
+  assert.equal(h.snapshots.at(-1)?.armed?.eventId, 'AAA')
+  h.store.close()
+})
