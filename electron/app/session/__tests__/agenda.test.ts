@@ -283,3 +283,53 @@ test('a listener that throws does not stop the meeting arming', async () => {
   assert.equal(agenda.snapshot().armed?.meetingId, meetingIdFor('AAA'))
   store.close()
 })
+
+test('the offer is withdrawn when the rep ends the call inside its own slot', async () => {
+  /*
+   * **The armed offer used to survive the end of the call.**
+   *
+   * `#armed` is cleared in `#tick` only when `decideArming` stops returning
+   * `arm`, and `decideArming` is pure over the calendar and the audio: it knows
+   * nothing about session state, clears on `now >= scheduledEnd` or when the
+   * meeting audio goes quiet, and `MeetingApps` reports a *running process* and
+   * not a call. The re-arm that follows is refused by the state machine —
+   * `ended` does not accept `arm` — and that branch returned without touching
+   * `#armed`.
+   *
+   * So a rep who finished at minute 20 of a 60-minute slot kept, for forty
+   * minutes: **Prêt** on a row whose meeting is `awaiting_confirmation`, under
+   * the *Passées* divider, wearing the screen's one filled primary reading
+   * *Enregistrer* — while `PendingGates` counted the same call and pointed at
+   * that row saying « Une autre est dans la liste du jour, au-dessus ».
+   */
+  const h = harness([event('AAA')])
+  await h.agenda.tick({ now: T0 - 60_000 })
+
+  const meetingId = meetingIdFor('AAA')
+  assert.equal(h.agenda.snapshot().armed?.meetingId, meetingId)
+
+  // The rep records and finishes, well inside the slot. Teams is still running
+  // and the calendar still says the meeting is on, so `decideArming` still
+  // wants to arm — which is exactly the case this closes.
+  h.orchestrator.dispatch(meetingId, 'start', null)
+  h.orchestrator.dispatch(meetingId, 'end', null)
+
+  await h.agenda.tick({ now: T0 + 20 * 60_000 })
+
+  assert.equal(h.agenda.snapshot().armed, null, 'l’offre a survécu à la fin de l’appel')
+  h.store.close()
+})
+
+test('a call still under way keeps its offer — that is the row to show', async () => {
+  // `recording` is not a refusal: the offer is what tells the rep which call the
+  // app is on, and withdrawing it mid-call would be the opposite defect.
+  const h = harness([event('AAA')])
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const meetingId = meetingIdFor('AAA')
+  h.orchestrator.dispatch(meetingId, 'start', null)
+
+  await h.agenda.tick({ now: T0 + 10 * 60_000 })
+
+  assert.equal(h.agenda.snapshot().armed?.meetingId, meetingId)
+  h.store.close()
+})

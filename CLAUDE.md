@@ -280,6 +280,19 @@ machine) or in `core/domain/` — never in an IPC handler.
   the line is how the document says it, the quote is what was said, and only the
   second is findable in a transcript. It travels **beside** the document and
   never inside it (DEC-44) — VerySwing receives the string the rep read.
+- **An answer with no citation is not a weaker answer, it is no answer** (DEC-21).
+  `AskDraftSchema.quotes` may be empty and nothing downstream required otherwise,
+  so a model that returned prose and no fragments produced
+  `{ answered: true, citations: [] }` — and `AskPanel` draws the citation list
+  only when it is non-empty. What reached the rep was a confident paragraph with
+  nothing under it, which is *exactly* Granola's Chat and the one difference this
+  feature exists to be. `verifyAnswer` now refuses it, and says the same thing it
+  says when the transcript cannot answer, because from where the rep stands it is
+  the same fact. The other half of the same rule: a quote too short to look up is
+  **kept and marked**, never dropped — dropping leaves a paragraph one footnote
+  lighter with nothing saying anything went wrong, and the filter counted *raw*
+  characters where `MIN_QUOTE_CHARS` is documented as counted after
+  normalisation, so the two disagreed at the boundary.
 - **`Demander` answers from the recording, and every quote is checked** (DEC-21, DEC-23).
   This is the one surface a general-purpose notetaker has that Sillage did not — Granola's
   sidebar calls it *Chat* — and the version built here is a different feature. Theirs answers

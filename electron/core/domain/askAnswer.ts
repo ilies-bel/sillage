@@ -22,7 +22,7 @@
  */
 import type { AskAnswer, AskDraft } from '../contracts/ask.ts'
 import type { TranscriptSegment } from '../contracts/transcript.ts'
-import { MIN_QUOTE_CHARS, locateQuote } from './spanVerification.ts'
+import { MIN_QUOTE_CHARS, locateQuote, normalizeForVerification } from './spanVerification.ts'
 
 /**
  * Turn what the model said into what the screen shows.
@@ -57,12 +57,19 @@ export const verifyAnswer = (
     // channel.
     .map((cited) => ({ quote: cited.quote.trim(), channel: cited.channel }))
     /*
-     * Too short to verify is not a citation. `locateQuote` refuses anything
-     * under `MIN_QUOTE_CHARS` because a three-character needle matches half the
-     * call, so a fragment that short would arrive permanently unverifiable and
-     * read as an app failure rather than as a model one.
+     * **Too short to verify is kept and marked, not dropped** — which is the
+     * rule this whole file is written around, and this filter was the one place
+     * that broke it. A quote silently removed leaves a confident paragraph with
+     * one fewer footnote and nothing saying anything went wrong, which is
+     * precisely the invisible failure DEC-21 exists to prevent; a rep who sees
+     * « introuvable » beside a sentence knows to distrust that sentence.
+     *
+     * It also disagreed with `locateQuote` at the boundary: this counted **raw**
+     * characters while `MIN_QUOTE_CHARS` is documented as counted *after*
+     * normalisation, so `TJM 520 €` (nine raw, seven folded) and a bare `€ !`
+     * (three raw, zero folded) fell on the wrong sides of the same number. Both
+     * now use the same measure.
      */
-    .filter(({ quote }) => quote.length >= MIN_QUOTE_CHARS)
     .filter(({ quote }) => {
       // A model asked for evidence repeats itself. The same sentence twice is
       // one citation, and two identical rows under one paragraph read as two
@@ -88,7 +95,12 @@ export const verifyAnswer = (
        * channels, and searching blind resolves it to `rep` every time — so a
        * client's own words would be shown as the rep's.
        */
-      const located = locateQuote(quote, segments, channel) ?? locateQuote(quote, segments, null)
+      // Nothing this short can be looked up — see `MIN_QUOTE_CHARS` — so it is
+      // not searched for, and it is reported unverified rather than discarded.
+      const searchable = normalizeForVerification(quote).length >= MIN_QUOTE_CHARS
+      const located = !searchable
+        ? null
+        : (locateQuote(quote, segments, channel) ?? locateQuote(quote, segments, null))
       return {
         span: {
           quote,
@@ -102,6 +114,28 @@ export const verifyAnswer = (
         verified: located !== null,
       }
     })
+
+  /*
+   * **An answer with no evidence at all is not an answer this product makes.**
+   *
+   * `AskDraftSchema.quotes` may be empty and nothing downstream required
+   * otherwise, so a model that returned prose and no fragments produced
+   * `{ answered: true, answer: '…', citations: [] }` — and `AskPanel` renders
+   * the citation list only when it is non-empty, so what reached the rep was a
+   * confident paragraph with nothing under it. That is *exactly* Granola's Chat:
+   * an answer from a model with nothing left to check it against, and the one
+   * difference this feature exists to be.
+   *
+   * `core/contracts/ask.ts` states the contract in one line — « every sentence
+   * of the answer has to point at a moment of the recording » — and this is
+   * where it is enforced. Not by dropping the sentence quietly: the rep is told
+   * the same thing they are told when the transcript cannot answer, because from
+   * where they stand it is the same fact. An unverifiable quote is kept and
+   * marked; **no** quote is not a weaker answer, it is no answer.
+   */
+  if (citations.length === 0) {
+    return { question, answered: false, answer: '', citations: [] }
+  }
 
   return { question, answered: true, answer, citations }
 }

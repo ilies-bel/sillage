@@ -116,14 +116,59 @@ test('the same sentence twice is one citation', () => {
   assert.equal(answer.citations.length, 1)
 })
 
-test('a fragment too short to verify is not offered as a citation', () => {
-  // `locateQuote` refuses anything under `MIN_QUOTE_CHARS`, so a three-character
-  // needle would arrive permanently unverifiable and read as an app failure
-  // rather than as a model one.
+test('a fragment too short to verify is kept and marked, never dropped', () => {
+  /*
+   * **This test used to assert the opposite, and it was the one place this file
+   * broke its own rule.**
+   *
+   * Dropping a quote leaves a confident paragraph with one fewer footnote and
+   * nothing saying anything went wrong — the invisible failure DEC-21 exists to
+   * prevent. `locateQuote` cannot look up anything this short, so it is not
+   * searched for; it is reported `verified: false`, which is what a rep needs to
+   * see to distrust the sentence it sits under.
+   */
   const answer = verifyAnswer('?', draft({ quotes: [{ quote: 'du', channel: null }] }), RECORD)
 
-  assert.equal(answer.citations.length, 0)
   assert.equal(answer.answered, true)
+  assert.equal(answer.citations.length, 1)
+  assert.equal(answer.citations[0]?.verified, false)
+  assert.equal(answer.citations[0]?.span.quote, 'du')
+  // Never invented: a span nobody located carries no timestamps.
+  assert.equal(answer.citations[0]?.span.startMs, null)
+})
+
+test('the short-quote rule is counted the way `locateQuote` counts it', () => {
+  // `MIN_QUOTE_CHARS` is documented as counted *after* normalisation and this
+  // filter counted raw characters, so `TJM 520 €` (nine raw, seven folded) and
+  // a bare `€ !` (three raw, zero folded) fell on the wrong sides of one number.
+  const answer = verifyAnswer(
+    '?',
+    draft({ quotes: [{ quote: '€ !', channel: null }] }),
+    RECORD,
+  )
+  assert.equal(answer.citations[0]?.verified, false)
+})
+
+test('an answer with no evidence at all is not an answer this product makes', () => {
+  /*
+   * `AskDraftSchema.quotes` may be empty and nothing downstream required
+   * otherwise, so a model that returned prose and no fragments produced
+   * `{ answered: true, citations: [] }` — and `AskPanel` draws the citation list
+   * only when it is non-empty, so a rep got a confident paragraph with nothing
+   * under it. That is *exactly* Granola's Chat: an answer from a model with
+   * nothing left to check it against, which is the one difference this feature
+   * exists to be. `core/contracts/ask.ts` states it in a line: every sentence of
+   * the answer has to point at a moment of the recording.
+   */
+  const answer = verifyAnswer(
+    'Quand démarrent-ils ?',
+    draft({ answered: true, answer: 'Le client vise septembre.', quotes: [] }),
+    RECORD,
+  )
+
+  assert.equal(answer.answered, false)
+  assert.equal(answer.answer, '')
+  assert.deepEqual(answer.citations, [])
 })
 
 test('« the record does not say » is an answer, and draws no prose', () => {

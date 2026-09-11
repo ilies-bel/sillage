@@ -185,7 +185,34 @@ export class Agenda {
 
   #arm(event: CalendarEvent): void {
     const meetingId = meetingIdFor(event.id)
-    if (this.#armed?.meetingId === meetingId) return
+    /*
+     * **Already armed is not « nothing to do »: the call may have ended since.**
+     *
+     * This returned flat, so the meeting's *state* was never consulted again
+     * once the offer was standing — and `#armed` is cleared in `#tick` only when
+     * `decideArming` stops returning `arm`. `decideArming` is pure over the
+     * calendar and the audio: it knows nothing about session state, clears on
+     * `now >= scheduledEnd` or when the meeting audio goes quiet, and
+     * `MeetingApps` reports a *running process*, not a call.
+     *
+     * A rep who finished at minute 20 of a 60-minute slot therefore kept, for
+     * forty minutes: **Prêt** on a row whose meeting is `awaiting_confirmation`,
+     * under the *Passées* divider, wearing the screen's one filled primary
+     * reading *Enregistrer* — while `PendingGates` counted the same call and
+     * pointed at that row saying « Une autre est dans la liste du jour,
+     * au-dessus ». Three statements about one meeting, two of them false, on one
+     * screen, and its day dot orange for the rest of the hour.
+     *
+     * So the standing offer is re-checked rather than assumed. `armed` and
+     * `recording` keep it — a call under way is precisely the row to show, and
+     * withdrawing it mid-call would be the opposite defect — and anything past
+     * those withdraws it. Cheap: a state read, no dispatch, no store write.
+     */
+    if (this.#armed?.meetingId === meetingId) {
+      const state = this.#options.orchestrator.stateOf(meetingId)
+      if (state !== 'armed' && state !== 'recording') this.#armed = null
+      return
+    }
 
     // Rehydrated from the log if a previous launch already armed this event —
     // which is exactly the restart case `meetingIdFor` exists for.
@@ -203,6 +230,27 @@ export class Agenda {
     // not, and re-offering it would put *Démarrer* on a finished conversation.
     const state = outcome.ok ? outcome.to : outcome.state
     if (state !== 'armed' && state !== 'recording') {
+      /*
+       * **And the standing offer is withdrawn, which it was not.**
+       *
+       * The comment above says a call already ended is not the offer to show,
+       * and then this branch returned without touching `#armed` — so the offer
+       * survived the end of the call. `#armed` is cleared in `#tick` only when
+       * `decideArming` stops returning `arm`, and `decideArming` is pure over the
+       * calendar and the audio: it knows nothing about session state, clears on
+       * `now >= scheduledEnd` or when the meeting audio goes quiet, and
+       * `MeetingApps` reports a *running process*, not a call. So a rep who
+       * finished at minute 20 of a 60-minute slot kept, for forty minutes:
+       * **Prêt** on a row whose meeting is `awaiting_confirmation`, under the
+       * *Passées* divider, wearing the screen's one filled primary reading
+       * *Enregistrer* — while `PendingGates` counted the same call and pointed at
+       * that row saying « Une autre est dans la liste du jour, au-dessus ». Three
+       * statements about one meeting, two of them false, on one screen.
+       *
+       * Only when it is *this* meeting: a refusal for some other event says
+       * nothing about the one currently armed.
+       */
+      if (this.#armed?.meetingId === meetingId) this.#armed = null
       this.#diagnostics.record({
         severity: 'warn',
         code: 'agenda.arm.refused',
