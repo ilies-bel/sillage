@@ -254,8 +254,25 @@ for (const file of files.filter((f) => f.startsWith(SESSION) && !isTest(f))) {
   for (const name of declared) {
     if (RESERVED.has(name)) continue
     methods += 1
+    /*
+     * **A call, *in a file that knows this class*.**
+     *
+     * `.${name}(` alone is satisfied by any unrelated receiver, so a method
+     * called `push`, `start`, `stop` or `run` would be marked reached by an
+     * `array.push(` three files away. Nothing live exploited it, which is
+     * exactly when a check is worth tightening. Requiring the caller to import
+     * the declaring module is the honest join: an instance reaches a caller
+     * either by construction or as a typed dependency, and both are imports.
+     */
+    const knows = (other) =>
+      new RegExp(`from '[^']*${file.split('/').pop()?.replace('.ts', '')}\\.ts'`).test(
+        text.get(other) ?? '',
+      )
     const called = CALLERS.some(
-      (other) => other !== file && new RegExp(`\\.${name}\\s*\\(`).test(bodies.get(other) ?? ''),
+      (other) =>
+        other !== file &&
+        knows(other) &&
+        new RegExp(`\\.${name}\\s*\\(`).test(bodies.get(other) ?? ''),
     )
     if (called) continue
     if (UNREACHED.some((entry) => entry.subject === `${className}.${name}`)) continue
