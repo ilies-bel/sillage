@@ -278,6 +278,31 @@ function Bar({ rms, floor, channel }: BarProps) {
          * `bg-meter-dropped` and not `bg-muted/30`, which is what stood here
          * and drew nothing at all — see the token's own comment.
          */
+        /*
+         * Two tones per channel and no threshold line — a 1px dashed rule
+         * across a strip this size in a header is invisible at the distance
+         * this is read from, whereas colour survives it, and a channel that is
+         * too quiet turns grey along its *whole* length, which is a harder
+         * thing to miss than bars sitting under a line.
+         *
+         * Two shades of the one blue *between* channels, because they measure
+         * the same thing on two sides of a call. Grey is shared: audio the
+         * transcriber drops is the same fact whoever said it, and two different
+         * greys would imply a distinction the threshold does not make.
+         *
+         * `bg-meter-dropped` and not `bg-muted/30`, which is what stood here
+         * and drew nothing at all — see the token's own comment.
+         *
+         * **And the cap stays square.** A round one was tried, on the argument
+         * that every voice instrument a rep has used looks like that and their
+         * eye would read it without being taught. It does not survive this
+         * geometry: the bars are wider than they are tall — five and a half
+         * pixels across a twelve pixel half — so a full radius turns each one
+         * into a *circle*, and ten circles over ten circles is a dot matrix.
+         * The reading was lost, not softened. This is an instrument (DEC-38),
+         * and a square edge is what lets a rep see which bars are grey; a
+         * lozenge is decoration wearing a measurement's clothes.
+         */
         className={`w-full rounded-[1px] ${
           audible ? (rep ? 'bg-brand-500' : 'bg-brand-700') : 'bg-meter-dropped'
         }`}

@@ -75,6 +75,15 @@
  * expansion. Truncation that draws its own ellipsis is exempt — the check is for
  * content cut off with nothing saying so.
  *
+ * It carries `--motion`, which asks the question the token file could not ask
+ * of itself: `tokens.css` declares the durations and collapses them under
+ * `prefers-reduced-motion`, and `design/tokens.test.ts` proves the tokens
+ * *exist* — neither proves anything *reads* them. A literal duration in a
+ * component passes both and then ignores the OS setting in silence. The check
+ * builds its allowed set from `:root` at runtime so it cannot rot, and flips
+ * `prefers-reduced-motion` with `emulateMedia` to measure the accessibility
+ * half directly rather than inferring it.
+ *
  * It carries `--geometry` as well, which is the other half of the same problem.
  * Ten of the compte-rendu's twenty-three gutter markers were clipped for three
  * review rounds: present in the DOM, correct in `innerText`, and a third of the
@@ -132,7 +141,7 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--scrollers', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--scrollers', '--motion', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

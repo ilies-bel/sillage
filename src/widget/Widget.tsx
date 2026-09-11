@@ -590,9 +590,43 @@ function Panel({
    */
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
+
+  /*
+   * **A log that holds more than its box has to say so, at the edge it is
+   * hiding it behind.**
+   *
+   * `data-scrolls` declares that this box is *allowed* to overflow — it is a
+   * log, it sticks to the bottom, and holding more than it shows is the point.
+   * What the attribute does not do, and what it quietly bought an exemption
+   * from, is put anything **on screen** saying so. The result was a hard rule
+   * across the first visible line: « chacun. » sliced through its x-height by
+   * the panel's own border, on the one surface a rep looks at for fifty
+   * minutes. That is the *Historique* finding again — « a hard rule under the
+   * last visible line read as the end of a four-paragraph document » — arriving
+   * at the top edge instead of the bottom, on a pane the declaration had made
+   * invisible to `--scrollers`.
+   *
+   * A `ReadingColumn` is the wrong instrument here: it is prose with a page
+   * turn, and this is a log that moves under the reader. What a log needs is the
+   * cue every chat surface uses — the content receding rather than being cut —
+   * and it is conditional on both sides, which is the half that makes it read as
+   * a finish rather than as a permanent grey band. Nothing above: no top fade,
+   * so the first line of a short call is at full strength. Scrolled up to read
+   * back: the bottom fades too, which is the only thing on screen saying that
+   * newer turns have arrived below.
+   */
+  const [edges, setEdges] = useState({ top: false, bottom: false })
+  const measure = (element: HTMLDivElement) => {
+    const above = element.scrollTop > 2
+    const below = element.scrollHeight - element.scrollTop - element.clientHeight > 2
+    setEdges((was) => (was.top === above && was.bottom === below ? was : { top: above, bottom: below }))
+  }
+
   useLayoutEffect(() => {
     const element = scroller.current
-    if (element && stuck.current) element.scrollTop = element.scrollHeight
+    if (!element) return
+    if (stuck.current) element.scrollTop = element.scrollHeight
+    measure(element)
   }, [rows.length])
 
   return (
@@ -630,7 +664,16 @@ function Panel({
         onScroll={(event) => {
           const element = event.currentTarget
           stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
+          measure(element)
         }}
+        /*
+          The mask is built here rather than as a class because it has four
+          states and three of them are a different gradient, not a different
+          colour. `FADE_PX` is the one number: twenty is about one line's
+          ascender, which is enough for the eye to read « this continues » and
+          little enough that no whole line is ever dimmed.
+        */
+        style={{ maskImage: logMask(edges), WebkitMaskImage: logMask(edges) }}
         /*
           `data-scrolls`: declared, which is what the attribute means. A live
           transcript is a log — it sticks to the bottom, the rep scrolls up to
@@ -837,14 +880,70 @@ function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () =
   )
 }
 
+/**
+ * One line's ascender. Enough for the eye to read « this continues », little
+ * enough that no whole line of a client's words is ever dimmed.
+ */
+const FADE_PX = 20
+
+/**
+ * The log's mask, by which edges are hiding something.
+ *
+ * `undefined` rather than `'none'` when nothing is hidden: `mask-image: none`
+ * is a paint the compositor still has to reason about, and a short call — which
+ * is every call for its first minute — should carry no mask at all.
+ */
+const logMask = (edges: { top: boolean; bottom: boolean }): string | undefined => {
+  /*
+   * **`currentColor`, and not because a token was missing.**
+   *
+   * `check:tokens` refused the `#000` this was first written with, and it was
+   * right to: a hex outside `tokens.css` is how `bg-muted/30` and `ring-card`
+   * shipped. But the answer here is not a new token — a mask is an **alpha
+   * stencil**, `mask-mode` defaults to `alpha`, and the hue of the opaque stop
+   * is discarded before it reaches a pixel. A `--mask-ink` in `tokens.css`
+   * would be a palette entry for something that is not a colour, which is worse
+   * than the literal: the next reader would try to theme it.
+   *
+   * `currentColor` says the only thing that is actually being asserted — fully
+   * opaque — in a value the check has no reason to object to, because it is not
+   * a colour choice at all.
+   */
+  const from = `transparent 0, currentColor ${FADE_PX}px`
+  const to = `currentColor calc(100% - ${FADE_PX}px), transparent 100%`
+  if (edges.top && edges.bottom) return `linear-gradient(to bottom, ${from}, ${to})`
+  if (edges.top) return `linear-gradient(to bottom, ${from})`
+  if (edges.bottom) return `linear-gradient(to bottom, ${to})`
+  return undefined
+}
+
 function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
   return (
     <li className="group flex gap-2">
-      <span className="text-brand-700 flex w-12 shrink-0 items-center gap-1 text-meta font-semibold leading-relaxed">
+      {/*
+        **A mark is an aside, and it was louder than the call.**
+
+        The gutter carried a bookmark glyph *and* the word « marqué » in
+        `brand-700` semibold, against a two-pixel `brand-500` rule, beside a
+        client's own sentence set in `text-muted` with a grey label. Three
+        brand-coloured elements on the rep's own note and none on the thing the
+        note is about: on a fifty-minute call the eye went to the annotations
+        and skated past the words. It reversed the hierarchy of the surface —
+        the transcript is the record, the mark is a finger pointing at it.
+
+        Same ink, same rule, one glyph. The bookmark alone says « marked » —
+        it is the same glyph as the pill's own counter and the *Marquer*
+        control, so it is already the word's meaning on this window — and the
+        `aria-label` keeps the word for a reader that cannot see the shape.
+        The note stays `text-strong`, because the rep wrote it on purpose.
+      */}
+      <span
+        aria-label="Moment marqué"
+        className="text-muted flex w-12 shrink-0 items-start justify-end pt-px text-meta leading-relaxed"
+      >
         <Bookmark />
-        marqué
       </span>
-      <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2 text-ui leading-relaxed">
+      <span className="text-strong border-subtle min-w-0 flex-1 border-l pl-2 text-ui leading-relaxed">
         {mark.note === '' ? 'Moment marqué.' : mark.note}
       </span>
       {/*

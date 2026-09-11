@@ -15,6 +15,7 @@
  *   --prose          count the characters a line of each prose surface really holds
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
+ *   --motion         every transition through the tokens, and silent under reduced motion
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -1557,6 +1558,7 @@ function parseArgs(argv) {
     prose: false,
     a11y: false,
     contrast: false,
+    motion: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -1578,6 +1580,7 @@ function parseArgs(argv) {
     else if (arg === '--a11y') flags.a11y = true
     else if (arg === '--contrast') flags.contrast = true
     else if (arg === '--scrollers') flags.scrollers = true
+    else if (arg === '--motion') flags.motion = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -1601,7 +1604,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -1720,6 +1723,17 @@ async function main() {
   }
 
   /*
+   * Before `--expand` for the same reason `--scrollers` is: the expansion
+   * injects rules of its own, and a check that runs after it is measuring the
+   * harness rather than the product.
+   */
+  let motionOff = { undeclared: [], persisting: [] }
+  if (flags.motion) {
+    await page.evaluate(() => document.fonts.ready)
+    motionOff = await motion(page)
+  }
+
+  /*
    * The app shell never scrolls the document: it is `h-full` with its own inner
    * `overflow-y-auto` columns, so a `fullPage` shot of it is exactly one
    * viewport and everything below an inner fold is lost. On the screens whose
@@ -1790,6 +1804,28 @@ async function main() {
         console.log(`   ✗ ${item.ratio}:1 (min ${item.need}) — « ${item.text} » ${item.fg} sur ${item.bg}`)
       }
       process.exitCode = 8
+    }
+  }
+  if (flags.motion) {
+    const { undeclared, persisting } = motionOff
+    if (undeclared.length === 0 && persisting.length === 0) {
+      console.log('  mouvement: tout passe par les jetons, et s’arrête quand l’OS le demande')
+    } else {
+      if (undeclared.length > 0) {
+        console.log(`  ✗ mouvement: ${undeclared.length} élément(s) hors jetons`)
+        for (const item of undeclared.slice(0, 8)) {
+          console.log(`     ${item.what} — ${item.dur} / ${item.ease}`)
+        }
+      }
+      if (persisting.length > 0) {
+        console.log(
+          `  ✗ mouvement réduit: ${persisting.length} élément(s) bougent encore malgré prefers-reduced-motion`,
+        )
+        for (const item of persisting.slice(0, 8)) {
+          console.log(`     ${item.what} — ${item.dur}`)
+        }
+      }
+      process.exitCode = 10
     }
   }
   if (flags.a11y) {
@@ -2302,6 +2338,108 @@ async function scrollers(page) {
     }
     return out.sort((a, b) => b.hidden - a.hidden)
   })
+}
+
+/**
+ * **Does the motion come from the design system, and does it stop when the rep
+ * asks their OS to stop it?**
+ *
+ * `tokens.css` declares `--motion`, `--motion-fast` and `--ease-out`, collapses
+ * the two durations to `0ms` under `prefers-reduced-motion`, and says of itself
+ * « Respect the OS setting rather than asserting our motion is tasteful enough
+ * to be exempt ». `design/tokens.test.ts` asserts the tokens *exist*. Neither
+ * asks the only question that matters: **does anything read them.**
+ *
+ * That is this repo's oldest defect shape — `models:progress` proved the row
+ * could render a number and never that one arrived; `--scrollers` visited zero
+ * elements and printed green. A duration written as a literal in a component
+ * survives both the token file and its test, and the media query then zeroes a
+ * variable nobody consults: a rep who turned animation off system-wide keeps
+ * every transition in the product, and nothing anywhere can tell.
+ *
+ * Two passes over the same page, which is what makes it cheap enough to run on
+ * every stage. The first asks whether each animated element's duration and
+ * easing are values `:root` actually declares — built from the tokens at
+ * runtime, so changing a token moves the check with it and it cannot rot into a
+ * hardcoded list. The second flips `prefers-reduced-motion` with
+ * `emulateMedia` and re-reads the computed styles: no re-navigation, no
+ * re-drive, and it proves the accessibility half **directly** rather than by
+ * arguing that reading a token implies it.
+ *
+ * The second pass is the load-bearing one. An element could read `--motion` and
+ * still move — a `@keyframes` with a literal duration, an inline style, a
+ * library animating in JS — and only measuring it after the flip can see that.
+ */
+async function motion(page) {
+  const scan = () =>
+    page.evaluate(() => {
+      /*
+       * Built from `:root`, never from a list here. Every custom property whose
+       * name begins `--motion` is an allowed duration and every `--ease` an
+       * allowed curve, so a new token is honoured the moment it is declared and
+       * a renamed one fails loudly instead of silently widening the check.
+       */
+      const root = getComputedStyle(document.documentElement)
+      const durations = new Set(['0s', '0ms'])
+      const easings = new Set()
+      for (const name of root) {
+        if (name.startsWith('--motion')) durations.add(root.getPropertyValue(name).trim())
+        else if (name.startsWith('--ease')) easings.add(root.getPropertyValue(name).trim())
+      }
+      // `150ms` and `0.15s` are the same duration and `getComputedStyle`
+      // answers in seconds, so both spellings have to resolve to one number.
+      const ms = (value) => {
+        const n = Number.parseFloat(value)
+        if (Number.isNaN(n)) return null
+        return Math.round(value.trim().endsWith('ms') ? n : n * 1000)
+      }
+      const allowedMs = new Set([...durations].map(ms).filter((n) => n !== null))
+      const allowedEase = new Set([...easings].map((e) => e.replace(/\s+/g, '')))
+
+      const out = []
+      for (const el of document.querySelectorAll('#root *')) {
+        const style = getComputedStyle(el)
+        /*
+         * A transition and an animation are both motion and both have to obey
+         * the setting. `transition-duration` is a comma list when
+         * `transition-property` is, and every entry counts.
+         */
+        const spans = [
+          ...style.transitionDuration.split(','),
+          ...style.animationDuration.split(','),
+        ]
+          .map((d) => ms(d))
+          .filter((n) => n !== null && n > 0)
+        if (spans.length === 0) continue
+        const curves = style.transitionTimingFunction
+          .split(/,(?![^(]*\))/)
+          .map((e) => e.replace(/\s+/g, ''))
+        const label =
+          el.id ||
+          el.getAttribute('aria-label') ||
+          `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`
+        out.push({
+          what: label,
+          dur: [...new Set(spans)].map((n) => `${n}ms`).join(' '),
+          ease: [...new Set(curves)].join(' '),
+          offToken: spans.some((n) => !allowedMs.has(n)),
+          offCurve: curves.some((e) => e !== 'linear' && !allowedEase.has(e)),
+        })
+      }
+      return out
+    })
+
+  const live = await scan()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const reduced = await scan()
+  // Put it back: this page is photographed after the checks run, and a stage
+  // shot under an emulated media query is not the stage.
+  await page.emulateMedia({ reducedMotion: null })
+
+  return {
+    undeclared: live.filter((m) => m.offToken || m.offCurve),
+    persisting: reduced,
+  }
 }
 
 /**
