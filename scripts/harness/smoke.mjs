@@ -26,6 +26,12 @@
  * question it answers is « can the design pass still photograph this product »,
  * which is the question that had been silently answering *no*.
  *
+ * `--contrast` also measures the graphics that carry information, at WCAG
+ * 1.4.11's 3:1 — opt-in via `data-graphic`, because only the author knows which
+ * marks a reader must see to understand the screen. The onboarding's three
+ * progress dots drew at 1.99:1 and 1.11:1, so the indicator rendered as one dot
+ * and lost the count it exists to give.
+ *
  * It carries `--contrast`, computed from the styles the browser resolved rather
  * than from sampled pixels — with transitions switched off, because
  * `getComputedStyle` returns the *current animated value* and a reading taken
@@ -54,6 +60,20 @@
  * Forty-odd controls were under it across the product, all of them 17 to 23
  * pixels tall: the reps this ships to are on laptops with trackpads (HR-2), and
  * a miss on the review gate lands on the field below.
+ *
+ * It carries `--scrollers`, which finds what this harness was itself hiding. It
+ * reports any box whose content is taller or wider than the box, and it exists
+ * because the review gate's guard measures **two** columns and withholds
+ * *Valider* until both have been shown — so a scroller nested inside one of them
+ * is a hole in that promise, and one no picture shows, because a clipped textarea
+ * looks exactly like a short one. There were eleven: `FieldRow` sized its box
+ * from a count of *newlines* where a rep reads *wrapped* lines, under a
+ * `min(6, …)` ceiling, so three fields hid text at 960×600 with the button
+ * armed. Thirteen rounds of screenshots missed it for a reason written into this
+ * harness: `--expand` injects `field-sizing: content` into every textarea, so
+ * every shot of that gate showed the fields unclipped. The check runs before the
+ * expansion. Truncation that draws its own ellipsis is exempt — the check is for
+ * content cut off with nothing saying so.
  *
  * It carries `--geometry` as well, which is the other half of the same problem.
  * Ten of the compte-rendu's twenty-three gutter markers were clipped for three
