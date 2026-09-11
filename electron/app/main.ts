@@ -1262,6 +1262,14 @@ const boot = async (): Promise<void> => {
    */
   const connectors = { routable: (_kind: PushIntentKind): boolean => true }
 
+  /**
+   * Whether the twenty-second dry run currently holds both devices (DEC-45).
+   *
+   * A holder for the same reason as the two above: `runEssai` is declared eight
+   * hundred lines below and the orchestrator has to be able to ask.
+   */
+  const essai = { running: (): boolean => false }
+
   const updateTick = async (): Promise<void> => {
     if (!updates) return
     if (!updateReadiness(orchestrator.liveStates(), pushInFlight.ask()).safe) return
@@ -1325,6 +1333,7 @@ const boot = async (): Promise<void> => {
   const orchestrator: Orchestrator = new Orchestrator(store, {
     diagnostics,
     routable: (kind) => connectors.routable(kind),
+    essaiRunning: () => essai.running(),
     /*
      * The plain broadcast, plus one derived one.
      *
@@ -2182,6 +2191,7 @@ const boot = async (): Promise<void> => {
    * to exit.
    */
   let essaiRunning = false
+  essai.running = () => essaiRunning
   const runEssai = async (): Promise<EssaiResult> => {
     if (essaiRunning) throw new Error('Un essai est déjà en cours.')
     if (orchestrator.recording()) {

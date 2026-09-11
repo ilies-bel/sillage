@@ -48,6 +48,23 @@ export interface OrchestratorOptions {
    * `MeetingSessionOptions.routable` — this is the one place the app knows.
    */
   routable?: (kind: PushIntentKind) => boolean
+  /**
+   * **Whether the twenty-second dry run currently holds the devices** (DEC-45).
+   *
+   * `capture:essai` refuses while a meeting is recording, and nothing refused
+   * the other way: `essaiRunning` was read at its own guard and nowhere else in
+   * the repo. `EssaiAudio.tsx` disables only the *Essai* button, so *Terminer*,
+   * *Passer* and *Retour* stay live — a rep can leave the onboarding six seconds
+   * into a twenty-second trial, press *Démarrer une réunion*, and the trial's
+   * own `finally` then runs `session.stop()` under the live meeting fourteen
+   * seconds later.
+   *
+   * The justification for the one-sided guard was that « opening a second handle
+   * on the same devices is exactly the failure `CaptureSession.start` guards
+   * against internally », and that is false across instances: `#running` is a
+   * per-instance private field and these are two independent constructions.
+   */
+  essaiRunning?: () => boolean
   /** Passed through to `Recording`, which is where the module factories are injected. */
   recording?: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   /**
@@ -172,6 +189,7 @@ export class Orchestrator {
   #recordingDeps: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   #signals = new Map<MeetingId, SignalProducer>()
   #routable: OrchestratorOptions['routable']
+  #essaiRunning: OrchestratorOptions['essaiRunning']
   #createSignals: OrchestratorOptions['createSignals']
   #onEnded: OrchestratorOptions['onEnded']
   #onEnding: OrchestratorOptions['onEnding']
@@ -215,6 +233,7 @@ export class Orchestrator {
     this.#health = initialHealth(this.#clock())
     this.#recordingDeps = options.recording ?? {}
     this.#routable = options.routable
+    this.#essaiRunning = options.essaiRunning
     this.#createSignals = options.createSignals
     this.#onEnded = options.onEnded
     this.#onEnding = options.onEnding
@@ -425,6 +444,11 @@ export class Orchestrator {
     if (this.#recordings.has(meetingId)) return
     const session = this.session(meetingId)
     if (!session) throw new Error(`réunion inconnue: ${meetingId}`)
+    // The other half of `capture:essai`'s guard — see `essaiRunning` above. The
+    // trial is twenty seconds and always stops; waiting is the whole remedy.
+    if (this.#essaiRunning?.()) {
+      throw new Error('Un essai audio est en cours — il se termine dans quelques secondes.')
+    }
 
     // Built before the devices open, and seeded from whatever the log already
     // holds so a resumed session neither restarts `seq` nor re-announces a chip

@@ -148,6 +148,51 @@ test('stop is idempotent', async () => {
   assert.deepEqual([...trace], ['capture.stop', 'transcribe.stop'])
 })
 
+test('a meeting will not start on top of the dry run (DEC-45)', async () => {
+  /*
+   * **The guard was one-directional.** `capture:essai` refuses while a meeting
+   * is recording; nothing refused the other way. `essaiRunning` was read at its
+   * own guard and nowhere else in the repo, and `EssaiAudio.tsx` disables only
+   * the *Essai* button — *Terminer*, *Passer* and *Retour* stay live. So a rep
+   * leaves the onboarding six seconds into a twenty-second trial, presses
+   * *Démarrer une réunion*, and the trial's own `finally` runs `session.stop()`
+   * under the live meeting fourteen seconds later.
+   *
+   * The justification for the one-sided guard was that « opening a second handle
+   * on the same devices is exactly the failure `CaptureSession.start` guards
+   * against internally », which is false across instances: `#running` is a
+   * per-instance private field and these are two independent constructions.
+   */
+  const store = openMemoryStore()
+  let trial = true
+  const capture = new FakeCapture()
+  const orchestrator = new Orchestrator(store, {
+    essaiRunning: () => trial,
+    recording: {
+      createCapture: () => capture as never,
+      createTranscribe: () => new FakeTranscribe() as never,
+    },
+  })
+  orchestrator.create({ id: 'm-essai', title: 'Point ACME' })
+  orchestrator.dispatch('m-essai', 'start')
+
+  await assert.rejects(
+    orchestrator.startRecording('m-essai', {
+      transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
+    }),
+    /essai audio est en cours/,
+  )
+
+  // Twenty seconds, and it always stops: waiting is the whole remedy.
+  trial = false
+  await orchestrator.startRecording('m-essai', {
+    transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
+  })
+  assert.equal(orchestrator.stateOf('m-essai'), 'recording')
+  await orchestrator.stopRecording('m-essai')
+  store.close()
+})
+
 test('a meeting whose devices will not open is aborted, not left claiming to record', async () => {
   const store = openMemoryStore()
   const capture = new FakeCapture()

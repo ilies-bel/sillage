@@ -698,6 +698,44 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The twelfth attack, and it is a *correction* the guard must leave free.**
+   *
+   * Arm *Valider*, then type a paragraph into the follow-up mail body — which is
+   * the thing a rep does on this screen, in the field whose whole purpose is to
+   * be edited. `GROWTH_SLACK` is a hundred pixels and nine lines of typing is
+   * more than that, so the button left the screen and recovering it cost six
+   * page turns at 1280×800 and nine at 960×600, re-showing a column already read
+   * to look at text the rep had just written and was staring at.
+   *
+   * `Review.tsx` states that exact behaviour, fifty lines above the rule, as the
+   * thing the latch exists to prevent.
+   */
+  'review-garde-frappe': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS['review-valider'].drive(page)
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
+
+      const body = page.locator('textarea').last()
+      await body.click()
+      // Twelve lines: well past the hundred-pixel allowance, and an ordinary
+      // paragraph in a client email.
+      await body.press('End')
+      for (let i = 0; i < 12; i++) {
+        await body.type(`\nLigne ${i} de la relance que le commercial écrit lui-même.`)
+      }
+      await page.waitForTimeout(500)
+
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
+        const asked = await page.getByRole('button', { name: /(la suite|Remonter)/ }).allInnerTexts()
+        throw new Error(
+          `écrire dans un champ a désarmé « Valider » — le gate demande ${JSON.stringify(asked)}`,
+        )
+      }
+    },
+  },
+
   'review-valider': {
     scenario: 'review',
     async drive(page) {

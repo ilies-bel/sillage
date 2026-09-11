@@ -592,3 +592,45 @@ test('a binary that cannot answer is never reported as a change', async () => {
   assert.equal(health.filter(routeChanged).length, 0)
   await session.stop()
 })
+
+// ── the Bluetooth headset that halves the transcript ────────────────────────
+
+test('a microphone on a narrowband link is said out loud, once', async () => {
+  /*
+   * **`get_native_sample_rate` was declared, `#[napi]`-exposed, wrapped in both
+   * TS capture classes, and called by nobody.** Its own docblock says it exists
+   * « for diagnostics and HFP/Bluetooth-degradation detection », and nothing in
+   * the product detected that degradation.
+   *
+   * A Bluetooth headset that negotiates HFP « call mode » drops the microphone
+   * to 8 kHz narrowband for the length of the meeting. The audio still arrives,
+   * the meter still moves, and the transcript comes back materially worse — a
+   * failure with no symptom a rep can see, which is the shape this file exists
+   * to end.
+   */
+  const narrow: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 8_000 })
+  session.on('health', (h: ConnectorHealth) => narrow.push(h))
+  await session.start()
+  await session.stop()
+  const said = narrow.map(reasonOf).filter((r) => /mode « communication »/.test(r))
+  assert.equal(said.length, 1, 'dit une fois')
+  assert.match(said[0] ?? '', /8\u00a0kHz/)
+
+  // A real wideband microphone says nothing.
+  const wide: ConnectorHealth[] = []
+  const ok = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 48_000 })
+  ok.on('health', (h: ConnectorHealth) => wide.push(h))
+  await ok.start()
+  await ok.stop()
+  assert.equal(wide.map(reasonOf).filter((r) => /communication/.test(r)).length, 0)
+
+  // And `0` is « we could not tell » — an older binary — which DEC-45 says is
+  // never reported as a finding.
+  const unknown: ConnectorHealth[] = []
+  const old = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 0 })
+  old.on('health', (h: ConnectorHealth) => unknown.push(h))
+  await old.start()
+  await old.stop()
+  assert.equal(unknown.map(reasonOf).filter((r) => /communication/.test(r)).length, 0)
+})

@@ -40,6 +40,15 @@ export interface AudioFrame {
   sampleRate: number
 }
 
+/**
+ * At or below this, the microphone came off a narrowband link.
+ *
+ * HFP is 8 kHz, and 16 is the resampler's own target — a device that opens at
+ * 16 has nothing left to give the DSP. Anything above it is a real wideband
+ * microphone.
+ */
+const HFP_SAMPLE_RATE = 16_000
+
 export interface CaptureOptions {
   micDeviceId?: string | null
   systemDeviceId?: string | null
@@ -61,6 +70,8 @@ export interface CaptureOptions {
    */
   defaultOutputDeviceId?: () => string | null
   defaultCommunicationsDeviceId?: () => string | null
+  /** The microphone's hardware rate, injected so a test needs no headset. */
+  nativeSampleRate?: () => number
 }
 
 export interface CaptureSessionEvents {
@@ -354,6 +365,46 @@ export class CaptureSession extends EventEmitter {
       throw error
     }
 
+    /*
+     * **The microphone's own hardware rate, which nothing had ever asked for.**
+     *
+     * `get_native_sample_rate` was written for this — « for diagnostics and
+     * HFP/Bluetooth-degradation detection », in its own docblock — exposed as
+     * `#[napi]`, wrapped in both TS capture classes, and called by nobody. So
+     * nothing in the product detected the degradation it was written to detect.
+     *
+     * A Bluetooth headset that negotiates HFP « call mode » drops the microphone
+     * to 8 kHz narrowband for the length of the meeting. The audio still
+     * arrives, the meter still moves, and the transcript comes back materially
+     * worse — a failure with no symptom a rep can see, which is the shape this
+     * whole file exists to end. It is `degraded` and never `down` (DEC-32): the
+     * meeting records and half of it is fine.
+     *
+     * `0` is « we could not tell » — an older binary, a device that answers
+     * nothing — and is never reported (DEC-45). The threshold is the rate
+     * itself: HFP is 8 kHz or 16, and the resampler's target is 16, so anything
+     * at or below that came off a narrowband link.
+     */
+    const native = this.#nativeRateOf(mic)
+    if (native > 0 && native <= HFP_SAMPLE_RATE) {
+      this.emit('health', {
+        state: 'degraded',
+        reason:
+          `Votre micro est en mode « communication » (${Math.round(native / 1000)}\u00a0kHz) — ` +
+          'la transcription sera moins précise. Un casque Bluetooth fait cela ; un micro filaire ou ' +
+          'les haut-parleurs l’évitent.',
+        since: this.#clock(),
+        retryable: true,
+      } satisfies ConnectorHealth)
+      this.#diagnostics.record({
+        severity: 'warn',
+        code: 'capture.rep.narrowband',
+        module: 'capture',
+        message: `micro ouvert à ${native}\u00a0Hz — lien bande étroite (HFP)`,
+        detail: { nativeSampleRate: native },
+      })
+    }
+
     if (generation !== this.#generation) {
       await this.stop()
       return
@@ -451,6 +502,16 @@ export class CaptureSession extends EventEmitter {
    * native call is made lazily — `AudioDevices` documents why nothing in this
    * module may touch the native host at import time.
    */
+  /** Injected so a test can move the rate without a Bluetooth headset. */
+  #nativeRateOf(mic: MicrophoneCapture): number {
+    const read = this.#options.nativeSampleRate
+    try {
+      return read ? read() : mic.getNativeSampleRate()
+    } catch {
+      return 0
+    }
+  }
+
   #defaultOutputDeviceId(): string | null {
     const read = this.#options.defaultOutputDeviceId ?? getDefaultOutputDeviceId
     try {

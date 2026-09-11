@@ -614,7 +614,28 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
          * whole set exists to prevent. A hundred is two lines of it. Anything
          * larger is content that was not there, and the case this caught was a
          * thousand.
+         *
+         * **And a hundred is nine lines of typing, which is a paragraph.**
+         *
+         * The rule cannot tell content that *arrived* from content the rep
+         * *wrote*, and a follow-up mail body is a thing a rep writes paragraphs
+         * in. Measured: eight added lines kept *Valider*, nine took it off the
+         * screen, and recovering it cost six page turns at 1280×800 and nine to
+         * eleven at 960×600 — re-showing a column already read, to look at text
+         * the rep had just typed and was staring at. Fifty lines up, this file
+         * states that exact behaviour as the thing the latch exists to prevent.
+         *
+         * The distinction the rule was missing is *who wrote it*, and the
+         * column knows: the caret is in it. Growth under the rep's own cursor
+         * pushes content they have already seen further down — it adds nothing
+         * unseen — so the coverage is **restamped at the new height** rather
+         * than deleted, and a later arrival is measured from there.
          */
+        if (el.contains(document.activeElement) && shippedHeight(el) > at.content) {
+          at.content = shippedHeight(el)
+          at.client = Math.min(at.client, el.clientHeight)
+          return true
+        }
         if (shippedHeight(el) > at.content + GROWTH_SLACK) {
           covered.current[column].delete(view)
           shownAs.current[column] = { view, height: el.clientHeight }

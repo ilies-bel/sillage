@@ -691,6 +691,18 @@ machine) or in `core/domain/` — never in an IPC handler.
   `[source ▸]` points at it. The timing test is **proximity of arrival**, not interval overlap —
   `modules/transcribe` sets `startMs === endMs` (a batch provider cannot report acoustic time),
   so an intersection test silently never fires.
+- **The AEC's three flags are asserted of the *shipped* constructor, and all three could be
+  deleted at once without a single test noticing.** `does_not_cancel_without_the_high_pass_filter`
+  built its own pipeline with the flag as a parameter and compared on against off — so it
+  measured the **crate**, never `EchoCanceller::new()`, and flipping
+  `enable_high_pass_filter(false)`, `enable_noise_suppression(true)` and
+  `enable_gain_controller2(true)` in the product left all 31 tests green, including the one
+  named after the first of them. The behavioural test drives the shipped canceller now (it
+  fails on the flip, measured), and a second reads the three flags off the source, because
+  `noise_suppression` and `gain_controller2` reshape the amplitude that `inputLevel.ts`, the VAD
+  and DEC-40's too-quiet detector all measure *downstream* — a property of the rest of the
+  product that no test of this file can see. Source as evidence, the `preloadUnwrap.test.ts`
+  shape.
 - **Echo cancellation is one filter, not one canceller per platform** (DEC-42). `aec3`, a
   pure-Rust AEC3, inside the native module — because the OS cancellers are unreachable
   through `cpal` and taking one would mean a second microphone path, COM, and two
