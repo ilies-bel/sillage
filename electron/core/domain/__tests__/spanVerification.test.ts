@@ -4,7 +4,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { Channel, TranscriptSegment } from '../../contracts/transcript.ts'
+import { locateSegments, type Channel, type TranscriptSegment } from '../../contracts/transcript.ts'
 import {
   MIN_QUOTE_CHARS,
   confidenceOf,
@@ -92,4 +92,83 @@ test('a span claiming the wrong speaker does not verify', () => {
     endMs: null,
   }
   assert.equal(spanOccursIn(misattributed, CALL), false)
+})
+
+// ── the gate and the reader agree, because there is one search ──────────────
+
+test('anything the gate certifies, the reader can open — the four routine cases', () => {
+  /*
+   * `TranscriptReader` wrote its own lookup — `segments.find((s) =>
+   * s.text.includes(quote))`, raw, inside one segment — under a comment saying
+   * it was « deliberately the same test `spanVerification.ts` uses ». It was not
+   * the same test in four ways, and each of them happens on an ordinary French
+   * call, so a rep pressed `[source ▸]` on a row the app had just certified and
+   * read « Cet extrait est introuvable dans la transcription. »
+   *
+   * The property is the one that matters and it is stated directly: whatever
+   * `confidenceOf` calls `ok`, `locateSegments` finds.
+   */
+  const turn = (id: string, channel: 'rep' | 'far', text: string, at: number): TranscriptSegment => ({
+    id,
+    channel,
+    text,
+    startMs: at,
+    endMs: at,
+    isFinal: true,
+    provider: 'test',
+    receivedAt: at,
+  })
+
+  const cases: { why: string; segments: TranscriptSegment[]; quote: string }[] = [
+    {
+      why: 'accent perdu par la transcription',
+      segments: [turn('s1', 'far', 'le demarrage est prevu en janvier', 1000)],
+      quote: 'le démarrage est prévu en janvier',
+    },
+    {
+      why: 'apostrophe typographique',
+      segments: [turn('s1', 'far', "c'est l'equipe achats qui tranche", 1000)],
+      quote: 'c’est l’équipe achats qui tranche',
+    },
+    {
+      why: 'point final ajouté par le modèle',
+      segments: [turn('s1', 'far', 'la grille plafonne à 550 euros', 1000)],
+      quote: 'La grille plafonne à 550 euros.',
+    },
+    {
+      why: 'citation à cheval sur deux tours',
+      segments: [
+        turn('s1', 'far', 'on doit sortir les pipelines Talend', 1000),
+        turn('s2', 'far', 'historiques avant la fin de l’année', 2000),
+      ],
+      quote: 'les pipelines Talend historiques avant la fin',
+    },
+  ]
+
+  for (const { why, segments, quote } of cases) {
+    const span = { quote, channel: 'far' as const, startMs: null, endMs: null }
+    assert.equal(confidenceOf(span, segments), 'ok', `${why} : le gate ne vérifie plus`)
+    assert.ok(
+      locateSegments(quote, segments, 'far').length > 0,
+      `${why} : le gate certifie et le lecteur dit « introuvable »`,
+    )
+  }
+})
+
+test('a quote that is genuinely absent stays absent on both', () => {
+  const segments: TranscriptSegment[] = [
+    {
+      id: 's1',
+      channel: 'far',
+      text: 'on parlait du planning',
+      startMs: 0,
+      endMs: 0,
+      isFinal: true,
+      provider: 'test',
+      receivedAt: 0,
+    },
+  ]
+  const span = { quote: 'le budget est de deux cent mille euros', channel: 'far' as const, startMs: null, endMs: null }
+  assert.equal(confidenceOf(span, segments), 'faible')
+  assert.deepEqual(locateSegments(span.quote, segments, 'far'), [])
 })

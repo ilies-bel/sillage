@@ -96,3 +96,125 @@ export const TranscriptViewSchema = z.object({
   marks: z.array(MomentMarkSchema).default([]),
 })
 export type TranscriptView = z.infer<typeof TranscriptViewSchema>
+
+
+// ── Looking a quote up in the record (DEC-21) ───────────────────────────────
+
+/**
+ * **The one way a quote is looked up, because two ways is a contradiction on
+ * screen.**
+ *
+ * It lived in `core/domain/spanVerification.ts`, which `src/*` may not import —
+ * so `TranscriptReader` wrote its own: `segments.find((s) => s.text.includes(q))`,
+ * raw, under a comment claiming it was « deliberately the same test
+ * `spanVerification.ts` uses ». It was not the same test in four ways, and each
+ * of them is routine:
+ *
+ *     accent lost by the STT    gate: verified   reader: introuvable
+ *     typographic apostrophe    gate: verified   reader: introuvable
+ *     trailing full stop        gate: verified   reader: introuvable
+ *     quote spanning two turns  gate: verified   reader: introuvable
+ *
+ * The gate matches over a **normalised, channel-joined** haystack and never
+ * rewrites the span's quote to the text it found; the reader matched raw, inside
+ * one segment. The last case fails by construction for every quote the join was
+ * written to bridge. So a rep pressed `[source ▸]` on a row the app had just
+ * certified and landed on « Cet extrait est introuvable dans la transcription. »
+ * — the one feature this product has over a general-purpose notetaker, telling
+ * the rep its own evidence is fabricated.
+ *
+ * It is here for the reason `speakerLabel` and `meetingAnchor` are here: three
+ * surfaces need it and `src/*` may import nothing else.
+ */
+/**
+ * Shorter than this, a match is a coincidence rather than evidence: `à`, `oui`
+ * and `520` occur in almost any French call, so they prove nothing about the
+ * claim built on top of them. Counted after normalisation, so `TJM 520 €` (→
+ * `tjm 520`, 7 chars) still qualifies and a bare `€` does not.
+ */
+export const MIN_QUOTE_CHARS = 4
+
+/**
+ * Fold away everything two renderings of the same sentence can disagree about.
+ *
+ * Case, punctuation, currency signs, typographic apostrophes and accents. The
+ * accents are the debatable one and they are folded on purpose: French STT
+ * routinely emits `demarrage` where the model writes `démarrage`, and refusing
+ * that match would drop true chips. It cannot create a false one — folding only
+ * merges characters, so an invented sentence stays absent.
+ */
+export const normalizeForVerification = (text: string): string =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+interface ChannelIndex {
+  haystack: string
+  /** Normalised offsets back to the segment they came from. */
+  parts: { start: number; end: number; segment: TranscriptSegment }[]
+}
+
+/**
+ * One channel's final segments as a single normalised string.
+ *
+ * Joining is what lets a quote that straddles two segments verify — providers
+ * cut on silence, not on sentences, and a model quoting a sentence has no idea
+ * where the cut fell. It is also the one place this check is deliberately
+ * generous: two utterances a minute apart are adjacent in the haystack, so a
+ * quote could in principle bridge them. The alternative — refusing every
+ * cross-segment quote — drops far more true citations than it stops false ones.
+ */
+const indexChannel = (segments: readonly TranscriptSegment[]): ChannelIndex => {
+  const chunks: string[] = []
+  const parts: ChannelIndex['parts'] = []
+  let cursor = 0
+
+  for (const segment of segments) {
+    const normalized = normalizeForVerification(segment.text)
+    if (normalized.length === 0) continue
+    if (cursor > 0) cursor += 1 // the space `join` will insert
+    parts.push({ start: cursor, end: cursor + normalized.length, segment })
+    chunks.push(normalized)
+    cursor += normalized.length
+  }
+
+  return { haystack: chunks.join(' '), parts }
+}
+
+
+const byStartMs = (a: TranscriptSegment, b: TranscriptSegment): number => a.startMs - b.startMs
+
+/**
+ * Every segment the quote touches, in order — empty when it is not in the
+ * record.
+ *
+ * The segments rather than a span, because the two callers want different
+ * things from the same search: the gate wants when it was said, the reader wants
+ * which rows to highlight. One search, so they cannot disagree.
+ *
+ * Only final segments: an interim segment can be revised away by the provider,
+ * and a citation must point at something the provider has committed to.
+ */
+export const locateSegments = (
+  quote: string,
+  segments: readonly TranscriptSegment[],
+  channel: Channel | null = null,
+): TranscriptSegment[] => {
+  const needle = normalizeForVerification(quote)
+  if (needle.length < MIN_QUOTE_CHARS) return []
+
+  for (const candidate of channel === null ? (['rep', 'far'] as const) : [channel]) {
+    const index = indexChannel(
+      segments.filter((s) => s.isFinal && s.channel === candidate).sort(byStartMs),
+    )
+    const at = index.haystack.indexOf(needle)
+    if (at === -1) continue
+    const end = at + needle.length
+    const touched = index.parts.filter((p) => p.start < end && p.end > at)
+    if (touched.length > 0) return touched.map((p) => p.segment)
+  }
+  return []
+}

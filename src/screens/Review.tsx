@@ -1882,7 +1882,11 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
               variant="link"
               className="mt-0.5 text-meta"
               onClick={() =>
-                onLocate({ quote: field.span?.quote ?? '', label: field.label })
+                onLocate({
+                  quote: field.span?.quote ?? '',
+                  label: field.label,
+                  channel: field.span?.channel ?? null,
+                })
               }
             >
               Voir dans la transcription ›

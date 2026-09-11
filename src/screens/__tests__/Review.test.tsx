@@ -415,7 +415,19 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
       marks: [],
       segments: [
         segment('s1', 'far', 0, 'Rien de ce qui a été cité.'),
-        segment('s2', 'far', 61_000, 'Il nous faudrait deux dev java, senior de préférence.'),
+        /*
+         * **Close, and genuinely not the quote.**
+         *
+         * This turn used to be « Il nous faudrait deux dev java, senior de
+         * préférence » against a cited « deux dev java senior » — which the
+         * *gate* verifies, because `normalizeForVerification` folds the comma,
+         * and which the reader's own raw `includes` did not. So the fixture was
+         * an instance of the contradiction rather than a test of the dead end:
+         * the two halves of one screen disagreeing about the same sentence, with
+         * this test asserting the losing half. One search now, so the dead end
+         * has to be a real one.
+         */
+        segment('s2', 'far', 61_000, 'Il nous faudrait deux profils java confirmés, plutôt seniors.'),
       ],
     }))
 
@@ -449,7 +461,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
      * never wear the verified treatment (DEC-21).
      */
     expect(screen.getByText(/Les plus proches, à vérifier/)).toBeTruthy()
-    const candidate = screen.getByRole('button', { name: /Il nous faudrait deux dev java/ })
+    const candidate = screen.getByRole('button', { name: /Il nous faudrait deux profils java/ })
     // The one turn that carries four of the query's terms, and not the turn that
     // carries none of them.
     expect(screen.queryByRole('button', { name: /Rien de ce qui a été cité/ })).toBeNull()
@@ -461,7 +473,7 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     })
     // The last of the two — the candidate button above carries the same string,
     // and the one that has to change is the turn in the record itself.
-    const drawn = screen.getAllByText('Il nous faudrait deux dev java, senior de préférence.')
+    const drawn = screen.getAllByText('Il nous faudrait deux profils java confirmés, plutôt seniors.')
     expect(drawn[drawn.length - 1]?.className).toContain('text-strong')
   })
 

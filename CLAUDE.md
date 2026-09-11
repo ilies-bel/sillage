@@ -512,6 +512,22 @@ machine) or in `core/domain/` — never in an IPC handler.
   fixture to it: every quotation in its compte-rendu must be locatable in its transcript. Two
   were not, and the affordance found them on its first press.
 
+- **There is one lookup, and it is in `contracts` because the reader needs it too.**
+  `locateSegments` matches over a **normalised, channel-joined** haystack — accents folded,
+  punctuation dropped, turns joined — and `spanVerification.ts` is a thin wrapper over it.
+  `TranscriptReader` could not import `core/domain/`, so it wrote its own:
+  `segments.find((s) => s.text.includes(quote))`, raw, inside one segment, under a comment
+  claiming it was « deliberately the same test `spanVerification.ts` uses ». It was not the
+  same test in four ways, and every one of them happens on an ordinary French call — an accent
+  the STT dropped, a typographic apostrophe, a trailing full stop the model added, and a quote
+  spanning two turns, which fails **by construction** for every quote the channel join exists
+  to bridge. So a rep pressed `[source ▸]` on a row the app had just certified and read « Cet
+  extrait est introuvable dans la transcription » : this product's one advantage over a
+  general-purpose notetaker, calling its own evidence fabricated. The fallback search box folds
+  the same way, and `TranscriptFocus` carries the span's **channel** — rep-first on a laptop
+  with open speakers finds the client's sentence on the rep's echo (DEC-41) and draws it under
+  « Moi ». The property is a test now: whatever `confidenceOf` calls `ok`, `locateSegments`
+  finds.
 - **`source ▸` leads somewhere** (DEC-21). `review:transcript` reads the stored segments — the
   same rows `spanVerification.ts` checked the quote against — and the gate opens them in the
   column next door, on that turn, highlighted. When the quote is *not* in the record the reader

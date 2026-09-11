@@ -30,7 +30,12 @@
  * verification ran against these rows unfiltered.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { speakerLabel, type TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
+import {
+  locateSegments,
+  normalizeForVerification,
+  speakerLabel,
+  type TranscriptSegment,
+} from '../../../electron/core/contracts/transcript.ts'
 import { useInvoke } from '../../app/bridge.ts'
 import { formatOffset, formatTime } from '../../app/format.ts'
 import { interleaveMarks } from '../../../electron/core/contracts/marks.ts'
@@ -40,6 +45,16 @@ import { scrollToCenter } from '../../lib/scroll.ts'
 export interface TranscriptFocus {
   /** The cited fragment, verbatim. What `spanVerification.ts` matched. */
   quote: string
+  /**
+   * The side the span claims, when the caller has one.
+   *
+   * Passed to the same `locateSegments` the gate verified with, so the reader
+   * lands on the turn the verification landed on. Without it the search is
+   * rep-first — and on a laptop with open speakers the microphone hears the far
+   * end too (DEC-41, measured at 24 of 38 rep segments), so a client's sentence
+   * would be found on the rep's echo and highlighted under « Moi ».
+   */
+  channel?: 'rep' | 'far' | null
   /** The field it was cited for, so the reader can say what it is showing. */
   label: string
   /**
@@ -119,16 +134,35 @@ export function TranscriptReader({
   const marks = loaded.state.status === 'ready' ? loaded.state.value.marks : []
 
   /*
-   * Which segment the citation lands in.
+   * Which segment the citation lands in — **the gate's own search, not a second
+   * one that agrees with it most of the time.**
    *
-   * Substring, and deliberately the same test `spanVerification.ts` uses — if
-   * the quote verified, exactly this will find it. A quote that does *not*
-   * match is the `⚠ faible` case, and the reader says so rather than silently
-   * opening at the top, because « we could not find this » is the finding.
+   * This was `segments.find((s) => s.text.includes(focus.quote))` under a
+   * comment saying it was « deliberately the same test `spanVerification.ts`
+   * uses — if the quote verified, exactly this will find it ». It was not the
+   * same test in four ways, and each of them is ordinary:
+   *
+   *     accent lost by the STT    gate: verified   reader: introuvable
+   *     typographic apostrophe    gate: verified   reader: introuvable
+   *     trailing full stop        gate: verified   reader: introuvable
+   *     quote spanning two turns  gate: verified   reader: introuvable
+   *
+   * The gate matches over a normalised, channel-joined haystack; this matched
+   * raw, inside one segment — so the last case failed by construction for every
+   * quote the join exists to bridge, and the accent case is the one
+   * `normalizeForVerification` names as routine French STT behaviour. A rep
+   * pressed `[source ▸]` on a row the app had just certified and landed on « Cet
+   * extrait est introuvable dans la transcription », which is this product's one
+   * advantage over a general-purpose notetaker calling its own evidence
+   * fabricated.
+   *
+   * `locateSegments` moved into `contracts` so there is one search
+   * (`src/*` may import nothing else). A quote that genuinely is *not* in the
+   * record is still the `⚠ faible` case and still says so.
    */
   const hit = useMemo(() => {
     if (!segments || !focus) return null
-    return segments.find((segment) => segment.text.includes(focus.quote)) ?? null
+    return locateSegments(focus.quote, segments, focus.channel ?? null)[0] ?? null
   }, [segments, focus])
 
   /*
@@ -158,11 +192,20 @@ export function TranscriptReader({
     setNeedle(hit === null ? quote : '')
   }, [focus, hit, segments])
 
-  const trimmed = needle.trim().toLowerCase()
+  const trimmed = needle.trim()
+  /*
+   * The same folding as the lookup above, for the same reason: a rep who lands
+   * here because a quote with an accent did not match would type the accent and
+   * find nothing either. `normalizeForVerification` is what both ends of this
+   * screen agree on.
+   */
   const matches = useMemo(() => {
-    if (trimmed === '' || !segments) return new Set<string>()
+    const folded = normalizeForVerification(trimmed)
+    if (folded === '' || !segments) return new Set<string>()
     return new Set(
-      segments.filter((s) => s.text.toLowerCase().includes(trimmed)).map((s) => s.id),
+      segments
+        .filter((s) => normalizeForVerification(s.text).includes(folded))
+        .map((s) => s.id),
     )
   }, [segments, trimmed])
 
