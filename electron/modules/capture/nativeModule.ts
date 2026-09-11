@@ -191,7 +191,9 @@ export const loadFrom = (env: LoadEnvironment): LoadResult => {
   const last = attempts.at(-1)
   return {
     ok: false,
-    reason: last ? `${last.error} (${attempts.length} paths tried)` : 'no candidate paths',
+    reason: last
+      ? `${last.error} (${attempts.length} chemin(s) essayé(s))`
+      : 'aucun chemin candidat',
     attempts,
   }
 }

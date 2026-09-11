@@ -161,7 +161,7 @@ export class SystemAudioHealthClassifier {
       type: 'log',
       level: 'warn',
       reason: 'initial-silence-no-chunks',
-      message: `SystemAudioCapture produced 0 chunks in ${Math.round(this.watchdogMs / 1000)}s — treating as initial silence unless another capture health signal fails.`,
+      message: `aucune donnée reçue sur ce canal en ${Math.round(this.watchdogMs / 1000)}\u00a0s — traité comme un silence initial tant qu’aucun autre signal de capture n’échoue`,
     }
   }
 
@@ -186,7 +186,7 @@ export class SystemAudioHealthClassifier {
         type: 'log',
         level: 'warn',
         reason: 'sustained-zero-valued-silence',
-        message: `SystemAudio chunks stayed zero-valued (peak-to-peak <= ${this.meaningfulPeakToPeak}) for ${Math.round(this.zeroObservationMs / 1000)}s — treating as silence unless another capture health signal fails.`,
+        message: `signal à zéro sur ce canal (crête à crête <= ${this.meaningfulPeakToPeak}) pendant ${Math.round(this.zeroObservationMs / 1000)}\u00a0s — traité comme un silence tant qu’aucun autre signal de capture n’échoue`,
       }
     }
 
@@ -202,7 +202,7 @@ export class SystemAudioHealthClassifier {
       level: 'warn',
       reason: 'inter-chunk-gap',
       gapMs,
-      message: `SystemAudio chunk gap ${gapMs}ms — likely transient route change. Resuming.`,
+      message: `interruption de ${gapMs}\u00a0ms sur ce canal — probablement un changement de périphérique passager, la capture reprend`,
     }
   }
 }

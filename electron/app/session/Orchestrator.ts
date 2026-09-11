@@ -472,7 +472,10 @@ export class Orchestrator {
       this.#stopSignals(meetingId)
       this.setHealth('capture', {
         state: 'down',
-        reason: err instanceof Error ? err.message : 'capture indisponible',
+        // Capture is the one required connector and this fires on *Enregistrer*,
+        // so this sentence is read at the worst possible moment. The native
+        // module's own text is English; it follows ours rather than replacing it.
+        reason: err instanceof Error ? `capture indisponible — ${err.message}` : 'capture indisponible',
         since: this.#clock(),
         retryable: true,
       })
@@ -663,7 +666,7 @@ export class Orchestrator {
     } catch (err) {
       const health: ConnectorHealth = {
         state: 'down',
-        reason: err instanceof Error ? err.message : 'échec inconnu',
+        reason: err instanceof Error ? `nouvelle tentative échouée — ${err.message}` : 'échec inconnu',
         since: this.#clock(),
         retryable: true,
       }

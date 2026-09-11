@@ -10,6 +10,7 @@ import { Store } from '../../../modules/store/index.ts'
 import { Orchestrator } from '../Orchestrator.ts'
 import { Enhancement, type EnhancementDeps, type ExtractionRunner } from '../Enhancement.ts'
 import { Diagnostics } from '../../../modules/diagnostics/index.ts'
+import { ExtractionError } from '../../../modules/extract/errors.ts'
 import {
   sampleContext,
   sampleExtraction,
@@ -35,13 +36,28 @@ const environment: DiagEnvironment = {
  * confusing one. (It failed for a confusing one.)
  */
 const runner = (
-  behaviour: 'ok' | 'throw' = 'ok',
+  behaviour: 'ok' | 'throw' | 'raw' = 'ok',
 ): ExtractionRunner & { calls: number } => {
   const stub = {
     calls: 0,
     async run() {
       stub.calls += 1
-      if (behaviour === 'throw') throw new Error('le modèle a refusé la réponse')
+      /*
+       * **What the recipe actually throws, not a French string chosen here.**
+       * `asExtractionError` wraps every failure of `CompteRenduRecipe` into an
+       * `ExtractionError` whose message is French by construction — so a plain
+       * `Error` with a French message was a fixture the product cannot produce,
+       * and it proved the property over the one shape that cannot break it. The
+       * `raw` behaviour below is the shape that can.
+       */
+      if (behaviour === 'throw') {
+        throw new ExtractionError({
+          kind: 'llm',
+          message: 'le modèle a refusé la réponse',
+          retryable: true,
+        })
+      }
+      if (behaviour === 'raw') throw new Error('database is locked')
       return {
         extraction: sampleExtraction,
         verification: sampleVerification,
@@ -255,6 +271,25 @@ test('a failed attempt reports its reason, so the retry button can state it', as
   // Not deferred: a model exists, so nothing will drain this on its own and the
   // rep is owed a button rather than a promise.
   assert.deepEqual(h.enhancement.deferred(), [])
+
+  h.cleanup()
+})
+
+test('a throw that is not an ExtractionError is still a French sentence', async () => {
+  /*
+   * The `try` is wider than the recipe: it covers `#resolveAccount` and two
+   * store writes. `EnhancementNotice` renders « Le compte-rendu n'a pas pu être
+   * rédigé : {reason} », so a `SQLITE_BUSY` used to finish that sentence in
+   * English on the screen that explains why the product's one output is missing.
+   */
+  const h = open(runner('raw'))
+
+  h.orchestrator.dispatch(h.id, 'end', null)
+  await settle()
+
+  const status = h.enhancement.statusOf(h.id, 'ended', true)
+  assert.equal(status.status, 'failed')
+  assert.equal(status.reason, 'rédaction impossible — database is locked')
 
   h.cleanup()
 })

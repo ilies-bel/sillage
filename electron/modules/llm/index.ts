@@ -89,13 +89,18 @@ export const llmHealth = (error: unknown, at: number): ConnectorHealth => {
         // A 4xx we caused — a model name that does not exist on this server, a
         // context overflow. `retryable` carries the adapter's own verdict rather
         // than a guess made here.
-        return { state: 'down', reason: error.message, since: at, retryable: error.retryable }
+        return {
+          state: 'down',
+          reason: `modèle de langage indisponible — ${error.message}`,
+          since: at,
+          retryable: error.retryable,
+        }
     }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'modèle de langage indisponible',
+    reason: error instanceof Error ? `modèle de langage indisponible — ${error.message}` : 'modèle de langage indisponible',
     since: at,
     retryable: true,
   }

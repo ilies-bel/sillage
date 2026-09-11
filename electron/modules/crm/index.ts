@@ -102,12 +102,12 @@ export const crmHealth = (error: unknown, at: number): ConnectorHealth => {
       // VerySwing. A 500 is weather, and the outbox row survives it.
       return { state: 'degraded', reason: `VerySwing temporairement indisponible${wait}`, since: at, retryable: true }
     }
-    return { state: 'down', reason: error.message, since: at, retryable: false }
+    return { state: 'down', reason: `VerySwing indisponible — ${error.message}`, since: at, retryable: false }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'VerySwing indisponible',
+    reason: error instanceof Error ? `VerySwing indisponible — ${error.message}` : 'VerySwing indisponible',
     since: at,
     retryable: true,
   }

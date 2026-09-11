@@ -183,7 +183,7 @@ export class OpenAiCompatibleLlm implements LlmPort {
         severity: 'error',
         code: 'llm.schema.rejected',
         module: 'llm',
-        message: issues.slice(0, 5).join(' | '),
+        message: `réponse du modèle non conforme au format attendu — ${issues.slice(0, 5).join(' | ')}`,
         detail: { provider: this.providerId, issues: issues.length },
       })
       throw new LlmSchemaError({
@@ -346,7 +346,7 @@ export class OpenAiCompatibleLlm implements LlmPort {
     // unchanged reproduces it.
     return new LlmError({
       kind: 'unknown',
-      message: detail || `le fournisseur de modèle a répondu ${status}`,
+      message: `le fournisseur de modèle a refusé la requête (${status})${detail ? ` — ${detail}` : ''}`,
       retryable: false,
       status,
     })

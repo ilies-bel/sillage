@@ -235,7 +235,7 @@ test('every failure a rep can hit maps to a reason and an honest retry flag', ()
 
   const unknown = mailHealth(new Error('câble débranché'), NOW)
   assert.equal(unknown.state, 'down')
-  assert.equal(unknown.state === 'down' && unknown.reason, 'câble débranché')
+  assert.equal(unknown.state === 'down' && unknown.reason, 'messagerie indisponible — câble débranché')
 })
 
 test('a sign-in that has expired is retryable, and nothing was sent', async () => {

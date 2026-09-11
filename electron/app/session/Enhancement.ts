@@ -413,7 +413,19 @@ export class Enhancement {
         { attempt, overall: result.verification.overall },
       )
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'extraction impossible'
+      /*
+       * **`EnhancementNotice` welds this into a French sentence, so it has to be
+       * one.** `asExtractionError` guarantees a French message for everything
+       * the recipe throws — but this `try` is wider than the recipe: it covers
+       * `#resolveAccount` and two store writes, and a `SQLITE_BUSY` or a throw
+       * from our own code read « Le compte-rendu n'a pas pu être rédigé :
+       * database is locked » on the screen that explains why the product's one
+       * output is missing. The cause is kept; it just never stands alone.
+       */
+      const reason =
+        error instanceof ExtractionError
+          ? error.message
+          : `rédaction impossible — ${error instanceof Error ? error.message : String(error)}`
       session.emit({ type: 'extraction.failed', reason })
       // Back to `ended`. The transcript and the rep's notes are untouched, so
       // the retry costs the enhancement only.

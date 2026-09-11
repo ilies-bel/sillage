@@ -64,12 +64,12 @@ export const calendarHealth = (error: unknown, at: number): ConnectorHealth => {
       // enough to arm from. A throttled request is not a lost calendar.
       return { state: 'degraded', reason: `calendrier temporairement indisponible${wait}`, since: at, retryable: true }
     }
-    return { state: 'down', reason: error.message, since: at, retryable: false }
+    return { state: 'down', reason: `calendrier indisponible — ${error.message}`, since: at, retryable: false }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'calendrier indisponible',
+    reason: error instanceof Error ? `calendrier indisponible — ${error.message}` : 'calendrier indisponible',
     since: at,
     retryable: true,
   }

@@ -63,12 +63,12 @@ export const mailHealth = (error: unknown, at: number): ConnectorHealth => {
       // lost follow-up.
       return { state: 'degraded', reason: `messagerie temporairement indisponible${wait}`, since: at, retryable: true }
     }
-    return { state: 'down', reason: error.message, since: at, retryable: false }
+    return { state: 'down', reason: `messagerie indisponible — ${error.message}`, since: at, retryable: false }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'messagerie indisponible',
+    reason: error instanceof Error ? `messagerie indisponible — ${error.message}` : 'messagerie indisponible',
     since: at,
     retryable: true,
   }

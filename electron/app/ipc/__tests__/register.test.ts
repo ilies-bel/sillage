@@ -247,7 +247,10 @@ test('health:retry runs the registered retry and broadcasts the result', async (
   })
   const failed = await ipc.invoke('health:retry', { connector: 'mail' })
   assert.ok(failed.state === 'down', 'a throwing retry leaves the connector down')
-  assert.equal(failed.reason, 'jeton expiré')
+  // The clause is ours; the throw's own text follows it. A retry that fails
+  // against Graph throws Microsoft's English, and this reason is drawn verbatim
+  // on the onboarding rows and Réglages' connector cards.
+  assert.equal(failed.reason, 'nouvelle tentative échouée — jeton expiré')
   assert.ok(failed.retryable, 'and offers another attempt — never a dead button')
   cleanup()
 })

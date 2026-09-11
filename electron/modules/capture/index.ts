@@ -477,7 +477,7 @@ export class CaptureSession extends EventEmitter {
       severity: 'warn',
       code: 'capture.far.routeChanged',
       module: 'capture',
-      message: 'default output route changed while the system tap was open',
+      message: 'la sortie audio par défaut a changé pendant que la capture système était ouverte',
       detail: {},
     })
     this.emit('health', {

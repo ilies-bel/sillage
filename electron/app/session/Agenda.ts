@@ -203,7 +203,7 @@ export class Agenda {
       this.#options.onHealth?.(
         this.#options.healthFor?.(error, now) ?? {
           state: 'down',
-          reason: error instanceof Error ? error.message : 'calendrier indisponible',
+          reason: error instanceof Error ? `calendrier indisponible — ${error.message}` : 'calendrier indisponible',
           since: now,
           retryable: true,
         },

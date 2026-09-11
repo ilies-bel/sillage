@@ -564,7 +564,9 @@ test('an unknown failure is down but retryable, and never silent', () => {
   const health = crmHealth(new Error('socket coupé'), NOW)
   assert.equal(health.state, 'down')
   assert.equal(health.state === 'down' && health.retryable, true)
-  assert.equal(health.state === 'down' ? health.reason : '', 'socket coupé')
+  // The cause is kept and it is not the whole sentence: VerySwing's own
+  // `message` field reaches here, and nothing promises it is in French.
+  assert.equal(health.state === 'down' ? health.reason : '', 'VerySwing indisponible — socket coupé')
 })
 
 test('a push failure is settled, never thrown — the Outlook draft must still ship', async () => {
