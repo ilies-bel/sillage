@@ -334,6 +334,22 @@ machine) or in `core/domain/` — never in an IPC handler.
   something resolves, the element is silently unstyled, and no screenshot shows
   it. `design/tokens.test.ts` holds the three scales to each other and refuses
   any of them pointing at a `--bg-` token.
+- **A mark that carries information by colour alone is measured at 3:1**
+  (WCAG 1.4.11), and `--contrast` does it. Everything that check measured was
+  *text*, so a graphic was outside it entirely — and one shipped: the onboarding's
+  three progress dots drew the completed step at `brand-300` (**1.99:1**) and the
+  upcoming one at `bg-subtle` (**1.11:1**) on a `#fdfefe` footer, so a rep saw
+  **one** dot and the count the indicator exists to give was the thing it lost.
+  The comment above it argued for dots over « étape 2 sur 3 » precisely because
+  the count is worth knowing. Opt in with `data-graphic`, which is the honest
+  scope: 1.4.11 covers a graphic *required to understand the content*, and a
+  `StateDot` is not one — it owns a text label and refuses to render without it.
+  The **ring counts as ink**, not only the fill, because `ring-*` is a
+  `box-shadow` and a hollow mark says what a filled one says. And the check must
+  not reuse `drawn()`: that excludes `aria-hidden`, which is right for text and
+  exactly backwards here, since a graphic paired with a labelled parent is
+  *supposed* to be hidden from the reader. Reusing it made the check measure
+  nothing while reporting green, which is worse than not having it.
 - **No `/NN` opacity modifier on a design token.** Tailwind cannot recompute alpha on a bare
   `var()`, so `bg-muted/30` compiles to *no rule at all* — the class name is spelled right,
   nothing throws, and the element is simply unstyled. Two shipped that way: the meter's

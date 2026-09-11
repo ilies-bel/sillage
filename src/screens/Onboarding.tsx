@@ -194,14 +194,41 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
             Three dots, not « étape 2 sur 3 ». The count is worth knowing and the
             sentence is not — it is the same information spelled out at the width
             of a line, on a screen whose whole argument is that it is short.
+
+            **And for several rounds only one of the three was visible.** Measured
+            against the footer's own `#fdfefe`: the completed dot was `brand-300`
+            at **1.99:1** and the upcoming one `bg-subtle` at **1.11:1**, against
+            WCAG 1.4.11's 3:1 floor for a graphic that carries information. So a
+            rep saw a single dot and no count at all — which is exactly the thing
+            the comment above says is worth knowing, lost to the one failure this
+            codebase keeps finding: a design that is right in the source and
+            invisible on screen.
+
+            `brand-500` (3.02:1) for a step already done and a ruled outline in
+            `--text-muted` (5.04:1) for one still ahead — filled means behind you,
+            hollow means ahead, and both are legible. `ring` rather than `border`
+            so the dot keeps its 8px box either way; 8 rather than 6 because three
+            marks two pixels across are a smudge, not a count. Not a target: it is
+            `aria-hidden` and the `<ol>` carries the sentence for anyone who
+            cannot see it.
           */}
           <ol className="flex shrink-0 items-center gap-1.5" aria-label={`Étape ${index + 1} sur 3`}>
             {ORDER.map((id, at) => (
               <li
                 key={id}
                 aria-hidden
-                className={`h-1.5 w-1.5 rounded-full ${
-                  at === index ? 'bg-brand-700' : at < index ? 'bg-brand-300' : 'bg-subtle'
+                /*
+                  Measured by `shot.mjs --contrast` at WCAG 1.4.11's 3:1: this
+                  mark says which step you are on by colour and fill alone, and
+                  for several rounds two of the three were under the floor.
+                */
+                data-graphic={`étape ${at + 1}`}
+                className={`h-2 w-2 rounded-full ${
+                  at === index
+                    ? 'bg-brand-700'
+                    : at < index
+                      ? 'bg-brand-500'
+                      : 'bg-transparent ring-1 ring-inset ring-muted'
                 }`}
               />
             ))}

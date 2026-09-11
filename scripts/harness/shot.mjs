@@ -1306,9 +1306,9 @@ async function main() {
     }
   }
   if (flags.contrast) {
-    if (dim.length === 0) console.log('  contraste: tout le texte passe AA')
+    if (dim.length === 0) console.log('  contraste: texte AA, graphiques 3:1')
     else {
-      console.log(`  ✗ contraste: ${dim.length} texte(s) sous le seuil`)
+      console.log(`  ✗ contraste: ${dim.length} élément(s) sous le seuil`)
       for (const item of dim.slice(0, 8)) {
         console.log(`   ✗ ${item.ratio}:1 (min ${item.need}) — « ${item.text} » ${item.fg} sur ${item.bg}`)
       }
@@ -1462,6 +1462,86 @@ async function contrast(page) {
       if (seen.has(key)) continue
       seen.add(key)
       out.push({ text, fg: style.color, bg: ground, ratio: Math.round(ratio * 100) / 100, need })
+    }
+
+    /*
+     * **And the graphics that carry information, at WCAG 1.4.11's 3:1.**
+     *
+     * Everything above measures *text*, so a mark that says something by colour
+     * alone was outside the check entirely — and one shipped. The onboarding's
+     * three progress dots drew the completed step at `brand-300` (**1.99:1**)
+     * and the upcoming one at `bg-subtle` (**1.11:1**) on a `#fdfefe` footer, so
+     * a rep saw **one** dot: the count the indicator exists to give was the
+     * thing it lost. Right in the source, invisible on screen, and no screenshot
+     * review in a dozen rounds noticed, because a missing dot looks like a
+     * design with fewer dots.
+     *
+     * Opt-in via `data-graphic`, and that is the honest scope rather than
+     * laziness: 1.4.11 covers a graphic *required to understand the content*,
+     * and only the author knows which those are. A `StateDot` is not one — it
+     * owns a text label beside it and refuses to render without it — and a
+     * decorative rule is not one either.
+     *
+     * The ring is read as well as the fill. A hollow mark says what a filled one
+     * says, and `ring-*` is a `box-shadow`, so an element with a transparent
+     * background and a 1px inset ring would otherwise measure 1.01:1 against its
+     * own ground and be reported as invisible when it is perfectly legible.
+     */
+    /*
+     * `drawn` is not used here, and the reason is the shape of the thing.
+     *
+     * It excludes anything under `aria-hidden`, which is right for text — text
+     * hidden from the reader is not read — and exactly backwards for a graphic.
+     * A mark that carries information visually is *supposed* to be `aria-hidden`
+     * when a labelled parent carries the same information as a sentence, which
+     * is precisely how the onboarding's dots are built. Using `drawn` here meant
+     * the check silently measured nothing at all, which is worse than not having
+     * it: a green line asserting a floor nobody had checked.
+     */
+    const painted = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (Number(style.opacity) < 0.99) return false
+      return el.offsetParent !== null || style.position === 'fixed'
+    }
+    for (const el of document.querySelectorAll('[data-graphic]')) {
+      if (!painted(el)) continue
+      const style = getComputedStyle(el)
+      const ground = groundOf(el.parentElement ?? el)
+      if (!ground) continue
+      /*
+       * The ring counts as ink, not only the fill. A hollow mark says what a
+       * filled one says, and `ring-*` compiles to a `box-shadow` — so an element
+       * with a transparent background and a 1px inset ring would measure 1.01:1
+       * against its own ground and be reported as invisible when it is perfectly
+       * legible. Tailwind emits the offset shadow first and the ring second, so
+       * the **last** opaque colour in the list is the ring.
+       */
+      const rings = [...style.boxShadow.matchAll(/rgba?\([^)]+\)/g)].map((m) => m[0])
+      const ink = opaque(style.backgroundColor)
+        ? style.backgroundColor
+        : (rings.filter(opaque).pop() ?? null)
+      if (!ink) {
+        out.push({
+          text: el.dataset.graphic || 'graphique',
+          fg: 'rien',
+          bg: ground,
+          ratio: 0,
+          need: 3,
+        })
+        continue
+      }
+      const a = luminance(parse(ink))
+      const b = luminance(parse(ground))
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      if (ratio >= 3) continue
+      out.push({
+        text: el.dataset.graphic || 'graphique',
+        fg: ink,
+        bg: ground,
+        ratio: Math.round(ratio * 100) / 100,
+        need: 3,
+      })
     }
     return out
   })
