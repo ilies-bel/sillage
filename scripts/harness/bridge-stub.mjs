@@ -1285,6 +1285,7 @@ export function installAppBridge(config) {
           selected: true,
           selectable: true,
           reason: null,
+          fields: [],
         },
         {
           id: 'local-whisper-large',
@@ -1299,6 +1300,7 @@ export function installAppBridge(config) {
           selected: false,
           selectable: false,
           reason: 'poids absents de cette machine — 1,5 Go à installer',
+          fields: [],
         },
         {
           id: 'azure-speech-fr',
@@ -1313,21 +1315,7 @@ export function installAppBridge(config) {
           selected: false,
           selectable: true,
           reason: null,
-        },
-        {
-          id: 'deepgram',
-          label: 'Deepgram',
-          tier: 'cloud',
-          residency: 'remote',
-          streaming: true,
-          cost: 'metered',
-          // Configured and usable, and the row still says « hors UE ». The
-          // residency is stated, not enforced — a stub that greyed this row
-          // would show a screen the app no longer renders.
-          configured: true,
-          selected: false,
-          selectable: true,
-          reason: null,
+          fields: [],
         },
         {
           id: 'soniox',
@@ -1342,16 +1330,18 @@ export function installAppBridge(config) {
           selected: false,
           selectable: false,
           reason: 'aucune clé enregistrée',
+          fields: [],
         },
       ],
       selected: 'local-whisper',
       reason: null,
+      fields: [],
     },
     llm: {
       rows: [
         {
           id: 'mistral',
-          label: 'Mistral AI (UE)',
+          label: 'Mistral AI',
           tier: 'cloud',
           residency: 'remote',
           streaming: true,
@@ -1362,6 +1352,7 @@ export function installAppBridge(config) {
           selected: true,
           selectable: true,
           reason: null,
+          fields: [],
         },
         {
           id: 'ollama-qwen',
@@ -1376,6 +1367,7 @@ export function installAppBridge(config) {
           selected: false,
           selectable: false,
           reason: 'aucun serveur Ollama détecté sur cette machine',
+          fields: [],
         },
         {
           id: 'openai',
@@ -1390,10 +1382,12 @@ export function installAppBridge(config) {
           selected: false,
           selectable: false,
           reason: 'aucune clé enregistrée',
+          fields: [],
         },
       ],
       selected: 'mistral',
       reason: null,
+      fields: [],
     },
     /**
      * The local checkpoints (DEC-35). One shipped with the installer, one

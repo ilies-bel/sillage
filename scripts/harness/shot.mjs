@@ -1072,6 +1072,45 @@ const SCREENS = {
    * own pane, and because a table that drifts from the matcher is exactly the
    * kind of thing nobody looks at again.
    */
+  /*
+   * **The STT table, which the harness had never rendered.**
+   *
+   * No stage opened *Transcription* or *Modèle de langage* — the one
+   * `getByRole('button', {name: 'Transcription'})` in this file is the review
+   * gate's tab — and the fixture's provider rows were missing `fields`, which
+   * `ProviderRowSchema` requires and `ProviderLine` reads as `row.fields.length`.
+   * So both panes threw, the whole app went blank, and every later pane click
+   * timed out. « 74 mises en scène jouées » and its six measured checks had
+   * therefore **never touched** the surfaces where HR-4, DEC-30, DEC-34 and
+   * DEC-35 live. The shipped app was fine — `e2e.mjs` opens all six panes
+   * against the real bridge — so what was lost was the measurement, which is
+   * the fifth time this fixture has flattered the app.
+   */
+  'reglages-transcription': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('button', { name: 'Transcription', exact: true }).click()
+      // The local engine is the default and says so (DEC-30), never « dégradé ».
+      await page.getByText('Whisper (local)').first().waitFor()
+    },
+  },
+
+  /*
+   * And the language-model table, where DEC-34's « no environment variable »
+   * lives: every provider setting is a declared field rendered as a text input.
+   */
+  'reglages-modele': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('button', { name: 'Modèle de langage', exact: true }).click()
+      await page.getByText(/Mistral|ChatGPT|Claude|Azure/).first().waitFor()
+    },
+  },
+
   'reglages-raccourcis': {
     scenario: 'reglages',
     async drive(page) {

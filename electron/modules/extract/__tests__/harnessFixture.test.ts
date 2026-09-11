@@ -44,6 +44,20 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findDeterministicLeaks } from '../deterministicLeaks.ts'
+import { SettingsSnapshotSchema } from '../../../core/contracts/settings.ts'
+/*
+ * The harness stub is plain JS with no declaration — it runs in a browser page,
+ * not under `tsc`. Imported dynamically and typed at the call site, so this test
+ * can drive the real fixture without dragging the whole harness into the
+ * electron type-check.
+ */
+const loadStub = async (): Promise<(o: { scenario: string; now: number; entra: boolean }) => void> => {
+  const url = new URL('../../../../scripts/harness/bridge-stub.mjs', import.meta.url).href
+  const mod = (await import(url)) as {
+    installAppBridge: (o: { scenario: string; now: number; entra: boolean }) => void
+  }
+  return mod.installAppBridge
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STUB = path.resolve(HERE, '../../../../scripts/harness/bridge-stub.mjs')
@@ -185,5 +199,65 @@ test('every source the fixture offers leads to a turn the fixture’s call conta
     [],
     'une source ne correspond à aucune ligne du compte-rendu de démonstration — ' +
       'le rendu compare par égalité, donc cette puce resterait sans provenance.',
+  )
+})
+
+test('the fixture’s settings snapshot is one the product could actually send', async () => {
+  /*
+   * **The fifth time this stub has flattered the app, and the first that made a
+   * screen impossible to look at.**
+   *
+   * Its eight provider rows were missing `fields`, which `ProviderRowSchema`
+   * requires and `ProviderLine` reads as `row.fields.length`. So *Transcription*
+   * and *Modèle de langage* both threw, the whole app went blank, and every
+   * later pane click timed out — and no stage in `shot.mjs` opened either pane,
+   * so « 74 mises en scène jouées » and its six measured checks had never
+   * touched the surfaces where HR-4, DEC-30, DEC-34 and DEC-35 live. The shipped
+   * app was fine; what was lost was the measurement.
+   *
+   * It also carried « Mistral AI (UE) » where the shipped registry says plain
+   * « Mistral AI » — a jurisdiction claim CLAUDE.md explicitly forbids
+   * reintroducing (DEC-37), living in the file the product is *looked at*
+   * through.
+   *
+   * `harnessFixture.test.ts` checked the compte-rendu and nothing checked this.
+   * Parsed with the product's own schema, which is the only standard that
+   * matters: the renderer is typed against it on the other side of the bridge.
+   */
+  const source = readFileSync(STUB, 'utf8')
+
+  /*
+   * The stub is **run**, not parsed. `SETTINGS` closes over other locals, and a
+   * regex that lifted the literal out would be a second implementation of the
+   * fixture — which is the drift this whole file exists to prevent. A bare
+   * `window` is all `installAppBridge` needs: it assigns `window.app` and
+   * answers synchronously.
+   */
+  const globals = globalThis as { window?: unknown }
+  const before = globals.window
+  globals.window = { addEventListener: () => {} }
+  let value: unknown
+  try {
+    const installAppBridge = await loadStub()
+    installAppBridge({ scenario: 'reglages', now: Date.now(), entra: true })
+    const bridge = (globals.window as { app: { invoke: (c: string, p: unknown) => unknown } }).app
+    value = await bridge.invoke('settings:snapshot', {})
+  } finally {
+    globals.window = before
+  }
+
+  const parsed = SettingsSnapshotSchema.safeParse(value)
+  assert.ok(
+    parsed.success,
+    `le SETTINGS du harnais ne passe pas son propre schéma : ${
+      parsed.success ? '' : JSON.stringify(parsed.error.issues.slice(0, 3))
+    }`,
+  )
+
+  // And no jurisdiction claim, on any row, in any label (DEC-37).
+  assert.doesNotMatch(
+    source,
+    /\((UE|EU)\)/,
+    'une revendication de juridiction est revenue dans le fixture — voir DEC-37',
   )
 })
