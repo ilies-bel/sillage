@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ARM_LEAD_MS,
+  ARM_POLL_MS,
   MAX_ARMABLE_DURATION_MS,
   decideArming,
   nextArmable,
@@ -92,11 +93,31 @@ test('an all-day-sized block cannot arm', () => {
   assert.equal(decideArming({ event: allDay, now: T0, meetingAudio: 'Teams' }).action, 'skip')
 })
 
-test('waiting for audio inside the window looks no further than the event', () => {
+test('waiting for audio inside the window re-asks soon, because the signal is polled', () => {
+  /*
+   * **This test asserted the defect, and passed for as long as it existed.**
+   *
+   * It was « looks no further than the event » and checked `untilMs ===
+   * scheduledEnd`, on the argument the branch itself used to carry: nothing
+   * time-based will change this before the event ends, « the next input is an
+   * audio event ». There is no audio event. Nothing calls `Agenda.tick` when the
+   * process list changes, so an hour-long horizon meant the only thing choosing
+   * the delay was `MAX_SLEEP_MS` — and the offer landed *at* the meeting's start
+   * instead of five minutes before it, which is the whole of `ARM_LEAD_MS`.
+   *
+   * What is asserted now is the property rather than the number: the horizon
+   * must be soon, because the thing being waited on is polled. Bounding it above
+   * by `ARM_LEAD_MS` is what makes this test able to fail the old way — the old
+   * value, an hour out, is not « soon ».
+   */
   const decision = decideArming({ event: event(), now: T0, meetingAudio: null })
   assert.equal(decision.action, 'wait')
   if (decision.action !== 'wait') return
-  assert.equal(decision.untilMs, T0 + 3_600_000)
+  assert.equal(decision.untilMs, T0 + ARM_POLL_MS)
+  assert.ok(
+    decision.untilMs - T0 < ARM_LEAD_MS,
+    'a horizon longer than the lead means the offer can arrive after the call has started',
+  )
 })
 
 // ── nextArmable ────────────────────────────────────────────────────────────

@@ -303,6 +303,66 @@ for (const entry of UNREACHED) {
   }
 }
 
+/**
+ * **A renderer file nothing imports.**
+ *
+ * The fourth boundary where « declared » and « reached » are different files,
+ * and the one that had no check at all. `src/components/ui/AccordionSection.tsx`
+ * was the only file under `src/components/`, had **zero** importers anywhere,
+ * and its dead `import { AnimatePresence, motion } from 'framer-motion'` kept a
+ * **5.5 MB** dependency in `dependencies` — where `build.files` takes
+ * `node_modules` whole and electron-builder prunes only devDependencies, so it
+ * shipped inside the installer. The thirty-ninth of the answer assistant's
+ * leftovers, surviving three rounds of review because one dead `.tsx` kept the
+ * import alive and nothing asked whether the `.tsx` itself was reached.
+ *
+ * The rule is the file, not the export, and that is deliberate. Asking « is this
+ * *component* used » means reasoning about barrels, re-exports and default
+ * exports, and would answer « no » for half of `src/ui/`. Asking « does anything
+ * import this file » is one grep, has no false positives that are not real, and
+ * catches exactly the defect: a module kept alive only by its own imports.
+ *
+ * Entry points are named rather than inferred — the two files the bundler
+ * reaches directly, which nothing in the tree imports by construction.
+ */
+const ENTRY = new Set(['src/main.tsx', 'src/App.tsx'])
+const renderer = files.filter(
+  (file) => file.startsWith('src/') && file.endsWith('.tsx') && !isTest(file) && !ENTRY.has(file),
+)
+for (const file of renderer) {
+  // `src/screens/review/TranscriptReader.tsx` is imported as
+  // `./review/TranscriptReader.tsx`, `../review/TranscriptReader.tsx`, and so
+  // on — the stem is the part every spelling shares.
+  const stem = file.slice(file.lastIndexOf('/') + 1).replace(/\.tsx$/, '')
+  /*
+   * **The extension is optional, and requiring it nearly deleted a live file.**
+   *
+   * `electron/` carries `.ts` on every relative import — that is what lets one
+   * source tree run under `node --test`, esbuild and `tsc` with no build step
+   * between — but `src/` goes through Vite and does not have to. The first
+   * version of this pattern demanded `\\.tsx?` and reported
+   * `src/editor/editor-error-boundary.tsx` as unreached, because `Session.tsx`
+   * imports it as `'../editor/editor-error-boundary'`. That file is the last
+   * thing standing between a ProseMirror crash and a rep who is in a call.
+   *
+   * A check that invents findings is worse than one that finds nothing, because
+   * the finding gets acted on. The match still ends at a quote or at an optional
+   * extension and never mid-name, so `Review` cannot be satisfied by an import
+   * of `ReviewGate`.
+   */
+  const imported = CALLERS.some(
+    (other) =>
+      other !== file &&
+      new RegExp(`from\\s+['"\`][^'"\`]*/${stem}(\\.tsx?)?['"\`]`).test(bodies.get(other) ?? ''),
+  )
+  if (!imported && !excused(file)) {
+    problems.push(
+      `${file}: aucun fichier ne l’importe — un composant que rien n’atteint n’est pas une fonctionnalité, ` +
+        'et ses propres imports gardent ses dépendances en vie (framer-motion: 5,5 Mo dans l’installeur).',
+    )
+  }
+}
+
 if (problems.length > 0) {
   console.error(`\nsurfaces déclarées et jamais atteintes (${problems.length}):\n`)
   for (const line of problems) console.error(`  ${line}`)
@@ -313,5 +373,6 @@ if (problems.length > 0) {
 console.log(
   `surfaces ok — ${invokeChannels.length} canal(aux), ${broadcastChannels.length} diffusion(s), ` +
     `${rust.length} fichier(s) Rust, ${methods} méthode(s) de session, ` +
+    `${renderer.length} composant(s) de rendu, ` +
     `${UNREACHED.length} dispense(s) déclarée(s)`,
 )

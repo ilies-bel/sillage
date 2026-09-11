@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Agenda, SYNC_INTERVAL_MS, meetingIdFor } from '../Agenda.ts'
+import { Agenda, MAX_SLEEP_MS, SYNC_INTERVAL_MS, meetingIdFor } from '../Agenda.ts'
 import { Orchestrator } from '../Orchestrator.ts'
 import { openMemoryStore } from '../../../modules/store/index.ts'
-import { ARM_LEAD_MS } from '../../../core/domain/arming.ts'
+import { ARM_LEAD_MS, ARM_POLL_MS } from '../../../core/domain/arming.ts'
 import type { CalendarEvent, CalendarPort, CalendarWindow } from '../../../core/contracts/calendar.ts'
 import type { ConnectorHealth } from '../../../core/contracts/health.ts'
 import type { MeetingContext } from '../../../core/contracts/meeting.ts'
@@ -454,5 +454,63 @@ test('armNow publishes a snapshot, so the row redraws without a poll', async () 
 
   assert.ok(h.snapshots.length > before, 'a snapshot was published')
   assert.equal(h.snapshots.at(-1)?.armed?.eventId, 'AAA')
+  h.store.close()
+})
+
+/*
+ * **How late the offer actually arrives**, driven through the real loop's own
+ * delay arithmetic rather than asserted about `decideArming` in isolation.
+ *
+ * This is the shape the defect had: `decideArming` was *correct* about the
+ * window — it returned `wait` before it and `arm` inside it — and the offer
+ * still arrived at the meeting's start time, because the horizon it handed back
+ * (`scheduledEnd`, an hour out) meant the only thing choosing the delay was
+ * `Agenda`'s five-minute ceiling. A unit test of `decideArming` at a chosen
+ * instant cannot see that: it never asks *when the next instant would be*.
+ *
+ * So this replays a rep's morning. Teams comes up inside the window, and the
+ * question is how long the rep stands there before the offer appears.
+ */
+test('the offer arrives inside the five-minute lead, not at the meeting’s start', async () => {
+  const start = T0
+  const launchedTeams = start - 4 * 60_000 // the rep opens Teams four minutes early
+  const h = harness([event('AAA')], null)
+
+  let now = start - 10 * 60_000
+  let armedAt: number | null = null
+
+  // The loop's own arithmetic, lifted verbatim: `min(MAX_SLEEP_MS, max(MIN, horizon - now))`.
+  for (let i = 0; i < 400 && armedAt === null && now < start + 60_000; i++) {
+    if (now >= launchedTeams) h.setAudio('Teams')
+    /*
+     * `tick` **returns the instant it wants to be woken at**, which is the one
+     * number the defect lived in — so the replay advances by the loop's own
+     * answer clamped the way `#loop` clamps it, rather than by a cadence this
+     * test chose. A test that stepped by a fixed interval would have measured
+     * its own interval.
+     */
+    const wakeAt = await h.agenda.tick({ now })
+    if (h.agenda.snapshot().armed !== null) {
+      armedAt = now
+      break
+    }
+    now += Math.min(MAX_SLEEP_MS, Math.max(1_000, wakeAt - now))
+  }
+
+  assert.ok(armedAt !== null, 'the offer appeared at all')
+  const lead = start - armedAt
+  /*
+   * The assertion is the **lead**, not a tick count. `ARM_LEAD_MS` is the
+   * promise — « a rep who is talking is not looking for a button » — so what has
+   * to hold is that the button is there before they start talking. Before the
+   * fix this was 0 (measured: armed exactly at `start`, 240 s after Teams came
+   * up); a whole `ARM_POLL_MS` of slack is left so the test is about the
+   * property and not about the exact sampling phase.
+   */
+  assert.ok(
+    lead >= ARM_LEAD_MS - 4 * 60_000 - ARM_POLL_MS,
+    `armed ${lead / 1000}s before the start — the offer must not arrive as the call begins`,
+  )
+  assert.ok(armedAt - launchedTeams <= ARM_POLL_MS * 2, `took ${(armedAt - launchedTeams) / 1000}s after Teams came up`)
   h.store.close()
 })

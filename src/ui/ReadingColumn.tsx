@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { PageTurn } from './PageTurn.tsx'
+import { scrollElementBy, scrollElementTo } from '../lib/scroll.ts'
 
 export interface ReadingColumnProps {
   children: ReactNode
@@ -72,12 +73,12 @@ export function ReadingColumn({ children, what, className }: ReadingColumnProps)
     const el = ref.current
     if (!el) return
     if (turn === 'up') {
-      el.scrollTo({ top: 0, behavior: 'smooth' })
+      scrollElementTo(el, { top: 0 })
       return
     }
     // A page minus two lines of overlap, so the sentence the fold cut is read
     // whole instead of resumed mid-clause.
-    el.scrollBy({ top: Math.max(80, el.clientHeight - 64), behavior: 'smooth' })
+    scrollElementBy(el, { top: Math.max(80, el.clientHeight - 64) })
   }
 
   return (

@@ -1631,11 +1631,32 @@ const boot = async (): Promise<void> => {
   if (!identityConfig) {
     orchestrator.setHealth('calendar', {
       state: 'down',
-      // Written for a rep, in the screen they read it in. The name of an
-      // environment variable belongs in a diagnostics bundle, not in
-      // *Réglages → Facultatifs* — and `retryable: false` because there is
-      // nothing here for a *Réessayer* to do (DEC-26).
-      reason: 'aucune application Microsoft configurée — le calendrier reste vide',
+      /*
+       * Written for a rep, in the screen they read it in. The name of an
+       * environment variable belongs in a diagnostics bundle, not in
+       * *Réglages → Facultatifs* — and `retryable: false` because there is
+       * nothing here for a *Réessayer* to do (DEC-26).
+       *
+       * **And it names the second thing that is gone, which it did not.**
+       *
+       * `Agenda` and `MeetingApps` are both constructed in the `else` of this
+       * branch, because arming is « calendar signal × process signal » and
+       * without Graph there is no calendar signal to conjoin — `decideArming`
+       * takes an event and reads `event.sensitivity`, so arming with no event is
+       * structurally impossible rather than merely unimplemented. That is a
+       * defensible design. What was not defensible is that the sentence on
+       * screen only mentioned the calendar: a rep on this build was told their
+       * calendar would be empty and left to discover on their own that **nothing
+       * will ever offer to record a call** — no *Prêt*, no 14:30 notification
+       * (DEC-46), no armed row. This is the build DEC-28 calls the first
+       * deliverable, so it is the configuration most reps will see first.
+       *
+       * DEC-26 is that a degradation is stated, never silent. Two clauses,
+       * because the rep loses two things and only one of them was named.
+       */
+      reason:
+        'aucune application Microsoft configurée — le calendrier reste vide, ' +
+        'et aucune réunion ne sera proposée à l’enregistrement : démarrez-les avec « Démarrer une réunion »',
       since: Date.now(),
       retryable: false,
     })

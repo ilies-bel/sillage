@@ -37,6 +37,7 @@ import type {
 import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { scrollElementBy } from '../lib/scroll.ts'
 import { formatOffset } from '../app/format.ts'
 import {
   Button,
@@ -1030,7 +1031,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     const range = seen.current[column]
     const step = Math.max(el.clientHeight - 64, 120)
     const up = range !== null && range.from > 8
-    el.scrollBy({ top: up ? -step : step, behavior: 'smooth' })
+    scrollElementBy(el, { top: up ? -step : step })
   }, [])
 
   if (loaded.state.status === 'loading') return <Centered>Chargement…</Centered>

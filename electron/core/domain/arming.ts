@@ -25,6 +25,29 @@ import type { ArmingDecision, MeetingContext, Sensitivity } from '../contracts/m
 export const ARM_LEAD_MS = 5 * 60_000
 
 /**
+ * How often to re-ask, once the window is open and no conferencing app is up
+ * yet.
+ *
+ * This exists because the second signal is a **poll**, not a subscription:
+ * `modules/capture/MeetingApps.ts` shells out to `ps`/`tasklist`, and nothing
+ * anywhere calls `Agenda.tick` when that list changes. A horizon further out
+ * than this is a promise to notice something at an instant when nothing will
+ * have been looked at.
+ *
+ * Twenty seconds against a five-minute lead: a rep who opens Teams at the last
+ * moment still gets the offer with four and a half minutes to spare, and the
+ * cost is one short-lived process every twenty seconds for at most the length of
+ * the slot — which `MeetingApps`'s own fifteen-second cache then damps, a cache
+ * that until now could never hit because its only caller ran every five minutes.
+ *
+ * It is deliberately **not** the sleep ceiling's job. `MAX_SLEEP_MS` exists for a
+ * suspended laptop and must stay a ceiling; a decision that wants to be asked
+ * again sooner has to say so itself, or every future caller inherits whatever
+ * the ceiling happens to be.
+ */
+export const ARM_POLL_MS = 20_000
+
+/**
  * Longer than this and it is a working block, not a call.
  *
  * All-day events are the case that matters. Their window would otherwise open
@@ -89,14 +112,35 @@ export const decideArming = (input: ArmingInput): ArmingDecision => {
     return { action: 'wait', untilMs: opensAt, reason: 'la fenêtre n’est pas encore ouverte' }
   }
 
-  // Inside the window and still silent. Nothing *time-based* will change this
-  // before the event ends — the next input is an audio event — so the horizon
-  // handed back is the end of the event, at which point the answer becomes
-  // `skip` rather than a timer that fired for nothing.
+  /*
+   * **Inside the window and still silent — and this is where the five-minute
+   * lead was being thrown away.**
+   *
+   * This used to hand back `event.scheduledEnd`, on the argument that « nothing
+   * *time-based* will change this before the event ends — the next input is an
+   * audio event ». **There is no audio event.** Nothing anywhere calls
+   * `Agenda.tick` on a change in the process list; the only callers outside
+   * tests are the loop itself and two rep-initiated IPC handlers. So the horizon
+   * named an instant an hour away at which, by construction, the answer would
+   * already be `skip` — and the only thing left choosing the delay was
+   * `Agenda`'s `MAX_SLEEP_MS` ceiling, five minutes, which is the whole of
+   * `ARM_LEAD_MS`.
+   *
+   * Measured over a simulated day: Teams launched at 14:26 for a 14:30 call, the
+   * window open since 14:25, and the offer arrived at **14:30:00** — 240 seconds
+   * late, worst case 299. DEC-46 and `ARM_LEAD_MS` above both exist to put the
+   * offer on screen *before* the rep joins, because « a rep who is talking is
+   * not looking for a button », and it was arriving as they said hello.
+   *
+   * The signal being waited on is **polled, not pushed**, so the horizon has to
+   * be a poll interval. That is the honest statement of what this branch knows:
+   * not « wake me when the event ends », but « ask again shortly, because the
+   * thing that decides this is a process list nobody will tell us about ».
+   */
   if (!meetingAudio) {
     return {
       action: 'wait',
-      untilMs: event.scheduledEnd,
+      untilMs: now + ARM_POLL_MS,
       reason: 'aucune application de réunion n’émet de son',
     }
   }

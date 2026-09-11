@@ -54,6 +54,7 @@
 import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { HistoryFilter } from '../../../electron/core/contracts/history.ts'
 import { Button, Chip } from '../../ui/index.ts'
+import { scrollElementBy } from '../../lib/scroll.ts'
 import {
   INTENTIONS,
   INTENTION_LABEL,
@@ -355,7 +356,7 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
   const page = (direction: -1 | 1) => {
     const el = ref.current
     if (!el) return
-    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: 'smooth' })
+    scrollElementBy(el, { left: direction * el.clientWidth * 0.8 })
   }
 
   return (

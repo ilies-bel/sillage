@@ -36,14 +36,15 @@
     "check:ports": "node scripts/check-ports.mjs",
     "check:surfaces": "node scripts/check-surfaces.mjs",
     "check:reasons": "node scripts/check-reasons.mjs",
-    "check": "npm run typecheck:electron && npm run typecheck:renderer && npm run check:boundaries && npm run check:crm && npm run check:tokens && npm run check:platform && npm run check:french && npm run check:ports && npm run check:surfaces && npm run check:reasons",
+    "check": "npm run typecheck:electron && npm run typecheck:renderer && npm run check:boundaries && npm run check:crm && npm run check:tokens && npm run check:platform && npm run check:french && npm run check:ports && npm run check:surfaces && npm run check:reasons && npm run check:motion",
     "whisper:fetch": "node scripts/fetch-whisper-model.mjs",
     "replay": "npm run build:electron && node scripts/replay.mjs",
     "typecheck:renderer": "tsc -p tsconfig.json --noEmit",
     "replay:extract": "node --experimental-strip-types scripts/replay-extraction.mjs",
     "seed:vsa": "node --experimental-strip-types scripts/seed-vsa.mjs",
     "check:platform": "node scripts/check-platform.mjs",
-    "check:french": "node scripts/check-french.mjs"
+    "check:french": "node scripts/check-french.mjs",
+    "check:motion": "node scripts/check-motion.mjs"
   },
   "build": {
     "appId": "fr.ilies-bel.sillage",
@@ -259,7 +260,6 @@
     "clsx": "^2.1.1",
     "electron-updater": "^6.7.3",
     "form-data": "^4.0.6",
-    "framer-motion": "^12.29.2",
     "keytar": "^7.9.0",
     "lucide-react": "^0.460.0",
     "markdown-it": "^14.3.0",

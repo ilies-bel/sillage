@@ -1761,6 +1761,36 @@ async function main() {
    * injects rules of its own, and a check that runs after it is measuring the
    * harness rather than the product.
    */
+  /*
+   * **The check's own self-test, kept rather than thrown away.**
+   *
+   * `--motion` shipped with two blind spots and an adversarial round found both
+   * by injecting exactly this: an **infinite** `steps(9)` animation, whose curve
+   * lives in `animation-timing-function` while the check was reading
+   * `transition-timing-function`; and a `::after` with a literal 777 ms
+   * transition, which `querySelectorAll('#root *')` can never reach. Both were
+   * reported green, exit 0.
+   *
+   * Re-running the attack is how anyone touching `motion()` finds out whether
+   * they have re-opened either hole, and a check this repo cannot re-break on
+   * demand is a check it has to take on trust. `SILLAGE_MOTION_ATTACK=1 node
+   * scripts/harness/shot.mjs <stage> /dev/null --no-png --motion` must print five
+   * findings and exit 10.
+   *
+   * A harness-only development override, which is what `process.env` is for
+   * here — DEC-34 is about the *app* requiring none, and nothing in `electron/`
+   * or `src/` reads this.
+   */
+  if (process.env.SILLAGE_MOTION_ATTACK) {
+    await page.addStyleTag({ content: `
+      @keyframes mykf { from { opacity: 1 } to { opacity: .5 } }
+      #root h1 { animation: mykf var(--motion) steps(9) infinite !important;
+                 transition: opacity var(--motion) var(--ease-out) !important }
+      #root h2::after { content:"[X]"; display:inline-block;
+                        transition: opacity 777ms linear !important }
+    ` })
+    await page.waitForTimeout(120)
+  }
   let motionOff = { undeclared: [], persisting: [], seen: 0 }
   if (flags.motion) {
     await page.evaluate(() => document.fonts.ready)
@@ -2433,34 +2463,61 @@ async function motion(page) {
       const allowedEase = new Set([...easings].map((e) => e.replace(/\s+/g, '')))
 
       const out = []
-      for (const el of document.querySelectorAll('#root *')) {
-        const style = getComputedStyle(el)
-        /*
-         * A transition and an animation are both motion and both have to obey
-         * the setting. `transition-duration` is a comma list when
-         * `transition-property` is, and every entry counts.
-         */
-        const spans = [
-          ...style.transitionDuration.split(','),
-          ...style.animationDuration.split(','),
-        ]
+      const split = (value) => value.split(/,(?![^(]*\))/).map((part) => part.trim())
+      /*
+       * **A transition's curve is `transition-timing-function`; an animation's
+       * is `animation-timing-function`, and reading the first for the second
+       * reads a property the element is not using.**
+       *
+       * The first version asked `transitionTimingFunction` whatever the motion
+       * was. An element whose only motion is a `@keyframes` has the *initial*
+       * `ease` sitting in that property untouched, and `ease` is not a token —
+       * except it was never flagged, because the same blindness cut both ways:
+       * an `animation: … steps(9)` reported `ease` and passed, while
+       * `animate-rise-in`, which is entirely ours, would have been reported as
+       * « hors jetons » for a curve it does not have. One property missing,
+       * a false negative and a false positive at once.
+       */
+      const reading = (el, pseudo) => {
+        const style = getComputedStyle(el, pseudo)
+        // A pseudo-element that is not generated has no box and no motion; its
+        // `content` is `none`, and measuring it would invent findings.
+        if (pseudo && (style.content === 'none' || style.content === '')) return null
+        const durations = [...split(style.transitionDuration), ...split(style.animationDuration)]
           .map((d) => ms(d))
           .filter((n) => n !== null && n > 0)
-        if (spans.length === 0) continue
-        const curves = style.transitionTimingFunction
-          .split(/,(?![^(]*\))/)
-          .map((e) => e.replace(/\s+/g, ''))
+        if (durations.length === 0) return null
+        const curves = []
+        if (split(style.transitionDuration).some((d) => (ms(d) ?? 0) > 0)) {
+          curves.push(...split(style.transitionTimingFunction))
+        }
+        if (split(style.animationDuration).some((d) => (ms(d) ?? 0) > 0)) {
+          curves.push(...split(style.animationTimingFunction))
+        }
+        const normalised = curves.map((e) => e.replace(/\s+/g, ''))
         const label =
-          el.id ||
-          el.getAttribute('aria-label') ||
-          `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`
-        out.push({
+          (el.id ||
+            el.getAttribute('aria-label') ||
+            `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`) +
+          (pseudo ?? '')
+        return {
           what: label,
-          dur: [...new Set(spans)].map((n) => `${n}ms`).join(' '),
-          ease: [...new Set(curves)].join(' '),
-          offToken: spans.some((n) => !allowedMs.has(n)),
-          offCurve: curves.some((e) => e !== 'linear' && !allowedEase.has(e)),
-        })
+          dur: [...new Set(durations)].map((n) => `${n}ms`).join(' '),
+          ease: [...new Set(normalised)].join(' '),
+          offToken: durations.some((n) => !allowedMs.has(n)),
+          offCurve: normalised.some((e) => e !== 'linear' && !allowedEase.has(e)),
+        }
+      }
+      for (const el of document.querySelectorAll('#root *')) {
+        /*
+         * **`::before` and `::after` are motion too, and `querySelectorAll`
+         * cannot reach them.** `index.css` already draws a `.pane-label::before`;
+         * the day one of those takes a transition, nothing was measuring it.
+         */
+        for (const pseudo of [null, '::before', '::after']) {
+          const found = reading(el, pseudo)
+          if (found) out.push(found)
+        }
       }
       return out
     })
