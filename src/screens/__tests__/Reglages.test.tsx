@@ -794,6 +794,46 @@ describe('DEC-35: the models are managed under Transcription', () => {
     expect(pane().getByRole('button', { name: 'Annuler' })).toBeTruthy()
   })
 
+  test('the percentage arrives — the row is moved by the broadcast, not by a re-read', async () => {
+    /*
+     * **The test above proves the row can render a number. It never asked
+     * whether one arrives**, and for the life of this feature none did.
+     *
+     * `main.ts` broadcasts `models:progress` on every change, under a comment
+     * naming the bug it exists to fix. The renderer subscribed to eleven
+     * channels and this was not one of them — so a rep who pressed *Télécharger*
+     * on a 1.5 GB model watched « téléchargement · 0 % » beside an *Annuler*
+     * button, unchanged, **including after it finished**. The row only ever
+     * moved when some unrelated write happened to re-read the whole snapshot.
+     */
+    const starting = snapshot()
+    starting.models.rows[1] = { ...starting.models.rows[1]!, status: 'downloading', progress: 0 }
+    mount(starting)
+    await open('Transcription')
+    expect(pane().getByText(/téléchargement · 0 %/)).toBeTruthy()
+
+    await act(async () => {
+      bridge.emit('models:progress', {
+        id: starting.models.rows[1]!.id,
+        status: 'downloading',
+        progress: 61,
+        reason: null,
+      })
+    })
+    expect(pane().getByText(/téléchargement · 61 %/)).toBeTruthy()
+
+    // And completion is visible too — the row said « téléchargement » for ever.
+    await act(async () => {
+      bridge.emit('models:progress', {
+        id: starting.models.rows[1]!.id,
+        status: 'ready',
+        progress: 100,
+        reason: null,
+      })
+    })
+    expect(pane().queryByText(/téléchargement/)).toBeNull()
+  })
+
   test('a failed download says why, in French, on the row', async () => {
     const failed = snapshot()
     failed.models.rows[1] = {

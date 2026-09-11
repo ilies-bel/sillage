@@ -1096,6 +1096,26 @@ export const handlers: Handlers = {
 
   'models:download': async ({ modelId }, deps) => {
     if (!deps.models) throw refuse('le gestionnaire de modèles n’est pas disponible')
+    /*
+     * **Never during a call** (DEC-26).
+     *
+     * `ModelDownloads.start` posts `init` straight to its own worker, which
+     * bypasses `acquireLoadSlot` and `memoryVerdict` — the two guards
+     * `engine.ts` describes as the reason an ONNX session that cannot allocate
+     * « does not fail politely, it takes the process with it ». So pressing
+     * *Télécharger* mid-call built a second ONNX session beside the meeting's,
+     * on a laptop already running a recording, a transcriber and Teams.
+     *
+     * The app refuses a ten-second installer while a call is live
+     * (`updateReadiness`); a multi-gigabyte download that spawns a model runtime
+     * is the same question with a bigger answer. Stated, never silent: the
+     * download is the rep's own gesture and they are owed the reason.
+     */
+    if (deps.orchestrator.liveStates().some((state) => state === 'recording')) {
+      throw refuse(
+        'Une réunion est en cours — le téléchargement attendra la fin de l’appel pour ne pas lui prendre de mémoire.',
+      )
+    }
     await deps.models.start(modelId)
     return deps.models.section()
   },

@@ -661,6 +661,24 @@ machine) or in `core/domain/` — never in an IPC handler.
   transcription and analysis — nothing else. VerySwing, Outlook and the calendar are optional
   (DEC-26) and must never render as an app-level degradation. Per-control reasons still stay
   inline; only the aggregate footer strip is gone.
+- **A model download is three separate promises, and all three were broken** (DEC-35).
+  **The progress has to arrive**: `main.ts` broadcasts `models:progress` on every change,
+  under a comment naming the bug it was written to fix, and the renderer subscribed to
+  eleven channels of which that was not one — so a 1.5 GB download read
+  « téléchargement · 0 % » beside an *Annuler* button for ever, including after it
+  finished. The jsdom test that should have caught it set 38 % *in the snapshot* and
+  asserted the row draws it: it proved the row can render a number, never that one
+  arrives. **The bytes have to land where the engine looks**: `resolveModelsDir` took the
+  first candidate that held *anything*, and a packaged build's `resources/whisper-models`
+  is never empty — it ships the default model — so a model downloaded after install sat in
+  `userData` where nothing looked, and with `allowRemoteModels: false` the load failed
+  telling the rep to download what they had just downloaded. It resolves on **the
+  checkpoint asked for** now, with the predicate supplied by the caller so `paths.ts` stays
+  free of the catalog; and when nobody holds it the answer is the *writable* directory,
+  because « nobody has it » and « put it here » are the same answer. **And it may not run
+  during a call**: `ModelDownloads.start` posts `init` straight to its own worker,
+  bypassing `acquireLoadSlot` and `memoryVerdict` — the guards `engine.ts` calls the reason
+  an ONNX session that cannot allocate « takes the process with it ».
 - **No environment variable is required to run this app** (DEC-34). Keys go to the OS
   credential store from Réglages; everything else a provider needs — a base URL, an Azure
   deployment, a region — is a `fields` entry on its descriptor, stored in the KV store and

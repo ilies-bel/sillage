@@ -160,6 +160,37 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
     if (settings.state.status !== 'ready') return
     settings.set({ ...settings.state.value, auth })
   })
+  /**
+   * **The download's progress, which nothing was listening for.**
+   *
+   * `main.ts` broadcasts `models:progress` on every change, under a comment
+   * naming the bug it was written to fix — and the renderer subscribed to eleven
+   * channels, of which this was not one. So a rep who pressed *Télécharger* on a
+   * 1.5 GB model watched the row read « téléchargement · 0 % » beside an
+   * *Annuler* button, unchanged, **including after it finished**: the row only
+   * ever moved when some other write happened to re-read the whole snapshot.
+   * `bridge.ts` states the contract this broke in one line — every screen reads
+   * one thing and is then kept current by a broadcast.
+   *
+   * The jsdom test that should have caught it (« a download in flight shows its
+   * percentage ») sets 38 % **in the snapshot** and asserts the row draws it. It
+   * proves the row can render a number. It never asked whether one arrives.
+   */
+  useBroadcast('models:progress', (payload) => {
+    if (settings.state.status !== 'ready') return
+    const snapshot = settings.state.value
+    settings.set({
+      ...snapshot,
+      models: {
+        ...snapshot.models,
+        rows: snapshot.models.rows.map((row) =>
+          row.id === payload.id
+            ? { ...row, status: payload.status, progress: payload.progress, reason: payload.reason }
+            : row,
+        ),
+      },
+    })
+  })
 
   /**
    * Every settings write answers with the whole snapshot, and the screen takes

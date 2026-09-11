@@ -1640,3 +1640,42 @@ test('switching after a compte-rendu exists regenerates it', async () => {
 
   cleanup()
 })
+
+test('a model download is refused while a meeting is recording, with the reason', async () => {
+  /*
+   * `ModelDownloads.start` posts `init` straight to its own worker, bypassing
+   * `acquireLoadSlot` and `memoryVerdict` — the two guards `engine.ts` describes
+   * as the reason an ONNX session that cannot allocate « does not fail politely,
+   * it takes the process with it ». So *Télécharger* mid-call built a second
+   * ONNX session beside the meeting's, on a laptop already running a recording,
+   * a transcriber and Teams.
+   *
+   * The app already refuses a ten-second installer while a call is live
+   * (`updateReadiness`); a multi-gigabyte download that spawns a model runtime is
+   * the same question with a bigger answer. Stated, never silent (DEC-26).
+   */
+  const h = open()
+  let started = 0
+  h.deps.models = {
+    start: async () => {
+      started += 1
+    },
+    cancel: async () => {},
+    section: () => ({ rows: [], selected: null }),
+  }
+  const meetingId = 'm-live'
+  h.deps.orchestrator.create({ id: meetingId, title: 'Appel', context: null })
+  h.deps.orchestrator.dispatch(meetingId, 'start', null)
+
+  await assert.rejects(
+    () => h.ipc.invoke('models:download', { modelId: 'Xenova/whisper-small' }),
+    /réunion est en cours/,
+  )
+  assert.equal(started, 0, 'rien ne doit avoir été lancé')
+
+  // And it is a refusal, not a wall: once the call is over the download runs.
+  h.deps.orchestrator.dispatch(meetingId, 'end', null)
+  await h.ipc.invoke('models:download', { modelId: 'Xenova/whisper-small' })
+  assert.equal(started, 1)
+  h.cleanup()
+})

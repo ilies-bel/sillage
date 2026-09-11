@@ -139,8 +139,12 @@ export const createSttSession = (providerId: string, options: SttSessionOptions)
  */
 export const isLocalWhisperReady = (modelId: string = DEFAULT_MODEL_ID, modelsDir?: string): boolean => {
   try {
-    const dir = modelsDir ?? resolveModelsDir(electronPaths())
-    return isModelCached(dir, modelId, resolveInferenceConfig().dtype)
+    const dtype = resolveInferenceConfig().dtype
+    // The checkpoint decides the directory, not the other way round: a packaged
+    // build always has a non-empty `resources/whisper-models`, so a model
+    // downloaded after install lives in `userData` and nothing used to look.
+    const dir = modelsDir ?? resolveModelsDir(electronPaths(), (d) => isModelCached(d, modelId, dtype))
+    return isModelCached(dir, modelId, dtype)
   } catch {
     // No Electron, no `userData`, nothing on disk — all mean "not available",
     // and none of them may throw out of a capability probe.

@@ -38,8 +38,8 @@
  */
 import { EventEmitter } from 'node:events'
 import { Worker } from 'node:worker_threads'
-import { buildInitMessage } from './inference.ts'
-import { DEFAULT_MODEL_ID, modelById } from './catalog.ts'
+import { buildInitMessage, resolveInferenceConfig } from './inference.ts'
+import { DEFAULT_MODEL_ID, isModelCached, modelById } from './catalog.ts'
 import { acquireLoadSlot, memoryVerdict } from './onnx.ts'
 import { claimLoad, clearSentinel } from './sentinel.ts'
 import { electronPaths, resolveModelsDir, resolveWorkerPath } from './paths.ts'
@@ -196,7 +196,16 @@ export class WhisperEngine extends EventEmitter {
     // which is exactly where `scripts/replay.mjs` calls this from.
     let paths: PathEnvironment | null = null
     const env = (): PathEnvironment => (paths ??= electronPaths())
-    const modelsDir = this.#options.modelsDir ?? resolveModelsDir(env)
+    /*
+     * The directory that holds **this** checkpoint. `resolveModelsDir` used to
+     * take the first candidate that held anything, and a packaged build's
+     * `resources/whisper-models` always holds the bundled model — so a model the
+     * rep downloaded landed in `userData` and was never found, and with
+     * `allowRemoteModels: false` the load failed telling them to download it.
+     */
+    const modelsDir =
+      this.#options.modelsDir ??
+      resolveModelsDir(env, (dir) => isModelCached(dir, this.modelId, resolveInferenceConfig().dtype))
     const workerPath = this.#options.workerPath ?? resolveWorkerPath(env)
     this.#stateDir = this.#options.stateDir ?? modelsDir
 
