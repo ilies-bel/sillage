@@ -224,6 +224,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   with no description, on the row, in French ». It did not: `taskPossible` read the *name*.
   « Select all, delete, validate » put an empty `taskDescription` into the client's system of
   record, where there is no idempotency key and no delete verb.
+- **A row that was on the wire is reclaimed, and a quit waits for one that still is.**
+  `Outbox.#reclaim` settles a row left `draining` by a dead process — « envoi interrompu —
+  vérifiez dans l'outil distant avant de relancer » — and it runs as the first line of
+  `#drain`, which `main.ts` calls once per meeting named by `drainable()`. `drainable()` is
+  `state = 'pending'`. So a meeting whose **only** non-terminal row was `draining` was never
+  passed to `drain()`, `#reclaim` ran for nobody, and the row stayed in flight for the life of
+  the database: « envoi en cours » on the Historique row for ever, `pushSettled` never fired so
+  the meeting never reached `done`, and `updateGate.ts` then refused every installer because a
+  push was in flight. `POST /v1/crm/tasks` has no idempotency key, so the rep could not find out
+  by sending it again — the one irreversible write in the product, with no way to learn whether
+  it landed. `Projections.interrupted()` is the missing half of `drainable()` and the boot sweep
+  reads both. **The trigger was not a crash**: `review:confirm` fires the drain without awaiting
+  it, deliberately, and on Windows closing the window quits — so « press *Valider*, close the
+  window » was enough. `before-quit` asked only whether a meeting was *recording*; it waits for
+  the pass now, bounded, and `Outbox.settle` replaced `isDraining`, which answered a question no
+  caller asked. The unit test that proves `#reclaim` works calls `drain()` **directly**: it was
+  green throughout, and it never asked whether anything calls `drain` for that meeting.
 - **A `failed` push is not a missing *Réessayer*, it is a missing sentence.** `Outbox` retries
   everything it safely can — an adapter that knows nothing was created answers
   `{ ok: false, retryable: true }` and the row stays `pending`. `failed` is the opposite case:
@@ -265,6 +282,20 @@ machine) or in `core/domain/` — never in an IPC handler.
   eight attacks that must be refused and four returns that must be free, all driven
   against real layout — jsdom measures every box as zero, so the renderer's tests
   can only assert that an unmeasurable column fails **open**.
+- **The transcript is a side view of that column and is measured by nothing.** It is
+  another document in the same box, reached by `source ▸`, and it **does not ship** —
+  `attachTranscript` is in `check-ports.mjs`'s `UNWIRED` list — while the caption over the
+  guard says « tout ce qui part doit avoir été affiché ». Making it a *view* that must be
+  covered is what the rule below cost: a rep who followed one citation on a fifty-minute call
+  paid **fifty page turns** to get *Valider* back, under a sentence naming the compte-rendu
+  while the only control offered named the transcript, with an escape — one click on
+  « Lecture » — that nothing on screen mentioned. The one feature this product has over a
+  general-purpose notetaker was the only thing on the screen being punished for being used, for
+  the second time (the first was *Demander*, inside the measurement, fixed with
+  `data-unmeasured`). It contributes no coverage either, which is what still refuses the attack
+  below: opening the tab leaves `compte-rendu:<sent>` uncovered, and that is what is asked.
+  `review-garde-citation` and `review-garde-transcription` are the pair, and a fix for either
+  that breaks the other is the oscillation this guard has already been through twice.
 - **A column is not read until its content has arrived, and the guard has to be told when
   it does.** One click on *Transcription* armed *Valider* at 1280×800 with the compte-rendu at
   `scrollTop` 0 — `TranscriptReader` fetches its own record and draws a placeholder that

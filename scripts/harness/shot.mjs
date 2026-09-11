@@ -606,6 +606,52 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The tenth attack, and it is a *return* the guard must leave free.**
+   *
+   * `review-garde`'s four free returns are all inside one document. This one
+   * leaves it: read both columns, arm *Valider*, then press `source ▸` and
+   * « Voir dans la transcription › » — the gesture DEC-21 exists to produce, and
+   * the one thing this product has that a general-purpose notetaker does not.
+   *
+   * It used to cost the arming. The fix for the ninth attack made the transcript
+   * a *view* of the document column, so following a citation put another
+   * document in the measured box and the coverage went with it: on a fifty-minute
+   * call, **fifty page turns** to get *Valider* back, under a sentence naming the
+   * compte-rendu while the only control offered named the transcript, with an
+   * escape — one click on « Lecture » — that nothing on screen mentioned.
+   *
+   * The ninth attack is still refused, in `review-garde-transcription`, and it
+   * has to stay that way: these two are the pair, and a fix for either that
+   * breaks the other is the oscillation this guard has been through twice.
+   */
+  'review-garde-citation': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS['review-valider'].drive(page)
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
+
+      await page.getByRole('button', { name: /^source/ }).nth(2).click()
+      await page.getByRole('button', { name: /Voir dans la transcription/ }).first().click()
+      await page.getByText(/Citation du champ/).first().waitFor()
+      await page.waitForTimeout(700)
+
+      if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
+        const asked = await page
+          .getByRole('button', { name: /(la suite|Remonter)/ })
+          .allInnerTexts()
+        throw new Error(
+          `suivre une citation a désarmé « Valider » — le gate demande ${JSON.stringify(asked)}`,
+        )
+      }
+
+      // And back, which must also be free: the compte-rendu was read once.
+      await page.getByRole('button', { name: 'Lecture', exact: true }).click()
+      await page.waitForTimeout(500)
+      await page.getByRole('button', { name: /^Valider/ }).waitFor()
+    },
+  },
+
   'review-valider': {
     scenario: 'review',
     async drive(page) {

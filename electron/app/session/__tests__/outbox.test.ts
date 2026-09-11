@@ -142,6 +142,9 @@ const mailStub = (result: () => Promise<PushResult> = async () => ok('AAMkAGI2')
 
 const nowhere = async (): Promise<void> => {}
 
+/** One turn of the microtask queue, so an in-flight pass has actually started. */
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
 // ── the DAG ────────────────────────────────────────────────────────────────
 
 test('the opportunity drains before the task that carries its reference', async () => {
@@ -325,7 +328,81 @@ test('two concurrent drains are one drain', async () => {
   assert.deepEqual(crm.calls, ['opportunity', 'task'])
   assert.equal(mail.calls, 1)
   assert.deepEqual(a, b)
-  assert.equal(outbox.isDraining(MEETING), false)
+  assert.equal(outbox.settledSynchronously(), true)
+  store.close()
+})
+
+test('a quit waits for a push already on the wire, and never for ever', async () => {
+  /*
+   * `review:confirm` fires the drain without awaiting it, so « press *Valider*,
+   * close the window » — the ordinary gesture on Windows, where closing quits —
+   * used to kill the process with the POST in flight. `before-quit` asked only
+   * whether a meeting was *recording*.
+   */
+  const store = seed([OPP_INTENT])
+  let release = (): void => {}
+  const crm = crmStub({
+    opportunity: async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return ok('OPP-1')
+    },
+  })
+  const outbox = new Outbox({ journal: store, crm: crm.port, mail: null, sleep: nowhere })
+
+  const pass = outbox.drain(MEETING)
+  await tick()
+  assert.equal(outbox.settledSynchronously(), false, 'the pass is in flight')
+
+  // Bounded: a quit that waited on a wedged POST would be a window that will
+  // not go away. The row is reclaimed on the next launch either way.
+  assert.equal(await outbox.settle(1), false, 'a wedged pass does not hold the quit')
+
+  release()
+  assert.equal(await outbox.settle(), true, 'and the pass that finishes is waited for')
+  await pass
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'drained')
+  store.close()
+})
+
+test('a push interrupted mid-POST is reclaimed by the next launch', async () => {
+  /*
+   * **The row the boot re-drain could not see.** `drainable()` is
+   * `state = 'pending'`, and a row that reached `push.started` is `draining` —
+   * so a meeting whose only non-terminal row was in flight when the process died
+   * was never passed to `drain()`, and `#reclaim`, which exists for exactly this
+   * row, ran for nobody. The Historique row said « envoi en cours » for the life
+   * of the database, `pushSettled` never fired so the meeting never reached
+   * `done`, and `POST /v1/crm/tasks` has no idempotency key, so the rep could
+   * not find out by sending it again.
+   */
+  const store = seed([OPP_INTENT])
+  // Exactly what `#attempt` appends before the POST goes on the wire.
+  store.append(MEETING, { type: 'push.attempted', intentId: 'i-opportunity', attempt: 1 })
+
+  assert.deepEqual(store.projections.drainable(), [], 'nothing is pending — this is the trap')
+  const stalled = store.projections.interrupted()
+  assert.deepEqual(
+    stalled.map((entry) => entry.intentId),
+    ['i-opportunity'],
+    'and this is what the boot sweep now sees',
+  )
+
+  // The boot re-drain, verbatim in shape: the union of both projections.
+  const crm = crmStub()
+  const outbox = new Outbox({ journal: store, crm: crm.port, mail: null, sleep: nowhere })
+  for (const meetingId of new Set(
+    [...store.projections.drainable(), ...stalled].map((entry) => entry.meetingId),
+  )) {
+    await outbox.drain(meetingId)
+  }
+
+  const entry = store.projections.outboxFor(MEETING)[0]
+  assert.equal(entry?.state, 'failed')
+  assert.equal(entry?.lastError, INTERRUPTED_REASON)
+  // Never re-POSTed: nobody knows whether the first one landed.
+  assert.deepEqual(crm.calls, [])
   store.close()
 })
 

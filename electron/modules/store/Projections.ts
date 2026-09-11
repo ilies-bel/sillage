@@ -351,6 +351,34 @@ export class Projections {
     return rows.map(toOutbox)
   }
 
+  /**
+   * **Every row a previous process was still POSTing, across every meeting.**
+   *
+   * `draining` means `push.started` was appended and no `push.settled` followed:
+   * the request is on the wire, or the process that sent it is gone. Live, the
+   * first is the only possibility and this answers nothing useful. **At boot the
+   * second is the only possibility**, and it is the one state in the outbox with
+   * no recovery of its own — `Outbox.#reclaim` settles exactly these rows, and
+   * it runs as the first line of `#drain`, which `main.ts` calls once per
+   * meeting named by `drainable()`. `drainable()` is `state = 'pending'`. So a
+   * meeting whose *only* non-terminal row is `draining` was never passed to
+   * `drain()`, `#reclaim` never ran, and the row stayed `draining` for the life
+   * of the database: « envoi en cours » on the Historique row for ever, no
+   * reason, no `pushSettled`, and — because `updateGate.ts` refuses an installer
+   * while a push is in flight — no updates either. `POST /v1/crm/tasks` has no
+   * idempotency key, so the rep could not safely check by sending it again.
+   *
+   * The trigger is not a crash. The confirmation handler fires the drain without
+   * awaiting it, deliberately, so a rep is never made to wait — and closing the
+   * window on Windows quits the app.
+   */
+  interrupted(): OutboxEntry[] {
+    const rows = this.#log.all<OutboxRow>(
+      `SELECT * FROM outbox WHERE state = 'draining' ORDER BY updated_at ASC`,
+    )
+    return rows.map(toOutbox)
+  }
+
   // ── Folded on demand ─────────────────────────────────────────────────────
 
   /**

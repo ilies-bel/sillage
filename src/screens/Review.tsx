@@ -458,10 +458,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * precise half of that fix, and the `GROWTH_SLACK` rule is the general net
    * behind it.
    */
-  const [transcriptLoaded, setTranscriptLoaded] = useState(false)
-  // Stable, so it is not a new prop on every render of a column that is
-  // measured on every scroll tick.
-  const onTranscriptLoaded = useCallback(() => setTranscriptLoaded(true), [])
+  /*
+   * **The placeholder latch is gone with the view it guarded.**
+   *
+   * `TranscriptReader` draws « Chargement… » filling the column, so the view was
+   * covered the instant it painted — which is why the key used to say
+   * « chargement » until the record landed. The transcript is no longer a view
+   * this guard measures at all, so there is nothing here for a placeholder to
+   * cover. `GROWTH_SLACK` and the `firstElementChild` observer stay: they are
+   * the general net, and the compte-rendu column has its own arrivals.
+   */
   /*
    * And it is forgotten on the way out of the tab.
    *
@@ -470,20 +476,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * would make the *second* visit stamp « transcription » over a column showing
    * « Chargement… », which is the defect this exists to prevent, one visit later.
    */
-  useEffect(() => {
-    if (mode !== 'transcription') setTranscriptLoaded(false)
-  }, [mode])
-
   const viewOf = useCallback(
-    (column: Column) =>
-      column === 'rail'
-        ? `rail:${payload}:${sent}`
-        : mode === 'transcription'
-          ? transcriptLoaded
-            ? 'transcription'
-            : 'transcription:chargement'
-          : `compte-rendu:${sent}`,
-    [mode, payload, sent, transcriptLoaded],
+    (column: Column) => (column === 'rail' ? `rail:${payload}:${sent}` : `compte-rendu:${sent}`),
+    [payload, sent],
   )
 
   const measure = useCallback(() => {
@@ -516,7 +511,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           ? before
           : { from: Math.min(before.from, from), to: Math.max(before.to, to) }
     }
-    extend('document', docRef.current)
+    // **Not while the transcript is showing.** It is another document in the same
+    // box, so unioning its scroll positions into this column's range would say
+    // the compte-rendu had been shown when what moved was the transcript.
+    if (mode !== 'transcription') extend('document', docRef.current)
     extend('rail', railRef.current)
 
     /*
@@ -536,6 +534,31 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     const read = (column: Column, el: HTMLElement | null): boolean => {
       // The unmeasurable case is the permissive one, always: see above.
       if (!el || el.clientHeight === 0) return true
+
+      /*
+       * **Following a citation costs nothing, and it never armed anything
+       * either.**
+       *
+       * The transcript is not a view of this column — it is a second document
+       * shown in the same box, reached by `source ▸`, and it does **not ship**:
+       * `attachTranscript` is in `check-ports.mjs`'s `UNWIRED` list, so the
+       * caption above — « tout ce qui part doit avoir été affiché » — is about
+       * the compte-rendu and the rail, and nothing else. Making it a *view* that
+       * must be covered charged a fifty-minute call **fifty page turns** for
+       * following one citation, under a sentence naming the wrong document and
+       * an escape (one click on « Lecture ») that nothing on screen mentioned.
+       * The one feature this product has over a general-purpose notetaker was
+       * the only thing on the screen being punished for being used — twice now,
+       * the first time inside the measurement (`data-unmeasured`, *Demander*).
+       *
+       * And the attack that made it a view is still refused, because it was
+       * never about the transcript: opening this tab without having read the
+       * compte-rendu leaves `compte-rendu:<sent>` uncovered, which is what is
+       * asked here. The transcript simply neither stamps it nor is asked for.
+       */
+      if (column === 'document' && mode === 'transcription') {
+        return covered.current.document.has(`compte-rendu:${sent}`)
+      }
 
       const view = viewOf(column)
       const mark = shownAs.current[column]
@@ -669,8 +692,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       !readToEnd.current.document ? 'document' : !readToEnd.current.rail ? 'rail' : null,
     )
     // `viewOf` is what the coverage set is keyed by, so `measure` is rebuilt
-    // when either half of it moves.
-  }, [viewOf])
+    // when either half of it moves — and `mode` alongside it, because the
+    // transcript is read here directly rather than through the key: a stale
+    // `mode` would leave the guard answering about the tab a rep just left.
+  }, [viewOf, mode, sent])
 
   /*
    * Measure before paint, and again whenever the rail changes size.
@@ -1208,7 +1233,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 meetingId={meetingId}
                 focus={focus}
                 interlocuteurs={panel.interlocuteurs}
-                onLoaded={onTranscriptLoaded}
               />
             ) : mode === 'lecture' ? (
               /*

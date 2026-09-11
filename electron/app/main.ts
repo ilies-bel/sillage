@@ -2031,8 +2031,30 @@ const boot = async (): Promise<void> => {
    * Deduplicated by meeting: `drain()` is per meeting and already single-flight,
    * so three pending intents for one call are one pass, not three.
    */
-  for (const meetingId of new Set(store.projections.drainable().map((e) => e.meetingId))) {
+  /*
+   * **And every row the last process was still POSTing**, which is the half that
+   * had no recovery at all. `drainable()` is `state = 'pending'`; a row that got
+   * as far as `push.started` is `draining`, and `Outbox.#reclaim` — the thing
+   * that settles it as « envoi interrompu — vérifiez dans l'outil distant avant
+   * de relancer » — runs as the first line of `#drain`. So a meeting whose only
+   * non-terminal row was `draining` was never named here, never drained, never
+   * reclaimed, and said « envoi en cours » for the life of the database about a
+   * compte-rendu that may or may not be in the client's CRM.
+   */
+  const stalled = store.projections.interrupted()
+  for (const meetingId of new Set(
+    [...store.projections.drainable(), ...stalled].map((e) => e.meetingId),
+  )) {
     drain(meetingId)
+  }
+  if (stalled.length > 0) {
+    diagnostics.record({
+      severity: 'warn',
+      code: 'outbox.interrupted.boot',
+      module: 'app',
+      message: `${stalled.length} envoi(s) interrompus par un arrêt de l’application — à vérifier dans l’outil distant`,
+      detail: { intentIds: stalled.map((entry) => entry.intentId) },
+    })
   }
 
   /**
@@ -2314,7 +2336,18 @@ const boot = async (): Promise<void> => {
       .liveIds()
       .filter((id) => orchestrator.stateOf(id) === 'recording')
 
-    if (!quitting && recording.length > 0) {
+    /*
+     * **A push already on the wire is the other thing a quit may not abandon.**
+     *
+     * `review:confirm` fires the drain without awaiting it, so « press *Valider*,
+     * close the window » — which on Windows quits — killed the process mid-POST
+     * and left the row `draining`. The boot sweep reclaims it now, but reclaiming
+     * means telling the rep to go and look in VerySwing, and waiting eight
+     * seconds for the answer that is already coming is better than that.
+     */
+    const settling = !outbox.settledSynchronously()
+
+    if (!quitting && (recording.length > 0 || settling)) {
       quitting = true
       event.preventDefault()
       void (async () => {
@@ -2332,6 +2365,16 @@ const boot = async (): Promise<void> => {
               meetingId,
             })
           }
+        }
+        if (!(await outbox.settle())) {
+          diagnostics.record({
+            severity: 'warn',
+            code: 'app.quit.pushUnsettled',
+            module: 'app',
+            message:
+              'un envoi était encore en cours à la fermeture — il sera repris au prochain démarrage',
+            detail: {},
+          })
         }
         app.quit()
       })()

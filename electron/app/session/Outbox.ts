@@ -97,6 +97,12 @@ export const INTERRUPTED_REASON =
 const errorReason = (error: unknown): string =>
   error instanceof Error ? error.message : 'envoi impossible'
 
+/**
+ * How long a quit waits for a push already on the wire. Long enough for a POST
+ * and its answer, short enough that a rep who pressed close sees the window go.
+ */
+const SETTLE_TIMEOUT_MS = 8_000
+
 export class Outbox {
   #journal: OutboxJournal
   #crm: CrmPort | null
@@ -118,8 +124,42 @@ export class Outbox {
     this.#diagnostics = deps.diagnostics ?? NULL_RECORDER
   }
 
-  isDraining(meetingId: MeetingId): boolean {
-    return this.#inFlight.has(meetingId)
+  /**
+   * **Waits for every pass in flight, bounded.** The one caller is `before-quit`.
+   *
+   * `review:confirm` fires the drain without awaiting it — deliberately, so a
+   * rep is never made to wait on a POST — and `before-quit` asked only whether a
+   * meeting was *recording*. On Windows, the primary platform, closing the
+   * window quits. So the ordinary sequence « press *Valider*, close the window,
+   * go to the next call » killed the process with the request on the wire, and
+   * the row stayed `draining`: `POST /v1/crm/tasks` has no idempotency key, so
+   * nobody — the rep included — could find out whether the task exists.
+   *
+   * Bounded, because a pass can sleep out its backoff and a rep who pressed
+   * close is owed a window that goes away. What the timeout costs is now only a
+   * delay: `Projections.interrupted()` reclaims the row on the next launch,
+   * which is the recovery that has to exist whatever this method does. The
+   * predecessor of this method was `isDraining`, which answered a question no
+   * caller asked — declared, documented, unit-tested, unreached.
+   */
+  /** Whether there is nothing to wait for, asked before a quit is deferred. */
+  settledSynchronously(): boolean {
+    return this.#inFlight.size === 0
+  }
+
+  async settle(timeoutMs = SETTLE_TIMEOUT_MS): Promise<boolean> {
+    const passes = [...this.#inFlight.values()]
+    if (passes.length === 0) return true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([Promise.allSettled(passes).then(() => true), expired])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /**
