@@ -398,19 +398,36 @@ const compteRenduOf = (store: Store, meetingId: string): string | null => {
 }
 
 /**
- * The three searchable surfaces of one call, folded from its log.
+ * The four searchable surfaces of one call, folded from its log.
+ *
+ * **`meeting` is the one a rep types first and the one that was missing.** The
+ * other three are all *contents* of a call, so « Néovia » — the client name this
+ * screen offers as a chip, one row above the box — found nothing unless somebody
+ * had said the word aloud and the transcriber had spelled it that way. A call
+ * that had not reached the gate was unreachable by name at all: no transcript,
+ * no notes, no compte-rendu, and the search replaces the day list while it is
+ * active, so the row was not on screen either. Four French strings and VISION §6
+ * all said this worked.
+ *
+ * The title and the client are joined with a newline for the reason the
+ * transcript is: an excerpt must never weld two unrelated fields into a phrase
+ * nobody wrote.
  *
  * The transcript is joined with newlines rather than spaces so an excerpt never
  * silently welds the end of one speaker's sentence to the start of another's.
  */
-const searchableRecord = (store: Store, meetingId: string) => ({
-  transcript: store.projections
-    .segments(meetingId)
-    .map((segment) => segment.text)
-    .join('\n'),
-  notes: documentToText(store.projections.document(meetingId)?.doc ?? null),
-  compteRendu: compteRenduOf(store, meetingId) ?? '',
-})
+const searchableRecord = (store: Store, meetingId: string) => {
+  const meeting = store.projections.getMeeting(meetingId)
+  return {
+    meeting: [meeting?.title ?? '', meeting?.clientName ?? ''].filter((s) => s !== '').join('\n'),
+    transcript: store.projections
+      .segments(meetingId)
+      .map((segment) => segment.text)
+      .join('\n'),
+    notes: documentToText(store.projections.document(meetingId)?.doc ?? null),
+    compteRendu: compteRenduOf(store, meetingId) ?? '',
+  }
+}
 
 /**
  * How many client names the chips offer.

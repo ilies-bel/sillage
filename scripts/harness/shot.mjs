@@ -249,6 +249,25 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **A call found by its own name**, which is what a rep types first — and
+   * which the product could not do at all: its « four searchable surfaces » were
+   * three, all of them *contents* of a call, so « Néovia » matched nothing
+   * unless somebody had said the word aloud and the transcriber had spelled it
+   * that way. The client name was offered as a filter chip one row above the box
+   * that could not find it.
+   */
+  'agenda-search-client': {
+    scenario: 'historique',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByPlaceholder(/Rechercher/).first().fill('Néovia')
+      await page.getByText('Résultats').first().waitFor()
+      // The row is found *by its name*, and the excerpt says which surface hit.
+      await page.getByText('Intitulé').first().waitFor()
+    },
+  },
+
   'agenda-search': {
     scenario: 'agenda',
     async drive(page) {

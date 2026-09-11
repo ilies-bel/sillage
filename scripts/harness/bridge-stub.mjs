@@ -1668,6 +1668,25 @@ export function installAppBridge(config) {
     */
     let rows = HISTORY_ROWS.slice().sort((a, b) => anchorOf(b.meeting) - anchorOf(a.meeting))
     if (needle) rows = rows.filter((row) => blobOf(row).indexOf(needle) !== -1)
+    /*
+      **The `Intitulé` match, composed rather than pre-baked.**
+
+      `blobOf` has always included the title and the client name, so a search for
+      « Néovia » *filtered* correctly here — while the product returned nothing
+      at all, because its four searchable surfaces were three and none of them
+      was the call's own name. The fixture would have gone on showing a row with
+      a transcript excerpt under a query that, shipped, matched nothing. That is
+      the fourth way this stub has flattered the app, so it composes the match
+      the same way `searchableRecord` does and leads with it for the same reason.
+    */
+    if (needle) {
+      rows = rows.map((row) => {
+        const name = [row.meeting.title, row.meeting.clientName].filter(Boolean).join(' — ')
+        if (fold(name).indexOf(needle) === -1) return row
+        if (row.matches.some((m) => m.where === 'meeting')) return row
+        return { ...row, matches: [{ where: 'meeting', excerpt: name }, ...row.matches] }
+      })
+    }
     if (filter.client) rows = rows.filter((row) => row.meeting.clientName === filter.client)
     const days = PERIOD_DAYS[filter.periode]
     if (days) rows = rows.filter((row) => (row.meeting.startedAt || row.meeting.createdAt) >= now - days * 24 * HOUR)

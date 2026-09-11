@@ -41,12 +41,21 @@ export const fold = (text: string): string =>
 
 /** The four surfaces of one call, as text. Built by the caller from the log. */
 export interface SearchableRecord {
+  /** The objet and the client name — what a rep types first. */
+  meeting: string
   transcript: string
   notes: string
   compteRendu: string
 }
 
-const WHERE_ORDER: readonly HistoryMatchWhere[] = ['transcript', 'notes', 'compteRendu']
+/**
+ * The order excerpts are reported in, and `meeting` leads it deliberately.
+ *
+ * A hit on the call's own name is the strongest answer to « which call was
+ * that »; a hit in four hundred lines of transcript is the weakest. The row
+ * shows one excerpt per surface, so the order is what a rep reads first.
+ */
+const WHERE_ORDER: readonly HistoryMatchWhere[] = ['meeting', 'transcript', 'notes', 'compteRendu']
 
 /**
  * One excerpt per surface that matched, in a fixed order.

@@ -23,8 +23,22 @@ import { ConfidenceSchema } from './extraction.ts'
 import { OutboxStateSchema, PushIntentKindSchema } from './push.ts'
 import { ReviewFieldSchema } from './review.ts'
 
-/** Which of the four surfaces a query hit. */
-export const HistoryMatchWhereSchema = z.enum(['transcript', 'notes', 'compteRendu'])
+/**
+ * Which of the four surfaces a query hit.
+ *
+ * **`meeting` was missing, and it is the one a rep types first.** The three
+ * below are all *contents of a call*, so a search for « Néovia » — the client
+ * name this very screen offers as a filter chip, one row above the box —
+ * returned nothing unless somebody had happened to say the word out loud and the
+ * transcriber had happened to spell it that way. Anything before the gate was
+ * unreachable by name entirely: a scheduled call has no transcript, no notes and
+ * no compte-rendu, and the search *replaces* the day list while it is active, so
+ * the row was not visible either.
+ *
+ * The comment on this line said « four surfaces » over a three-value enum, which
+ * is how long the omission had been half-noticed.
+ */
+export const HistoryMatchWhereSchema = z.enum(['meeting', 'transcript', 'notes', 'compteRendu'])
 export type HistoryMatchWhere = z.infer<typeof HistoryMatchWhereSchema>
 
 export const HistoryMatchSchema = z.object({

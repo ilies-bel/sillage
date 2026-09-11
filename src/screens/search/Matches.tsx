@@ -20,6 +20,10 @@ import type { HistoryMatch } from '../../../electron/core/contracts/history.ts'
  * met the same artefact under two names one click apart.
  */
 const WHERE_LABEL: Record<HistoryMatch['where'], string> = {
+  // The call's own objet and client. A `Record` and not a lookup with a
+  // fallback, on purpose: a surface added to the contract without a French name
+  // fails the typecheck instead of drawing its own key at a rep.
+  meeting: 'Intitulé',
   transcript: 'Transcription',
   notes: 'Mes notes',
   compteRendu: 'Compte-rendu',

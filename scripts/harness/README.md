@@ -161,6 +161,7 @@ what `serve.mjs` drops the meta for.
 | `agenda-semaine` | the same day in the **Semaine** view |
 | `agenda-liste` | the same day in the **Liste** view |
 | `agenda-client` | one client chip pressed — the filter path rather than the typed-query path |
+| `agenda-search-client` | a call found **by its own name** — the thing a rep types first and the thing the product could not do: its « four searchable surfaces » were three, all of them *contents* of a call, so the client name offered as a chip one row above the box matched nothing unless somebody had said it aloud |
 | `agenda-search` | the same screen with `TJM` typed: the day list gives way to *Résultats*, each row carrying the matched excerpt and its push summary |
 | `session` | *En réunion* — the rep's own ProseMirror notes filling the frame, the seven-slot signal rail on the right, and the two-channel level meter in the recording pill fed a speech-shaped history over `audio:level` — the rep above the baseline, the far end below, both with bars under the transcription floor — `00:22:00` on the clock |
 | `session-attente` | the same meeting **ended with no model configured** (DEC-39) — the notice that used to be a blank screen, stating that the transcript and the notes are safe and that the compte-rendu follows as soon as a model exists, beside *Choisir un modèle* |

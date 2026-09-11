@@ -568,7 +568,20 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
   const opportunityPossible = typedFields && edits.accountId !== null && taskPossible
   const opportunityChecked = opportunityPossible && checked.has(opportunityId)
   const mailAccount = input.mailAccount ?? true
-  const mailPossible = mailAccount && mailTo.length > 0
+  /*
+   * **A subject, stated as a reason and never as a schema error.**
+   *
+   * `ReviewEditsSchema` carried a `min(1)` on `mailSubject`, so a rep who
+   * cleared the field — there is no guard on it, and no reason for one — armed
+   * *Valider* normally and got a raw English Zod blob across the top of the
+   * gate, with nothing shipped at all: not the task, not the opportunity, not
+   * the draft. The requirement is real; the instrument was wrong. Enforced here
+   * it costs the rep the draft and nothing else (DEC-26), which is exactly what
+   * `taskName` three dozen lines above already does, in the same words.
+   */
+  const mailSubject = edits.mailSubject.trim()
+  const NO_MAIL_SUBJECT = 'Donnez un objet au brouillon — Outlook n’accepte pas un message sans objet.'
+  const mailPossible = mailAccount && mailTo.length > 0 && mailSubject !== ''
 
   /*
    * **Every field the gate lets a rep correct has to reach something.**
@@ -707,7 +720,9 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
           ? null
           : !mailAccount
             ? 'Aucun compte Microsoft connecté.'
-            : 'Aucun destinataire au calendrier.',
+            : mailTo.length === 0
+              ? 'Aucun destinataire au calendrier.'
+              : NO_MAIL_SUBJECT,
       },
       // A draft, never a send (HR-8). `modules/mail` posts to
       // `/me/messages`, which creates a draft in the rep's mailbox.

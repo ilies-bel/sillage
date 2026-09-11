@@ -306,3 +306,41 @@ test('the three that were dropped are in the opportunity, named', () => {
   // said, and DEC-7 forbids the app inventing a day from it.
   assert.equal(opportunity.payload.startingDate, null)
 })
+
+/*
+ * ── a cleared field is a stated reason, never a schema error ────────────────
+ *
+ * `ReviewEditsSchema` carried `min(1)` on `mailSubject`, `mailBody` and
+ * `compteRendu`. There is no guard on the objet field and no reason for one, so
+ * a rep who cleared it armed *Valider* normally — « Valider malgré 1 champ non
+ * vérifié » — and pressing it put a raw English Zod blob across the top of the
+ * gate: `[{"origin":"string","code":"too_small",…}]`. **Nothing shipped**: not
+ * the task, not the opportunity, not the draft.
+ *
+ * The requirement is real and the instrument was wrong. The argument was already
+ * written down forty lines above those fields, on `taskName`: a requirement is
+ * enforced where it can be *stated*, because `min(1)` can only throw, and this
+ * is the one screen in the product that must never lose what the rep is holding.
+ */
+test('an empty mail subject costs the draft and nothing else', () => {
+  const edits = prefillEdits(sampleExtraction, DOCUMENT)
+  const all = ['crm.task', 'crm.opportunity', 'mail.draft'].map((k) => `${MEETING}:${k}`)
+  const drafted = draftIntents({
+    meetingId: MEETING,
+    facts: sampleExtraction.facts,
+    edits: { ...edits, mailSubject: '   ' },
+    mailTo: ['client@acme.fr'],
+    checked: all,
+  })
+  const mail = drafted.find((d) => d.view.kind === 'mail.draft')
+  assert.equal(mail?.view.available, false)
+  assert.match(mail?.view.reason ?? '', /objet au brouillon/)
+
+  // And the two VerySwing pushes beside it are untouched, which is the whole
+  // point of stating it here instead of rejecting the confirmation (DEC-26).
+  assert.equal(drafted.find((d) => d.view.kind === 'crm.task')?.view.available, true)
+})
+
+test('a subject that is present is not refused for its own sake', () => {
+  assert.equal(gate(sampleExtraction).view('mail.draft').available, true)
+})

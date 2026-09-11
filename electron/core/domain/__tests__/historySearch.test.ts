@@ -23,6 +23,7 @@ import {
 } from '../historySearch.ts'
 
 const record = {
+  meeting: 'Sodexial — comité de staffing\nSodexial',
   transcript:
     'alors sur le budget, on est plutôt sur un TJM de 520 euros par jour, et il faudra que Camille valide avant la fin du mois',
   notes: 'penser au démarrage septembre',
@@ -34,6 +35,44 @@ test('an empty query matches nothing and is not a search', () => {
   assert.equal(isSearching('   '), false)
   assert.deepEqual(matchesFor(record, ''), [])
   assert.deepEqual(matchesFor(record, '   '), [])
+})
+
+test('the call’s own name is searchable, which is what a rep types first', () => {
+  /*
+   * **This surface was missing, and it is the one the screen advertises.**
+   *
+   * The other three are all *contents* of a call, so « Sodexial » — the client
+   * name Historique offers as a filter chip one row above the search box —
+   * returned nothing unless somebody had said the word aloud and the
+   * transcriber had spelled it that way. A call that had not reached the gate
+   * was unreachable by name at all: no transcript, no notes, no compte-rendu,
+   * and the search replaces the day list while it is active, so the row was not
+   * on screen either. Four French strings and VISION §6 all said this worked,
+   * and the enum's own comment said « four surfaces » over three values.
+   */
+  assert.deepEqual(
+    matchesFor(record, 'Sodexial').map((m) => m.where),
+    ['meeting'],
+  )
+  // The objet too — « comité de staffing » is how a rep remembers the call.
+  assert.deepEqual(
+    matchesFor(record, 'staffing').map((m) => m.where),
+    ['meeting'],
+  )
+})
+
+test('the call’s name leads the excerpts, because it is the strongest answer', () => {
+  // One excerpt per surface, in a fixed order: a hit on the call's own name
+  // answers « which call was that » outright, a hit in four hundred lines of
+  // transcript barely narrows it.
+  const both = matchesFor(
+    { meeting: 'Sodexial — point TJM', transcript: 'le TJM reste ouvert', notes: '', compteRendu: '' },
+    'TJM',
+  )
+  assert.deepEqual(
+    both.map((m) => m.where),
+    ['meeting', 'transcript'],
+  )
 })
 
 test('each surface is searched, and the match says which one it came from', () => {
@@ -53,7 +92,12 @@ test('each surface is searched, and the match says which one it came from', () =
 
 test('one query can match several surfaces, in a fixed order', () => {
   const both = matchesFor(
-    { transcript: 'on démarre en septembre', notes: 'septembre, à confirmer', compteRendu: '' },
+    {
+      meeting: '',
+      transcript: 'on démarre en septembre',
+      notes: 'septembre, à confirmer',
+      compteRendu: '',
+    },
     'septembre',
   )
   assert.deepEqual(
@@ -87,7 +131,7 @@ test('the excerpt is a window around the hit, not the surface it was cut from', 
 })
 
 test('a hit at the very start is not elided at the front', () => {
-  const [match] = matchesFor({ transcript: 'TJM évoqué', notes: '', compteRendu: '' }, 'TJM')
+  const [match] = matchesFor({ meeting: '', transcript: 'TJM évoqué', notes: '', compteRendu: '' }, 'TJM')
   assert.equal(match?.excerpt, 'TJM évoqué')
 })
 
