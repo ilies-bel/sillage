@@ -1881,3 +1881,31 @@ test('settings:setOfflineOnly refuses with a sentence when preferences are absen
   )
   cleanup()
 })
+
+/**
+ * **Why there is no updater, when the reason is the thing that matters.**
+ *
+ * « mise à jour automatique indisponible dans cette build » is true of a
+ * portable install and misleading about an unsigned Windows one, where the fact
+ * a rep needs is that nothing could have checked the download before running it
+ * (`core/domain/updateTrust.ts`). One string for both would have made the
+ * decision to disable auto-update on unsigned builds invisible on the screen
+ * built to explain it.
+ */
+test('update:status carries the stated reason there is no updater', async () => {
+  const { ipc, deps, cleanup } = open()
+
+  const generic = await ipc.invoke('update:status', {})
+  assert.equal(generic.phase, 'disabled')
+  assert.match(generic.reason ?? '', /indisponible dans cette build/)
+
+  deps.noUpdaterReason =
+    'mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
+    'vérifier que la mise à jour vient bien de l’éditeur. Les nouvelles versions sont à ' +
+    'installer à la main.'
+  const stated = await ipc.invoke('update:status', {})
+  assert.match(stated.reason ?? '', /n’est pas signée/)
+  // Still not installable, which is the point: there is nothing to install.
+  assert.equal(stated.installable, false)
+  cleanup()
+})

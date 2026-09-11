@@ -938,6 +938,32 @@ while developing and in a diagnostics bundle; `sourcesContent: false` drops what
 a map does not need for that, and `build.files` excludes every map outright, so
 what ships has neither. 82 MB → 26 MB locally, zero packaged.
 
+## Updates are verified before they run, or they do not run
+
+`electron-updater` downloads an installer from the release feed and **executes
+it**. On Windows it checks that installer's Authenticode signature against an
+expected publisher — if the packaging config declares one. `build.win` declares
+neither `publisherName` nor `certificateFile`, so the check was *skipped* rather
+than failed, and « Installer et redémarrer » ran whatever the feed served, on
+the primary platform, with nothing between the rep and a swapped asset but TLS
+and a GitHub account.
+
+`core/domain/updateTrust.ts` is the rule and `main.ts` applies it: on an unsigned
+Windows build the updater is not constructed at all, and the panel says why —
+a stated degradation, never a silent one (DEC-26), with the remedy named. It is
+deliberately **not** a build failure: the first deliverable is a demo installer
+(DEC-28) and reps are on Windows (HR-2), so refusing to produce an installer
+until somebody buys a certificate would stop the product shipping to defend a
+feature it does not need yet. What it stops is the unverified *install*.
+
+The signing fields are baked in by `scripts/build-electron.js` as an esbuild
+`define`, not read from `package.json` at runtime: electron-builder does not
+promise to keep the `build` block in the `package.json` it writes into the asar,
+and an updater deciding whether it can verify itself from a field that may have
+been stripped would fail **open**. The define key is dotted
+(`globalThis.__SILLAGE_WIN_BUILD__`) because a bare one substitutes nothing and
+does it silently. Setting `publisherName` and signing is all it takes to lift.
+
 ## Platforms — Windows is the primary one (HR-2)
 
 The reps this ships to are on Windows laptops. macOS is where it is *written*, which is the

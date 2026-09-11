@@ -237,6 +237,8 @@ export interface IpcDeps {
    * thing for it to say.
    */
   updates?: UpdatePort | null
+  /** Why there is no updater, when it is more specific than « not in this build ». */
+  noUpdaterReason?: string | null
   /** `app.getVersion()`, so the update panel can name the running build even
    *  when there is no updater to ask. */
   appVersion?: string
@@ -286,8 +288,14 @@ export const updateStatus = (
   updates: UpdatePort | null | undefined,
   states: readonly MeetingState[],
   appVersion: string,
+  /**
+   * Why there is no updater, when the caller knows something better than « not
+   * in this build » — today that is an unsigned Windows build, where the reason
+   * is the whole of what the rep needs (`core/domain/updateTrust.ts`).
+   */
+  absentReason: string | null = null,
 ): UpdateStatus => {
-  const state = updates?.state() ?? updatesUnavailable(appVersion, NO_UPDATER)
+  const state = updates?.state() ?? updatesUnavailable(appVersion, absentReason ?? NO_UPDATER)
   const readiness = updateReadiness(states)
   return {
     ...state,
@@ -299,7 +307,12 @@ export const updateStatus = (
 
 /** The `IpcDeps` form, for the handlers. */
 const statusOf = (deps: IpcDeps): UpdateStatus =>
-  updateStatus(deps.updates, deps.orchestrator.liveStates(), deps.appVersion ?? '0.0.0')
+  updateStatus(
+    deps.updates,
+    deps.orchestrator.liveStates(),
+    deps.appVersion ?? '0.0.0',
+    deps.noUpdaterReason ?? null,
+  )
 
 const SIGNED_OUT: AuthState = { status: 'signedOut' }
 

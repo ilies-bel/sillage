@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
 import { allowedByResidency } from '../core/domain/residency.ts'
+import { updateTrust, type BuildTrust } from '../core/domain/updateTrust.ts'
 import { Overlay, type OverlayWindowOptions } from './windows/Overlay.ts'
 import { Store } from '../modules/store/index.ts'
 import { DB_FILENAME } from '../modules/store/schema.ts'
@@ -135,6 +136,19 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
  * releases page, which is the honest answer for that build.
  */
 const isPortableBuild = (): boolean => Boolean(process.env.PORTABLE_EXECUTABLE_DIR)
+
+/**
+ * `build.win`'s signing fields, baked in by `scripts/build-electron.js`.
+ *
+ * A `define`, not a runtime read: electron-builder does not promise to keep the
+ * `build` block in the `package.json` it writes into the asar, and an updater
+ * that decided whether it could verify itself from a field that may have been
+ * stripped would fail **open**. `globalThis` rather than a bare identifier so
+ * `node --test` — which does no bundling and therefore no substitution — sees
+ * `undefined` instead of a ReferenceError.
+ */
+const WIN_BUILD: BuildTrust | null =
+  (globalThis as { __SILLAGE_WIN_BUILD__?: BuildTrust }).__SILLAGE_WIN_BUILD__ ?? null
 
 /**
  * A worker whose only job is to pull one checkpoint from Hugging Face (DEC-35b).
@@ -1119,8 +1133,21 @@ const boot = async (): Promise<void> => {
    * Constructed here, before the orchestrator, because the broadcast below
    * closes over both.
    */
+  /*
+   * **And not on a build whose updates could not be checked** — which is every
+   * Windows build today (`core/domain/updateTrust.ts`).
+   *
+   * `electron-updater` runs the installer it downloaded, and verifies its
+   * signature against an expected publisher only if the packaging config
+   * declares one. `build.win` declares neither `publisherName` nor a
+   * certificate, so the check is *skipped* rather than failed, and « Installer
+   * et redémarrer » executed whatever the feed served. The updater is simply
+   * not built in that case, and the panel says why — the same shape as a
+   * portable build, which has nowhere to install to.
+   */
+  const trust = updateTrust(process.platform, WIN_BUILD)
   const updates: UpdatePort | null =
-    app.isPackaged && !isPortableBuild()
+    app.isPackaged && !isPortableBuild() && trust.ok
       ? new AutoUpdate({ currentVersion: app.getVersion(), diagnostics })
       : null
 
@@ -1135,7 +1162,10 @@ const boot = async (): Promise<void> => {
    * it go away.
    */
   const publishUpdateStatus = (): void => {
-    broadcast('update:changed', updateStatus(updates, orchestrator.liveStates(), app.getVersion()))
+    broadcast(
+      'update:changed',
+      updateStatus(updates, orchestrator.liveStates(), app.getVersion(), trust.reason),
+    )
   }
   updates?.onChanged(publishUpdateStatus)
 
@@ -2148,6 +2178,10 @@ const boot = async (): Promise<void> => {
     // value captured here would freeze the state at registration time.
     bootState: () => bootState,
     updates,
+    // Why there is no updater, when there is none — « indisponible dans cette
+    // build » is true of a portable install and misleading about an unsigned
+    // one, where the reason is the thing the rep needs to know.
+    noUpdaterReason: trust.reason,
     appVersion: app.getVersion(),
     // The two window gestures the widget has, and nothing else: it cannot
     // create a window, cannot close one, and cannot move itself anywhere it

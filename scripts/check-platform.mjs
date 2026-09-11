@@ -61,6 +61,15 @@ const ALLOWED = new Map([
       'permission to refuse, so the branch never runs there.',
   ],
   [
+    'electron/core/domain/updateTrust.ts',
+    'whether a downloaded update can be verified before it runs *is* a question about ' +
+      'the platform’s own verification mechanism, so there is nothing to probe: on ' +
+      'Windows `electron-updater` checks an Authenticode signature against a publisher ' +
+      'the packaging config declares, and on macOS the OS verifies the app bundle ' +
+      'itself. The platform is a **parameter** here rather than `process.platform`, so ' +
+      'both branches are unit-tested on either host, and the one caller passes it in.',
+  ],
+  [
     'electron/modules/capture/MeetingApps.ts',
     'process enumeration has no portable form: `tasklist` on Windows, `ps` elsewhere. ' +
       'The platform is injectable so the parsing of both is unit-tested on either host.',
