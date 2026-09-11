@@ -44,6 +44,7 @@ import {
   Chip,
   CopyButton,
   List,
+  PageTurn,
   SectionHeader,
   Segmented,
   unavailable,
@@ -165,6 +166,12 @@ const PLACEHOLDER: Partial<Record<ReviewField['key'], string>> = {
 
 export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const loaded = useInvoke('review:get', { meetingId })
+  /*
+   * Derived here rather than beside its first use, because the arming guard is
+   * built above the form and keys on what this last brought in — see `sent`.
+   */
+  const panel: ReviewPanel | null =
+    loaded.state.status === 'ready' && loaded.state.value.open ? loaded.state.value.panel : null
   const [edits, setEdits] = useState<ReviewEdits | null>(null)
   const [checked, setChecked] = useState<string[] | null>(null)
   /*
@@ -175,6 +182,32 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * would be a page turn a rep is asked for and cannot explain.
    */
   const payload = useMemo(() => [...(checked ?? [])].sort().join(','), [checked])
+
+  /*
+   * **What the main process last sent, as one string.**
+   *
+   * The coverage key was `mode` and the checked set, and neither describes what
+   * is *in* the column. The panel is re-read on `session:changed` — deliberately;
+   * the gate follows the machine — so a reload that brought different fields or
+   * different intents would have landed under a latch still saying the column
+   * had been shown. Forced through a harness intercept: the rail went from 1023
+   * to 1405 pixels, 349 below the fold, with *Valider* armed.
+   *
+   * Taken from the **panel**, never from `edits` or from the DOM. The rep's own
+   * typing changes what the column contains and must not disarm anything — that
+   * is the latch's whole reason — and only text they did not write is new to
+   * them. `panel.edits.compteRendu` is the server's original, which is why it is
+   * read here rather than the live copy the rep edits in « Modifier ».
+   */
+  const sent = useMemo(() => {
+    if (!panel) return ''
+    const fields = panel.fields.map((f) => `${f.key}:${f.confidence}:${f.span ? 1 : 0}`).join('|')
+    const intents = panel.intents.map((i) => `${i.id}:${i.available}:${i.reason ?? ''}`).join('|')
+    const filled = Object.values(panel.edits)
+      .map((v) => (typeof v === 'string' ? v.length : 0))
+      .join(',')
+    return `${fields}#${intents}#${filled}`
+  }, [panel])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   /*
@@ -325,7 +358,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * *finished*, and the range has to be dropped the moment a different one
    * arrives, covered or not.
    */
-  const shownAs = useRef<Record<Column, string | null>>({ document: null, rail: null })
+  const shownAs = useRef<Record<Column, { view: string; height: number } | null>>({
+    document: null,
+    rail: null,
+  })
 
   /**
    * **What a column is showing, as a key.** The coverage set above is keyed by
@@ -350,11 +386,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const viewOf = useCallback(
     (column: Column) =>
       column === 'rail'
-        ? `rail:${payload}`
+        ? `rail:${payload}:${sent}`
         : mode === 'transcription'
           ? 'transcription'
-          : 'compte-rendu',
-    [mode, payload],
+          : `compte-rendu:${sent}`,
+    [mode, payload, sent],
   )
 
   const measure = useCallback(() => {
@@ -409,10 +445,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       if (!el || el.clientHeight === 0) return true
 
       const view = viewOf(column)
-      if (shownAs.current[column] !== view) {
-        // A different view is in the column. The range belongs to the old one.
-        shownAs.current[column] = view
+      const mark = shownAs.current[column]
+      if (!mark || mark.view !== view || el.clientHeight < mark.height - SHRINK_SLACK) {
+        /*
+         * A different view is in the column, or the box shrank under the one
+         * that is: either way the range belongs to a layout that is gone. A box
+         * that *grew* keeps its range and moves its mark — growth reflows less
+         * below the fold, never more.
+         */
+        shownAs.current[column] = { view, height: el.clientHeight }
         seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
+      } else if (el.clientHeight > mark.height) {
+        mark.height = el.clientHeight
       }
 
       const at = covered.current[column].get(view)
@@ -433,16 +477,30 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
          * read, so growth is never invalidating.
          */
         if (el.clientHeight >= at - SHRINK_SLACK) return true
-        // The window shrank under a view that had been read. There is more of it
-        // below the fold now than there was, and that part is unread.
-        covered.current[column].delete(view)
-        seen.current[column] = { from: el.scrollTop, to: el.scrollTop + el.clientHeight }
+        /*
+         * The window shrank under a view that had been read: the text reflowed,
+         * there is more below the fold than there was, and that part is unread.
+         *
+         * **The record is kept, not deleted.** Deleting it threw away the height
+         * the view was covered at, so a window put *back* could not be
+         * recognised — read both columns at 1280×800, shrink to 1280×500, then
+         * restore the geometry that was read, and the guard charged five page
+         * turns for six pixels. It was asymmetric, which is what made it a bug
+         * rather than a policy: growing to 1400 and back was already free.
+         * Undocking a laptop does this, and so does a Windows DPI change.
+         */
       }
 
       const range = seen.current[column]
       if (!range) return true
       const done = range.from <= 8 && range.to >= el.scrollHeight - 8
-      if (done) covered.current[column].set(view, el.clientHeight)
+      /*
+       * The **narrowest** box it has ever been covered at. Covering at a smaller
+       * height is the stronger statement — the same content, more scrolling — so
+       * a rep who read the column in a cramped window has read it in every
+       * roomier one, and `Math.min` is what carries that forward.
+       */
+      if (done) covered.current[column].set(view, Math.min(at ?? Infinity, el.clientHeight))
       return done
     }
     const readToEnd = {
@@ -537,9 +595,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     },
     [healthState],
   )
-
-  const panel: ReviewPanel | null =
-    loaded.state.status === 'ready' && loaded.state.value.open ? loaded.state.value.panel : null
 
   /*
    * Attached once the columns exist, and not again on every render.
@@ -1424,70 +1479,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   )
 }
 
-/**
- * **The page turn, at the foot of the column it turns.**
- *
- * It used to live in the pinned decision slot and swap to *Valider* the instant
- * the last screenful landed — the same DOM node, the same rectangle, sixty-three
- * milliseconds apart. A double-click on the fourth turn shipped to the CRM
- * without the rep ever seeing the word; five Enters on the retained focus did
- * the same; and the first frame of every gate painted the ship's fill under the
- * turn's label, because the shared `transition` animated one into the other.
- * `POST /v1/crm/tasks` has no idempotency key, so none of the three has an undo.
- *
- * Here it is in the flow instead, after the last thing to read, which is where a
- * rep who has just finished a screenful is already looking. It is not the
- * decision's slot, it is not the decision's shape, and the two never occupy one
- * rectangle — which is the property that makes the gesture a decision rather
- * than a repetition.
- *
- * **One screenful, not the whole column.** The scroll used to jump to
- * `scrollHeight`, so the guard could be satisfied by two presses of a button the
- * rep never took their eyes off — a EULA checkbox with better copy. Arming is
- * measured from the scroll either way (`atEnd` fires from this, never from the
- * click), but a measurement of a single teleport measures *revealing*. `- 64`
- * overlaps two lines across the turn so nothing falls into the seam.
- */
-function PageTurn({
-  what,
-  onTurn,
-  ground,
-}: {
-  what: string
-  onTurn: () => void
-  /** The colour the column is painted, for the gradient the button sits on. */
-  ground?: string
-}) {
-  return (
-    /*
-      **Sticky, because a control at the end of the content is a control nobody
-      reaches.**
-
-      The first version sat after the last paragraph. Measured on the document
-      column at 1280×800 — 2508px of content in a 747px box — it was fully
-      visible for sixteen pixels of a 1761-pixel scroll: **nine-tenths of one per
-      cent**, and inside that window the scroll it performs is a no-op because
-      the column is already at its end. Wheel-scrolled from the top in 200px
-      steps it never entered the viewport once. The harness only ever clicked it
-      because Playwright scrolls a target into view first, and the keyboard only
-      because focus does — which is precisely the « a teleport measures
-      *revealing* » failure this control exists to prevent.
-
-      Pinned to the bottom of its own scroller instead: reachable at every scroll
-      position, in the column whose text it turns, and never in the decision's
-      rectangle. `pointer-events-none` on the row and `auto` on the button so the
-      band it floats over stays scrollable and selectable.
-    */
-    <div
-      className="turn-ground pointer-events-none sticky bottom-0 z-10 flex justify-center pb-2 pt-8"
-      {...(ground ? { style: { ['--turn-ground' as string]: ground } } : {})}
-    >
-      <Button variant="bordered" className="pointer-events-auto shadow-sm" onClick={onTurn}>
-        {what}
-      </Button>
-    </div>
-  )
-}
 
 interface FieldRowProps {
   field: ReviewField
@@ -1624,11 +1615,30 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
         <textarea
           id={`field-${field.key}`}
           value={value}
-          rows={Math.min(6, Math.max(2, value.split('\n').length))}
+          /*
+            **The same defect as the mail body, on eleven rows instead of one,
+            and this time under the caption that makes the claim.**
+            `rows` counts *newlines*; a rep reads *wrapped* lines. And the
+            `min(6, …)` cap made it worse than the draft's: a nine-line
+            « Prochaines étapes » drew six rows and put three lines behind a
+            scrollbar **at every width**, 1280×800 included. At 960×600 — which
+            is not hypothetical, it is the `minWidth`/`minHeight` `main.ts`
+            enforces — three fields hid text at once, « Point de calage la
+            semaine suivante » among them, a commitment that goes into the
+            VerySwing task.
+            The arming guard cannot see any of it. It measures the two columns
+            and these are eleven scrollers *inside* one of them, so the button
+            armed over text never drawn, under « Tout ce qui part doit avoir été
+            affiché avant d'être validé ». `field-sizing: content` is the
+            engine's own measurement of wrapped height and there is no ceiling:
+            a field with more to say makes the column longer, which the guard
+            *does* measure and does charge a page turn for.
+          */
+          rows={Math.max(2, value.split('\n').length)}
           onChange={(event) => onChange(event.target.value)}
           readOnly={inert !== null}
           className={cn(
-            'text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui',
+            'text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui [field-sizing:content]',
             inert === null ? 'bg-inner' : 'bg-subtle',
           )}
         />
@@ -1851,8 +1861,18 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
           ellipsis and nowhere else on the screen to read the rest. Two lines,
           then an ellipsis: a summary that runs to a paragraph is still bounded,
           but the bound is no longer four words in.
+
+          **And `block` beside it made the clamp do nothing.** Tailwind's
+          `line-clamp-2` is `display: -webkit-box` plus `-webkit-line-clamp: 2`,
+          and the `block` utility overwrote the display it needs — so the
+          declaration resolved, the class name was right, and the element drew
+          **nine lines**. The pinned footer has no ceiling of its own, so it grew
+          from 313 to 432px of an 800px window on a long « besoin » and crushed
+          the eleven-field rail from 434px to 315. Third of the family CLAUDE.md
+          already names — `bg-muted/30`, `ring-card` — and the shape is always
+          the same: a class that is spelled correctly and silently inert.
         */}
-        <span className="text-muted line-clamp-2 block text-meta">
+        <span className="text-muted line-clamp-2 text-meta">
           {intent.available ? intent.summary : intent.reason}
         </span>
         {intent.available && trouble ? (

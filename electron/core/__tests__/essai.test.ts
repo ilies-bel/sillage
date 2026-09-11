@@ -17,9 +17,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   ESSAI_SECONDS,
+  essaiHealth,
   essaiLines,
   essaiSummary,
   essaiWorthRepeating,
+  EssaiRecordSchema,
   EssaiResultSchema,
   type EssaiResult,
 } from '../contracts/essai.ts'
@@ -76,4 +78,59 @@ test('each channel gets its own sentence, in the rep’s vocabulary', () => {
   assert.match(lines[0]?.sentence ?? '', /Entendue/)
   // And the failing one says what to check, not that something is wrong.
   assert.match(lines[1]?.sentence ?? '', /autorisation d’enregistrement de l’écran/)
+})
+
+/*
+ * ── the verdict, kept ───────────────────────────────────────────────────────
+ *
+ * `runEssai` returned this and wrote nothing, so a rep who ran the trial, read
+ * « Vous seriez capté, le client non » and closed the card got a header saying
+ * « Tout fonctionne » and a *Requis* row saying « Audio · connecté ». The one
+ * failure the trial exists to catch survived a rep who ran it and understood it.
+ */
+test('a trial that heard both sides implies nothing — there is nothing to say', () => {
+  assert.equal(essaiHealth({ ...result(true, true), at: 1_760_000_000_000 }), null)
+  // And no trial at all is not a claim about the machine.
+  assert.equal(essaiHealth(null), null)
+})
+
+test('a silent far channel degrades the capture row, with the trial’s own sentence', () => {
+  const record = {
+    rep: { heard: true, peak: 0.42 },
+    far: { heard: false, peak: 0.001 },
+    floor: 0.02,
+    seconds: 20,
+    at: 1_760_000_000_000,
+  }
+  const health = essaiHealth(record)
+  assert.ok(health)
+  // `degraded`, never `down`: the device opens and the meeting records. What is
+  // in doubt is whether one side of it will be in the recording (DEC-32).
+  assert.equal(health.state, 'degraded')
+  assert.match(health.reason, /le client non/)
+  assert.match(health.reason, /Relancez l’essai/)
+  // Nothing to retry from a row — the fix is on the machine, then the trial.
+  assert.equal(health.retryable, false)
+  // Dated by the measurement, not by boot: « depuis » has to mean when it was
+  // established, or the row is a state the app has merely been holding.
+  assert.equal(health.since, record.at)
+})
+
+test('a silent rep channel degrades it too, and says which side', () => {
+  const health = essaiHealth({
+    rep: { heard: false, peak: 0.001 },
+    far: { heard: true, peak: 0.5 },
+    floor: 0.02,
+    seconds: 20,
+    at: 1_760_000_000_000,
+  })
+  assert.ok(health)
+  assert.match(health.reason, /Le client serait capté, vous non/)
+})
+
+test('a record that cannot be parsed is not a health claim', () => {
+  // The store can hold a row written by an older build. A malformed one must not
+  // be able to put a sentence on the connector board.
+  assert.equal(EssaiRecordSchema.safeParse(result(true, true)).success, false, 'at est requis')
+  assert.equal(EssaiRecordSchema.safeParse({ ...result(true, true), at: 1 }).success, true)
 })

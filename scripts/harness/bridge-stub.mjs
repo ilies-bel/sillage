@@ -1644,6 +1644,14 @@ export function installAppBridge(config) {
         }
       : { events: [], syncedAt: 0, armed: null, reason: 'Aucun calendrier connecté' }
 
+  /** The health table this scenario reads — see `healthSnapshot` below. */
+  const healthBase = () =>
+    scenario === 'onboarding'
+      ? HEALTH.premierLancement
+      : scenario === 'reglages' || scenario === 'historique'
+        ? HEALTH.mixed
+        : (HEALTH[scenario] ?? HEALTH.agenda)
+
   const healthSnapshot = () => {
     /*
       A fresh install is not a healthy one, and the onboarding fixture used to
@@ -1653,12 +1661,7 @@ export function installAppBridge(config) {
       analysis provider chosen yet, and those are the three rows worth
       photographing.
     */
-    const base =
-      scenario === 'onboarding'
-        ? HEALTH.premierLancement
-        : scenario === 'reglages' || scenario === 'historique'
-          ? HEALTH.mixed
-          : HEALTH.agenda
+    const base = healthBase()
     return entra ? base : { ...base, ...NO_ENTRA_HEALTH }
   }
 
@@ -1797,12 +1800,32 @@ export function installAppBridge(config) {
           floor: 0.008,
         })
       })
-      return {
+      /*
+        And the verdict is **kept**, the way `main.ts` keeps it: the trial
+        outranks the boot probe, so the connector row stops saying « Audio ·
+        connecté » the moment twenty seconds of listening says otherwise. A
+        fixture that answered and then forgot would photograph the defect this
+        was written to fix and call it a pass.
+      */
+      const result = {
         rep: { heard: true, peak: 0.42 },
         far: { heard: false, peak: 0.003 },
         floor: 0.008,
         seconds: 20,
       }
+      // `healthSnapshot` picks the table from the scenario; the trial's verdict
+      // has to land on whichever one it picked, not on a key named after it.
+      const captureHealth = {
+        state: 'degraded',
+        reason:
+          'Vous seriez capté, le client non — c’est la moitié qui compte le plus. Relancez l’essai de 20 secondes après correction.',
+        since: Date.now(),
+        retryable: false,
+      }
+      healthBase().capture = captureHealth
+      // One connector per broadcast, which is the shape every listener reads.
+      harness.emit('health:changed', { connector: 'capture', health: captureHealth })
+      return result
     },
 
     'diagnostics:recent': () => DIAGNOSTICS,

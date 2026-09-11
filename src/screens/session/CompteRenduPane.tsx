@@ -34,7 +34,7 @@
  * indistinguishable from a preview. This one is a preview, so it is typed as
  * prose and takes no cursor.
  */
-import { SectionHeader } from '../../ui/index.ts'
+import { ReadingColumn, SectionHeader } from '../../ui/index.ts'
 import { AskPanel } from './AskPanel.tsx'
 import { CompteRenduDocument, CompteRenduMarkersNote } from './CompteRenduDocument.tsx'
 
@@ -60,9 +60,15 @@ export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps
         rep's own typeset notes it read as a log dump of something the machine
         had produced rather than as the document the product exists to write.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/*
+        `ReadingColumn`, and not a bare `overflow-y-auto`, because this pane was
+        hiding 73% of the document at 1280×800 with nothing on screen saying so —
+        see the component. The fade and the page turn are the gate's own two
+        instruments, on the surface where the rep meets the compte-rendu first.
+      */}
+      <ReadingColumn what="du compte-rendu">
         <CompteRenduDocument text={compteRendu} />
-      </div>
+      </ReadingColumn>
 
       {/*
         The way out, stated once. The rep reading this pane is one step from the

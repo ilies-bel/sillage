@@ -147,6 +147,22 @@ what `serve.mjs` drops the meta for.
 | `session-sans-entra` | a call recorded with no Microsoft account of any kind |
 | `review-sans-entra` | the gate with the Outlook intent greyed and the two VerySwing ones live |
 | `reglages-sans-entra` | *Facultatifs* with the Microsoft row inert and stating why |
+| `splash-telechargement` | the `downloading` variant `core/contracts/boot.ts` declares for a boot-time fetch that **does not exist yet** — the weights ship inside the installer. Its own scenario so it can be looked at without the ordinary splash quietly staging a download a rep never sees |
+| `onboarding` | first run, step 1 — what the app is, before anything has been asked for |
+| `onboarding-besoins` | step 2, the one worth photographing: the **real** health rows and the **real** `health:retry` behind them, because a hand-written checklist would be a second place where « is capture working » is decided |
+| `onboarding-essai` | step 3 — the twenty-second dry run offered, not yet run (DEC-45) |
+| `onboarding-essai-fait` | the dry run **after it answered**, with the case that matters: the rep was heard and the machine was not. That is the failure a rep cannot find on their own, because their own voice is in the transcript and the recording looks like it worked |
+| `reglages-essai` | the same dry run where a rep in trouble actually looks for it — under the *Requis* rows, one of which says « Audio · connecté », which is a device that opened and not a sound that arrived (DEC-45) |
+| `reglages-raccourcis` | the keyboard, printed from `app/shortcuts.ts`. Its own pane, and its own stage, because a printed table that drifts from the matcher is exactly what nobody looks at again |
+| `agenda-empty-presentation` | the empty day's second way out: a rep who installs on Tuesday with no calls until Thursday replays first run, rather than being shown a fabricated demo |
+| `session-libre` | the same call on the free recipe (DEC-43) — a scenario, not a click, because what is worth photographing is the **rail** with no slate declared, saying so instead of drawing empty rows |
+| `session-demander` | *Demander* during… no: on the session's compte-rendu, with the question **typed** rather than chip-clicked, because the suggestion chips are the first thing 960px drops |
+| `historique-demander` | *Demander* on the reader — the screen it was written for, and the one where its citations lead somewhere, the record's own transcription being in the same box (DEC-25) |
+| `review-valider` | the same gate once **both** columns have been read to the end, which is the only way *Valider* is drawn at all |
+| `review-garde` | **not a photograph — twelve assertions.** Eight attacks the arming guard must refuse (the opening jump, an instant `scrollTo` to both bottoms, a fast flick, a resize mid-read, the Transcription tab, a window that shrinks, a payload changed after arming) and four returns it must leave **free** (re-ticking an intent, « Modifier », and back to « Lecture »). Both halves fail without the other's fix, in opposite directions |
+| `review-valide` | the one irreversible press, driven: read both columns, correct a field, press *Valider*, and assert the payload actually left with the correction in it |
+| `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
+| `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 
 ## `--sans-entra` — the configuration the first demo ships in
 

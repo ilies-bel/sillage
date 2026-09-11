@@ -773,6 +773,20 @@ const SCREENS = {
       await arms('« Modifier » montre le compte-rendu déjà lu, dans un textarea')
       await page.getByRole('button', { name: 'Lecture', exact: true }).click()
       await arms('le retour à « Lecture » pour relire la correction')
+
+      /*
+       * And the window that comes back. Shrinking correctly disarms — the text
+       * reflows and there is more below the fold than there was — but restoring
+       * the geometry that *was* read has to restore the button with it. It did
+       * not: the record was deleted rather than kept, so five page turns were
+       * charged for six pixels, and the asymmetry gave it away — growing to 1400
+       * and back was already free. A rep undocking a laptop does this.
+       */
+      await page.setViewportSize({ width: 1280, height: 500 })
+      await page.waitForTimeout(500)
+      await refuses('avoir rétréci la fenêtre sous une colonne déjà lue')
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await arms('avoir rendu à la fenêtre la taille où la lecture avait été faite')
     },
   },
 
@@ -923,7 +937,19 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Réglages' }).click()
       await page.getByRole('heading', { name: 'Requis' }).waitFor()
       await page.getByRole('button', { name: /^Essai de/ }).click()
-      await page.getByText(/c’est la moitié qui compte le plus/).waitFor()
+      await page.getByText(/c’est la moitié qui compte le plus/).first().waitFor()
+      /*
+       * **And the row above it stops saying « connecté ».**
+       *
+       * The trial's verdict used to be returned and thrown away: a rep read
+       * « Vous seriez capté, le client non », closed the card, and the *Requis*
+       * row still said « Audio · connecté » with the header still saying « Tout
+       * fonctionne ». Twenty seconds of listening is the strongest fact this
+       * product has about capture and it outranks the boot probe, which only
+       * establishes that a device can be opened.
+       */
+      const audio = page.getByRole('listitem').filter({ hasText: 'Audio' }).first()
+      await audio.getByText('à vérifier').waitFor()
     },
   },
 
@@ -1059,6 +1085,7 @@ function parseArgs(argv) {
     else if (arg === '--prose') flags.prose = true
     else if (arg === '--a11y') flags.a11y = true
     else if (arg === '--contrast') flags.contrast = true
+    else if (arg === '--scrollers') flags.scrollers = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -1174,6 +1201,20 @@ async function main() {
     dim = await contrast(page)
   }
 
+  /*
+   * Before `--expand`, and this is the whole reason it took thirteen rounds.
+   * The expansion injects `textarea { field-sizing: content !important }` so a
+   * `fullPage` shot shows a draft rather than scrolling past it — which means
+   * every screenshot ever taken of this gate showed the fields at their full
+   * height while the shipped product clipped them. The harness was hiding the
+   * defect it exists to find.
+   */
+  let inner = []
+  if (flags.scrollers) {
+    await page.evaluate(() => document.fonts.ready)
+    inner = await scrollers(page)
+  }
+
   let unnamed = []
   if (flags.a11y) {
     await page.evaluate(() => document.fonts.ready)
@@ -1223,6 +1264,15 @@ async function main() {
   const size = `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
+  if (flags.scrollers) {
+    if (inner.length === 0) console.log('  ascenseurs: rien de caché dans une boîte interne')
+    else {
+      console.log(`  ✗ ascenseurs: ${inner.length} boîte(s) cachent du contenu`)
+      for (const item of inner.slice(0, 8)) {
+        console.log(`     ${item.what} — ${item.hidden}px cachés en ${item.axis} (boîte ${item.box}px)`)
+      }
+    }
+  }
   if (flags.contrast) {
     if (dim.length === 0) console.log('  contraste: tout le texte passe AA')
     else {
@@ -1546,6 +1596,63 @@ async function prose(page) {
       out.push({ what, chars, box: Math.round(box), size: style.fontSize })
     }
     return out
+  })
+}
+
+/**
+ * **Is anything hidden inside a scroller the arming guard cannot see?**
+ *
+ * The gate's guard measures two columns and withholds *Valider* until both have
+ * been shown end to end, under a caption that says so out loud: « Tout ce qui
+ * part doit avoir été affiché avant d'être validé ». It measures those two boxes
+ * and nothing else — so **a scroller nested inside one of them is a hole in the
+ * claim**, and one that no screenshot shows, because a clipped textarea looks
+ * exactly like a short one.
+ *
+ * There were eleven. `FieldRow`'s textarea sized itself from `value.split('\n')`
+ * — a count of *newlines*, where a rep reads *wrapped* lines — under a
+ * `Math.min(6, …)` ceiling. A nine-line « Prochaines étapes » drew six rows and
+ * hid three lines at 1280×800, armed; at 960×600, which is the `minWidth` /
+ * `minHeight` `app/main.ts` enforces, three fields hid text at once. The same
+ * defect had already been found and fixed on the follow-up draft's body, in the
+ * same file, with the fix written in a comment beside it.
+ *
+ * So it is measured instead of remembered. Every element under a scroll
+ * container is checked for content taller or wider than its own box; the
+ * containers themselves are exempt (they are the thing the guard measures) and
+ * so is anything that opts out by declaring the overflow deliberately.
+ */
+async function scrollers(page) {
+  return page.evaluate(() => {
+    const SLACK = 2
+    const columns = [...document.querySelectorAll('.fade-below, [data-scroller]')]
+    const out = []
+    for (const el of document.querySelectorAll('main *, aside *, dialog *')) {
+      if (columns.includes(el)) continue
+      const hiddenY = el.scrollHeight - el.clientHeight
+      const hiddenX = el.scrollWidth - el.clientWidth
+      if (hiddenY <= SLACK && hiddenX <= SLACK) continue
+      if (el.clientHeight === 0) continue
+      const style = getComputedStyle(el)
+      // `visible` cannot scroll: the content overflows the box and is drawn
+      // anyway, which is a layout question and not a hidden one.
+      const scrolls = (axis) => axis === 'auto' || axis === 'scroll' || axis === 'hidden'
+      if (!scrolls(style.overflowY) && !scrolls(style.overflowX)) continue
+      // Declared on purpose — a wide table or a code block is allowed to scroll
+      // sideways inside its own box, and says so.
+      if (el.dataset.scrolls !== undefined) continue
+      const label =
+        el.id ||
+        el.getAttribute('aria-label') ||
+        `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}`
+      out.push({
+        what: label,
+        hidden: Math.max(hiddenY, hiddenX),
+        axis: hiddenY > SLACK ? 'y' : 'x',
+        box: Math.round(el.clientHeight),
+      })
+    }
+    return out.sort((a, b) => b.hidden - a.hidden)
   })
 }
 

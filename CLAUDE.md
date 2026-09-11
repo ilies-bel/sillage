@@ -161,6 +161,39 @@ machine) or in `core/domain/` — never in an IPC handler.
   eight attacks that must be refused and four returns that must be free, all driven
   against real layout — jsdom measures every box as zero, so the renderer's tests
   can only assert that an unmeasurable column fails **open**.
+- **Nothing hides inside the columns the guard measures.** The gate's guard
+  measures two boxes and withholds *Valider* until both have been shown, under a
+  caption that says so; a scroller *nested* in one of them is a hole in that
+  claim, and one no screenshot shows, because a clipped textarea looks exactly
+  like a short one. There were eleven: `FieldRow` sized its box from
+  `value.split('\n')` — a count of newlines, where a rep reads *wrapped* lines —
+  under a `Math.min(6, …)` ceiling, so a nine-line « Prochaines étapes » hid three
+  lines at 1280×800 and three fields hid text at once at 960×600, which is the
+  `minWidth`/`minHeight` `main.ts` enforces. The same defect had been found and
+  fixed on the follow-up draft's body, in the same file, with the reasoning in a
+  comment beside it. `field-sizing: content` is the fix and `shot.mjs
+  --scrollers` is the check. It runs on every stage at both sizes — **and note
+  what hid it for thirteen rounds: `--expand` injects `field-sizing: content`
+  into every textarea so a `fullPage` shot shows a draft rather than scrolling
+  past one, so every screenshot ever taken showed the fields unclipped.**
+- **A reading column says how much of itself is left** (`ui/ReadingColumn.tsx`).
+  The mask and the page turn were built at the gate, where they are a safety
+  property, and the pane where the rep *meets* the compte-rendu had neither: it
+  hid 73% of the document at 1280×800 and 83% at 960×600, with a hard rule under
+  the last visible line, so « …a voté ce matin en comité » followed by a border
+  read as the end of a four-paragraph document. The rule had been added to fix
+  that symptom. Same document, one click apart, opposite treatment. A new pane
+  that scrolls prose uses the component; the gate keeps its own `measure`
+  because its guard is a union of bands, not an edge.
+- **The dry run's verdict is kept, and outranks the boot probe** (DEC-45).
+  Twenty seconds of listening is the strongest fact this product has about
+  capture — the probe says a device *opens*, the trial says sound *arrived* — and
+  it used to be returned and thrown away, so a rep who read « Vous seriez capté,
+  le client non » and closed the card got « Tout fonctionne » and « Audio ·
+  connecté ». `ESSAI_LAST_KEY` stores it, `essaiHealth` folds it into the capture
+  row as `degraded` (never `down`: the meeting still records — DEC-32) dated by
+  the measurement. Nothing expires it; a later trial replaces it, which is what
+  the *Réglages* entry point is for.
 - **The gate opens on the doubt, and never draws an inert primary** (DEC-4, DEC-21). The rail
   scrolls to the first `⚠ faible` field on open — the screen was flagging a field in the header
   and hiding it six rows below the fold. *Valider* is withheld until the rail has been on

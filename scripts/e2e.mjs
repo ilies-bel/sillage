@@ -35,12 +35,19 @@
  *
  *     npm run build && npm run build:electron && node scripts/e2e.mjs
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { Store } from '../electron/modules/store/index.ts'
+import { DB_FILENAME } from '../electron/modules/store/schema.ts'
+import {
+  sampleExtraction,
+  sampleSegment,
+  sampleVerification,
+} from '../electron/core/contracts/fixtures.ts'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(path.join(REPO, 'package.json'))
@@ -64,6 +71,28 @@ const step = async (name, body) => {
 let app = null
 let page = null
 let noise = []
+/** The meeting the gate steps below seed, drive and confirm. */
+let gated = null
+
+/**
+ * Where the running app put its database.
+ *
+ * `--user-data-dir` is what Electron reads for `app.getPath('userData')`, so
+ * `sillage.db` is normally at the root of the profile — but that is Electron's
+ * business and not this file's, and a version that nests it one directory down
+ * would turn a real failure into a confusing `ENOENT`. So it is looked up.
+ */
+const dbUnder = (dir) => {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry)
+    if (entry === DB_FILENAME) return full
+    if (statSync(full).isDirectory()) {
+      const found = dbUnder(full)
+      if (found) return found
+    }
+  }
+  return null
+}
 
 /**
  * One launch, on the profile directory the whole run shares.
@@ -324,6 +353,160 @@ try {
    * have to read rows written by a previous process, a preference that has to
    * come back. Nothing in this repo had ever opened a non-empty database.
    */
+  /*
+   * ── the one irreversible press, on the real main process ────────────────────
+   *
+   * `review:confirm` is the only thing in this product that writes into a
+   * client's CRM, and until this step it had **no end-to-end coverage at all**.
+   * The reason is honest and had held for a dozen rounds: a headless run
+   * produces no audio, so it produces no transcript, so no extraction, so the
+   * gate correctly refuses — the step above asserts exactly that. The screenshot
+   * harness drives the gate against real layout but a stubbed `window.app`; the
+   * renderer's tests drive it against a fake bridge in jsdom. Neither has ever
+   * seen the real store, the real state machine, the real field map or the real
+   * outbox, which is the half of this screen that touches a client.
+   *
+   * So the log is written the way the app writes it — through the product's own
+   * `Store`, with every event validated by its own Zod schema on the way in and
+   * folded into the projections by its own `Projections` — and the next launch
+   * rehydrates the session from those transitions like any other. Nothing is
+   * mocked and nothing is injected: the events are the ones an extraction that
+   * succeeded would have left, and the fixture is `core/contracts/fixtures.ts`,
+   * the same `ExtractionESN` the domain tests agree on.
+   *
+   * It has to happen with the app **closed**. SQLite would take the write from a
+   * second connection, but the running main process holds the session in memory
+   * and would never re-read it.
+   */
+  await step('a meeting that reached the gate is written into the closed store', async () => {
+    await app.close()
+    app = null
+
+    const dbPath = dbUnder(profile)
+    if (!dbPath) throw new Error(`aucun ${DB_FILENAME} sous ${profile}`)
+    const store = new Store(dbPath)
+    try {
+      const rows = store.log.db
+        .prepare("SELECT id FROM meetings WHERE state = 'ended' ORDER BY updated_at DESC LIMIT 1")
+        .all()
+      if (rows.length === 0) throw new Error('aucune réunion terminée dans la base')
+      gated = rows[0].id
+
+      /*
+       * Two turns, so every quotation in the extraction is locatable in the
+       * transcript it is checked against — `[source ▸]` reads these rows and
+       * `spanVerification` folds them the same way. A seeded gate whose
+       * citations lead nowhere would photograph the failure state of the one
+       * feature DEC-21 exists for and call it a pass.
+       */
+      store.appendAll(gated, [
+        {
+          type: 'transcript.segment',
+          segment: {
+            ...sampleSegment,
+            id: 'e2e-1',
+            channel: 'rep',
+            text: 'Sur le budget, vous êtes à combien pour un profil confirmé ?',
+            startMs: 806_000,
+            endMs: 810_000,
+          },
+        },
+        { type: 'transcript.segment', segment: { ...sampleSegment, id: 'e2e-2' } },
+        { type: 'session.transition', from: 'ended', to: 'extracting', command: 'extract', reason: null },
+        {
+          type: 'extraction.completed',
+          extraction: sampleExtraction,
+          verification: sampleVerification,
+        },
+        {
+          type: 'session.transition',
+          from: 'extracting',
+          to: 'awaiting_confirmation',
+          command: 'extractionSucceeded',
+          reason: null,
+        },
+      ])
+    } finally {
+      store.log.db.close()
+    }
+
+    noise = []
+    await launch()
+    await page.waitForSelector('#root > *', { timeout: 45_000 })
+  })
+
+  await step('the gate opens on a session rehydrated from the log', async () => {
+    // Not a route the renderer invented: the state came back out of SQLite,
+    // through `replayState`, into a `MeetingSession` this process never created.
+    await page.keyboard.press('Control+h')
+    await page.getByRole('heading', { name: 'Historique' }).waitFor({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Relire et valider' }).first().click()
+    await page.getByText('Prêt à envoyer').waitFor({ timeout: 30_000 })
+  })
+
+  await step('the fields are the extraction, and the citation leads into the record', async () => {
+    /*
+     * The whole DEC-21 chain, on the real bridge: `prefillEdits` filled the row
+     * from the stored extraction, and `review:transcript` reads the segments
+     * seeded above — the same rows the verification was computed against.
+     */
+    const tjm = page.locator('#field-tjm')
+    await tjm.waitFor()
+    const value = await tjm.inputValue()
+    if (!value.includes('520')) throw new Error(`le TJM extrait n’est pas pré-rempli : « ${value} »`)
+
+    await page.getByRole('button', { name: /source/ }).first().click()
+    await page.getByText('on est plutôt sur un TJM de 520 euros').first().waitFor({ timeout: 15_000 })
+  })
+
+  await step('Valider is withheld until both columns have been shown (DEC-4)', async () => {
+    // The guard, measured by the real renderer in a real window. jsdom cannot
+    // see this at all — every box there is zero and the guard fails open.
+    await page.getByRole('button', { name: 'Lecture', exact: true }).click()
+    if ((await page.getByRole('button', { name: /^Valider/ }).count()) > 0) {
+      throw new Error('Valider est armé avant que les deux colonnes aient été montrées')
+    }
+    for (let i = 0; i < 40; i += 1) {
+      const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+      if ((await turn.count()) === 0) break
+      await turn.click()
+      await page.waitForTimeout(320)
+    }
+    await page.getByRole('button', { name: /^Valider/ }).waitFor({ timeout: 15_000 })
+  })
+
+  await step('confirming writes the intents and the CRM refuses with a reason (DEC-26)', async () => {
+    /*
+     * The press. No VerySwing credentials exist on a throwaway profile, so the
+     * adapter cannot create anything — and **that is the case worth running end
+     * to end**, because it is the one where something could be lost silently.
+     * What has to hold: the confirmation is recorded, the intents are in the
+     * outbox, and an attempt that could not start leaves its row `pending` with
+     * a stated reason rather than `failed` (which would offer a retry against a
+     * record nobody knows the existence of — `POST /v1/crm/tasks` has no
+     * idempotency key).
+     */
+    await page.getByRole('button', { name: /^Valider/ }).click()
+    await page.waitForTimeout(2_000)
+
+    const { outbox } = await page.evaluate(
+      (meetingId) => window.app.invoke('meeting:get', { meetingId }),
+      gated,
+    )
+    if (!Array.isArray(outbox) || outbox.length === 0) {
+      throw new Error('la validation n’a écrit aucune intention dans l’outbox')
+    }
+    const drained = outbox.filter((row) => row.state === 'drained')
+    if (drained.length > 0) {
+      throw new Error(`une intention est partie sans connecteur : ${drained[0].kind}`)
+    }
+    for (const row of outbox) {
+      if (row.state === 'failed' && !row.lastError) {
+        throw new Error(`${row.kind} a échoué sans dire pourquoi`)
+      }
+    }
+  })
+
   await step('the app reopens on the database it left behind', async () => {
     await app.close()
     noise = []

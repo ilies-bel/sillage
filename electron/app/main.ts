@@ -28,7 +28,14 @@ import {
   type AccessStatus,
   type CaptureAccess,
 } from '../core/domain/capturePermission.ts'
-import { ESSAI_MEETING_ID, ESSAI_SECONDS, type EssaiResult } from '../core/contracts/essai.ts'
+import {
+  ESSAI_LAST_KEY,
+  ESSAI_MEETING_ID,
+  ESSAI_SECONDS,
+  EssaiRecordSchema,
+  essaiHealth,
+  type EssaiResult,
+} from '../core/contracts/essai.ts'
 import { SPEECH_FLOOR } from '../core/domain/inputLevel.ts'
 
 /** The trial's meter tick. The same cadence `Recording` draws a meeting's at. */
@@ -1152,7 +1159,22 @@ const boot = async (): Promise<void> => {
    * fact about audio that can be established without opening a device, and it
    * is the one that decides whether a meeting can be recorded at all.
    */
-  orchestrator.setHealth('capture', audio)
+  /*
+   * And the last trial, if there was one, outranks it — see `runEssai`. Read
+   * through the schema rather than cast: a row written by an older build, or a
+   * hand-edited store, must not be able to put a malformed sentence on the
+   * connector board.
+   */
+  const lastEssai = (() => {
+    const raw = store.appState.get(ESSAI_LAST_KEY)
+    if (!raw) return null
+    try {
+      return EssaiRecordSchema.parse(JSON.parse(raw))
+    } catch {
+      return null
+    }
+  })()
+  orchestrator.setHealth('capture', essaiHealth(lastEssai) ?? audio)
 
   /*
    * **`Autoriser` had nothing behind it, on the one connector that cannot be
@@ -1712,12 +1734,29 @@ const boot = async (): Promise<void> => {
       await session.stop().catch(() => undefined)
     }
 
-    return {
+    const result: EssaiResult = {
       rep: { heard: peak.rep > SPEECH_FLOOR, peak: Math.min(1, peak.rep) },
       far: { heard: peak.far > SPEECH_FLOOR, peak: Math.min(1, peak.far) },
       floor: SPEECH_FLOOR,
       seconds: Math.round((Date.now() - startedAt) / 100) / 10,
     }
+
+    /*
+     * **Kept, and folded into the capture row.**
+     *
+     * This used to be returned and nothing else. The rep read « Vous seriez
+     * capté, le client non », closed the card, and the header went back to
+     * « Tout fonctionne » — the exact failure the trial exists to catch,
+     * surviving a rep who ran the trial and understood it.
+     *
+     * It outranks `audio`, the boot probe, because it is the stronger fact: the
+     * probe says a device can be opened, this says sound arrived on each side.
+     * A later trial replaces it; nothing else does.
+     */
+    const record = { ...result, at: Date.now() }
+    store.appState.set(ESSAI_LAST_KEY, JSON.stringify(record))
+    orchestrator.setHealth('capture', essaiHealth(record) ?? audio)
+    return result
   }
 
   registerIpc(ipcMain, {

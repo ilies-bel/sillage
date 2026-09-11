@@ -171,3 +171,55 @@ export const essaiSummary = (result: EssaiResult): string => {
  */
 export const essaiWorthRepeating = (result: EssaiResult): boolean =>
   !(result.rep.heard && result.far.heard)
+
+/**
+ * **What the last trial established, kept.**
+ *
+ * `runEssai` returned a verdict and wrote nothing, and `EssaiAudio` held it in a
+ * `useState`. So a rep who ran the trial, read « L'audio de votre ordinateur —
+ * rien entendu » and « Vous seriez capté, le client non », and then closed the
+ * card, got a header saying « Tout fonctionne » and a *Requis* row saying
+ * « Audio · connecté ». The product calls this the only thing that answers « will
+ * this actually record my next call », and then forgot the answer before the
+ * call. The precise failure the whole surface is written around — the rep
+ * transcribed, the client silent — survived a rep who ran the test **and read
+ * the warning**.
+ *
+ * So the verdict is stored and it outranks the boot-time probe, because it is a
+ * stronger fact: the probe says a device can be opened, the trial says sound
+ * arrived. Nothing expires it on a timer — a measurement does not become false
+ * because a week passed — and a later trial replaces it, which is exactly what
+ * the *Réglages* entry point is for.
+ */
+export const ESSAI_LAST_KEY = 'essai.last'
+
+export const EssaiRecordSchema = EssaiResultSchema.extend({
+  /** When it was measured. The row says so, so a rep can judge its age. */
+  at: z.number().int().positive(),
+})
+export type EssaiRecord = z.infer<typeof EssaiRecordSchema>
+
+/**
+ * The capture health a remembered trial implies, or `null` when it implies none.
+ *
+ * `degraded`, never `down`: the device opened and a meeting will record. What is
+ * in doubt is whether one side of it will be *in* the recording, and DEC-32 says
+ * only a subsystem that stops a meeting moves the general status. Not retryable
+ * — there is nothing to retry from a health row; the fix is to change something
+ * on the machine and run the trial again, which the sentence says.
+ */
+export const essaiHealth = (
+  record: EssaiRecord | null,
+): { state: 'degraded'; reason: string; since: number; retryable: false } | null => {
+  if (!record) return null
+  if (record.rep.heard && record.far.heard) return null
+  return {
+    state: 'degraded',
+    reason: `${essaiSummary(record)} Relancez l’essai de 20 secondes après correction.`,
+    // When it was measured, which is what « depuis » on the row means and the
+    // only honest answer: the trial is a measurement with a date, not a state
+    // the app has been holding since boot.
+    since: record.at,
+    retryable: false,
+  }
+}
