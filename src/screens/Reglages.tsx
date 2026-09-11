@@ -335,6 +335,13 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
 
           {section === 'transcription' ? (
             <>
+              <OfflineOnly
+                value={snapshot.offlineOnly}
+                busy={busy === 'offlineOnly'}
+                onChange={(value) =>
+                  void write('offlineOnly', () => invoke('settings:setOfflineOnly', { value }))
+                }
+              />
               <Providers
                 title="Transcription"
                 capability="stt"
@@ -507,6 +514,64 @@ const RESIDENCY_LABEL = {
   local: 'sur la machine',
   remote: 'hors machine',
 } as const
+
+/**
+ * **« Cette machine uniquement »** (DEC-37) — the one switch in this product
+ * that refuses something.
+ *
+ * DEC-37 withdrew every jurisdiction claim: no `eu` value, no « UE » badge, no
+ * allow-list, because a contractual term differs per client and per year and a
+ * literal in a source file cannot keep it true. What it kept is this — the rep
+ * asking, *in the product*, for this meeting to stay on the machine — and until
+ * now the only way to ask was an environment variable, on a product whose
+ * DEC-34 says none is required to run it.
+ *
+ * Three things the wording has to get right, because this is a promise and a
+ * promise stated loosely is worse than none:
+ *
+ *  · it covers **both** hops. The audio goes to the transcriber and the
+ *    transcript goes to the language model, and the second is the one carrying
+ *    the client's name — a switch that only bound transcription would be true
+ *    of the smaller half;
+ *  · it is a **constraint**, not a preference: turning it on removes every
+ *    remote engine from the candidate set, including one the rep had explicitly
+ *    chosen, which is why the tables below change under it;
+ *  · it says what it **costs**, here, rather than leaving the rep to find out
+ *    when the compte-rendu does not arrive.
+ */
+function OfflineOnly({
+  value,
+  busy,
+  onChange,
+}: {
+  value: boolean
+  busy: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <label className="border-card bg-card mb-block flex items-start gap-inline rounded-sm border p-row">
+      <input
+        type="checkbox"
+        checked={value}
+        disabled={busy}
+        onChange={(event) => onChange(event.target.checked)}
+        className="accent-brand-700 mt-0.5 h-4 w-4 shrink-0"
+      />
+      <span className="min-w-0">
+        <span className="text-strong block text-ui font-medium">
+          Cette machine uniquement
+        </span>
+        <span className="text-muted measure mt-tight block text-meta">
+          Rien de ce qui est dit ni de ce qui est écrit ne quitte cet ordinateur : ni l’audio
+          envoyé à la transcription, ni le texte envoyé au modèle de langage. Les moteurs hors
+          machine disparaissent des listes ci-dessous, y compris celui que vous auriez choisi.
+          Sans modèle installé ici, le compte-rendu ne sera pas rédigé — l’enregistrement et la
+          transcription, eux, continuent.
+        </span>
+      </span>
+    </label>
+  )
+}
 
 /**
  * DEC-30, in the two sentences a rep actually reads.

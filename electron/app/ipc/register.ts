@@ -85,6 +85,8 @@ export interface CredentialStore {
 export interface ProviderPreferences {
   selectProvider(capability: 'stt' | 'llm', providerId: string | null): Promise<void>
   selectModel(modelId: string): Promise<void>
+  /** « Cette machine uniquement » (DEC-37). */
+  setOfflineOnly(value: boolean): Promise<void>
   /** A provider's declared non-secret setting. Empty clears it (DEC-34). */
   setField(providerId: string, key: string, value: string): Promise<void>
 }
@@ -188,6 +190,14 @@ export interface IpcDeps {
    * and outlives the process.
    */
   preferences?: ProviderPreferences | null
+  /**
+   * Whether « cette machine uniquement » is on (DEC-37).
+   *
+   * A function, resolved in `main.ts`: the answer is the stored preference
+   * *or* the development override, and this file has no business knowing there
+   * is one.
+   */
+  offlineOnly?: () => boolean
   /** Starting, cancelling and reporting Hugging Face downloads (DEC-35b). */
   models?: ModelDownloads | null
   /**
@@ -1176,6 +1186,20 @@ export const handlers: Handlers = {
     return saved(deps)
   },
 
+  /**
+   * « Cette machine uniquement » (DEC-37), written where a rep can reach it.
+   *
+   * `onSettingsChanged` for the same reason every other settings write calls
+   * it: this can be the thing that makes — or unmakes — a usable model, and a
+   * meeting sitting in `ended` is waiting on exactly that promise (DEC-39).
+   */
+  'settings:setOfflineOnly': async ({ value }, deps) => {
+    if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
+    await deps.preferences.setOfflineOnly(value)
+    deps.onSettingsChanged?.()
+    return snapshot(deps)
+  },
+
   'settings:selectProvider': async ({ capability, providerId }, deps) => {
     if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
     await deps.preferences.selectProvider(capability, providerId)
@@ -1356,6 +1380,13 @@ const snapshot = (deps: IpcDeps): InvokeResponse<'settings:snapshot'> => {
     // the silent degradation DEC-26 exists to forbid.
     probeReason: capabilities.report ? null : (capabilities.reason ?? 'sonde indisponible'),
     retention: deps.retention ?? DEFAULT_RETENTION,
+    /*
+     * Read from the same place a meeting reads it (`main.ts`'s `offlineOnly`),
+     * so the switch on screen cannot say one thing while the next recording
+     * does another — which is what `resolveLlm` and `recordingOptionsFor` were
+     * both once guilty of for the whole settings surface.
+     */
+    offlineOnly: deps.offlineOnly?.() ?? false,
   }
 }
 

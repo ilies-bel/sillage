@@ -19,6 +19,7 @@ import {
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
+import { allowedByResidency } from '../core/domain/residency.ts'
 import { Overlay, type OverlayWindowOptions } from './windows/Overlay.ts'
 import { Store } from '../modules/store/index.ts'
 import { DB_FILENAME } from '../modules/store/schema.ts'
@@ -423,6 +424,17 @@ const chosen = (choice: string | null, configured: readonly string[], ranked: st
   choice !== null && configured.includes(choice) ? choice : ranked
 
 /**
+ * **« Cette machine uniquement »** (DEC-37), as the rep asked for it.
+ *
+ * The stored preference first and the environment second, which is DEC-34's
+ * « `process.env` is a development override and is read last » — and until
+ * there was a preference at all, the environment was the *only* way to ask,
+ * on a product that says no environment variable is required to run it.
+ */
+const offlineOnly = (context: SettingsContext): boolean =>
+  context.preferences.offlineOnly() ?? offlineOnlyStt()
+
+/**
  * Which model, if any. Selection lives in `modules/llm/registry.ts` — this only
  * turns its answer into an adapter.
  *
@@ -440,8 +452,13 @@ const resolveLlm = (
 ): { port: OpenAiCompatibleLlm; id: string } | null => {
   const stored = context.credentials.keys()
   const fields = providerFieldValues(LLM_PROVIDERS, context)
-  const configured = configuredLlmProviders({ stored, fields })
-  const selection = selectLlm({ configured })
+  const offline = offlineOnly(context)
+  const configured = allowedByResidency(
+    configuredLlmProviders({ stored, fields }),
+    LLM_PROVIDERS,
+    offline,
+  )
+  const selection = selectLlm({ configured, offlineOnly: offline })
   const id = chosen(context.preferences.provider('llm'), configured, selection.ok ? selection.id : null)
   if (id === null) return null
 
@@ -512,18 +529,40 @@ const resolveProviders = (context: SettingsContext): ProviderTables => {
   // is the weights being on disk *for the dtype this machine will ask for*.
   // `usableSttProviders` is the one place that reconciles the two, so this
   // panel cannot name a different engine from the one a meeting would run on.
-  const stt = usableSttProviders({ stored, fields: sttFields })
+  /*
+   * The constraint is applied to the **candidate set**, not to the ranking.
+   * `chosen` below takes the rep's explicit pick whenever it is configured, so
+   * a constraint honoured only by `selectProvider` is one that an earlier
+   * *Utiliser* walks straight around (`core/domain/residency.ts`).
+   */
+  const offline = offlineOnly(context)
+  const stt = allowedByResidency(
+    usableSttProviders({ stored, fields: sttFields }),
+    STT_PROVIDERS,
+    offline,
+  )
   const sttChoice = context.preferences.provider('stt')
   const sttSelection = selectProvider({
     configured: stt,
     language: LANGUAGE,
-    offlineOnly: offlineOnlyStt(),
+    offlineOnly: offline,
     preferCloud: preferCloudStt(),
   })
 
-  const llm = configuredLlmProviders({ stored, fields: llmFields })
+  /*
+   * And the language model, which never honoured it at all: `selectLlm` was
+   * called with no `offlineOnly`, so a rep who asked for the audio to stay on
+   * the machine had the **transcript** posted to a hosted model — the audio is
+   * only half of what leaves, and it is not the half with the client's name in
+   * it.
+   */
+  const llm = allowedByResidency(
+    configuredLlmProviders({ stored, fields: llmFields }),
+    LLM_PROVIDERS,
+    offline,
+  )
   const llmChoice = context.preferences.provider('llm')
-  const llmSelection = selectLlm({ configured: llm })
+  const llmSelection = selectLlm({ configured: llm, offlineOnly: offline })
 
   return {
     stt: providerSection(STT_PROVIDERS, {
@@ -1678,11 +1717,16 @@ const boot = async (): Promise<void> => {
     // « Utilisé », and record the meeting on a different engine (DEC-34).
     const stored = credentials.keys()
     const fields = providerFieldValues(STT_PROVIDERS, settings)
-    const configured = usableSttProviders({ stored, fields })
+    const offline = offlineOnly(settings)
+    const configured = allowedByResidency(
+      usableSttProviders({ stored, fields }),
+      STT_PROVIDERS,
+      offline,
+    )
     const selection = selectProvider({
       configured,
       language: 'fr-FR',
-      offlineOnly: offlineOnlyStt(),
+      offlineOnly: offline,
       preferCloud: preferCloudStt(),
     })
     const providerId = chosen(
@@ -2086,6 +2130,9 @@ const boot = async (): Promise<void> => {
       clear: (providerId) => credentials.clear(providerId),
     },
     preferences: settings.preferences,
+    // Read the same way a meeting reads it, so the switch on screen and the
+    // next recording cannot disagree.
+    offlineOnly: () => offlineOnly(settings),
     models: {
       start: (modelId) => downloads.start(modelId),
       cancel: (modelId) => downloads.cancel(modelId),

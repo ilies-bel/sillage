@@ -93,6 +93,16 @@ export class CredentialCache {
 const PROVIDER_KEY = { stt: 'settings.provider.stt', llm: 'settings.provider.llm' } as const
 const MODEL_KEY = 'settings.model.local'
 /**
+ * « Cette machine uniquement » (DEC-37).
+ *
+ * The one switch in this product that still *refuses* something, and until now
+ * the only way to ask for it was `SILLAGE_STT_OFFLINE_ONLY=1` — an environment
+ * variable, on a product whose DEC-34 says no environment variable is required
+ * to run it and whose VISION.md describes this as « the rep asking, **in the
+ * product** ». A guarantee nobody can reach is not a guarantee.
+ */
+const OFFLINE_ONLY_KEY = 'settings.offlineOnly'
+/**
  * One row per (provider, field), not one JSON blob per provider.
  *
  * A blob would need read-modify-write on every keystroke's save, and two rapid
@@ -123,6 +133,21 @@ export class ProviderPreferenceStore {
 
   model(): string | null {
     return this.#store.get(MODEL_KEY)
+  }
+
+  /**
+   * Null when the rep has never said, which is what lets the development
+   * override still mean something: `main.ts` reads this first and falls back to
+   * `SILLAGE_STT_OFFLINE_ONLY`, which is DEC-34's « `process.env` is a
+   * development override and is read last ».
+   */
+  offlineOnly(): boolean | null {
+    const raw = this.#store.get(OFFLINE_ONLY_KEY)
+    return raw === null ? null : raw === '1'
+  }
+
+  async setOfflineOnly(value: boolean): Promise<void> {
+    this.#store.set(OFFLINE_ONLY_KEY, value ? '1' : '0')
   }
 
   async selectProvider(capability: 'stt' | 'llm', providerId: string | null): Promise<void> {

@@ -1111,6 +1111,30 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **« Cette machine uniquement », on** (DEC-37).
+   *
+   * The one switch in this product that refuses something, and the state worth
+   * photographing is the one *after* the press: the copy promises that every
+   * off-machine engine leaves the lists below, and a fixture that flipped a
+   * flag and answered the same tables would show that promise being broken in
+   * the same screenshot that makes it.
+   */
+  'reglages-hors-ligne': {
+    scenario: 'reglages',
+    expand: true,
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('button', { name: 'Transcription', exact: true }).click()
+      await page.getByRole('checkbox', { name: /Cette machine uniquement/ }).check()
+      // The row, not the group header: « fournisseur cloud » also occurs in the
+      // lede above it, and a selector that matches prose is a stage that passes
+      // while the thing it is about is still on screen.
+      await page.getByText('Azure Speech — France Centre').waitFor({ state: 'detached' })
+    },
+  },
+
   'reglages-raccourcis': {
     scenario: 'reglages',
     async drive(page) {

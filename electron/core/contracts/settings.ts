@@ -137,5 +137,16 @@ export const SettingsSnapshotSchema = z.object({
   /** Why there is no probe. Non-null exactly when `probe` is null. */
   probeReason: z.string().nullable(),
   retention: RetentionPolicySchema,
+  /**
+   * **« Cette machine uniquement »** (DEC-37) — the one switch in this product
+   * that still refuses something.
+   *
+   * It existed as `SILLAGE_STT_OFFLINE_ONLY=1` and nowhere else, on a product
+   * whose DEC-34 says no environment variable is required to run it and whose
+   * own decision describes this as « the rep asking, **in the product** ». A
+   * guarantee nobody can reach is not a guarantee, and `check-surfaces.mjs`
+   * would now call it by its name: declared, and unreached.
+   */
+  offlineOnly: z.boolean(),
 })
 export type SettingsSnapshot = z.infer<typeof SettingsSnapshotSchema>

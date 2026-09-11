@@ -36,6 +36,7 @@ let bridge: FakeBridge
 let uninstall: () => void
 
 const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
+  offlineOnly: false,
   stt: {
     rows: [
       {
@@ -412,7 +413,11 @@ describe('DEC-33: every provider is listed, with where it runs and its reason', 
     // carries the fact to the person deciding. The row used to claim a
     // jurisdiction too; DEC-37 removed that, because the app cannot keep it
     // true and a stale badge is worse than no badge.
-    expect(screen.getByText(/hors machine/)).toBeTruthy()
+    //
+    // Exact, not a substring: « hors machine » is now also a phrase inside the
+    // « cette machine uniquement » switch above the table, and a loose match
+    // would pass on that sentence while the row itself said nothing at all.
+    expect(screen.getAllByText('hors machine').length).toBeGreaterThan(0)
   })
 
   test('the tiers are named, and the selected provider is marked', async () => {

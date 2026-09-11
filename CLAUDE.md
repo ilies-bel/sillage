@@ -765,6 +765,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   test can never share the pooled engine that production always shares.
 - **`POST /v1/crm/tasks` has no idempotency key.** The outbox persists the returned `id` in
   the same transaction that drains the intent, and never re-posts a drained one.
+- **« Cette machine uniquement » is asked for in the product, and it binds the
+  *candidate set*** (DEC-37, `core/domain/residency.ts`). It was
+  `SILLAGE_STT_OFFLINE_ONLY=1` and nothing else — an environment variable, on a
+  product whose DEC-34 says none is required to run it and whose own decision calls this « the
+  rep asking, in the product ». And once asked for, it was bypassable by the most ordinary
+  sequence of two settings: both registries honoured it in their **ranking**, and `main.ts`
+  takes the rep's explicit provider pick whenever it is configured, so « paste a cloud key,
+  press *Utiliser*, then ask for offline only » sent the audio to the cloud anyway. Worse, the
+  language model never saw the flag at all — `selectLlm({ configured })` — so the **transcript**
+  went to a hosted model, which is the half with the client's name in it. The constraint is
+  applied to the candidate set now, before the ranking and before the choice, which is the one
+  place every path has to go through. A Réglages switch writes it, the snapshot reads it from
+  the same function a meeting reads, and the harness fixture *applies* it rather than flipping a
+  flag — a stub that answered the same tables would have photographed the switch's own promise
+  being broken in the screenshot that makes it.
 - **Where a provider runs is surfaced, never enforced** (HR-11 as amended by DEC-33 and
   narrowed by DEC-37). Every provider row declares `local | remote` and Réglages shows it as
   « sur la machine » / « hors machine ». It refuses nothing and breaks no ties. **Do not

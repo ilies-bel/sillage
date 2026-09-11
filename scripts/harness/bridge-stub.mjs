@@ -1333,6 +1333,12 @@ export function installAppBridge(config) {
   }
 
   const SETTINGS = {
+    /*
+      « Cette machine uniquement » (DEC-37), off — which is the default and the
+      state every other row in this fixture is consistent with: a cloud provider
+      is configured and selected, and with the switch on it would not be.
+    */
+    offlineOnly: false,
     stt: {
       rows: [
         {
@@ -2226,7 +2232,21 @@ export function installAppBridge(config) {
     },
     'history:record': (payload) => recordFor(payload.meetingId),
 
-    'settings:snapshot': () => SETTINGS,
+    'settings:snapshot': () => settingsSnapshot(),
+    /*
+      « Cette machine uniquement » (DEC-37), and the fixture **applies** it.
+
+      A stub that flipped the flag and answered the same tables would photograph
+      a switch whose copy says « les moteurs hors machine disparaissent des
+      listes ci-dessous » beside two cloud rows that had not gone anywhere —
+      which is the third time this file has been caught flattering the product.
+      `main.ts` removes remote providers from the candidate set, so this does
+      the same to the rows and to the selection.
+    */
+    'settings:setOfflineOnly': (payload) => {
+      SETTINGS.offlineOnly = payload.value
+      return settingsSnapshot()
+    },
     /*
      * DEC-34. The stub stores nothing durable — it answers with the snapshot
      * the screen would get, so a harness screenshot shows the row *after* a
@@ -2309,6 +2329,19 @@ export function installAppBridge(config) {
     'widget:resize': () => ({ ok: true, above: false }),
     'widget:passThrough': () => ({ ok: true }),
     'window:focus': () => ({ ok: true }),
+  }
+
+  /** The settings, with « cette machine uniquement » applied as `main.ts` applies it. */
+  const settingsSnapshot = () => {
+    if (!SETTINGS.offlineOnly) return SETTINGS
+    const local = (section) => {
+      const rows = section.rows.filter((row) => row.residency !== 'remote')
+      const selected = rows.some((row) => row.id === section.selected)
+        ? section.selected
+        : (rows.find((row) => row.configured)?.id ?? null)
+      return { ...section, rows, selected }
+    }
+    return { ...SETTINGS, stt: local(SETTINGS.stt), llm: local(SETTINGS.llm) }
   }
 
   // ── plumbing ──────────────────────────────────────────────────────────────

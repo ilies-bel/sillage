@@ -1815,3 +1815,69 @@ test('the widget’s window gestures answer false when there is no window', asyn
   assert.equal(through, true)
   cleanup()
 })
+
+/**
+ * **« Cette machine uniquement » had no way to be asked for, and was
+ * bypassable once it was** (DEC-37).
+ *
+ * DEC-37 withdrew every jurisdiction claim and kept exactly one rule that still
+ * refuses. Both registries honoured it in their *ranking* — and the ranking is
+ * not where the decision ends. `main.ts` takes the rep's explicit provider
+ * choice whenever it is configured, so « paste an OpenAI key, press *Utiliser*,
+ * then ask for this machine only » left the audio going to OpenAI. The
+ * constraint is applied to the candidate set now
+ * (`core/domain/residency.ts`), which is the only place every downstream path
+ * has to pass through.
+ *
+ * Here: the channel exists, it writes, and the snapshot the screen redraws from
+ * says what a meeting would actually do.
+ */
+test('settings:setOfflineOnly is written and read back on the snapshot', async () => {
+  const { ipc, deps, cleanup } = open()
+  let stored: boolean | null = null
+  deps.preferences = {
+    selectProvider: async () => {},
+    selectModel: async () => {},
+    setField: async () => {},
+    setOfflineOnly: async (value) => {
+      stored = value
+    },
+  }
+  deps.offlineOnly = () => stored ?? false
+  let resettled = 0
+  deps.onSettingsChanged = () => {
+    resettled += 1
+  }
+
+  const before = await ipc.invoke('settings:snapshot', {})
+  assert.equal(before.offlineOnly, false)
+
+  const after = await ipc.invoke('settings:setOfflineOnly', { value: true })
+  assert.equal(stored, true)
+  assert.equal(after.offlineOnly, true)
+  /*
+   * Every settings write drains what is waiting, because any of them can be the
+   * piece that makes — or unmakes — a usable model, and a meeting sitting in
+   * `ended` is waiting on exactly that promise (DEC-39). This one can unmake
+   * one, which is the direction that was never considered.
+   */
+  assert.equal(resettled, 1)
+
+  // And off again: returning to the default has to be reachable, or the first
+  // time a rep asks for this it is permanent.
+  const off = await ipc.invoke('settings:setOfflineOnly', { value: false })
+  assert.equal(stored, false)
+  assert.equal(off.offlineOnly, false)
+  cleanup()
+})
+
+test('settings:setOfflineOnly refuses with a sentence when preferences are absent', async () => {
+  // The build with no settings backend behind it — the channel answers a stated
+  // refusal rather than throwing something nobody composed (DEC-26).
+  const { ipc, cleanup } = open()
+  await assert.rejects(
+    () => ipc.invoke('settings:setOfflineOnly', { value: true }),
+    /préférences ne sont pas disponibles/,
+  )
+  cleanup()
+})

@@ -684,6 +684,21 @@ export const invokeChannels = {
    * they want to pick. Null returns to the ranking (DEC-30's default), which is
    * why this is not a plain string.
    */
+  /**
+   * « Cette machine uniquement » (DEC-37).
+   *
+   * Answers the whole snapshot rather than an ack, like every other settings
+   * write here: turning it on **removes** every remote engine from the
+   * candidate set, so the tables the screen is drawing change under the switch
+   * the rep just pressed, and a screen that patched its own state would show a
+   * cloud provider still marked « Utilisé » while the next meeting ran on
+   * Whisper.
+   */
+  'settings:setOfflineOnly': {
+    request: z.object({ value: z.boolean() }),
+    response: SettingsSnapshotSchema,
+  },
+
   'settings:selectProvider': {
     request: z.object({
       capability: z.enum(['stt', 'llm']),
