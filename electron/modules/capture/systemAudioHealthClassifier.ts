@@ -29,12 +29,27 @@ export type HealthEvent =
   | { kind: 'capture-stopped'; nowMs?: number }
   | { kind: 'chunk'; chunk: Buffer; nowMs: number }
   | { kind: 'watchdog-tick'; nowMs: number }
-  | { kind: 'same-device-route-detected'; device?: string; nowMs?: number }
 
 export type HealthOutcome =
   | { type: 'none' }
   | { type: 'log'; level: 'warn' | 'error'; reason: string; message: string; gapMs?: number }
-  | { type: 'warn-user'; reason: string; device?: string; terminal: boolean; stuck: boolean }
+
+/*
+ * **`warn-user` and `same-device-route-detected` were removed, not renamed.**
+ *
+ * The event declared a condition worth knowing — a headset used as both input
+ * and output, where the loopback tap picks up the microphone — and **nothing
+ * could produce it**: the native surface offers `getInputDevices`,
+ * `getOutputDevices` and `getDefaultOutputDeviceId`, none of which says which
+ * input device is the default, so there is nothing to compare. It had a type, a
+ * handler, a test and a French sentence in `index.ts` that no run of this
+ * product could reach.
+ *
+ * Bringing it back means adding `getDefaultInputDeviceId` to the native module
+ * first. Until that exists this is a condition the app cannot measure, and
+ * `core/domain/capturePermission.ts` already states the rule for those: « we did
+ * not measure it » is never reported as a finding (DEC-45).
+ */
 
 export interface HealthClassifierOptions {
   watchdogMs?: number
@@ -53,9 +68,25 @@ function peakToPeakInt16LE(chunk: Buffer): number {
 
   let min = 32767
   let max = -32768
-  const stride = Math.max(2, (chunk.length >> 5) & ~1)
-  for (let i = 0; i + 1 < chunk.length; i += stride) {
-    const sample = chunk.readInt16LE(i)
+  /*
+   * **An odd stride, in samples, and that is not a detail.**
+   *
+   * This strode by `(length >> 5) & ~1` *bytes* — twenty on a 640-byte frame,
+   * which is ten samples, which is **even**. So it read sample 0, 10, 20, 40…
+   * and every one of those has the same parity: a signal that alternates sign
+   * every sample came back with `min === max` and a peak-to-peak of **zero**,
+   * from a waveform at full scale. A detector whose one job is to tell zero from
+   * not-zero could be made to report silence by a periodic signal whose period
+   * divides its own step.
+   *
+   * Odd, so no period that is a power of two can stay in phase with it, and
+   * counted in samples so the arithmetic says what it means. The `| 1` is the
+   * whole fix and the `Math.max` keeps it a step.
+   */
+  const samples = chunk.length >> 1
+  const stride = Math.max(1, samples >> 5) | 1
+  for (let i = 0; i < samples; i += stride) {
+    const sample = chunk.readInt16LE(i * 2)
     if (sample < min) min = sample
     if (sample > max) max = sample
   }
@@ -73,7 +104,6 @@ export class SystemAudioHealthClassifier {
   firstChunkAtMs: number | null = null
   lastChunkAtMs: number | null = null
   hasMeaningfulSignal = false
-  sameDeviceWarningEmitted = false
   noChunkLogEmitted = false
   zeroValuedLogEmitted = false
 
@@ -82,7 +112,6 @@ export class SystemAudioHealthClassifier {
     'capture-stopped',
     'chunk',
     'watchdog-tick',
-    'same-device-route-detected',
   ])
 
   constructor(options: HealthClassifierOptions = {}) {
@@ -100,7 +129,6 @@ export class SystemAudioHealthClassifier {
     this.firstChunkAtMs = null
     this.lastChunkAtMs = null
     this.hasMeaningfulSignal = false
-    this.sameDeviceWarningEmitted = false
     this.noChunkLogEmitted = false
     this.zeroValuedLogEmitted = false
   }
@@ -114,26 +142,12 @@ export class SystemAudioHealthClassifier {
       case 'capture-stopped':
         this.stopped = true
         return { type: 'none' }
-      case 'same-device-route-detected':
-        return this.handleSameDeviceRoute(event)
       case 'watchdog-tick':
         return this.handleWatchdogTick(event)
       case 'chunk':
         return this.handleChunk(event)
       default:
         return { type: 'none' }
-    }
-  }
-
-  handleSameDeviceRoute(event: Extract<HealthEvent, { kind: 'same-device-route-detected' }>): HealthOutcome {
-    if (this.sameDeviceWarningEmitted) return { type: 'none' }
-    this.sameDeviceWarningEmitted = true
-    return {
-      type: 'warn-user',
-      reason: 'same-device-input-output',
-      ...(event.device === undefined ? {} : { device: event.device }),
-      terminal: false,
-      stuck: true,
     }
   }
 

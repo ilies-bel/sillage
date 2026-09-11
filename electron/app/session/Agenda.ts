@@ -160,7 +160,29 @@ export class Agenda {
       // The offer expired — the event ended, was cancelled, or the app closed.
       // Leaving it on screen would have the rep pressing Démarrer on a meeting
       // that is over.
+      const expired = this.#armed.meetingId
       this.#armed = null
+      /*
+       * **And the machine is told, which it never was.**
+       *
+       * `disarm` has had an entry in `SessionCommandSchema` and a rule in
+       * `TRANSITIONS` since the state machine was written, and **no dispatcher**:
+       * a grep for it outside those two files returned the declarations and
+       * nothing else. So a 14:30 that came and went without the rep recording
+       * left the meeting in `armed` for ever — a row the boot sweep does not
+       * touch (it ends `recording`), that `Agenda` will not re-arm (`arm` is
+       * illegal from `armed`), and that nothing in the product could move.
+       *
+       * The offer being withdrawn is exactly the moment the machine should hear
+       * about it: the calendar window closed, nobody pressed *Enregistrer*, and
+       * `idle` is what that meeting is. Only from `armed` — a call under way is
+       * `recording` and is not this branch's business — and the outcome is
+       * ignored on purpose, because a meeting that has moved on by itself is not
+       * an error.
+       */
+      if (this.#options.orchestrator.stateOf(expired) === 'armed') {
+        this.#options.orchestrator.dispatch(expired, 'disarm', 'la réunion est passée sans enregistrement')
+      }
     }
 
     this.#options.onChanged?.(this.snapshot())

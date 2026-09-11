@@ -149,7 +149,15 @@
    * widget can wear the product's own light palette instead of growing a second
    * dark one: separation comes from the shadow, not from a second theme.
    */
-  --shadow-overlay: 0 8px 28px rgb(0 0 0 / 32%);
+  /*
+   * The extent has to fit the halo the widget reserves for it (`HALO = 20` in
+   * `src/widget/Widget.tsx`), or the shadow is clipped by the window and the
+   * separation it exists to give is a straight horizontal edge across the video
+   * instead. `0 8px 28px` reached 36px below and 28px sideways and was measured
+   * spilling 16px past the frame; `0 4px 14px` reaches 18 and 14. Darker to pay
+   * for the smaller spread, so it still reads as elevation over a dark call.
+   */
+  --shadow-overlay: 0 4px 14px rgb(0 0 0 / 38%);
 
   /* type faces */
   --font-display: "Fraunces", ui-serif, Georgia, serif;

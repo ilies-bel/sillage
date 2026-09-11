@@ -250,6 +250,19 @@ let mainWindow: BrowserWindow | null = null
  */
 let closeSecondaryWindows: (() => void) | null = null
 
+/**
+ * Put the widget back where the state machine says it should be.
+ *
+ * Set by `boot()` for the same reason `closeSecondaryWindows` is, and called
+ * from `activate` — macOS only, and the case is real: the rep closes the main
+ * window during a call, which takes the widget with it (the comment on
+ * `window-all-closed` explains why it has to), then reopens the app from the
+ * Dock. `createWindow()` brings the app back; without this the rest of the call
+ * has no pill, because nothing else re-evaluates it until the next transition
+ * and a recording has none.
+ */
+let resyncOverlay: (() => void) | null = null
+
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1280,
@@ -1005,6 +1018,7 @@ const boot = async (): Promise<void> => {
     if (recording) overlay.show()
     else overlay.hide()
   }
+  resyncOverlay = syncOverlay
 
   // ── Screen 0 (DEC-30) ────────────────────────────────────────────────────
   //
@@ -2410,6 +2424,15 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   // Same reasoning as `second-instance`: an open widget is not an open app.
   if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  /*
+   * And the widget comes back with it. Closing the main window during a call
+   * takes the pill with it — it has to, or `window-all-closed` never fires and
+   * the meeting is left recording in a process with no way back into it — and
+   * reopening from the Dock brought the app back and not the widget, so the rest
+   * of the call had nothing on top of Teams. Nothing else re-evaluates it: the
+   * sync is driven by transitions, and a recording in progress has none.
+   */
+  resyncOverlay?.()
 })
 
 void app.whenReady().then(async () => {

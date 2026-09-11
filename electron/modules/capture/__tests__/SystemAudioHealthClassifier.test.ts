@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SystemAudioHealthClassifier } from '../systemAudioHealthClassifier.ts';
+import { SystemAudioHealthClassifier, peakToPeakInt16LE } from '../systemAudioHealthClassifier.ts';
 import type { HealthOutcome } from '../systemAudioHealthClassifier.ts';
 
 function zeroChunk(bytes = 1920) {
@@ -59,29 +59,6 @@ test('transcript absence cannot influence system-audio health classification', (
   );
 });
 
-test('same-device route conflict emits one actionable user warning', () => {
-  const health = new SystemAudioHealthClassifier();
-
-  const first = health.handle({
-    kind: 'same-device-route-detected',
-    nowMs: 12_000,
-    device: "Evin's AirPods Pro",
-  });
-  const duplicate = health.handle({
-    kind: 'same-device-route-detected',
-    nowMs: 13_000,
-    device: "Evin's AirPods Pro",
-  });
-
-  assert.deepEqual(first, {
-    type: 'warn-user',
-    reason: 'same-device-input-output',
-    device: "Evin's AirPods Pro",
-    terminal: false,
-    stuck: true,
-  });
-  assert.equal(duplicate.type, 'none');
-});
 
 test('inter-chunk gaps are diagnostics only', () => {
   const health = new SystemAudioHealthClassifier({ interChunkGapLogMs: 2_000 });
@@ -93,3 +70,37 @@ test('inter-chunk gaps are diagnostics only', () => {
   assert.equal(decision.type, 'log');
   assert.equal(decision.reason, 'inter-chunk-gap');
 });
+
+/**
+ * **A full-scale signal must never measure as flat.**
+ *
+ * The stride was `(length >> 5) & ~1` *bytes* — ten samples on a 640-byte frame,
+ * and ten is even — so every sample it looked at had the same parity. A waveform
+ * that alternates sign each sample came back `min === max`, peak-to-peak zero,
+ * from a signal at full scale: the detector whose one job is to tell zero from
+ * not-zero could be told silence by a periodic signal whose period divides its
+ * own step.
+ */
+test('a signal that alternates every sample is not measured as silence', () => {
+  const alternating = Buffer.alloc(640)
+  for (let i = 0; i < 320; i += 1) alternating.writeInt16LE(i % 2 === 0 ? 6_000 : -6_000, i * 2)
+  assert.equal(peakToPeakInt16LE(alternating), 12_000)
+
+  // Every period a stride could plausibly land on, at frame sizes the tap
+  // actually delivers — none of them may read flat.
+  for (const period of [2, 4, 8, 16, 32, 64]) {
+    for (const bytes of [320, 640, 1_280, 3_840]) {
+      const wave = Buffer.alloc(bytes)
+      for (let i = 0; i < bytes / 2; i += 1) {
+        wave.writeInt16LE(i % period < period / 2 ? 8_000 : -8_000, i * 2)
+      }
+      assert.ok(
+        peakToPeakInt16LE(wave) > 0,
+        `période ${period} à ${bytes} octets mesurée comme silencieuse`,
+      )
+    }
+  }
+
+  // And silence is still silence.
+  assert.equal(peakToPeakInt16LE(Buffer.alloc(640)), 0)
+})

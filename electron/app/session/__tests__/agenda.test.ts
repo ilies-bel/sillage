@@ -333,3 +333,42 @@ test('a call still under way keeps its offer — that is the row to show', async
   assert.equal(h.agenda.snapshot().armed?.meetingId, meetingId)
   h.store.close()
 })
+
+/**
+ * **A 14:30 that came and went without a recording is `idle`, not `armed` for
+ * ever.**
+ *
+ * `disarm` has had an entry in `SessionCommandSchema` and a rule in
+ * `TRANSITIONS` since the state machine was written, and no dispatcher anywhere:
+ * a grep outside those two files returned the declarations and nothing else. So
+ * a meeting the rep did not record stayed `armed` — a row the boot sweep does
+ * not touch (it ends `recording`), that `Agenda` will not re-arm (`arm` is
+ * illegal from `armed`), and that nothing in the product could move.
+ */
+test('an offer that expires without a recording leaves the meeting idle', async () => {
+  const h = harness([event('AAA')])
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const meetingId = meetingIdFor('AAA')
+  assert.equal(h.orchestrator.stateOf(meetingId), 'armed')
+
+  // The slot passes. `decideArming` stops offering, the standing offer goes —
+  // and so does the arming.
+  await h.agenda.tick({ now: T0 + 4 * 60 * 60_000 })
+  assert.equal(h.agenda.snapshot().armed, null)
+  assert.equal(h.orchestrator.stateOf(meetingId), 'idle')
+  h.store.close()
+})
+
+test('an offer that expires *during* a recording leaves the recording alone', async () => {
+  // The opposite error, and the more expensive one: a slot that ends while the
+  // call is still running must not touch the machine. `disarm` is illegal from
+  // `recording` anyway — this holds the guard that never asks.
+  const h = harness([event('AAA')])
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const meetingId = meetingIdFor('AAA')
+  h.orchestrator.dispatch(meetingId, 'start', null)
+
+  await h.agenda.tick({ now: T0 + 4 * 60 * 60_000 })
+  assert.equal(h.orchestrator.stateOf(meetingId), 'recording')
+  h.store.close()
+})

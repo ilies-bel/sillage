@@ -500,6 +500,8 @@ export class CaptureSession extends EventEmitter {
     if (outcome.type === 'none') return
 
     const side = channel === 'rep' ? 'votre micro' : 'l’audio de votre ordinateur'
+    // The same two, as the subject of a sentence rather than its object.
+    const sideCap = channel === 'rep' ? 'Votre micro' : 'L’audio de votre ordinateur'
     if (outcome.type === 'log') {
       this.#diagnostics.record({
         severity: outcome.level,
@@ -508,25 +510,34 @@ export class CaptureSession extends EventEmitter {
         message: outcome.message,
         detail: { channel },
       })
-      // A channel that has produced nothing at all is the case a rep has to be
-      // told about while the call is still running, not after it.
-      if (outcome.reason === 'initial-silence-no-chunks') {
+      /*
+       * A channel that has produced nothing at all is the case a rep has to be
+       * told about while the call is still running, not after it — **and so is a
+       * channel producing nothing but zeros.**
+       *
+       * The second was a log line and no more. Frames arrive, the tap is alive,
+       * every sample is exactly zero: that is a microphone muted in hardware —
+       * the switch on a headset, the OS mute — or a tap bound to a dead
+       * endpoint. It is *not* a quiet room, which carries room tone, and the
+       * meter cannot tell the rep apart from one: both draw a flat line. Two
+       * minutes of it is a meeting being half recorded with nothing saying so,
+       * which is the failure this whole file exists to end.
+       */
+      if (
+        outcome.reason === 'initial-silence-no-chunks' ||
+        outcome.reason === 'sustained-zero-valued-silence'
+      ) {
         this.emit('health', {
           state: 'degraded',
-          reason: `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.`,
+          reason:
+            outcome.reason === 'initial-silence-no-chunks'
+              ? `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.`
+              : `${sideCap} est coupé : le signal est à zéro depuis le début de l’appel. Vérifiez le bouton « muet ».`,
           since: this.#clock(),
           retryable: true,
         } satisfies ConnectorHealth)
       }
       return
-    }
-    if (outcome.type === 'warn-user') {
-      this.emit('health', {
-        state: 'degraded',
-        reason: `Entrée et sortie sur le même périphérique — ${side} risque de ne rien capter.`,
-        since: this.#clock(),
-        retryable: true,
-      } satisfies ConnectorHealth)
     }
   }
 
