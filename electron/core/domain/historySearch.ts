@@ -29,15 +29,41 @@ import type { Meeting, MeetingState } from '../contracts/meeting.ts'
 const CONTEXT = 40
 
 /**
- * Lowercase and strip combining marks. `NFD` splits `é` into `e` + U+0301, the
- * range then removes the mark — which is the whole of accent-insensitivity, and
- * it does not need a table.
+ * Lowercase, strip combining marks, **and fold the apostrophe**. `NFD` splits
+ * `é` into `e` + U+0301 and the range removes the mark, which is the whole of
+ * accent-insensitivity and needs no table.
+ *
+ * **The apostrophe is not an accent and NFD does nothing to it.** Everything
+ * this product stores carries U+2019: `check:french` enforces it in repo prose,
+ * `terms.fr-esn.ts` ships « appel d’offres » as a Whisper boost term, and both
+ * the STT and the composer write it. A Windows AZERTY keyboard — the primary
+ * platform (HR-2) — emits U+0027. So the only route back into a past call
+ * answered « Aucun appel ne correspond. » for « appel d'offres », « l'équipe »,
+ * « c'est », « aujourd'hui », about calls sitting in the store:
+ *
+ *     query ascii  "appel d'offres" -> []
+ *     query curly  "appel d’offres" -> [meeting, transcript]
+ *     coeur / cœur                  -> []
+ *
+ * `normalizeForVerification` folds both, 140 lines away, in a module this
+ * screen's own file already imports — and `contracts/transcript.ts` records
+ * exactly this failure as one already found and fixed for the citation reader.
+ * This was the third copy of the same fold and the last one still wrong. It is
+ * kept separate rather than merged because that one collapses punctuation to
+ * spaces, which would move every excerpt offset on this screen.
+ *
+ * The ligatures for the same reason: `Cœur` and `coeur` are one word to a rep
+ * and NFD leaves `œ` alone. `excerptFor` already handles a fold that changes
+ * length.
  */
 export const fold = (text: string): string =>
   text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[\u2018\u2019\u02bc\u00b4`]/g, "'")
+    .replace(/œ/g, 'oe')
+    .replace(/æ/g, 'ae')
 
 /** The four surfaces of one call, as text. Built by the caller from the log. */
 export interface SearchableRecord {

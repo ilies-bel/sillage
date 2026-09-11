@@ -83,6 +83,29 @@ export function DayPane({
   // ended, and it is at the bottom of an ascending list.
   const past = entries.filter((entry) => entry.past).slice().reverse()
 
+  /*
+   * **The empty state is about the *day*, not about the upcoming half of it.**
+   *
+   * It was keyed on `upcoming.length`, with `past` rendered unconditionally
+   * below — so on **every past day that holds a call**, « Aucune réunion ce
+   * jour-là. » was drawn directly above the list of that day's meetings:
+   *
+   *     mardi 4 août, 1 réunion, dont une enregistrée
+   *       claim above : ["Aucune réunion ce jour-là."]
+   *       Passées     : ["10:00 – 11:00 Groupe Maréchal — qualification besoin ERP"]
+   *
+   * The `unsynced` variant is the worse half: « le calendrier n'a pas été
+   * interrogé dessus » about a day on which **this app recorded a call**, which
+   * it has first-hand knowledge of. Five past days in the fixture, five false
+   * cards, on the home screen, for every day of a rep's working history.
+   *
+   * Only the `today` sentence was ever written for a day that has a past list —
+   * « Plus aucune réunion aujourd'hui » is true beside one — and that is the
+   * shape the others needed: the card appears when the day holds nothing at all.
+   */
+  /** The day holds calls; only the *upcoming* half of it is empty. */
+  const suppressed = upcoming.length === 0 && past.length > 0 && when !== 'today'
+
   return (
     <div className="min-h-0">
       {upcoming.length > 0 ? (
@@ -91,7 +114,7 @@ export function DayPane({
             <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} />
           ))}
         </List>
-      ) : (
+      ) : suppressed ? null : (
         <EmptyState
           action={action}
           reason={unsynced ? undefined : reason || undefined}
@@ -128,6 +151,15 @@ export function DayPane({
               <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} />
             ))}
           </List>
+          {/*
+            The *Ajouter au …* control follows the card that used to carry it.
+
+            Suppressing a false « aucune réunion » must not also remove the way
+            to create one: DEC-31 says a rep can create and record a meeting on
+            any day, including a past one, and the header's copy is at the top of
+            a screen the rep has scrolled away from.
+          */}
+          {suppressed && action ? <div className="mt-2">{action}</div> : null}
         </section>
       ) : null}
     </div>

@@ -959,7 +959,15 @@ export const handlers: Handlers = {
 
     // Over everything scanned, not over `rows`: a facet computed after its own
     // filter offers one chip — the one already pressed — and no way back.
-    return { query, filter, scanned: meetings.length, clients: clientFacet(meetings), rows }
+    return {
+      query,
+      filter,
+      scanned: meetings.length,
+      clients: clientFacet(meetings),
+      rows,
+      // The loop above breaks at `limit`; the screen is owed the fact.
+      capped: rows.length >= limit,
+    }
   },
 
   /**

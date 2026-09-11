@@ -40,7 +40,7 @@
  */
 import type { Signal, SignalKind } from '../../../electron/core/contracts/signals.ts'
 import { DEFAULT_RECIPE, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
-import { Button } from '../../ui/index.ts'
+import { Button, ReadingColumn } from '../../ui/index.ts'
 
 interface SignalRailProps {
   signals: Signal[]
@@ -148,7 +148,23 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
 
       {/* `.slate` declares the container the rows measure themselves against;
           see `index.css`. Below 250px they stack rather than shrink the value. */}
-      <div className="slate min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      {/*
+        `ReadingColumn` — the rail is a reading surface and had no edge.
+
+        Measured at 960×600, 120 of 494 pixels of the slate sat below the fold
+        with a hard rule under the last visible row, which is exactly the « a
+        document cut off at the fold looks like a document that ends there »
+        this component was written for. The slate is the whole point of the
+        rail (DEC-14): a rep judges the compte-rendu against it by seeing
+        « Durée — » empty, and a slot they never knew was there is a slot they
+        cannot judge.
+
+        The class alone would not have done it: `.fade-below` draws from
+        `data-above` / `data-below`, which this component is what sets — a bare
+        class would have masked nothing and exempted the element from the check,
+        which is the worst of both.
+      */}
+      <ReadingColumn what="de la fiche" className="slate px-4 pb-4">
         <ul className="space-y-1.5">
           {slots.map((kind) => (
             <Slot key={kind} label={KIND_LABEL[kind]} found={byKind.get(kind) ?? []} />
@@ -186,7 +202,7 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
           is not written into by anything here.
         */}
         <p className="text-muted mt-row text-label">Rien ne migre dans vos notes.</p>
-      </div>
+      </ReadingColumn>
     </section>
   )
 }

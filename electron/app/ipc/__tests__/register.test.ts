@@ -1928,3 +1928,38 @@ test('update:status carries the stated reason there is no updater', async () => 
   assert.equal(stated.installable, false)
   cleanup()
 })
+
+test('the search cap is reported, because the screen promises it is not there', async () => {
+  /*
+   * `SEARCH_LIMIT` is fifty and `history:search` simply breaks out of the loop
+   * — while `Results.tsx`, the eight-row preview a rep arrives *from*, draws
+   * « Les premiers résultats — l'historique les porte tous. » An ESN rep passes
+   * fifty calls matching « TJM » inside a year, and from that point the screen
+   * that was just promised to carry all of them silently carried fifty.
+   */
+  const { ipc, deps, cleanup } = open()
+  for (let i = 0; i < 4; i++) captured(deps, `m${i}`, 'on parle du TJM', 'note')
+
+  const capped = await ipc.invoke('history:search', { query: 'TJM', limit: 2 })
+  assert.equal(capped.rows.length, 2)
+  assert.equal(capped.capped, true, 'la liste est tronquée et doit le dire')
+
+  const whole = await ipc.invoke('history:search', { query: 'TJM', limit: 50 })
+  assert.equal(whole.rows.length, 4)
+  assert.equal(whole.capped, false, 'rien de caché, rien à annoncer')
+  cleanup()
+})
+
+test('the apostrophe a Windows keyboard types finds what the app stored (HR-2)', async () => {
+  // Everything stored carries U+2019 — `check:french` enforces it in repo prose
+  // and `terms.fr-esn.ts` ships « appel d’offres » as a Whisper boost term — and
+  // an AZERTY keyboard emits U+0027. Driven through the real handler.
+  const { ipc, deps, cleanup } = open()
+  captured(deps, 'ao', 'ils lancent un appel d’offres en janvier', 'relancer aujourd’hui')
+
+  for (const query of ["appel d'offres", 'appel d’offres', "aujourd'hui"]) {
+    const result = await ipc.invoke('history:search', { query })
+    assert.equal(result.rows.length, 1, `« ${query} » ne trouve rien`)
+  }
+  cleanup()
+})

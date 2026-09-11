@@ -113,6 +113,35 @@ test('accents and case are folded — a rep who types `demarrage` means `démarr
   assert.equal(matchesFor(record, 'tjm').length, 1)
 })
 
+test('the apostrophe is folded, in both directions — a Windows keyboard types U+0027', () => {
+  /*
+   * Everything stored carries U+2019: `check:french` enforces it in repo prose,
+   * `terms.fr-esn.ts` ships « appel d’offres » as a Whisper boost term, and both
+   * the STT and the composer write it. A Windows AZERTY keyboard — the primary
+   * platform (HR-2) — emits U+0027. So the product's only route back into a past
+   * call answered « Aucun appel ne correspond. » about calls sitting in the
+   * store, for every French contraction there is.
+   */
+  const curly = {
+    meeting: 'Néovia — appel d’offres',
+    transcript: 'Le client n’a pas validé l’offre aujourd’hui.',
+    notes: '',
+    compteRendu: '',
+  }
+  for (const query of ["appel d'offres", 'appel d’offres', "l'offre", 'l’offre', "aujourd'hui"]) {
+    assert.ok(matchesFor(curly, query).length > 0, `« ${query} » ne trouve rien`)
+  }
+  // And the other direction: a record written with a straight quote, searched
+  // with the curly one the app itself would produce.
+  const straight = { ...curly, transcript: "Le client n'a pas validé l'offre." }
+  assert.ok(matchesFor(straight, 'l’offre').length > 0)
+
+  // Ligatures, for the same reason and with the same shape: NFD leaves `œ`
+  // alone and `Cœur` is one word to a rep.
+  assert.ok(matchesFor({ ...curly, notes: 'Groupe Cœur de Ville' }, 'coeur').length > 0)
+  assert.ok(matchesFor({ ...curly, notes: 'Groupe Coeur de Ville' }, 'cœur').length > 0)
+})
+
 test('the match is a substring, because ESN vocabulary is compound and inflected', () => {
   // A word-boundary matcher would miss the plural of the most searched term in
   // the product.

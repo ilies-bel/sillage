@@ -631,6 +631,13 @@ function Panel({
           const element = event.currentTarget
           stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
         }}
+        /*
+          `data-scrolls`: declared, which is what the attribute means. A live
+          transcript is a log — it sticks to the bottom, the rep scrolls up to
+          read back, and it is *supposed* to hold more than its box. It is not
+          the « clipped and looks short » failure `--scrollers` is about.
+        */
+        data-scrolls
         className="max-h-[220px] overflow-y-auto px-3 py-2"
       >
         {rows.length === 0 ? (

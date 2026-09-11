@@ -148,6 +148,17 @@ export const HistorySearchResultSchema = z.object({
    */
   clients: z.array(z.string()),
   rows: z.array(HistoryRowSchema),
+  /**
+   * **Whether the cap was reached**, which the screen had no way to know.
+   *
+   * `history:search` stops at `limit` rows and said nothing, while the eight-row
+   * preview a rep arrives *from* draws « Les premiers résultats — l'historique
+   * les porte tous. » An ESN rep passes fifty calls matching « TJM » inside a
+   * year, and from that point the screen that was just promised to carry all of
+   * them silently carried fifty. Optional, so every stub and every call written
+   * before this keeps working.
+   */
+  capped: z.boolean().optional(),
 })
 export type HistorySearchResult = z.infer<typeof HistorySearchResultSchema>
 

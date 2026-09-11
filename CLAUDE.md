@@ -376,6 +376,28 @@ machine) or in `core/domain/` — never in an IPC handler.
   what hid it for thirteen rounds: `--expand` injects `field-sizing: content`
   into every textarea so a `fullPage` shot shows a draft rather than scrolling
   past one, so every screenshot ever taken showed the fields unclipped.**
+- **The way back into a past call is a surface too, and it had had none of the attention.**
+  Four defects on one journey, all found in an hour: the search box folded accents and **not
+  the apostrophe**, so « appel d'offres » typed on an AZERTY keyboard found nothing while
+  everything stored carries U+2019 — `check:french` enforces it in repo prose and
+  `terms.fr-esn.ts` ships that very phrase as a Whisper boost term; `history:search` stopped at
+  fifty rows and said nothing, under a preview screen promising « l'historique les porte tous »;
+  *Historique*'s four panes were bare `max-h-72` boxes hiding **95%** of a fifty-minute
+  transcript behind a hard edge; and `DayPane` drew « Aucune réunion ce jour-là » — or, worse,
+  « le calendrier n'a pas été interrogé dessus » — *above* the list of that day's calls, on
+  every past day of a rep's history, because the empty state was keyed on the **upcoming** half
+  of the day while the past list was rendered unconditionally below it.
+- **A check that measures nothing is worse than no check, and two did.** `shot.mjs --scrollers`
+  scoped itself to `main *, aside *, dialog *` — a landmark list — and *Historique* has no
+  landmark, so it visited **zero elements** there and printed « rien de caché » over four
+  unmeasured panes. And it was **the only one of the six that never set an exit code**: every
+  finding it has ever made was printed into a `smoke.mjs` run that passed, because smoke fails
+  on a non-zero exit and on nothing else. Widening it to `#root *` and making it fail surfaced
+  a real backlog on the first run — the signal rail, the *Demander* answers and *Historique*'s
+  panes all cut content with nothing saying so. The exemptions are declarations, never
+  omissions: `data-scrolls` on the notepad and the widget's live log, which hold more than their
+  box by definition, and a size guard for `sr-only`, which is a 1×1 clipped box by construction.
+  Same shape as the `drawn()` false-green already recorded for `--contrast`.
 - **A reading column says how much of itself is left** (`ui/ReadingColumn.tsx`).
   The mask and the page turn were built at the gate, where they are a safety
   property, and the pane where the rep *meets* the compte-rendu had neither: it

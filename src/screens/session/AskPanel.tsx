@@ -42,11 +42,12 @@
  * this component is simply never mounted then.
  */
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { AskAnswer } from '../../../electron/core/contracts/ask.ts'
 import { speakerLabel } from '../../../electron/core/contracts/transcript.ts'
 import { invoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
-import { Button, unavailable } from '../../ui/index.ts'
+import { Button, ReadingColumn, unavailable } from '../../ui/index.ts'
 
 export interface AskPanelProps {
   meetingId: string
@@ -219,7 +220,15 @@ export function AskPanel({
         </p>
       ) : null}
 
-      <div className={pinned ? 'min-h-0 flex-1 overflow-y-auto' : undefined}>
+      {/*
+        The answers scroll when the panel is pinned, and they said nothing about
+        it: 62 of 184 pixels below the fold at 960×600, with the citations —
+        which are the whole point of this feature (DEC-21) — the part that goes
+        first. An answer cut off at a hard edge reads as a *short* answer, which
+        is the one thing a feature built on « every claim is checkable » cannot
+        afford to look like.
+      */}
+      <AnswerScroller pinned={pinned}>
         {answers.map((answer, at) => (
           // The question is the identity here — two answers to the same question
           // would be the same row twice, and the index keeps them apart.
@@ -230,9 +239,23 @@ export function AskPanel({
           interlocuteurs={interlocuteurs}
         />
         ))}
-      </div>
+      </AnswerScroller>
     </section>
   )
+}
+
+/**
+ * The answers, scrollable only where they are pinned.
+ *
+ * `ReadingColumn` when they are — a scroller with no edge reads as a short
+ * answer, and the citations are the part below the fold — and no wrapper at all
+ * when they are not, because an unpinned panel grows with the column it is in
+ * and a second scroller inside one is the hole the arming guard's caption
+ * cannot see.
+ */
+function AnswerScroller({ pinned, children }: { pinned: boolean; children: ReactNode }) {
+  if (!pinned) return <>{children}</>
+  return <ReadingColumn what="des réponses">{children}</ReadingColumn>
 }
 
 function Answer({

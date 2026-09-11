@@ -1180,7 +1180,19 @@ export function installAppBridge(config) {
       meeting: m || meeting({ id: meetingId }),
       interlocuteurs: INTERLOCUTEURS[meetingId] || [],
       marks: MARKS,
-      segments: SEGMENTS.slice(0, 6),
+      /*
+        **The whole call, and it was six turns for as long as this stub
+        existed.**
+
+        A rep opens *Historique* to read a fifty-minute call, and every
+        screenshot ever taken of that screen showed a record that fits in its
+        box. So the transcript pane's bare `max-h-72` — 288 pixels, no mask, no
+        page turn, hiding 95% of a real record behind a hard edge — was
+        photographed as a comfortable little panel, thirteen rounds running.
+        This file's own header records that a fixture shorter than the output
+        flatters every layout it appears in; this was the fourth time.
+      */
+      segments: SEGMENTS,
       notes: 'Rien de particulier à signaler sur cet appel.',
       compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',
       fields: [{ key: 'account', label: 'Client', confidence: 'ok', span: null }],
@@ -2237,6 +2249,10 @@ export function installAppBridge(config) {
         scanned: HISTORY_ROWS.length,
         clients: CLIENTS,
         rows: searchRows(query, filter, payload.limit || 50),
+        // The fixture holds fewer calls than the cap, so this is always false
+        // here — stated rather than omitted, because the schema defaults it and
+        // a missing key is invisible in production (see `recordFor`).
+        capped: searchRows(query, filter, payload.limit || 50).length >= (payload.limit || 50),
       }
     },
     'history:record': (payload) => recordFor(payload.meetingId),

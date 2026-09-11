@@ -395,6 +395,14 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
       <div
         ref={ref}
         data-fade={fade}
+        /*
+          `data-scrolls`: declared on purpose, which is what that attribute
+          means. This row scrolls sideways by design and says so — `data-fade`
+          masks whichever edge is cut — and `--scrollers` is about content cut
+          off with *nothing* saying so. It only became visible to the check when
+          the scope widened from the landmark list to the tree.
+        */
+        data-scrolls
         className="filter-scroller flex min-w-0 flex-1 items-center gap-tight"
       >
         {children}

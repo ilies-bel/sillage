@@ -1731,6 +1731,17 @@ async function main() {
       for (const item of inner.slice(0, 8)) {
         console.log(`     ${item.what} — ${item.hidden}px cachés en ${item.axis} (boîte ${item.box}px)`)
       }
+      /*
+       * **This was the one of the six that never set an exit code.**
+       *
+       * `smoke.mjs` fails on a non-zero exit and on nothing else, so every
+       * finding this check has ever made was printed into a run that passed —
+       * ninety-two stagings of « ✓ » over a box hiding 95% of a transcript. It
+       * was written to end exactly that failure on the review gate's textareas,
+       * and it could only ever have been read by a human looking at the right
+       * two lines of output.
+       */
+      process.exitCode = 9
     }
   }
   if (flags.contrast) {
@@ -2193,12 +2204,36 @@ async function scrollers(page) {
     const SLACK = 2
     const columns = [...document.querySelectorAll('.fade-below, [data-scroller]')]
     const out = []
-    for (const el of document.querySelectorAll('main *, aside *, dialog *')) {
+    /*
+     * **`#root *`, not `main *, aside *, dialog *`.**
+     *
+     * The scope was a landmark list, and a screen with no landmark was
+     * therefore not checked at all — which is exactly what *Historique* is. The
+     * check reported « rien de caché dans une boîte interne » over four panes it
+     * never visited, one of which hides 95% of a fifty-minute transcript behind
+     * a bare 288-pixel box. Zero elements visited, green.
+     *
+     * The same shape as the `drawn()` false-green this file already records for
+     * `--contrast`: a check that measures nothing is worse than no check, because
+     * it is read as evidence.
+     */
+    const LANDMARK = 'main, aside, dialog, [role="main"]'
+    for (const el of document.querySelectorAll('#root *')) {
       if (columns.includes(el)) continue
+      // A landmark *is* the page's own scroll region, not a box inside one.
+      if (el.matches(LANDMARK)) continue
       const hiddenY = el.scrollHeight - el.clientHeight
       const hiddenX = el.scrollWidth - el.clientWidth
       if (hiddenY <= SLACK && hiddenX <= SLACK) continue
       if (el.clientHeight === 0) continue
+      /*
+       * **Visually hidden is not hidden content.** The `sr-only` pattern is a
+       * 1×1 clipped box carrying a full sentence for a screen reader, so it
+       * overflows by construction and always will — and nothing is being kept
+       * from anybody, which is the whole subject of this check. It only became
+       * visible when the scope widened from the landmark list to the tree.
+       */
+      if (el.clientHeight <= 1 || el.clientWidth <= 1) continue
       const style = getComputedStyle(el)
       // `visible` cannot scroll: the content overflows the box and is drawn
       // anyway, which is a layout question and not a hidden one.

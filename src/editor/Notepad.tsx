@@ -175,7 +175,13 @@ export function Notepad({
   }, [meetingId])
 
   return (
-    <div className="notepad relative h-full min-h-0 overflow-y-auto px-8 py-6 text-[15px] leading-[1.7]">
+    // `data-scrolls`: an editor holds more than its box by definition — the rep
+    // is typing into it and the caret is what decides what is on screen. It is
+    // not the « clipped and looks short » failure `--scrollers` measures.
+    <div
+      data-scrolls
+      className="notepad relative h-full min-h-0 overflow-y-auto px-8 py-6 text-[15px] leading-[1.7]"
+    >
       {empty && placeholder ? (
         <span
           aria-hidden

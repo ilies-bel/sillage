@@ -65,6 +65,7 @@ import {
   CopyButton,
   EmptyState,
   List,
+  ReadingColumn,
   Row as UiRow,
   RowTitle,
   SectionHeader,
@@ -146,7 +147,18 @@ export function Historique({
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-gutter pb-block">
+      {/*
+        `<main>`, and it is not only a label.
+
+        This screen had no landmark at all, so a screen reader's region list
+        offered nothing for the one surface DEC-25 exists for — and
+        `shot.mjs --scrollers` scoped itself to `main *, aside *, dialog *`,
+        so the check that measures « content cut off with nothing saying so »
+        visited **zero elements here** and reported green over four panes, one of
+        which hid 95% of a fifty-minute transcript. The check is scoped to the
+        tree now; the landmark is owed regardless.
+      */}
+      <main className="min-h-0 flex-1 overflow-y-auto px-gutter pb-block">
         {rows === null ? (
           <p className="text-muted text-copy">Chargement…</p>
         ) : rows.length === 0 ? (
@@ -173,7 +185,27 @@ export function Historique({
             ))}
           </List>
         )}
-      </div>
+        {/*
+          **The cap, said out loud.**
+
+          `SEARCH_LIMIT` is fifty and the loop in `history:search` simply breaks
+          — while the eight-row preview a rep arrives *from* draws « Les premiers
+          résultats — l'historique les porte tous. » An ESN rep passes fifty
+          calls matching « TJM » inside a year, and from that point the screen
+          that was just promised to carry all of them silently carried fifty.
+
+          A sentence rather than paging: what a rep does next is narrow the
+          search, and the chips to do it are three rows above. Telling them the
+          list is truncated is what makes that a choice rather than a wrong
+          belief.
+        */}
+        {search.result?.capped ? (
+          <p className="text-muted mt-block measure text-meta">
+            Les {SEARCH_LIMIT} appels les plus récents qui correspondent. Affinez la recherche
+            pour en voir d’autres.
+          </p>
+        ) : null}
+      </main>
     </div>
   )
 }
@@ -387,6 +419,7 @@ function Record({
       <div className="min-w-0">
       <Section
         title="Transcription"
+        turnLabel="de la transcription"
         copy={
           record.segments.length > 0
             ? {
@@ -432,7 +465,7 @@ function Record({
       />
       </div>
 
-      <Section title="Mes notes">
+      <Section title="Mes notes" turnLabel="de vos notes">
         {record.notes.trim() ? (
           <p className="text-strong whitespace-pre-wrap text-copy leading-relaxed">{record.notes}</p>
         ) : (
@@ -442,6 +475,7 @@ function Record({
 
       <Section
         title="Compte-rendu"
+        turnLabel="du compte-rendu"
         copy={record.compteRendu ? { text: record.compteRendu, what: 'le compte-rendu' } : undefined}
       >
         {record.compteRendu ? (
@@ -472,7 +506,7 @@ function Record({
         )}
       </Section>
 
-      <Section title="Extraction">
+      <Section title="Extraction" turnLabel="de l’extraction">
         <Extraction fields={record.fields} />
         <PushStatus intents={intents} />
       </Section>
@@ -483,6 +517,7 @@ function Record({
 
 function Section({
   title,
+  turnLabel,
   copy,
   children,
 }: {
@@ -497,6 +532,8 @@ function Section({
    * behind « select the text in a 288px scroller without missing a line ».
    */
   copy?: { text: string; what: string }
+  /** Completes the page turn's label: « Lire la suite de la transcription ». */
+  turnLabel: string
   children: React.ReactNode
 }) {
   return (
@@ -516,9 +553,31 @@ function Section({
         <SectionHeader className="mb-0 min-w-0 flex-1">{title}</SectionHeader>
         {copy ? <CopyButton text={copy.text} what={copy.what} className="text-meta" /> : null}
       </div>
-      {/* `.measure` — the product's one reading width, so a compte-rendu read
-          three weeks later is set the way it was set at the gate. */}
-      <div className="measure max-h-72 overflow-y-auto pr-1">{children}</div>
+      {/*
+        `.measure` — the product's one reading width, so a compte-rendu read
+        three weeks later is set the way it was set at the gate — and
+        `ReadingColumn`, which is the other half and was missing.
+
+        It was a bare `max-h-72 overflow-y-auto`: 288 pixels, no mask, no page
+        turn, on four panes. Measured through the product's own reader with a
+        fifty-minute call in it:
+
+            TranscriptionCopier  box 288  content 5436  hidden 95%
+            Compte-renduCopier   box 288  content  345  hidden 17%
+            fade-below on screen: 0     page-turn controls: 0
+
+        Which is the defect `ReadingColumn`'s own header records as fixed for the
+        session pane — « Same document, same product, one click apart, opposite
+        treatment » — with *Historique*, the screen DEC-25 exists for, still on
+        the wrong side of it. Two things hid it: `shot.mjs --scrollers` scopes
+        itself to `main *, aside *, dialog *` and this screen had **no landmark
+        at all**, so the check visited zero elements here and reported green; and
+        `bridge-stub.mjs` answers `history:record` with six segments, so every
+        screenshot ever taken showed a record that fits.
+      */}
+      <ReadingColumn what={turnLabel} className="measure max-h-72 pr-1">
+        {children}
+      </ReadingColumn>
     </section>
   )
 }
