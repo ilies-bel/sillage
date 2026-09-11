@@ -224,6 +224,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   with no description, on the row, in French ». It did not: `taskPossible` read the *name*.
   « Select all, delete, validate » put an empty `taskDescription` into the client's system of
   record, where there is no idempotency key and no delete verb.
+- **An intent nobody can route is settled as far as the *meeting* is concerned, and the
+  updater's danger is a POST, not a state.** Two halves of the same trap, one layer above
+  `blocked`. `Outbox.#attempt` finds no port, abandons the intent without an attempt event —
+  deliberately, so it ships the day the connector is configured — and the row stays `pending`.
+  On the **demo build**, which DEC-28 calls the first deliverable and which has no VerySwing
+  tenant, that is the ordinary path: one press of *Valider* left `allIntentsSettled` false for
+  the life of the database, the calendar read « Envoi… » on that call for ever, and because the
+  boot re-drain rehydrates the session on every launch, `liveStates()` carried `pushing` and
+  **every future update was refused** with a sentence that was false. `routable` is injected by
+  `main.ts`, which is the one place that knows which ports exist; the outbox keeps the queue
+  either way, and a real outage — connector present, row retryable — still leaves the meeting
+  visibly mid-flight, which is DEC-26's reading. And `updateReadiness` asks whether a push is
+  **on the wire** rather than whether a meeting is in `pushing`: the danger its own docblock
+  states is a `POST /v1/crm/tasks` interrupted between the request and the commit that stores
+  its id, and that lasts as long as the request.
 - **`blocked` means a dependency has not settled *yet*, never that it failed.** It meant
   « or has failed » for as long as the DAG existed, and that was a terminal state with no
   exit: `drainable()` is `state = 'pending'`, so no boot re-drain ever named the row again,

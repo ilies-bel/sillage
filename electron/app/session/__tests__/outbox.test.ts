@@ -392,6 +392,48 @@ test('a quit waits for a push already on the wire, and never for ever', async ()
   store.close()
 })
 
+test('an intent nobody can route does not hold the meeting in pushing for ever', async () => {
+  /*
+   * **The demo build, which DEC-28 calls the first deliverable.**
+   *
+   * There is no VerySwing tenant, so `crm` is null. `draftIntents` is pure
+   * domain and creates the `crm.task` intent anyway; the gate draws the
+   * connector trouble on the row and leaves it checked. The rep presses
+   * *Valider* once. `Outbox.#attempt` finds no port, abandons the intent without
+   * an attempt event — deliberately, so it ships the day the connector is
+   * configured — and the row stays `pending`.
+   *
+   * That was the whole of it: `allIntentsSettled` counts only `drained` and
+   * `failed`, so the meeting never left `pushing`; the calendar read « Envoi… »
+   * for the life of the database; and because the boot re-drain rehydrates the
+   * session on every launch, `liveStates()` carried `pushing` and every future
+   * update was refused, permanently, with a sentence that was false — nothing
+   * was in flight and nothing ever would be. The same trap as `blocked`, one
+   * layer up.
+   */
+  const store = seed()
+  const mail = mailStub()
+  const outbox = new Outbox({ journal: store, crm: null, mail: mail.port, sleep: nowhere })
+
+  const entries = await outbox.drain(MEETING)
+  // The queue keeps both VerySwing intents — the opportunity unattempted, the
+  // task behind it — and the Outlook draft ships regardless (DEC-26).
+  assert.equal(stateOf(entries, 'i-opportunity'), 'pending', 'la file garde l’intention')
+  assert.equal(stateOf(entries, 'i-task'), 'blocked')
+  assert.equal(stateOf(entries, 'i-mail'), 'drained')
+
+  // What the state machine is asked, with and without a connector behind the
+  // kind. The queue is untouched either way — only the meeting settles.
+  const settled = (routable: (kind: string) => boolean): boolean =>
+    store.projections
+      .outboxFor(MEETING)
+      .every((e) => e.state === 'drained' || e.state === 'failed' || !routable(e.kind))
+
+  assert.equal(settled(() => true), false, 'avec VerySwing câblé : toujours en vol')
+  assert.equal(settled((kind) => kind === 'mail.draft'), true, 'sans VerySwing : réglée')
+  store.close()
+})
+
 test('every row is terminal after a pass, so the meeting can leave pushing', async () => {
   /*
    * **The property `allIntentsSettled` needs and nothing guaranteed.**

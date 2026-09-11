@@ -102,6 +102,7 @@ import { Agenda } from './session/Agenda.ts'
 import { registerIpc, updateStatus } from './ipc/register.ts'
 import { AutoUpdate } from '../modules/update/index.ts'
 import { updateReadiness } from '../core/domain/updateGate.ts'
+import type { PushIntentKind } from '../core/contracts/push.ts'
 import type { UpdatePort } from '../core/contracts/update.ts'
 import { runDevRecording } from './devRecord.ts'
 import { loadDevEnv } from './devEnv.ts'
@@ -1242,12 +1243,31 @@ const boot = async (): Promise<void> => {
     updateLoop = null
   }
 
+  /**
+   * Whether a push is on the wire right now.
+   *
+   * A holder rather than a direct reference: `Outbox` is constructed four
+   * hundred lines below this, and the answer is only ever asked for after a rep
+   * has confirmed something — long after. `false` until then is correct and is
+   * also what an app with no outbox at all would say.
+   */
+  const pushInFlight = { ask: (): boolean => false }
+
+  /**
+   * Which kinds of push intent have a connector behind them, at all.
+   *
+   * A holder for the same reason as the one above: `crm` and `mail` are built
+   * four hundred lines below. Until they are, nothing has confirmed anything, so
+   * « everything is routable » is both true and unreachable.
+   */
+  const connectors = { routable: (_kind: PushIntentKind): boolean => true }
+
   const updateTick = async (): Promise<void> => {
     if (!updates) return
-    if (!updateReadiness(orchestrator.liveStates()).safe) return
+    if (!updateReadiness(orchestrator.liveStates(), pushInFlight.ask()).safe) return
     const state = await updates.check()
     if (state.phase !== 'available') return
-    if (!updateReadiness(orchestrator.liveStates()).safe) return
+    if (!updateReadiness(orchestrator.liveStates(), pushInFlight.ask()).safe) return
     await updates.download()
   }
 
@@ -1304,6 +1324,7 @@ const boot = async (): Promise<void> => {
 
   const orchestrator: Orchestrator = new Orchestrator(store, {
     diagnostics,
+    routable: (kind) => connectors.routable(kind),
     /*
      * The plain broadcast, plus one derived one.
      *
@@ -1649,6 +1670,13 @@ const boot = async (): Promise<void> => {
   const vsa = vsaConfig()
   const crm = vsa ? new VsaCrm({ config: vsa, diagnostics }) : null
   const mail = identity ? new OutlookMail({ identity, diagnostics }) : null
+  /*
+   * **The demo build has no VerySwing tenant** (DEC-28), so `crm` is null and
+   * every `crm.*` intent a rep confirms is queued rather than attempted — which
+   * is right, and which used to leave the meeting in `pushing` for the life of
+   * the database. See `MeetingSessionOptions.routable`.
+   */
+  connectors.routable = (kind) => (kind === 'mail.draft' ? mail !== null : crm !== null)
 
   /*
    * Outlook's remedy is a **sign-in**, and it had none.
@@ -1715,6 +1743,7 @@ const boot = async (): Promise<void> => {
   )
 
   const outbox = new Outbox({ journal: store, crm, mail, diagnostics })
+  pushInFlight.ask = () => !outbox.settledSynchronously()
 
   /**
    * Everything a meeting needs to start recording, resolved at the moment it
@@ -2237,6 +2266,7 @@ const boot = async (): Promise<void> => {
 
   registerIpc(ipcMain, {
     drain,
+    pushInFlight: pushInFlight.ask,
     store,
     orchestrator,
     diagnostics,

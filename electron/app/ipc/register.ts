@@ -145,6 +145,13 @@ export interface IpcDeps {
    */
   drain?: (meetingId: string) => void
   /**
+   * Whether a push is on the wire right now — `Outbox.settledSynchronously()`,
+   * inverted. The updater's one real danger is a POST interrupted between the
+   * request and the commit that stores its id, and that lasts as long as the
+   * request, not as long as the meeting stays in `pushing`. See `updateGate.ts`.
+   */
+  pushInFlight?: () => boolean
+  /**
    * The two provider tables Réglages renders, and the model table beside them.
    *
    * A **function**, not a value, and that changed with DEC-34. It used to be a
@@ -295,9 +302,10 @@ export const updateStatus = (
    * is the whole of what the rep needs (`core/domain/updateTrust.ts`).
    */
   absentReason: string | null = null,
+  draining = false,
 ): UpdateStatus => {
   const state = updates?.state() ?? updatesUnavailable(appVersion, absentReason ?? NO_UPDATER)
-  const readiness = updateReadiness(states)
+  const readiness = updateReadiness(states, draining)
   return {
     ...state,
     // Only `ready` is installable at all; the gate decides whether it may.
@@ -313,6 +321,7 @@ const statusOf = (deps: IpcDeps): UpdateStatus =>
     deps.orchestrator.liveStates(),
     deps.appVersion ?? '0.0.0',
     deps.noUpdaterReason ?? null,
+    deps.pushInFlight?.() ?? false,
   )
 
 const SIGNED_OUT: AuthState = { status: 'signedOut' }
@@ -1328,14 +1337,17 @@ export const handlers: Handlers = {
      * while the rep is on the call being transcribed degrades that call, which
      * is a way to damage a meeting without ever touching the capture path.
      */
-    if (updateReadiness(deps.orchestrator.liveStates()).safe) {
+    if (updateReadiness(deps.orchestrator.liveStates(), deps.pushInFlight?.() ?? false).safe) {
       await deps.updates?.download()
     }
     return statusOf(deps)
   },
 
   'update:install': async (_request, deps) => {
-    const readiness = updateReadiness(deps.orchestrator.liveStates())
+    const readiness = updateReadiness(
+      deps.orchestrator.liveStates(),
+      deps.pushInFlight?.() ?? false,
+    )
     /*
      * The authoritative check. The renderer's `installable` decides what the
      * button looks like; this decides what happens, because a meeting can start

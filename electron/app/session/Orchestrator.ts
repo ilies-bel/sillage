@@ -22,6 +22,7 @@ import type { Signal } from '../../core/contracts/signals.ts'
 import type { Store } from '../../modules/store/index.ts'
 import { MeetingSession, type TransitionOutcome } from './MeetingSession.ts'
 import { Recording, type RecordingDeps, type RecordingOptions } from './Recording.ts'
+import type { PushIntentKind } from '../../core/contracts/push.ts'
 import { EndOfMeetingWatch } from './EndOfMeetingWatch.ts'
 
 export type Broadcaster = <C extends BroadcastChannel>(
@@ -42,6 +43,11 @@ export interface OrchestratorOptions {
     clear: (handle: unknown) => void
   }
   broadcast?: Broadcaster
+  /**
+   * Whether a kind of push intent has a connector behind it at all. See
+   * `MeetingSessionOptions.routable` — this is the one place the app knows.
+   */
+  routable?: (kind: PushIntentKind) => boolean
   /** Passed through to `Recording`, which is where the module factories are injected. */
   recording?: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   /**
@@ -165,6 +171,7 @@ export class Orchestrator {
   #endWatch = new Map<MeetingId, EndOfMeetingWatch>()
   #recordingDeps: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   #signals = new Map<MeetingId, SignalProducer>()
+  #routable: OrchestratorOptions['routable']
   #createSignals: OrchestratorOptions['createSignals']
   #onEnded: OrchestratorOptions['onEnded']
   #onEnding: OrchestratorOptions['onEnding']
@@ -207,6 +214,7 @@ export class Orchestrator {
       : () => {}
     this.#health = initialHealth(this.#clock())
     this.#recordingDeps = options.recording ?? {}
+    this.#routable = options.routable
     this.#createSignals = options.createSignals
     this.#onEnded = options.onEnded
     this.#onEnding = options.onEnding
@@ -228,6 +236,7 @@ export class Orchestrator {
     const session = MeetingSession.create(this.#store, input, {
       diagnostics: this.#diagnostics,
       clock: this.#clock,
+      ...(this.#routable ? { routable: this.#routable } : {}),
     })
     this.#sessions.set(session.id, session)
     return session
@@ -240,6 +249,7 @@ export class Orchestrator {
     const loaded = MeetingSession.load(this.#store, meetingId, {
       diagnostics: this.#diagnostics,
       clock: this.#clock,
+      ...(this.#routable ? { routable: this.#routable } : {}),
     })
     if (loaded) this.#sessions.set(meetingId, loaded)
     return loaded
