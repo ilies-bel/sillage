@@ -120,6 +120,37 @@ export function Widget() {
   useBroadcast('session:changed', () => state.reload())
 
   /*
+   * **The health of the two required channels, collected by the *window*.**
+   *
+   * It lived in `Panel` — state mounted by a press and destroyed by the next
+   * one — while `health:changed` is an **edge** broadcast. So a channel that
+   * died while the panel was shut, which is most of a call, was never reported:
+   * the rep opened the widget at minute 20 to check and it said nothing was
+   * wrong. That is the same defect as the transcript's, in the same file, under
+   * a header that states the rule — and it was worse here, because this is the
+   * one reading that says the product is failing.
+   *
+   * Seeded from the snapshot as well as the edge, which every other health
+   * surface in the app already does (`StatusControl`, the gate, the onboarding):
+   * an edge that fired before this window existed is an edge nobody heard, and
+   * a widget is created *during* a meeting.
+   */
+  const [trouble, setTrouble] = useState<string | null>(null)
+  const health = useInvoke('health:snapshot', {})
+  useEffect(() => {
+    if (health.state.status !== 'ready') return
+    const snapshot = health.state.value
+    const worst = (['capture', 'transcribe'] as const)
+      .map((connector) => snapshot[connector])
+      .find((entry) => entry !== undefined && entry.state !== 'ok')
+    setTrouble(worst?.reason ?? null)
+  }, [health.state])
+  useBroadcast('health:changed', ({ connector, health: next }) => {
+    if (connector !== 'capture' && connector !== 'transcribe') return
+    setTrouble(next.state === 'ok' ? null : (next.reason ?? null))
+  })
+
+  /*
    * The turns arrive on the broadcast nothing had ever subscribed to.
    *
    * `transcript:appended` has been emitted for every segment of every meeting
@@ -200,6 +231,7 @@ export function Widget() {
               heading={meeting?.clientName ?? meeting?.title ?? ''}
               turns={turns}
               marks={marks}
+              trouble={trouble}
               onMark={mark}
               onForget={forget}
               onClose={() => setOpen(false)}
@@ -404,7 +436,25 @@ function Pill({
     <div
       data-pill
       data-card
-      className="drag-region bg-card border-card shadow-overlay flex items-center gap-2 rounded-lg border py-1.5 pl-2.5 pr-1.5"
+      /*
+        `self-center`, and it is not cosmetic.
+
+        The frame is a `flex-col` whose `align-items` defaulted to `stretch`, so
+        opening the panel stretched the pill from its own 240 px to the panel's
+        340 and left its content packed at the left — a hundred pixels of blank
+        card to the right of the chevron. And the card's *centre* is what
+        `placeAroundPill` holds fixed, so a card that grows by a hundred grows
+        fifty each way: every control on the pill moved **50 px left, under the
+        pointer, on the press that opened the panel**. The chevron's before and
+        after rectangles were disjoint, so the reflex second press landed on
+        bare pill — which is `drag-region`, and Electron delivers no click from
+        one, so it did nothing at all.
+
+        Centred and its own width, the pill is invariant under the panel opening:
+        the centre does not move, so neither does anything measured from it.
+        `widget-ouvert` measures the chevron across the press.
+      */
+      className="drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-2 self-center rounded-lg border py-1.5 pl-2.5 pr-1.5"
     >
       {/*
         Recording, said the way the rest of the product says it: orange, which
@@ -503,29 +553,25 @@ interface PanelProps {
   heading: string
   turns: readonly TranscriptSegment[]
   marks: readonly MomentMark[]
+  /** Collected by the window, never here — see the note on the state itself. */
+  trouble: string | null
   onMark: (segmentId: string | null, note: string) => void
   onForget: (markId: string) => void
   onClose: () => void
 }
 
-function Panel({ meetingId, heading, turns, marks, onMark, onForget, onClose }: PanelProps) {
+function Panel({
+  meetingId,
+  heading,
+  turns,
+  marks,
+  trouble,
+  onMark,
+  onForget,
+  onClose,
+}: PanelProps) {
   const [note, setNote] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
-
-  /*
-   * The transcription's own health, and nothing else's.
-   *
-   * The pill says a meeting is recording; the one thing that could make that
-   * misleading is a channel arriving silent or a transcriber that has stopped,
-   * and both already broadcast (`capture`, `transcribe`). Shown here and not on
-   * the pill, because a sentence that appears over a client's face uninvited is
-   * the interruption DEC-14 forbids — the meter is what says it without words.
-   */
-  const [trouble, setTrouble] = useState<string | null>(null)
-  useBroadcast('health:changed', ({ connector, health }) => {
-    if (connector !== 'capture' && connector !== 'transcribe') return
-    setTrouble(health.state === 'ok' ? null : (health.reason ?? null))
-  })
 
   /*
    * Everything said, in order, with the rep's own marks in place — one helper
@@ -636,13 +682,31 @@ function Panel({ meetingId, heading, turns, marks, onMark, onForget, onClose }: 
       </div>
 
       <div className="border-subtle flex items-center justify-between gap-2 border-t px-3 py-2">
-        <Button
-          variant="nav"
-          className="no-drag px-1"
-          onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
-        >
-          Ouvrir Sillage
-        </Button>
+        {/*
+          **The row asks one question at a time, and it has to fit.**
+
+          « Ouvrir Sillage » + « Arrêter l'enregistrement » + « Annuler » is
+          wider than the card, and this row has no `min-w-0`, so the two
+          confirmation controls were laid out *past the card's right edge* —
+          over the halo, which is exactly the band `widget:passThrough` hands
+          back to Teams. The most dangerous button in the product was painted
+          on the part of the window that is not supposed to be clickable.
+
+          It also moved the right edge, which is what broke the rule below:
+          right-aligned controls can only line up with each other if the row
+          they are in does not reflow.
+        */}
+        {confirmEnd ? (
+          <span />
+        ) : (
+          <Button
+            variant="nav"
+            className="no-drag px-1"
+            onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
+          >
+            Ouvrir Sillage
+          </Button>
+        )}
 
         {/*
           **Two presses, and the second one is a different rectangle.**
@@ -654,16 +718,30 @@ function Panel({ meetingId, heading, turns, marks, onMark, onForget, onClose }: 
           something else. One click is the wrong number of clicks for that.
 
           It is the same reasoning DEC-4 states at the review gate — the one
-          control that ships is never the rectangle the rep just pressed — and
-          it is honoured the same way: the confirmation is drawn where the
-          *label* was, in `danger`, and the escape is beside it rather than
-          under the pointer.
+          control that ships is never the rectangle the rep just pressed.
+
+          **And it was stated here and done backwards.** Both clusters are
+          right-aligned in a `justify-between` row, so the 160-px danger button
+          grew *leftward* and swallowed the whole 59×24 « Terminer » box:
+
+              Terminer                 x 738  w  59
+              Arrêter l’enregistrement x 637  w 160   -> fully contains it
+
+          One double-click on « Terminer » — or two impatient clicks on a
+          control floating over a live call — ended the recording. There is no
+          way back from `ended` and the audio was never retained (DEC-12), so
+          the rest of the meeting is gone. The confirmation was theatre, and the
+          docblock claiming otherwise is how it survived.
+
+          So the **escape** takes that rectangle, not the danger. `Annuler` is
+          last in the row, right-aligned like the trigger, and wide enough to
+          cover it — a second click at the same pixel cancels, which is the
+          idempotent, harmless half. The danger button sits to its left, where
+          nothing was a moment ago, and reaching it is a deliberate movement.
+          `widget-terminer` measures both rectangles.
         */}
         {confirmEnd ? (
           <span className="flex items-center gap-1.5">
-            <Button variant="text" className="no-drag px-1" onClick={() => setConfirmEnd(false)}>
-              Annuler
-            </Button>
             <Button
               variant="danger"
               className="no-drag"
@@ -678,6 +756,13 @@ function Panel({ meetingId, heading, turns, marks, onMark, onForget, onClose }: 
               }}
             >
               Arrêter l’enregistrement
+            </Button>
+            <Button
+              variant="text"
+              className="no-drag min-w-[5rem] px-1"
+              onClick={() => setConfirmEnd(false)}
+            >
+              Annuler
             </Button>
           </span>
         ) : (

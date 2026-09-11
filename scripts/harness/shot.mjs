@@ -1349,9 +1349,31 @@ const SCREENS = {
       */
       await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
-      await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
+
+      /*
+       * **The chevron must not move out from under the pointer.**
+       *
+       * The frame is a `flex-col` whose `align-items` defaulted to `stretch`,
+       * so opening the panel stretched the pill to the panel's width with its
+       * content still packed left — and the card's *centre* is what
+       * `placeAroundPill` holds fixed, so every control on the pill moved 50 px
+       * left on the press that opened it. The before and after rectangles were
+       * disjoint, and the reflex second press landed on bare pill, which is
+       * `drag-region` and delivers no click at all.
+       */
+      const chevron = page.getByRole('button', { name: /le panneau/ })
+      const before = await chevron.boundingBox()
+      await chevron.click()
       await page.getByPlaceholder('Noter ce moment…').waitFor()
       await page.waitForTimeout(120)
+      const after = await chevron.boundingBox()
+      const moved = Math.abs((after?.x ?? 0) - (before?.x ?? 0))
+      if (moved > 2) {
+        throw new Error(
+          `le chevron se déplace de ${Math.round(moved)} px sous le pointeur en s’ouvrant : ` +
+            `${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+        )
+      }
     },
   },
 
@@ -1367,8 +1389,50 @@ const SCREENS = {
       await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
       await page.getByRole('button', { name: /^Ouvrir le panneau/ }).click()
-      await page.getByRole('button', { name: 'Terminer' }).click()
-      await page.getByRole('button', { name: 'Arrêter l’enregistrement' }).waitFor()
+
+      /*
+       * **Not a photograph — the two rectangles, measured.**
+       *
+       * DEC-4's rule, stated in this control's own docblock and done backwards
+       * for as long as it existed: both clusters are right-aligned in a
+       * `justify-between` row, so the 160-px danger button grew *leftward* and
+       * fully contained the 59×24 « Terminer » box. One double-click on a
+       * control floating over a live call ended the recording, and `ended` has
+       * no way back — the audio was never retained (DEC-12).
+       *
+       * Two properties, and the second is the stronger one: the danger button
+       * must not intersect the trigger, and the **escape** must contain it, so
+       * a second click at the same pixel cancels.
+       */
+      const box = async (name) => {
+        const rect = await page.getByRole('button', { name, exact: true }).boundingBox()
+        if (!rect) throw new Error(`« ${name} » n’est pas à l’écran`)
+        return rect
+      }
+      const trigger = await box('Terminer')
+      await page.getByRole('button', { name: 'Terminer', exact: true }).click()
+      const danger = await box('Arrêter l’enregistrement')
+      const escape = await box('Annuler')
+
+      const intersects = (a, b) =>
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+      if (intersects(trigger, danger)) {
+        throw new Error(
+          `« Arrêter l’enregistrement » recouvre « Terminer » — un double-clic arrête l’enregistrement : ` +
+            `${JSON.stringify(trigger)} ∩ ${JSON.stringify(danger)}`,
+        )
+      }
+      const covers =
+        escape.x <= trigger.x &&
+        escape.x + escape.width >= trigger.x + trigger.width &&
+        escape.y <= trigger.y + trigger.height &&
+        escape.y + escape.height >= trigger.y
+      if (!covers) {
+        throw new Error(
+          `« Annuler » ne couvre pas « Terminer » — le second clic ne tombe sur rien : ` +
+            `${JSON.stringify(escape)} vs ${JSON.stringify(trigger)}`,
+        )
+      }
     },
   },
 

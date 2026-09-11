@@ -170,7 +170,22 @@ export class Overlay {
     window.on('moved', () => {
       if (window.isDestroyed() || this.#moving) return
       const [x = 0, y = 0] = window.getPosition()
-      this.#kv.set(OVERLAY_ORIGIN_KEY, JSON.stringify({ x, y: y + this.#pillTop }))
+      /*
+       * **The pill's centre, not the frame's left edge** — the other half of
+       * the same fix as `y + pillTop`.
+       *
+       * The frame's x is a function of the card's *width*, and the card is 232
+       * collapsed and 340 open. So a rep who dragged the widget with the panel
+       * open had the collapsed pill come back 54 pixels to the right of where
+       * they left it, every launch, for the same reason the y was wrong: the
+       * stored number described the window rather than the thing the rep was
+       * looking at. Storing the centre makes it size-independent, which is what
+       * it has to be — the two states are different widths by design.
+       */
+      this.#kv.set(
+        OVERLAY_ORIGIN_KEY,
+        JSON.stringify({ cx: Math.round(x + this.#size.width / 2), y: y + this.#pillTop }),
+      )
     })
     window.on('closed', () => {
       if (this.#window === window) this.#window = null
@@ -230,7 +245,7 @@ export class Overlay {
       height: Math.round(box.pillHeight) || this.#pillHeight,
     }
 
-    const origin = placeAroundPill(pill, to, areas)
+    const origin = placeAroundPill(pill, to, areas, this.#size)
     this.#size = to
     this.#pillTop = pill.offsetTop
     this.#pillHeight = pill.height
@@ -289,19 +304,27 @@ export class Overlay {
     return this.#host.focusMain(meetingId)
   }
 
+  /**
+   * The origin a window of `INITIAL_SIZE` would have had with its pill where the
+   * rep left it.
+   *
+   * `{ cx, y }` is what is written — the pill's centre and its top — and `{ x, y }`
+   * is what every install written before that change holds. Both are read: a
+   * preference the rep cannot see and cannot clear must not become a widget
+   * that opens in the wrong place for ever, and the old shape is still a
+   * perfectly good answer for a widget that was dragged while collapsed.
+   */
   #saved(): Origin | null {
     const raw = this.#kv.get(OVERLAY_ORIGIN_KEY)
     if (raw === null) return null
     try {
-      const parsed: unknown = JSON.parse(raw)
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        Number.isFinite((parsed as Origin).x) &&
-        Number.isFinite((parsed as Origin).y)
-      ) {
-        return { x: (parsed as Origin).x, y: (parsed as Origin).y }
+      const parsed = JSON.parse(raw) as { x?: unknown; cx?: unknown; y?: unknown }
+      if (typeof parsed !== 'object' || parsed === null || !Number.isFinite(parsed.y)) return null
+      const y = parsed.y as number
+      if (Number.isFinite(parsed.cx)) {
+        return { x: Math.round((parsed.cx as number) - INITIAL_SIZE.width / 2), y }
       }
+      if (Number.isFinite(parsed.x)) return { x: parsed.x as number, y }
     } catch {
       // A corrupt preference is one the rep cannot see and cannot clear, and
       // the widget is the one window with no way back if it opens nowhere. The

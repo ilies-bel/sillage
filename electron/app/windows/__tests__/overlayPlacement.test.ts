@@ -155,3 +155,33 @@ test('a pill on no display at all still answers, rather than throwing', () => {
   // not be the thing that throws in between.
   assert.equal(opensAbove(pillAt(9_000), [LAPTOP]), true)
 })
+
+// ── a placement the rep made with their own hand ────────────────────────────
+
+test('a turn arriving never moves the widget sideways', () => {
+  /*
+   * **The rep tucked the pill against the right edge and it slid back.**
+   *
+   * `placeAroundPill` clamped the card fully inside the display on *every*
+   * resize, and a resize is what happens each time a turn of the call changes
+   * the frame's height. Measured: dropped at x 1780 on a 1920 display, back at
+   * 1639 one turn later — a hundred and forty-one pixels over the video, with
+   * nobody touching anything. The stored preference kept an x the app would
+   * never honour, so it happened again on the next launch.
+   */
+  const display = { x: 0, y: 0, width: 1920, height: 1080 }
+  const pill = { screenTop: 900, screenCentreX: 1780 + 281 / 2, offsetTop: 20, height: 52 }
+  const from = { width: 281, height: 78 }
+
+  const same = placeAroundPill(pill, { width: 281, height: 96 }, [display], from)
+  assert.equal(same.x, 1780, 'la largeur n’a pas changé : le x du commercial est gardé')
+
+  // And growth still clamps: a card that widens has to fit, or the controls the
+  // rep just asked for are drawn off the display.
+  const grown = placeAroundPill(pill, { width: 380, height: 431 }, [display], from)
+  assert.ok(grown.x + 380 <= display.width, `un panneau plus large reste à l’écran (x=${grown.x})`)
+
+  // With no `from` at all — the creation path — the old behaviour stands.
+  const created = placeAroundPill(pill, { width: 281, height: 96 }, [display])
+  assert.equal(created.x, 1920 - 281)
+})

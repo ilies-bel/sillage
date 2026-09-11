@@ -159,18 +159,37 @@ export interface Pill {
   height: number
 }
 
-export const placeAroundPill = (pill: Pill, to: Size, areas: readonly Area[]): Origin => {
+export const placeAroundPill = (
+  pill: Pill,
+  to: Size,
+  areas: readonly Area[],
+  /**
+   * **The width the window already has**, so a resize that does not change it
+   * cannot move the window sideways.
+   *
+   * Clamping is right when the card *grows*: a pill dragged against the bottom
+   * with a panel that fits neither above nor below has to move, and the
+   * alternative is a card half off the display. It is wrong on a height change,
+   * and a height change is what happens **every time a turn of the call
+   * arrives**. A rep who tucked the pill against the right edge — which is the
+   * ordinary way to keep it off a shared screen — had it slide a hundred and
+   * forty-one pixels back over the video seconds later, with nobody touching
+   * anything, and the stored preference kept an x the app would never honour,
+   * so it happened again on the next launch.
+   *
+   * A placement the rep made with their own hand is not a saved origin from a
+   * monitor that may have been unplugged. Horizontally it is honoured until the
+   * card's width changes, and `placeWindow` still clamps at creation, which is
+   * the case that is genuinely unrecoverable.
+   */
+  from?: Size,
+): Origin => {
   const wanted: Origin = {
     x: Math.round(pill.screenCentreX - to.width / 2),
     y: Math.round(pill.screenTop - pill.offsetTop),
   }
-  /*
-   * Clamped like any other placement, which is what covers the case the anchor
-   * cannot: a pill dragged against the top of the screen with a panel that does
-   * not fit above **or** below it. The pill moves then, and it has to — the
-   * alternative is a card half off the display.
-   */
-  return placeWindow(wanted, to, areas)
+  const placed = placeWindow(wanted, to, areas)
+  return from && from.width === to.width ? { x: wanted.x, y: placed.y } : placed
 }
 
 /**
