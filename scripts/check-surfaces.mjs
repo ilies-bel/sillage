@@ -307,29 +307,163 @@ for (const file of files.filter((f) => f.startsWith(SESSION) && !isTest(f))) {
       (m) => m[1],
     ),
   )
+  /**
+   * **The identifiers this tree has a reason to believe hold an instance of this
+   * class, per caller file — because « the file imports the module » was not a join.**
+   *
+   * `knows(other)` used to ask « does `other` import the declaring module », and that
+   * is satisfied by a file importing it for *anything*: a type, a constant, a sibling
+   * class. `electron/app/main.ts` imports every module in this folder and contains
+   * `store.close()`, `agenda?.stop()`, `session.start()` and `downloads.state()` — so
+   * **any** method on **any** session class named `close`, `stop`, `start` or `state`
+   * was reached for free. Measured on the shipped check: four dead methods added to
+   * `Outbox` under exactly those names took the count from 38 to **42** and the check
+   * to exit **0**, every one of them reported as called. `Outbox.isDraining` — the
+   * defect this rule exists for, where the quit path asked a different question and a
+   * POST in flight was abandoned — would have been invisible had it been spelled
+   * `close`.
+   *
+   * So the join is a receiver, the `check-ports.mjs` shape: derived from the tree's
+   * own annotations rather than listed, so it cannot go stale. Four derivations, and
+   * the last two exist because two of these seven classes are held in **no** typed
+   * variable at all:
+   *
+   *   · an annotation — `#outbox: Outbox`, `agenda?: Agenda`;
+   *   · a construction — `const outbox = new Outbox(`;
+   *   · a **collection** of them — `#recordings = new Map<MeetingId, Recording>()` and
+   *     `#endWatch = new Map<MeetingId, EndOfMeetingWatch>()`, which is how `Recording`
+   *     and `EndOfMeetingWatch` are held and the only way either is ever reached. A
+   *     collection is called through one access, so `this.#endWatch.get(id)?.stop()`
+   *     counts and `store.close()` does not;
+   *   · a local bound out of one — `const recording = this.#recordings.get(id)` — or
+   *     **aliased** from one, `const loop = agenda`, which is the only way
+   *     `Agenda.start` is ever called (`main.ts:2585`, so a `void (async () => …)`
+   *     closure can hold it past a narrowing);
+   *   · **the class itself**, in a file that imports it, because three of these
+   *     thirty-eight are `static` — `MeetingSession.create`, `MeetingSession.load`,
+   *     `Recording.start`. That is the old import join, kept for the one receiver it
+   *     states precisely: `MeetingSession.create(` cannot be satisfied by
+   *     `store.close()`.
+   *
+   * An empty receiver set is itself a finding, for the reason `check-ports.mjs` gives:
+   * a class nobody holds cannot be asked who calls it, and a check that quietly
+   * measures nothing is worse than no check.
+   */
+  const ACCESS = '(?:\\.(?:get|pop|shift|at|find)\\s*\\([^()]*\\)\\s*\\??)'
+  const escape = (receiver) => receiver.replace(/\$/g, '\\$')
+  /*
+   * Compiled once per class, not once per class per file: the first version built
+   * three `RegExp`s inside the file loop — seven classes over three hundred and
+   * seventy files — and took this check from 0.15 s to 1.31 s. With the patterns
+   * hoisted and a file whose text never mentions the class skipped outright, 0.25 s.
+   * Same shape as `alternationOf` in `check-ports.mjs`, and the same measurement.
+   */
+  const ANNOTATED = new RegExp(
+    `(#?[A-Za-z_$][\\w$]*)\\s*\\??\\s*:\\s*(?:readonly\\s+)?${className}\\b(?!\\[)`,
+    'g',
+  )
+  const CONSTRUCTED = new RegExp(`(#?[A-Za-z_$][\\w$]*)\\s*=\\s*new ${className}\\s*[(<]`, 'g')
+  const COLLECTED = new RegExp(
+    `(#?[A-Za-z_$][\\w$]*)\\s*\\??\\s*(?:` +
+      `:\\s*(?:readonly\\s+)?(?:Readonly)?(?:Map|Set|Array)<[^<>]*\\b${className}\\b[^<>]*>` +
+      `|:\\s*(?:readonly\\s+)?${className}\\[\\]` +
+      `|=\\s*new (?:Map|Set)<[^<>]*\\b${className}\\b[^<>]*>` +
+      `)`,
+    'g',
+  )
+  const receiversIn = (source) => {
+    const named = new Set()
+    const holders = new Set()
+    const add = (set, hit) => set.add(hit[1])
+    if (!source.includes(className)) return { named, holders }
+    for (const hit of source.matchAll(ANNOTATED)) add(named, hit)
+    for (const hit of source.matchAll(CONSTRUCTED)) add(named, hit)
+    for (const hit of source.matchAll(COLLECTED)) add(holders, hit)
+    if (holders.size > 0) {
+      const from = [...holders].map(escape).join('|')
+      for (const hit of source.matchAll(
+        new RegExp(
+          `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:await\\s+)?(?:this\\.)?(?:${from})${ACCESS}`,
+          'g',
+        ),
+      ))
+        named.add(hit[1])
+    }
+    /*
+     * Aliases, to a fixed point — three passes, because `const signedIn = identity`
+     * beside `const loop = agenda` is one hop and nothing in this tree is two. An
+     * alias is only ever seeded by a receiver, so widening it cannot admit a name the
+     * file does not already type.
+     */
+    for (let pass = 0; pass < 3 && named.size > 0; pass += 1) {
+      const before = named.size
+      const from = [...named].map(escape).join('|')
+      for (const hit of source.matchAll(
+        new RegExp(`(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:this\\.)?(?:${from})\\s*$`, 'gm'),
+      ))
+        named.add(hit[1])
+      if (named.size === before) break
+    }
+    return { named, holders }
+  }
+
+  /**
+   * `from '…/MeetingSession.ts'` — what makes the class name itself a receiver.
+   *
+   * Asked of `bodies`, not `text`: a commented-out import is not an import, and every
+   * other rule in this file reads the comment-stripped source for exactly that reason.
+   */
+  const imports = new RegExp(`from '[^']*${path.basename(file, '.ts')}\\.ts'`)
+
+  const receivers = new Map()
+  for (const other of CALLERS) {
+    if (other === file) continue
+    const { named, holders } = receiversIn(bodies.get(other) ?? '')
+    if (imports.test(bodies.get(other) ?? '')) named.add(className)
+    if (named.size + holders.size === 0) continue
+    receivers.set(
+      other,
+      [...[...named].map(escape), ...[...holders].map((r) => `${escape(r)}${ACCESS}`)].join('|'),
+    )
+  }
+  if (receivers.size === 0) {
+    problems.push(
+      `${file}: ${className} n’est le type d’aucune variable, champ ou collection hors de ` +
+        'son propre fichier — personne n’en tient une instance, donc « qui appelle ses ' +
+        'méthodes » ne peut pas être posée. Câble-la, ou supprime la classe.',
+    )
+  }
+
   for (const name of declared) {
     if (RESERVED.has(name)) continue
     methods += 1
     /*
-     * **A call, *in a file that knows this class*.**
-     *
-     * `.${name}(` alone is satisfied by any unrelated receiver, so a method
-     * called `push`, `start`, `stop` or `run` would be marked reached by an
-     * `array.push(` three files away. Nothing live exploited it, which is
-     * exactly when a check is worth tightening. Requiring the caller to import
-     * the declaring module is the honest join: an instance reaches a caller
-     * either by construction or as a typed dependency, and both are imports.
+     * **A call, on a receiver this file types as this class.** `.${name}(` alone is
+     * satisfied by any unrelated receiver — `array.push(` three files away — and
+     * requiring only the import was satisfied by `store.close()` in a file that
+     * imports every module in the folder. `!` and `?.` are allowed between, as
+     * `check-ports.mjs` allows them, because `this.#outbox!.drain(` and
+     * `agenda?.stop()` are both the instance being reached.
      */
-    const knows = (other) =>
-      new RegExp(`from '[^']*${file.split('/').pop()?.replace('.ts', '')}\\.ts'`).test(
-        text.get(other) ?? '',
-      )
-    const called = CALLERS.some(
-      (other) =>
-        other !== file &&
-        knows(other) &&
-        new RegExp(`\\.${name}\\s*\\(`).test(bodies.get(other) ?? ''),
-    )
+    const called = CALLERS.some((other) => {
+      const alternation = receivers.get(other)
+      if (alternation === undefined) return false
+      const source = bodies.get(other) ?? ''
+      if (!source.includes(name)) return false
+      return new RegExp(
+        `(?:${alternation})\\s*!?\\s*\\??\\.\\s*${name}\\s*(?:<[^<>;={}]*>\\s*)?\\(`,
+      ).test(source)
+    })
+    /*
+     * **What this rule *saw*, printed on demand** — `SILLAGE_SESSION_DUMP=1`, one line
+     * per method. « The gate still passes » is not evidence that a tightening changed
+     * nothing: the join below went from an import to a receiver, and the only honest
+     * way to say no live method went red was to diff the thirty-eight lines before
+     * against the thirty-eight after. Three did on the first attempt, all `static`.
+     */
+    if (process.env.SILLAGE_SESSION_DUMP === '1') {
+      console.log(`SESS ${className}.${name} ${called ? 'appelé' : 'RIEN'}`)
+    }
     if (called) continue
     if (UNREACHED.some((entry) => entry.subject === `${className}.${name}`)) continue
     problems.push(
