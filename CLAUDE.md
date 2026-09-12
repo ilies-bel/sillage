@@ -1329,9 +1329,16 @@ machine) or in `core/domain/` — never in an IPC handler.
 
 - **Something happens at 14:30** (DEC-46). `Agenda.onArmed` fires on the arming *edge*, never
   on the thirty-second tick, and `main.ts` raises one OS notification from it. Its click
-  restores, shows and focuses the window and broadcasts `session:open` — the only thing in the
-  product that navigates without the rep having pressed something inside it. It never starts a
-  recording, and a notification that will not show is not a meeting that will not record.
+  restores, shows and focuses the window and broadcasts `session:open` — one of exactly **two**
+  things in the product that navigate without the rep having pressed something inside it. It
+  never starts a recording, and a notification that will not show is not a meeting that will not
+  record.
+  **The second is `PowerWatch`'s** (US-1), and it is the same gesture for the opposite reason:
+  the arming notice says a call is about to start, the sleep notice says one stopped while the
+  screen was off. Both are DEC-46's argument — the rep is not looking at this window, and the
+  fact is worth their attention — and neither starts or resumes anything, because `start` is not
+  a legal command from `ended` and offering it would be the dead control DEC-26 forbids. A third
+  is a decision, not a feature: the whole weight of DEC-46 is that this is rare.
 
 - **Nothing Electron composes reaches a rep's eyes.** `ipcRenderer.invoke` rejects with
   `Error invoking remote method '<channel>': Error: <ours>`, and the renderer prints

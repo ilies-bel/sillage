@@ -202,13 +202,13 @@ findings were sound.
 
 | | Story | Lane | State |
 |---|---|---|---|
-| R31-1 | The page turn is a treadmill in the Transcription tab | `ui-review` | **now** |
-| R31-2 | `check:surfaces` free for four method names | `checks` | **now** |
-| R31-3 | `withoutProse` mis-parses regex literals | `checks` | **now** |
+| R31-1 | The page turn is a treadmill in the Transcription tab | `ui-review` | **done** — `5c7f18d` |
+| R31-2 | `check:surfaces` free for four method names | `checks` | **done** — `418f7bb` |
+| R31-3 | `withoutProse` mis-parses regex literals | `checks` | **done** — `418f7bb` |
 | R31-4 | ~~CLAUDE.md prose is stale~~ | shared | **rejected — measured false** |
-| US-1 | The machine went to sleep during the call | `session` | **now** |
-| US-2 | Windows ended the session while a call was live | `session` | todo |
-| US-3 | A motion vocabulary, not one curve | `motion` | **next** |
+| US-1 | The machine went to sleep during the call | `session` | **done** — `b2cc981` |
+| US-2 | Windows ended the session while a call was live | `session` | **next** — US-1 shaped the rule file for it |
+| US-3 | A motion vocabulary, not one curve | `motion` | **in flight** |
 | US-4 | The suggested next thing, on the note | `ui-session` | todo |
 | US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
 | US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | todo |
