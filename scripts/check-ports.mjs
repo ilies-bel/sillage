@@ -114,8 +114,36 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+import { runProseProbes, withoutProse } from './lib/withoutProse.mjs'
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CONTRACTS = 'electron/core/contracts'
+
+/**
+ * **The scanner's own self-test, run where somebody touching it already is.**
+ *
+ * `SILLAGE_PROSE_ATTACK=1 node scripts/check-ports.mjs` prints one line per probe and
+ * exits on the first failure — the `--motion` affordance, with the lesson `--motion`
+ * paid for: every probe is asserted **by name**, never by a count, because a count
+ * cannot say which token class stopped being understood while another over-reports.
+ * The same table runs under `npm test`; it is one table, not two lists.
+ */
+if (process.env.SILLAGE_PROSE_ATTACK === '1') {
+  const rows = runProseProbes()
+  for (const row of rows) {
+    console.log(`  ${row.ok ? 'ok   ' : 'RATÉ '} ${row.name}`)
+    if (row.missing.length > 0) console.log(`        code mangé : ${row.missing.join(' · ')}`)
+    if (row.leaked.length > 0) console.log(`        prose laissée : ${row.leaked.join(' · ')}`)
+    if (!row.ok) console.log(`        ${row.why}`)
+  }
+  const bad = rows.filter((row) => !row.ok)
+  console.log(
+    bad.length === 0
+      ? `withoutProse ok — ${rows.length} sonde(s), chacune nommée`
+      : `withoutProse : ${bad.length} sonde(s) en échec sur ${rows.length}`,
+  )
+  process.exit(bad.length === 0 ? 0 : 1)
+}
 
 /**
  * Where each port's implementation lives — a call from inside the implementing
@@ -212,76 +240,13 @@ for (const dir of CALLER_ROOTS) walk(path.join(ROOT, dir))
  */
 const treeOf = (file) => CALLER_ROOTS.find((root) => file.startsWith(`${root}/`)) ?? file
 /**
- * **Comments are not code, and this check is about code.**
- *
- * The caller test is a grep, and a grep over a file that documents itself as heavily as
- * this repo does is a grep over prose. That has been a false green twice: `CalendarPort.sync`
- * passed for a dozen rounds on this very file's docblock *about* `CalendarPort.sync`, and
- * when round 29 widened the followers to accept a method taken as a value it reopened the
- * door — its own comment claims « Prose does not follow a method name with `(`, `.bind(`,
- * `)`, `,`, `;`, `]` or `}` », and an enumeration or a parenthetical does exactly that.
- * Measured: a live-looking `CrmPort.closeSession`, implemented and called nowhere, fails
- * the check — and one sentence in `Outbox.ts` reading « Nothing here calls
- * crm.closeSession, and this sentence is the only place the name appears » makes it pass.
- *
- * So comments and string literals are taken out before anything is matched. Narrowing the
- * *followers* could never close this, because the shape of the hole is that the text is
- * prose, not that the punctuation is unusual — every tightening would be one comma away
- * from the next false green. Replaced with spaces of the same length rather than deleted,
- * so nothing downstream that counts or slices is thrown off.
+ * **Comments are not code, and this check is about code — and a regex literal is
+ * neither.** `scripts/lib/withoutProse.mjs` is the scanner and carries both defects it
+ * has had: prose naming a verb wiring it (rounds 27 and 29) and a backtick inside a
+ * character class desyncing the scan for thirty lines (round 31). It lives in its own
+ * file so its ten-probe self-test can drive the *shipped* function, from
+ * `scripts/__tests__/withoutProse.test.mjs` and from `SILLAGE_PROSE_ATTACK=1` here.
  */
-const withoutProse = (source) => {
-  /*
-   * A single pass, not a regex: an alternation carrying `[\s\S]*?` took this check from
-   * 1.5 s to 16.5 s on the same tree, measured.
-   *
-   * And the stripped characters are **dropped**, not spaced over. Blanking them to spaces
-   * left thousand-character runs of whitespace inside the docblocks this repo is made of,
-   * and the caller pattern is `receiver \s* !? \s* \?? . \s* method` — so every failed
-   * match backtracked across the whole run. Same 16 s, for the opposite reason. Newlines
-   * survive so a line count still means something; columns were never reported.
-   */
-  const out = Array.from(source)
-  const blank = (from, to) => {
-    for (let at = from; at < to; at += 1) if (out[at] !== '\n') out[at] = ''
-  }
-  let at = 0
-  while (at < source.length) {
-    const two = source.slice(at, at + 2)
-    if (two === '//') {
-      const end = source.indexOf('\n', at)
-      blank(at, end === -1 ? source.length : end)
-      at = end === -1 ? source.length : end
-      continue
-    }
-    if (two === '/*') {
-      const end = source.indexOf('*/', at + 2)
-      const stop = end === -1 ? source.length : end + 2
-      blank(at, stop)
-      at = stop
-      continue
-    }
-    const ch = source[at]
-    if (ch === "'" || ch === '"' || ch === '`') {
-      let cursor = at + 1
-      while (cursor < source.length) {
-        if (source[cursor] === '\\') {
-          cursor += 2
-          continue
-        }
-        if (source[cursor] === ch) break
-        // An unterminated single- or double-quoted string cannot cross a line.
-        if (ch !== '`' && source[cursor] === '\n') break
-        cursor += 1
-      }
-      blank(at, Math.min(cursor + 1, source.length))
-      at = Math.min(cursor + 1, source.length)
-      continue
-    }
-    at += 1
-  }
-  return out.join('')
-}
 const text = new Map(
   sources.map((file) => [file, withoutProse(readFileSync(path.join(ROOT, file), 'utf8'))]),
 )
@@ -320,6 +285,22 @@ for (const file of readdirSync(path.join(ROOT, CONTRACTS))) {
 
 const problems = []
 let checked = 0
+/**
+ * **What the check *saw*, printed on demand — because « the gate still passes » is
+ * not evidence that nothing moved.**
+ *
+ * `SILLAGE_PORTS_DUMP=1` prints one `RECV` line per port (the receiver set this
+ * tree's own annotations produced) and one `PORT` line per method (the files that
+ * satisfied the caller test). Both sorted, so the output is a byte-comparable
+ * fingerprint of everything the stripper feeds this check.
+ *
+ * It exists because round 31 rewrote `withoutProse` to understand regex literals,
+ * and the only honest way to say « the rewrite changed nothing about what the check
+ * sees on today's tree » is to diff the two dumps. Exit 0 either way and no
+ * findings suppressed: the dump is an instrument, never a mode.
+ */
+const DUMP = process.env.SILLAGE_PORTS_DUMP === '1'
+const dumped = []
 
 for (const port of discovered) {
   const home = HOMES.get(port.interface)
@@ -385,6 +366,7 @@ for (const port of discovered) {
     }
     perFile.set(file, here)
   }
+  if (DUMP) dumped.push(`RECV ${port.interface} ${[...receivers].sort().join(' ')}`)
   if (receivers.size === 0) {
     problems.push(
       `${port.interface} n’est le type d’aucune variable, champ ou paramètre du dépôt — ` +
@@ -462,6 +444,7 @@ for (const port of discovered) {
       return scoped.test(source)
     })
 
+    if (DUMP) dumped.push(`PORT ${key} ${[...callers].sort().join(' ')}`)
     if (callers.length === 0 && !exempt) {
       problems.push(
         `${key} n’est appelé nulle part hors de ${home} — câble-le, ou déclare-le dans UNWIRED avec la raison.`,
@@ -513,6 +496,8 @@ for (const [name, home] of HOMES) {
     )
   }
 }
+
+if (DUMP) for (const line of dumped.sort()) console.log(line)
 
 if (problems.length > 0) {
   console.error(`\nports declared and never called (${problems.length}):\n`)
