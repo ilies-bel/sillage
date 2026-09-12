@@ -50,3 +50,6 @@ resources/whisper-models/
 # Reference images for docs/STORIES.md.
 # Competitor screenshots and captures of a real account: read locally, never published.
 /docs/stories/ref/
+
+# Agent worktrees. Created and removed by the harness; never committed.
+/.claude/worktrees/

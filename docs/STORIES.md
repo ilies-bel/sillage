@@ -208,7 +208,7 @@ findings were sound.
 | R31-4 | ~~CLAUDE.md prose is stale~~ | shared | **rejected — measured false** |
 | US-1 | The machine went to sleep during the call | `session` | **done** — `b2cc981` |
 | US-2 | Windows ended the session while a call was live | `session` | **next** — US-1 shaped the rule file for it |
-| US-3 | A motion vocabulary, not one curve | `motion` | **in flight** |
+| US-3 | A motion vocabulary, not one curve | `motion` | **done** — `c6ea550` |
 | US-4 | The suggested next thing, on the note | `ui-session` | todo |
 | US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
 | US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | todo |
@@ -218,6 +218,9 @@ findings were sound.
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
 | US-11 | Telling the client they are being recorded | `ui-session` | **next** — business consequence |
 | US-12 | What the shared screen says | — | argued debt |
+| US-13 | The widget arrives by popping into existence | `ui-session` | **now** |
+| US-14 | The gate's page turn takes 434 ms | `ui-review` | **now** |
+| US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
 
 ---
 
@@ -471,6 +474,78 @@ wordmark as type.
 
 Deferred on the rep's own instruction (« keep reviewing, logo later »), recorded here
 so it is a decision rather than something nobody noticed.
+
+---
+
+## Wave-2 stories, all three found by measuring rather than by reading
+
+### US-13 — the widget arrives by popping into existence
+
+**Lane** `ui-session` · **Licensed by DEC-50** · **This is the goal's headline surface.**
+
+Driven on the real window: the 340×205 card that appears over another application's video
+call has `transitionDuration: 0s`, `animationName: none`, and
+`transform-origin: 170px 102.594px` — dead centre, the CSS initial, **regardless of
+`above`**. It has no transform at all. It pops between two frames, at the instant the rep
+presses *Enregistrer*, over the face of the person on the call.
+
+The frequency table puts this surface on the « once or twice a day → this is where delight
+belongs » row, and there is nothing on it. Every other motion decision in this product has
+been made; this one never was.
+
+DEC-50 is what makes it possible and also what bounds it — read the decision, not this
+paragraph. The four bounds are each a test: overshoot pinned by **shape**, collapsed
+entirely under reduced motion, the **exit untouched**, and nothing animating before
+`widget:measuring` has answered, because `getBoundingClientRect` includes transforms and a
+window sized from a scaled box is the clipped-first-frame defect that handshake exists to
+end — reintroduced by its own polish.
+
+**Acceptance** — `widget-entree` as a stage beside `widget-sortie`; the origin follows
+`above`; `scripts/e2e.mjs` still measures the pill's screen position across an open and a
+close on the real window, unchanged; `--motion`'s self-test still reports eleven attacks
+with two deliberately silent.
+
+### US-14 — the gate's page turn takes 434 ms, and no check can see it
+
+**Lane** `ui-review` · owns `src/lib/scroll.ts`.
+
+Measured on the gate's own compte-rendu column, driven the rep's way:
+
+```
+1280×800   box 747 in 2549 (3 pages)   smooth 434 ms / 52 frames   auto 33 ms / 4 frames
+ 960×600   box 547 in 2549 (5 pages)   smooth 369 ms / 44 frames   auto 35 ms / 4 frames
+```
+
+434 ms is nearly **3× VISION §6's 150 ms ceiling** and above the standard's 300 ms master
+rule — and it is the only motion in the product above either. `shot.mjs --motion` cannot
+see it, because a scroll animation is neither a transition nor an animation;
+`scroll.ts`'s own docblock already records that blind spot and nothing was ever built
+against it.
+
+At 6–10 presses per gate that is **2.6–3.7 seconds per gate**, on the one screen a rep
+cannot leave without deciding. The frequency table's row for « tens of times a day » is
+*remove or drastically reduce*.
+
+A token cannot fix it: Chromium picks the duration for `scroll-behavior: smooth`. So the
+question is whether this scroll should be animated at all, and the answer has to be
+measured against the guard — the arming guard records the viewports a column has *shown*,
+and a scroll that teleports shows nothing on the way. That is the whole reason it was
+smooth. Read `review-garde`'s « a scroll the app performs is marked and records where it
+landed, never the bands it animated past » before changing anything: the coverage
+arithmetic already does not credit the intermediate frames, which may mean the animation is
+paying a cost for a property that is not being bought.
+
+### US-15 — three dead declarations, one of them a mask that snaps
+
+**Lane** `motion`, except the first line.
+
+- `shadow-card` has **zero** `className` occurrences under `src/` — declared, mapped,
+  drawn by nothing. Same shape as the two motion tokens US-3 resurrected.
+- `src/design/index.css`'s `.fade-below` and `.filter-scroller` switch their mask between a
+  two-stop and a four-stop gradient **between two frames**, so a hard edge appears under the
+  rep's eyes on the pane where they meet the compte-rendu. The fix is always the four-stop
+  form with a registered `--fade-reading` animating, which rewrites a rule `shot.mjs --fade`
+  defends heavily — so it is its own story and not a hunk in someone else's.
 
 ---
 

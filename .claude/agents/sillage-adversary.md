@@ -21,6 +21,11 @@ All three green, tree clean, before you measure anything — and again at the en
 tree is dirty when you start, say so and name the files; someone is working in it and
 your measurements are against something that is not HEAD.
 
+**Implementing agents running at the same time are fine, and expected** — they work in
+their own git worktrees under `.claude/worktrees/`, so the checkout you measure is not the
+one they edit. What you must not tolerate is a dirty *main* checkout. Ignore the worktrees
+entirely: they are other people's branches, not findings, and never `cd` into one.
+
 ## What counts as a finding
 
 Only something you **drove**. Not a code smell, not a naming preference, not a
