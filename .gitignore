@@ -46,3 +46,7 @@ logs/
 # 466 MB in the repo is paid by every clone forever, and Git LFS only moves
 # that bill to a quota.
 resources/whisper-models/
+
+# Reference images for docs/STORIES.md.
+# Competitor screenshots and captures of a real account: read locally, never published.
+/docs/stories/ref/
