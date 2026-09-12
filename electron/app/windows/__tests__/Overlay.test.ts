@@ -28,6 +28,7 @@ import test from 'node:test'
 import type { BrowserWindow } from 'electron'
 import { memoryKeyValueStore } from '../../../core/contracts/kv.ts'
 import {
+  APPEARANCE_MS,
   EXIT_FALLBACK_MS,
   FIRST_FRAME_MS,
   INITIAL_SIZE,
@@ -536,4 +537,127 @@ test('a meeting that ends inside the wait leaves no timer behind', (t) => {
       `${teardown}() left the reveal armed`,
     )
   }
+})
+
+// ── the deadline on appearing at all ─────────────────────────────────────────
+//
+// `FIRST_FRAME_MS` calls itself « a deadline and never a requirement » and was half
+// of one: it is armed inside the `ready-to-show` handler, so a renderer that never
+// painted had **no timer**. Measured on this class with no paint
+// (`scratch/r26-overlay-edges.mjs`): « after 600 ms: ["create w1"] », « active
+// timers: 0 ». Four tests below and the first two are the hole; the other two are
+// the properties that must survive closing it.
+
+test('un rendu qui ne peint jamais finit quand même par avoir sa pastille', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  // No `paint()`, no `resize()`: a crashed bundle, a `did-fail-load`, a broken
+  // install. The old deadline was armed by the paint, so nothing was counting.
+  t.mock.timers.tick(APPEARANCE_MS - 1)
+  assert.deepEqual(staging.window.state.seen, [], 'montrée avant le plafond')
+
+  t.mock.timers.tick(1)
+  assert.deepEqual(
+    staging.window.state.seen,
+    ['show'],
+    'aucune pastille, jamais, pour un rendu qui ne peint pas',
+  )
+  // At the guess, which is all anybody knows about a renderer that said nothing.
+  assert.equal(staging.window.state.width, INITIAL_SIZE.width)
+})
+
+test('un rendu qui mesure sans que ready-to-show arrive est borné lui aussi', (t) => {
+  /*
+   * Electron does not promise `ready-to-show` for a transparent window, and this is
+   * the case where that costs everything: the renderer is alive, it has measured
+   * itself, the main process has placed the window — and `#show` refused on
+   * `#painted`, for ever. The paint stays required *until* the ceiling, because a
+   * measurement genuinely can arrive a frame before anything is drawn.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+  assert.ok(!staging.window.state.seen.includes('show'), 'montrée sans rien de peint')
+
+  t.mock.timers.tick(APPEARANCE_MS)
+  assert.ok(
+    staging.window.state.seen.includes('show'),
+    'la fenêtre n’apparaît jamais alors que le rendu la mesure',
+  )
+  // And at the size it measured, not at the guess.
+  assert.equal(staging.window.state.width, 281)
+})
+
+test('le plafond ne montre rien deux fois, et disparaît avec la fenêtre', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  for (const teardown of ['hide', 'dismiss'] as const) {
+    const staging = staged([LAPTOP])
+    staging.window.paint()
+    staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+    staging.overlay[teardown]()
+    t.mock.timers.tick(APPEARANCE_MS * 2)
+    assert.equal(
+      staging.window.state.seen.filter((what) => what === 'show').length,
+      1,
+      `${teardown}() a laissé le plafond armé`,
+    )
+  }
+})
+
+test('et une réunion qui s’arrête avant le plafond ne laisse rien derrière elle', (t) => {
+  /*
+   * `hide()` is called one line before `store.close()`. A ceiling that fired after it
+   * would be `showInactive` on a destroyed window — the same property the reveal
+   * timer already has, asserted of the second timer because there are now two.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  for (const teardown of ['hide', 'dismiss'] as const) {
+    const staging = staged([LAPTOP])
+    staging.overlay[teardown]()
+    t.mock.timers.tick(APPEARANCE_MS * 2)
+    assert.ok(
+      !staging.window.state.seen.includes('show'),
+      `${teardown}() a laissé le plafond armé`,
+    )
+  }
+})
+
+// ── one pill at a time ───────────────────────────────────────────────────────
+
+test('une nouvelle pastille emporte celle qui s’en allait, au lieu de s’y superposer', (t) => {
+  /*
+   * `dismiss()` leaves a live window on screen for up to `EXIT_FALLBACK_MS`, and a
+   * rep taking the next call inside that window got **two** frameless always-on-top
+   * cards at the same saved origin (`scratch/r26-overlay-edges.mjs` B). It got worse
+   * the moment the renderer started freezing its content for the exit: the fading
+   * card keeps « Enregistrement en cours » and the previous call's elapsed time, so
+   * the two cards claim to be recording with two different clocks, one over the
+   * other, on the surface drawn over the client's face.
+   *
+   * The fade exists so a card does not vanish between two frames while the rep is
+   * looking at it. A new pill at the same coordinates is a bigger change than the
+   * one the fade was smoothing, so it wins.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+  staging.window.paint()
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+
+  staging.overlay.dismiss()
+  assert.equal(staging.asked.length, 1, 'la sortie n’a pas été demandée')
+  assert.equal(staging.window.state.destroyed, false, 'détruite sans animation')
+
+  // The next call, inside the fade.
+  staging.overlay.show()
+  assert.equal(staging.window.state.destroyed, true, 'deux pastilles à la fois')
+  const second = staging.built[1]
+  assert.ok(second, 'la deuxième pastille n’a pas été créée')
+  assert.notEqual(second.window, staging.window.window, 'la pastille sortante a été adoptée')
+
+  // And the timer that was going to destroy the first one is gone with it: no
+  // `destroy()` on a window that already has none.
+  t.mock.timers.tick(EXIT_FALLBACK_MS * 2)
+  assert.equal(staging.overlay.left(150), false, 'une fenêtre sortante est restée en attente')
 })

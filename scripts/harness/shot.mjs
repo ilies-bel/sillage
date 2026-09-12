@@ -1577,6 +1577,42 @@ const SCREENS = {
    * most of a call in once a rep has opened it, and it is the only surface in
    * the product that draws an *interim* transcription.
    */
+  /*
+   * **The pill before it knows which call it is — the face the product paints at
+   * the start of every single recording, and no stage had ever seen it.**
+   *
+   * `widget:state` is a preload hop and two SQLite reads, and until it answers
+   * `Pill` draws « Aucun enregistrement » with no meter, no clock and no mark
+   * button: `Widget.tsx`'s entire `MEASURE_DEADLINE_MS` handshake exists because
+   * the window used to be *revealed* carrying it, 41 px clipped and sliding 21.
+   * Five widget stages shared one `widget:state` that resolved in the same
+   * microtask as the call, so the placeholder could not exist in the harness, and
+   * 106 stagings and eight checks had visited it exactly zero times — the third
+   * instance of « the fixture was the reason no stage could reproduce it ».
+   *
+   * The answer is held 150 ms (`LATENCY` in `bridge-stub.mjs`) and this stage
+   * shoots inside that window. It is the only stage whose assertion is a string
+   * that must be there **and then not be there**: a stage that only waited for the
+   * placeholder would pass on a widget whose state never arrives at all.
+   */
+  'widget-attente': {
+    scenario: 'widget-sans-reunion',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByText('Aucun enregistrement').waitFor()
+      /*
+        And the clock, the meter and the mark button are **absent**, which is the
+        half a `waitFor` on one string cannot state: the placeholder is not the
+        pill with a different label, it is the pill with three of its four things
+        missing, and that is why revealing the window carrying it was 41 px of
+        clipping and a 21 px slide.
+      */
+      if ((await page.getByLabel('Durée d’enregistrement').count()) > 0) {
+        throw new Error('la pilule d’attente porte une horloge — ce n’est plus l’état sans réunion')
+      }
+    },
+  },
+
   'widget-ouvert': {
     scenario: 'session',
     query: 'window=widget',
@@ -2034,31 +2070,107 @@ async function main() {
   /*
    * **The check's own self-test, kept rather than thrown away.**
    *
-   * `--motion` shipped with two blind spots and an adversarial round found both
-   * by injecting exactly this: an **infinite** `steps(9)` animation, whose curve
-   * lives in `animation-timing-function` while the check was reading
-   * `transition-timing-function`; and a `::after` with a literal 777 ms
-   * transition, which `querySelectorAll('#root *')` can never reach. Both were
-   * reported green, exit 0.
+   * `--motion` has now shipped with six blind spots across two rounds, and every
+   * one of them was found by injecting something. Re-running the attack is how
+   * anyone touching `motion()` finds out whether they have re-opened one, and a
+   * check this repo cannot re-break on demand is a check it has to take on trust.
    *
-   * Re-running the attack is how anyone touching `motion()` finds out whether
-   * they have re-opened either hole, and a check this repo cannot re-break on
-   * demand is a check it has to take on trust. `SILLAGE_MOTION_ATTACK=1 node
-   * scripts/harness/shot.mjs <stage> /dev/null --no-png --motion` must print five
-   * findings and exit 10.
+   *   SILLAGE_MOTION_ATTACK=1 node scripts/harness/shot.mjs <stage> \
+   *     /dev/null --no-png --motion
    *
-   * A harness-only development override, which is what `process.env` is for
-   * here — DEC-34 is about the *app* requiring none, and nothing in `electron/`
-   * or `src/` reads this.
+   * must exit **10** on every stage, and it now also exits **11** — with the
+   * probe named — if any one of its five attacks provoked nothing. It exited 0 on
+   * all five widget stages for a round, which is the finding below.
    */
   if (process.env.SILLAGE_MOTION_ATTACK) {
+    /*
+     * **It creates the elements it attacks**, which is the difference between a
+     * self-test and a self-test that happens to work on one renderer.
+     *
+     * It used to target `#root h1` and `#root h2::after`. The widget renderer has
+     * neither — measured, its entire tag set is `button div p path span svg` — so
+     * on `widget-sortie`, `widget-ouvert`, `widget-refus`, `widget-arret` and
+     * `widget-replay` the injected CSS matched nothing, the check reported a clean
+     * page and the run exited 0. The stage where the exit animation this rule was
+     * written for actually lives was the one stage the attack could not reach.
+     *
+     * Five probes, each aimed at a hole the rule has had:
+     *
+     *   1. a literal 777 ms duration                    → `offToken`
+     *   2. a `steps(9)` curve in `animation-timing-function`, which a check
+     *      reading `transition-timing-function` cannot see → `offCurve`
+     *   3. a transition on a `::after`, out of reach of `querySelectorAll`
+     *   4. three departures on an arrival curve: a **child** of the leaving
+     *      element (the class name says nothing), a **`@keyframes`** exit (neither
+     *      half of the old rule could see inside one), and an **`<svg>`** (whose
+     *      `className.toString()` is the literal `"[object SVGAnimatedString]"`)
+     *   5. an infinite animation, which must still be moving under
+     *      `prefers-reduced-motion`
+     *   6. and one that must stay **silent**: an element wearing Tailwind's own
+     *      `ease-out` utility (`tailwind.config.js:165`) while genuinely
+     *      arriving. The first version of the direction rule read the class name
+     *      and matched `out` as a word, so `className="transition ease-out"`
+     *      would have been reported as a departure on the arrival curve — a false
+     *      positive one keystroke from any component in the product. A check that
+     *      can only fail loudly cannot prove it does not fire, so this probe is
+     *      asserted the other way round.
+     *
+     * The curve on the three departures is `cubic-bezier(0.22, 1, 0.36, 0.99)` —
+     * the near-identical respelling of `--ease-out` that defeated the token
+     * comparison, measured at 0.768 / 0.278 / 0.018 opacity on the shipped
+     * element, which is the same blink. So the attack proves the *shape* rule and
+     * not the string one.
+     *
+     * A harness-only development override, which is what `process.env` is for
+     * here — DEC-34 is about the *app* requiring none, and nothing in `electron/`
+     * or `src/` reads this.
+     */
     await page.addStyleTag({ content: `
-      @keyframes mykf { from { opacity: 1 } to { opacity: .5 } }
-      #root h1 { animation: mykf var(--motion) steps(9) infinite !important;
-                 transition: opacity var(--motion) var(--ease-out) !important }
-      #root h2::after { content:"[X]"; display:inline-block;
-                        transition: opacity 777ms linear !important }
+      @keyframes sillage-attack-spin { from { opacity: 1 } to { opacity: .5 } }
+      @keyframes sillage-attack-leave { from { opacity: 1 } to { opacity: 0 } }
+      #sillage-attack-litteral {
+        animation: sillage-attack-spin var(--motion) steps(9) infinite !important;
+        transition: opacity 777ms linear !important }
+      #sillage-attack-litteral::after { content:"[X]"; display:inline-block;
+        transition: opacity 777ms linear !important }
+      .sillage-attack-leaving > * {
+        opacity: 0;
+        transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      #sillage-attack-keyframe {
+        animation: sillage-attack-leave var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) forwards !important }
+      #sillage-attack-svg {
+        opacity: 0;
+        transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      /* Probe 6, the one that must stay silent: arriving, on the arrival curve,
+         wearing the word that used to be read as « leaving ». */
+      #sillage-attack-arrivee {
+        transition: opacity var(--motion) var(--ease-out) !important }
     ` })
+    await page.evaluate(() => {
+      const root = document.querySelector('#root')
+      if (!root) throw new Error('SILLAGE_MOTION_ATTACK: pas de #root à attaquer')
+      const add = (id, className) => {
+        const el = document.createElement('div')
+        if (id) el.id = id
+        if (className) el.className = className
+        el.textContent = '·'
+        root.append(el)
+        return el
+      }
+      add('sillage-attack-litteral')
+      // The child carries the fade; the parent carries only the marker, which is
+      // exactly the shape that made the class-name rule blind.
+      add(null, 'sillage-attack-leaving').append(document.createElement('span'))
+      add('sillage-attack-keyframe')
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.id = 'sillage-attack-svg'
+      svg.setAttribute('width', '8')
+      svg.setAttribute('height', '8')
+      root.append(svg)
+      // `ease-out` is the class, not the token: Tailwind ships it and it is what
+      // a component arriving is written with.
+      add('sillage-attack-arrivee', 'transition ease-out duration-150')
+    })
     await page.waitForTimeout(120)
   }
   let motionOff = { undeclared: [], backwards: [], persisting: [], seen: 0 }
@@ -2191,11 +2303,13 @@ async function main() {
     }
   }
   if (flags.motion) {
-    const { undeclared, backwards, persisting, seen } = motionOff
+    const { undeclared, backwards, persisting, seen, departures, unreadable, declared } = motionOff
     if (undeclared.length === 0 && backwards.length === 0 && persisting.length === 0) {
       console.log(
-        `  mouvement: ${seen} élément(s) animé(s), tous par les jetons, dans le bon sens, ` +
-          'tous muets sous prefers-reduced-motion',
+        `  mouvement: ${seen} élément(s) animé(s) dont ${departures} qui s’en vont, tous par ` +
+          'les jetons, dans le bon sens, tous muets sous prefers-reduced-motion ' +
+          `(${declared.selectors} sélecteur(s) « opacity: 0 », ${declared.keyframes} @keyframes de sortie` +
+          `${unreadable > 0 ? `, ${unreadable} feuille(s) illisible(s)` : ''})`,
       )
     } else {
       if (undeclared.length > 0) {
@@ -2207,10 +2321,14 @@ async function main() {
       if (backwards.length > 0) {
         console.log(
           `  ✗ mouvement à contresens: ${backwards.length} élément(s) qui s’en vont ` +
-            'portent la courbe d’arrivée',
+            'portent une courbe d’arrivée',
         )
         for (const item of backwards.slice(0, 8)) {
-          console.log(`     ${item.what} — ${item.dur} / ${item.wrongWay} (attendu: --ease-in)`)
+          console.log(
+            `     ${item.what} — ${item.dur} / ${item.wrongWay} : part moyenne du changement ` +
+              `déjà faite ${item.share} % (une courbe de sortie est sous 50 % — --ease-in mesure 17 %, ` +
+              '--ease-out 83 %)',
+          )
         }
       }
       if (persisting.length > 0) {
@@ -2222,6 +2340,62 @@ async function main() {
         }
       }
       process.exitCode = 10
+    }
+    /*
+     * **The self-test says whether it measured anything, which is the whole
+     * reason it exists.**
+     *
+     * `SILLAGE_MOTION_ATTACK` injected rules targeting `#root h1` and
+     * `#root h2::after`, and the widget renderer has **no `h1` and no `h2`** —
+     * measured, its whole tag set is `button div p path span svg`. So the attack
+     * matched nothing on all five widget stages, `--motion` correctly reported a
+     * clean page, and the run exited **0**: « a check that measures nothing while
+     * reporting green », applied to the self-test of the check written to end
+     * exactly that. Fifth instance of the shape in this repo.
+     *
+     * The attacks below are aimed at elements the injection creates itself, so
+     * they land on any renderer — but the fix is not the aim, it is this: the
+     * attack now states what each of its five probes must provoke and fails the
+     * run when one of them provokes nothing. An attack that stops working can no
+     * longer pass.
+     */
+    if (process.env.SILLAGE_MOTION_ATTACK) {
+      const missed = [
+        [undeclared.length > 0, 'une durée littérale (777 ms) hors jetons'],
+        [
+          undeclared.some((m) => m.ease.includes('steps')),
+          'une courbe dans animation-timing-function (steps(9)), invisible à transition-timing-function',
+        ],
+        [
+          undeclared.some((m) => m.what.includes('::after')),
+          'une transition sur un ::after, hors de portée de querySelectorAll',
+        ],
+        [backwards.length >= 3, 'trois départs sur une courbe d’arrivée : un enfant, un @keyframes, un SVG'],
+        [persisting.length > 0, 'une animation infinie encore en mouvement sous prefers-reduced-motion'],
+        /*
+         * The silent one, asserted as an absence. `#sillage-attack-arrivee` wears
+         * `transition ease-out duration-150` and is arriving: nothing about it is
+         * a finding, and the moment it becomes one the rule has re-acquired the
+         * false positive that shipped with its first version.
+         */
+        [
+          !backwards.some((m) => m.what.includes('sillage-attack-arrivee')),
+          'RIEN — la classe Tailwind « ease-out » sur un élément qui arrive a été signalée ' +
+            'comme un départ (faux positif)',
+        ],
+      ]
+        .filter(([held]) => !held)
+        .map(([, what]) => what)
+      if (missed.length > 0) {
+        console.log(
+          `  ✗ auto-test du mouvement: ${missed.length} attaque(s) n’ont rien provoqué — ` +
+            'la vérification ne mesure pas ce qu’elle prétend mesurer sur cette mise en scène',
+        )
+        for (const what of missed) console.log(`     jamais signalé : ${what}`)
+        process.exitCode = 11
+      } else {
+        console.log('  auto-test du mouvement: les cinq attaques signalées, la sixième restée muette')
+      }
     }
   }
   if (flags.a11y) {
@@ -3121,9 +3295,6 @@ async function motion(page) {
       const root = getComputedStyle(document.documentElement)
       const durations = new Set(['0s', '0ms'])
       const easings = new Set()
-      // The entering curve by name, so the direction rule below compares against
-      // the token rather than against a literal `cubic-bezier` copied into here.
-      const enterCurve = root.getPropertyValue('--ease-out').trim().replace(/\s+/g, '')
       for (const name of root) {
         if (name.startsWith('--motion')) durations.add(root.getPropertyValue(name).trim())
         else if (name.startsWith('--ease')) easings.add(root.getPropertyValue(name).trim())
@@ -3140,6 +3311,166 @@ async function motion(page) {
 
       const out = []
       const split = (value) => value.split(/,(?![^(]*\))/).map((part) => part.trim())
+
+      /*
+       * **How much of its change a curve spends early — the number that replaced
+       * « is this the `--ease-out` token ».**
+       *
+       * The mean of the easing's progress function over the duration, sampled at
+       * 1% and solved for `t` by bisection because a `cubic-bezier` is
+       * parameterised by `t` and CSS applies it against `x`. Above 0.5 the change
+       * is front-loaded: the element is most of the way there in the first
+       * fraction of the time and then settles, which is what makes an *arrival*
+       * feel instant. Run on something *leaving* it is a blink followed by a
+       * window still holding its place with nothing in it.
+       *
+       * Measured, for the record and because these are the numbers `FRONT_LOADED`
+       * is set against: `--ease-out` 0.827 · `cubic-bezier(0.22,1,0.36,0.99)`
+       * (the attack that defeated the old rule) 0.824 · `cubic-bezier(0.3,0.95,0.4,1)`
+       * 0.787 · `ease` 0.667 · `ease-out` 0.625 · `linear` and `ease-in-out`
+       * exactly 0.500 · `ease-in` 0.375 · `--ease-in` 0.173.
+       *
+       * `null` for anything that is not a curve with a direction — `steps()`,
+       * `jump-*`, a keyword this browser invented — because a check that guesses
+       * at a value it could not parse invents findings, and `--motion` already
+       * refuses a curve `:root` does not declare.
+       */
+      const FRONT_LOADED = 0.55
+      const KEYWORD_CURVES = {
+        linear: [0, 0, 1, 1],
+        ease: [0.25, 0.1, 0.25, 1],
+        'ease-in': [0.42, 0, 1, 1],
+        'ease-out': [0, 0, 0.58, 1],
+        'ease-in-out': [0.42, 0, 0.58, 1],
+      }
+      const frontLoaded = (curve) => {
+        const text = (curve || '').trim()
+        let points = KEYWORD_CURVES[text] ?? null
+        if (!points) {
+          const bezier = /^cubic-bezier\(([^)]*)\)$/.exec(text)
+          if (!bezier) return null
+          const numbers = bezier[1].split(',').map((n) => Number.parseFloat(n))
+          if (numbers.length !== 4 || numbers.some((n) => Number.isNaN(n))) return null
+          points = numbers
+        }
+        const [x1, y1, x2, y2] = points
+        const cubic = (a, b) => (t) => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3
+        const X = cubic(x1, x2)
+        const Y = cubic(y1, y2)
+        let total = 0
+        for (let i = 0; i <= 100; i += 1) {
+          const x = i / 100
+          let lo = 0
+          let hi = 1
+          for (let step = 0; step < 40; step += 1) {
+            const mid = (lo + hi) / 2
+            if (X(mid) < x) lo = mid
+            else hi = mid
+          }
+          total += Y((lo + hi) / 2)
+        }
+        return total / 101
+      }
+
+      /*
+       * **Which elements are going away, read off the cascade rather than off a
+       * class name.**
+       *
+       * Collected once per pass: every selector whose rule declares `opacity: 0`
+       * **and, in the same declaration block, how it gets there** — a transition
+       * or an animation — plus every `@keyframes` whose progression ends more
+       * transparent than it starts. A departure declared as `.widget-leaving`, as
+       * `.widget-leaving > *`, on an `<svg>`, through a keyframe or in an inline
+       * style is the same fact to all of this, and none of it can be defeated by
+       * a rename.
+       *
+       * **Both halves of « in the same block » are load-bearing, and the second
+       * one is what a naive version got wrong.** Asking only « is its computed
+       * opacity zero and is something animating it » reported **seven** findings
+       * on `widget-ouvert`, and every one of them was the transcript row's mark
+       * button: `opacity-0 transition group-hover:opacity-100`, an affordance that
+       * is in the layout at all times and fades *in* on hover, deliberately, so a
+       * line does not reflow while a rep is reading it during a call. It rests at
+       * zero and it is arriving. That is precisely the objection the first version
+       * of this rule wrote down — « guessing from the target opacity would fire on
+       * anything fading for any reason » — and it is right; what it concluded from
+       * it (read the class name instead) was not.
+       *
+       * The discriminator is that **a departure state declares the endpoint and
+       * the motion together**, because it is a state the element *enters*:
+       * `.widget-leaving` sets `opacity`, `transform` and the `transition` naming
+       * both, in one block. A reveal-on-hover takes its resting endpoint from one
+       * utility (`opacity-0`) and its motion from another (`transition`), and no
+       * single rule in the cascade declares the pair. So the two are separable
+       * without reading a name, without reading a pseudo-class, and without the
+       * check having an opinion about hover.
+       *
+       * A cross-origin sheet throws on `cssRules` and is **counted**, not
+       * swallowed: a check that quietly read no stylesheet would report « aucune
+       * sortie » over a page full of them, which is the false green this repo has
+       * now shipped five times. `index.html` serves its CSS from the dev server's
+       * own origin, so the expected count is zero.
+       */
+      const leavingSelectors = []
+      const leavingKeyframes = new Set()
+      let unreadableSheets = 0
+      const walk = (rules) => {
+        for (const rule of rules) {
+          if (rule.type === CSSRule.STYLE_RULE) {
+            const opacity = rule.style.getPropertyValue('opacity').trim()
+            const moves = ['transition', 'transition-duration', 'transition-property', 'animation', 'animation-name'].some(
+              (property) => rule.style.getPropertyValue(property).trim() !== '',
+            )
+            if (opacity !== '' && Number.parseFloat(opacity) === 0 && moves) {
+              leavingSelectors.push(rule.selectorText)
+            }
+          } else if (rule.type === CSSRule.KEYFRAMES_RULE) {
+            // First and last offset, by declared order — `from`/`0%` and
+            // `to`/`100%` are the two ends whatever they are spelled as.
+            const frames = [...rule.cssRules]
+            const opacityAt = (frame) => {
+              const value = frame?.style?.getPropertyValue('opacity')?.trim()
+              return value === '' || value == null ? null : Number.parseFloat(value)
+            }
+            const first = opacityAt(frames[0])
+            const last = opacityAt(frames[frames.length - 1])
+            if (last !== null && last < (first ?? 1)) leavingKeyframes.add(rule.name)
+          }
+          if (rule.cssRules && rule.type !== CSSRule.KEYFRAMES_RULE) walk(rule.cssRules)
+        }
+      }
+      for (const sheet of document.styleSheets) {
+        try {
+          walk(sheet.cssRules)
+        } catch {
+          unreadableSheets += 1
+        }
+      }
+      const leavingHere = (el, pseudo, style) => {
+        // A pseudo-element is judged by the rule that generated it, so the
+        // selector test is run against the element it hangs off.
+        for (const selector of leavingSelectors) {
+          try {
+            if (el.matches(selector)) return true
+          } catch {
+            // A selector this browser cannot parse says nothing either way.
+          }
+        }
+        for (const name of split(style.animationName)) {
+          if (leavingKeyframes.has(name)) return true
+        }
+        /*
+         * And the same pair written inline, which no stylesheet declares: a
+         * `style={{ opacity: 0, transition: '…' }}` is one block by construction.
+         */
+        const inline = el.style
+        return (
+          inline != null &&
+          inline.opacity !== '' &&
+          Number.parseFloat(inline.opacity) === 0 &&
+          (inline.transition !== '' || inline.transitionDuration !== '' || inline.animation !== '')
+        )
+      }
       /*
        * **A transition's curve is `transition-timing-function`; an animation's
        * is `animation-timing-function`, and reading the first for the second
@@ -3188,27 +3519,70 @@ async function motion(page) {
          * *entering* curve: `--ease-out` is an expo-out that spends 73% of its
          * change in the first 35ms, which is what makes an arrival feel instant and
          * then settle, and on a departure is a blink followed by 88ms of a fully
-         * transparent always-on-top window still over the rep's call. Measured:
-         * opacity above 0.05 for 62 of 150ms.
+         * transparent always-on-top window still over the rep's call. Measured on
+         * the shipped element in Chromium: opacity 0.768 at 9ms, 0.278 at 35ms,
+         * 0.018 at 93ms — under 0.05 for the last 74 of 150ms. With `--ease-in`,
+         * the same element measures 0.999 / 0.998 / 0.909 and lands at 151ms.
          *
-         * So an element that says it is leaving must not carry an easing whose slow
-         * end is the start. Read from the class name, because that is where a
-         * leaving state is declared in this codebase and the alternative — guessing
-         * from the target opacity — would fire on anything fading for any reason.
-         * `--ease-in` is `--ease-out` mirrored through the diagonal, so the test is
-         * simply « is this the entering token », and `linear` is nobody's mistake.
+         * **Both halves of this rule were named rather than measured, and an
+         * adversarial round walked through six holes in one sitting.** The first
+         * version asked « does the class name say `leaving`, and is the curve the
+         * `--ease-out` token »:
+         *
+         *   · redefining `--ease-in` to `cubic-bezier(0.22, 1, 0.36, 0.99)` — the
+         *     same blink to three decimal places, measured 0.768/0.278/0.018 —
+         *     passed, because it is not the `--ease-out` *string*;
+         *   · renaming `--ease-out` turned the rule off entirely and silently:
+         *     `enterCurve` became `''` and `allowedEase.has('')` is false, so
+         *     `entering` was false for every element on every stage;
+         *   · moving the fade to `.widget-leaving > *` was invisible — the child
+         *     carries no `leaving` in its own class list — and the census did not
+         *     move either (3 → 3), so the count could not betray it;
+         *   · a curve inside `@keyframes` was invisible to both halves;
+         *   · an SVG can never say it is leaving at all: `className` on an
+         *     `SVGElement` is an `SVGAnimatedString`, and `.toString()` on it is
+         *     the literal `"[object SVGAnimatedString]"`;
+         *   · and a false positive sat one keystroke away: `tailwind.config.js`
+         *     ships the utility class `ease-out`, and `-out` matched as a word, so
+         *     `className="transition ease-out"` on anything arriving would have
+         *     been reported as a departure on the arrival curve.
+         *
+         * So neither half is named now. **The curve is judged by its shape**, which
+         * is `frontLoaded` below: the mean of the progress function over the
+         * duration, which is 0.827 for `--ease-out`, 0.824 for that near-identical
+         * attack, 0.667 for the CSS keyword `ease`, 0.625 for `ease-out`, exactly
+         * 0.5 for `linear` and `ease-in-out`, 0.375 for `ease-in` and 0.173 for
+         * `--ease-in`. A curve that spends more than `FRONT_LOADED` of its change
+         * early is an arrival curve whatever it is called, and the rule survives
+         * every rename and every near-miss respelling because no token identity
+         * enters into it.
+         *
+         * **And a departure is read off the stylesheet, not off a word.**
+         * `leavingHere` unions three signals, every one of them a measurement:
+         * a rule in the cascade that sets `opacity: 0` (so `.widget-leaving`, and
+         * `.widget-leaving > *`, and anything else, matched by the selector rather
+         * than by a name); a `@keyframes` whose progression ends more transparent
+         * than it starts, matched on `animation-name`; and a computed `opacity` of
+         * exactly `0` under a live duration, which needs no declaration anywhere
+         * and catches an inline style. None of the three can read an SVG wrongly,
+         * because none of them reads a class name, and none of them fires on
+         * Tailwind's `ease-out` utility, because that utility sets a timing
+         * function and nothing else.
          */
-        const names = (el.className || '').toString()
-        const leaving = /(^|[\s-])(leaving|exit|leave|out)(\s|-|$)/.test(names)
-        const entering = allowedEase.has(enterCurve)
+        const leaving = leavingHere(el, pseudo, style)
+        const wrong = normalised.filter((e) => frontLoaded(e) !== null && frontLoaded(e) > FRONT_LOADED)
         return {
           what: label,
           dur: [...new Set(durations)].map((n) => `${n}ms`).join(' '),
           ease: [...new Set(normalised)].join(' '),
           offToken: durations.some((n) => !allowedMs.has(n)),
           offCurve: normalised.some((e) => e !== 'linear' && !allowedEase.has(e)),
-          wrongWay:
-            leaving && entering && normalised.some((e) => e === enterCurve) ? enterCurve : null,
+          leaving,
+          wrongWay: leaving && wrong.length > 0 ? wrong[0] : null,
+          // The measurement behind the verdict, so the finding is evidence rather
+          // than an assertion — and so a tuned `FRONT_LOADED` can be argued about
+          // against a number the check printed.
+          share: leaving && wrong.length > 0 ? Math.round(frontLoaded(wrong[0]) * 100) : null,
         }
       }
       for (const el of document.querySelectorAll('#root *')) {
@@ -3222,7 +3596,9 @@ async function motion(page) {
           if (found) out.push(found)
         }
       }
-      return out
+      // The census travels with the findings: a run that read no stylesheet and
+      // therefore recognised no departure has to be able to say so.
+      return { items: out, unreadableSheets, selectors: leavingSelectors.length, keyframes: leavingKeyframes.size }
     })
 
   const live = await scan()
@@ -3233,9 +3609,25 @@ async function motion(page) {
   await page.emulateMedia({ reducedMotion: null })
 
   return {
-    undeclared: live.filter((m) => m.offToken || m.offCurve),
-    backwards: live.filter((m) => m.wrongWay),
-    persisting: reduced,
+    undeclared: live.items.filter((m) => m.offToken || m.offCurve),
+    backwards: live.items.filter((m) => m.wrongWay),
+    persisting: reduced.items,
+    /*
+     * **How much the departure half of this check had to work with**, printed on
+     * a pass.
+     *
+     * `seen` alone could not betray the `.widget-leaving > *` attack: the count
+     * stayed at three while the rule stopped applying. What moved — and what
+     * nothing was printing — is how many *departures* were recognised, so a
+     * stage whose exit animation stopped being identified as one says
+     * « 0 sortie » instead of « dans le bon sens ». `unreadable` is the same
+     * property one level down: if every stylesheet were cross-origin, the two
+     * declarative signals would find nothing and only the computed-opacity one
+     * would remain.
+     */
+    departures: live.items.filter((m) => m.leaving).length,
+    unreadable: live.unreadableSheets,
+    declared: { selectors: live.selectors, keyframes: live.keyframes },
     /*
      * **How many elements were actually looked at**, printed even when the
      * check passes.
@@ -3251,7 +3643,7 @@ async function motion(page) {
      * can see*, so « tout passe par les jetons » on a stage that measured
      * nothing cannot be mistaken for a stage that measured forty.
      */
-    seen: live.length,
+    seen: live.items.length,
   }
 }
 

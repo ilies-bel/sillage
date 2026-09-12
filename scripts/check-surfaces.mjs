@@ -1,10 +1,13 @@
 /**
  * **A surface that is declared and never reached.**
  *
- * `check-ports.mjs` asks this question about one interface, `CrmPort`, because
- * that is where it was first asked — four declared verbs, implemented and unit
- * tested, called by nothing, and the VerySwing opportunity was therefore
- * structurally impossible on every meeting the product had ever produced.
+ * `check-ports.mjs` asks this question of every port declared in `core/contracts/`
+ * — nine of them, discovered rather than listed. It began with one, `CrmPort`,
+ * because that is where it was first asked: four declared verbs, implemented and
+ * unit tested, called by nothing, and the VerySwing opportunity was therefore
+ * structurally impossible on every meeting the product had ever produced. It stayed
+ * at that one for a dozen rounds while its own docblock claimed all of them, which is
+ * the same gap between prose and wiring that this check exists to close.
  *
  * The fifteenth adversarial round said the check was right and its scope was
  * the problem, and gave the general form of the defect: **the repo's prose is

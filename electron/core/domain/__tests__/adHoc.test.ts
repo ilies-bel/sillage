@@ -18,6 +18,7 @@ const input = (over: Partial<Parameters<typeof decideAdHoc>[0]> = {}) => ({
   heldSince: T0,
   meetingLive: false,
   spent: false,
+  calendarOffersAt: null,
   ...over,
 })
 

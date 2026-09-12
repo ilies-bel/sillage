@@ -138,9 +138,38 @@ const walk = (dir) => {
  * undeclared, which is the benign direction, and would have read a *comment*
  * mentioning `origin: 'authored'` as a declaration, which is not.
  */
+/**
+ * Could the character before a `/` have ended an operand?
+ *
+ * The one question that separates division from a regex literal, and the reason this
+ * scanner needs to ask it at all: **a regex is full of quote characters.**
+ * `MeetingApps.ts:201` is `/^"([^"]+)"/` — three `"` — so a scanner that knows only
+ * about strings enters a phantom one at the first, leaves at the second, enters again
+ * at the third and stays there to the next `"` in the file or to EOF. Comment blanking
+ * desyncs from that point on, which is confirmed and observable in the tree today.
+ *
+ * Every shape I could construct from it fails *closed* — the un-blanked comment is read
+ * as an unnameable property and the site is reported — and that is worth writing down
+ * rather than claiming a leak I did not reproduce. But the file's own docblock names the
+ * dangerous direction (« would have read a *comment* mentioning `origin: 'authored'` as
+ * a declaration »), and a scanner that has lost sync has no defined behaviour after the
+ * point where it lost it. The next hole is unknown by construction, which is the whole
+ * reason to fix a scanner rather than the symptom.
+ *
+ * The heuristic is the standard one and it is deliberately conservative: after an
+ * identifier, a number, `)` or `]` a `/` is division; after anything else — `(`, `,`,
+ * `=`, `:`, `return`, the start of a line — it opens a regex. `}` is treated as ending
+ * an operand, which is wrong for a block but right for the object and template cases
+ * this file actually meets, and being wrong there costs a missed regex rather than a
+ * phantom string.
+ */
+const endsOperand = (ch) => ch !== undefined && /[\w$)\]}]/.test(ch)
+
 const blankComments = (src) => {
   const out = src.split('')
   let quote = null
+  /** The last character that was not whitespace and not inside a comment. */
+  let prev
   for (let i = 0; i < src.length; i++) {
     const c = src[i]
     if (quote) {
@@ -150,7 +179,31 @@ const blankComments = (src) => {
     }
     if (c === "'" || c === '"' || c === '`') {
       quote = c
+      prev = c
       continue
+    }
+    /*
+     * A regex literal, skipped whole — including its character classes, where an
+     * unescaped `/` is legal and would otherwise close it early.
+     */
+    if (c === '/' && src[i + 1] !== '/' && src[i + 1] !== '*' && !endsOperand(prev)) {
+      let j = i + 1
+      let inClass = false
+      for (; j < src.length; j++) {
+        const r = src[j]
+        if (r === '\\') { j++; continue }
+        if (r === '\n') break
+        if (r === '[') inClass = true
+        else if (r === ']') inClass = false
+        else if (r === '/' && !inClass) break
+      }
+      // An unterminated regex is not a regex; leave `prev` alone and carry on from
+      // the next character rather than swallowing the rest of the line.
+      if (j < src.length && src[j] === '/') {
+        i = j
+        prev = '/'
+        continue
+      }
     }
     if (c === '/' && src[i + 1] === '/') {
       while (i < src.length && src[i] !== '\n') out[i++] = ' '
@@ -161,7 +214,11 @@ const blankComments = (src) => {
       const stop = end === -1 ? src.length : end + 2
       for (; i < stop; i++) if (src[i] !== '\n') out[i] = ' '
       i--
+      continue
     }
+    // A comment is not an operand, so `prev` is only moved by real code — which is
+    // what lets `x /* c */ / 2` still read as division.
+    if (!/\s/.test(c)) prev = c
   }
   return out.join('')
 }

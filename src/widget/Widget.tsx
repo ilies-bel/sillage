@@ -91,7 +91,67 @@ const NOTHING_YET = 'Rien n’a encore été transcrit.'
 
 export function Widget() {
   const state = useInvoke('widget:state', {})
-  const meeting = state.state.status === 'ready' ? state.state.value.meeting : null
+  /*
+   * **The window is going away, and from here on it draws the call it recorded.**
+   *
+   * `widget:leave` is the only warning this window gets, and it used to be heard
+   * one component down, in `Frame`, where it moved a class and nothing else.
+   * Everything else went on running: `session:changed` fires for the very
+   * transition that is dismissing us, this component's handler reloads
+   * `widget:state`, the meeting is `null` by then — and the card dropped the
+   * `LevelMeter`, the elapsed time and the mark counter **17 ms into a 150 ms
+   * fade, at opacity 0.998**, measured in the packaged app
+   * (`scratch/r26-e2e-widget-last-frame.cjs`: 241 px « … | 00:00:03 | 1 | ▴ » at
+   * +23 ms, 200 px « … | Aucun enregistrement | ▾ » at +54 ms). The last thing a
+   * rep sees of a call they just recorded was this product saying there was no
+   * recording — and the previous round's `--ease-in` fix, correct on its own
+   * terms, multiplied the exposure of that false statement by **8.6×**
+   * (`∫opacity·dt` over the wrong card 12.5 → 107.6; above 0.05 opacity for
+   * 53 ms → 131 ms, `scratch/r26-curve.mjs`). A fix that produces the next
+   * round's finding, with a number.
+   *
+   * The reordering candidate — `syncOverlay()` before the `session:changed`
+   * broadcast in `main.ts` — was rejected, and the reason is worth keeping.
+   * `useInvoke.reload()` holds its previous value until the new one lands, so
+   * the reload that blanks the card is already **in flight** when `widget:leave`
+   * arrives; winning the race changes when `leaving` becomes true, not whether
+   * the answer lands. And it would make a property of this window depend on the
+   * order of two sends in another process, for one channel, when the card can
+   * also be changed by `transcript:appended`, `moment:marked`,
+   * `moment:forgotten`, `health:changed` and `widget:placed` — each of which can
+   * arrive during the fade, and one of which (`health:changed`) grows the frame
+   * and asks for a `widget:resize` that `Overlay` now refuses, which is the
+   * ~20 px slide in the same measurement.
+   *
+   * So the rule is the one that is true of every channel and every order: **a
+   * window that has been told to go away stops taking state.** It keeps drawing
+   * what it last drew, because the recording did happen.
+   *
+   * **A latch and not only a state**, and that took a failing test to learn. React
+   * batches: two broadcasts arriving in one task are both handled before anything
+   * re-renders, so a handler guarded on the *state* reads `false` for the message
+   * that arrives beside `widget:leave` — which is exactly the pair this is about,
+   * since `main.ts` sends `session:changed` and `widget:leave` from the same
+   * function. The ref is the fact, read at the moment it is needed; the state is
+   * what re-renders the shell so the fade can start. One latch, two readers.
+   */
+  const gone = useRef(false)
+  const [leaving, setLeaving] = useState(false)
+  useBroadcast('widget:leave', () => {
+    gone.current = true
+    setLeaving(true)
+  })
+
+  const live = state.state.status === 'ready' ? state.state.value.meeting : null
+  /*
+   * The last meeting this window *rendered*, which is what makes the freeze cover
+   * a read that was already on the wire. Written during render and only while the
+   * window is staying: that is the definition of « what is on screen », and there
+   * is no commit after `leaving` in which it could be captured instead.
+   */
+  const drawn = useRef(live)
+  if (!gone.current) drawn.current = live
+  const meeting = drawn.current
   const meetingId = meeting?.meetingId ?? null
 
   const [open, setOpen] = useState(false)
@@ -134,7 +194,15 @@ export function Widget() {
     if (loadedMarks) setMarks((was) => (was.length === 0 ? [...loadedMarks] : was))
   }, [loadedMarks])
 
-  useBroadcast('session:changed', () => state.reload())
+  /*
+   * And nothing is *asked* either. `session:changed` is the broadcast that
+   * carries the very transition dismissing this window, so the reload it fires is
+   * work done to redraw a card that is fading out — see `leaving` above.
+   */
+  useBroadcast('session:changed', () => {
+    if (gone.current) return
+    state.reload()
+  })
 
   /*
    * **The health of the two required channels, collected by the *window*.**
@@ -163,6 +231,7 @@ export function Widget() {
     setTrouble(worst?.reason ?? null)
   }, [health.state])
   useBroadcast('health:changed', ({ connector, health: next }) => {
+    if (gone.current) return
     if (connector !== 'capture' && connector !== 'transcribe') return
     setTrouble(next.state === 'ok' ? null : (next.reason ?? null))
   })
@@ -177,6 +246,7 @@ export function Widget() {
    * keeping; this is the surface that keeps it.
    */
   useBroadcast('transcript:appended', (payload) => {
+    if (gone.current) return
     if (payload.meetingId !== meetingId) return
     // Batch providers only, today — see the header. A provisional result is
     // dropped rather than drawn: this surface shows the record.
@@ -194,6 +264,7 @@ export function Widget() {
    * on screen is the row in the log.
    */
   useBroadcast('moment:marked', (payload) => {
+    if (gone.current) return
     if (payload.meetingId !== meetingId) return
     setMarks((was) =>
       was.some((mark) => mark.id === payload.mark.id) ? was : [...was, payload.mark],
@@ -201,6 +272,7 @@ export function Widget() {
   })
 
   useBroadcast('moment:forgotten', (payload) => {
+    if (gone.current) return
     if (payload.meetingId !== meetingId) return
     setMarks((was) => was.filter((mark) => mark.id !== payload.markId))
   })
@@ -232,7 +304,12 @@ export function Widget() {
   )
 
   return (
-    <Frame open={open}>
+    <Frame
+      open={open}
+      leaving={leaving}
+      gone={gone}
+      settled={state.state.status !== 'loading'}
+    >
       {(above) => (
         <>
           <Pill
@@ -322,25 +399,66 @@ export function Widget() {
 const HALO = 20
 
 /**
- * How long the frame waits for its own webfont before reporting a size.
+ * How long the frame waits before reporting a size it is not happy with.
  *
  * The main process does not show this window until the renderer has said how big it
  * is (`FIRST_FRAME_MS` in `Overlay.ts`), which is what stopped a card appearing
  * clipped and sliding into place. The measurement itself then has to be worth
- * waiting for — and measured on the shipped renderer it was not: the first frame is
- * laid out in the **fallback** face, so the pill reported 239 px, Inter then loaded
- * and it became 276, and `placeAroundPill` holds the pill's *centre*, so those 37 px
- * moved the window sideways by eighteen. Before the window was deferred that jump
- * was the third of three; after, it would have been the only one left, and the one
- * still visible.
+ * waiting for, and there are **two** ways it is not.
  *
- * Inter is bundled (`src/font/`), so `document.fonts.status` is almost always
- * `'loaded'` already and this costs nothing. The deadline is for the case that is
- * not true, and it is deliberately **shorter** than `FIRST_FRAME_MS`: silence here
- * is a pill that does not appear until the main process gives up on us, so the
- * renderer must always answer first, with a worse number if that is all it has.
+ * **The wrong face.** Measured on the shipped renderer: the first frame is laid out
+ * in the *fallback* face, so the pill reported 239 px, Inter then loaded and it
+ * became 276, and `placeAroundPill` holds the pill's *centre*, so those 37 px moved
+ * the window sideways by eighteen. Before the window was deferred that jump was the
+ * third of three; after, it would have been the only one left, and the one still
+ * visible.
+ *
+ * **The wrong content, which is worse and was the entrance's own version of the
+ * exit's defect.** The gate was on the font and never on what the pill was
+ * *drawing*: `widget:state` is a preload hop and two SQLite reads, and until it
+ * answers `Pill` draws « Aucun enregistrement » with no meter, no clock and no mark
+ * button. So the measurement the main process was holding the window off screen for
+ * could be a measurement of a pill saying the recording is not happening — and the
+ * window was then *revealed* carrying it. Measured on the shipped renderer with one
+ * line of latency on that one channel (`scratch/r26-widget-first-frame-shot.mjs`,
+ * 120 ms): « the window is created/shown at 240×78 », pill text
+ * « Enregistrement en cours / Aucun enregistrement / ▴ », settling at 281×78 — 41 px
+ * clipped and a 21 px slide, arriving with the opposite of what it means. In real
+ * Electron on the machine this is typed on, `widget:state` took 17 ms and the reveal
+ * *was* correct (`scratch/r26-e2e-widget-first-frame.cjs`: 619 ms placeholder,
+ * 636 ms the real pill; the main process shows at 276×78), so the whole defence was
+ * ~104 ms of unguarded margin at the instant `startRecording` is opening two audio
+ * devices and booting a transcriber — on a Mac, where the primary platform is
+ * Windows (HR-2). Correct by construction, not by margin.
+ *
+ * One number for both waits, and it is the **deadline** on each rather than a
+ * requirement: silence here is a pill that does not appear until the main process
+ * gives up on us, so the renderer must always answer first, with a worse number if
+ * that is all it has (DEC-26). It is measured from the **mount** and not from each
+ * arming of the effect — the content arriving re-arms the measurement, and a font
+ * deadline that restarted there would land past the moment the main process stops
+ * waiting.
+ *
+ * **And it has to be longer than the read it is waiting for, which is what made the
+ * first attempt at this useless.** At 120 ms it fired before `widget:state` answered
+ * and the placeholder was measured anyway — measured on the built bundle with the
+ * harness's own fixture, whose `LATENCY` table gives that channel 150 ms precisely so
+ * a stage can catch the pill mid-flight: « t=+181ms 240×78 « … | Aucun
+ * enregistrement | ▾ » », then the real pill at 221 ms
+ * (`scratch/r26b-prod-first-frame.mjs`). A deadline shorter than the answer is a
+ * deadline that decides every time, so the wait it guards never happens. 200 ms
+ * covers that read with room, and `FIRST_FRAME_MS` was raised to 300 so the main
+ * process still gives up **after** this side does — a handshake whose two deadlines
+ * are in the wrong order is decided by the wrong process, and what the main process
+ * reveals when it gives up is the *guess*, which is 49 px narrower than the pill.
+ *
+ * Inter is bundled (`src/font/`) and `widget:state` is two SQLite reads over a
+ * preload hop, so on an ordinary launch both waits are already over and this costs
+ * nothing: measured in the packaged app, the placeholder is in the DOM for **10 ms**
+ * (456 ms → 466 ms) and the window is revealed at 737 ms
+ * (`scratch/r26b-e2e-visible-text.cjs`).
  */
-const FONT_DEADLINE_MS = 120
+const MEASURE_DEADLINE_MS = 200
 
 /**
  * How long this element's own transition will take, in milliseconds — read off
@@ -372,7 +490,30 @@ const transitionMs = (element: Element): number => {
   return Math.max(0, ...durations.map((ms, index) => ms + (delays[index] ?? 0)))
 }
 
-function Frame({ open, children }: { open: boolean; children: (above: boolean) => React.ReactNode }) {
+interface FrameProps {
+  open: boolean
+  /**
+   * The window has been asked to play its exit — see `leaving` in `Widget`.
+   *
+   * `leaving` re-renders the shell so the fade can start; `gone` is the same latch
+   * read synchronously, because React batches and a broadcast arriving beside
+   * `widget:leave` must not be allowed to see `false`.
+   */
+  leaving: boolean
+  gone: React.RefObject<boolean>
+  /**
+   * Whether the read the pill cannot draw without has landed.
+   *
+   * Settled either way, and that is the honest condition rather than « there is a
+   * meeting »: a `widget:state` that answers `{ meeting: null }` is an answer, and
+   * a window held off screen until a meeting appears would never appear at all on
+   * the one race where it does not. See `MEASURE_DEADLINE_MS`.
+   */
+  settled: boolean
+  children: (above: boolean) => React.ReactNode
+}
+
+function Frame({ open, leaving, gone, settled, children }: FrameProps) {
   const box = useRef<HTMLDivElement>(null)
   const [above, setAbove] = useState(false)
 
@@ -387,7 +528,13 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
    * pixel. Both used to depend on a `widget:resize` being sent, and both are a
    * broadcast now.
    */
-  useBroadcast('widget:placed', ({ above: next }) => setAbove(next))
+  useBroadcast('widget:placed', ({ above: next }) => {
+    // A window that has been let go of does not relayout — `leaving` in `Widget`
+    // states the rule, and this is the one channel that would move the *card*
+    // rather than its content: `above` flips `flex-col` to `flex-col-reverse`.
+    if (gone.current) return
+    setAbove(next)
+  })
 
   /*
    * **The window is about to be destroyed and this is the only warning it gets.**
@@ -397,15 +544,16 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
    * during it. Nothing about the widget's *content* changes — the pill keeps its
    * elapsed time and its counter to the last frame, because the recording did
    * happen and a card that blanked its own numbers on the way out would be
-   * saying something about the call that is not true.
+   * saying something about the call that is not true. That sentence was written
+   * here as a property and the product did the opposite for as long as it was
+   * written down; what makes it true is the freeze in `Widget`, which is why
+   * `leaving` arrives as a prop rather than being heard in this component.
    *
    * The reply is not load-bearing: `Overlay` armed a fallback timer before it
    * asked, so a renderer that is wedged, crashed or simply slower than half a
    * second loses its window anyway. A pill that outlives the call it reports is
    * worse than a pill that pops.
    */
-  const [leaving, setLeaving] = useState(false)
-  useBroadcast('widget:leave', () => setLeaving(true))
   const shell = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (!leaving) return
@@ -444,14 +592,50 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
    */
   const legible = useRef(false)
 
+  /**
+   * When this frame first armed its measurement, so both deadlines are measured
+   * from the mount rather than from the arming that happens to be current — see
+   * `MEASURE_DEADLINE_MS`.
+   */
+  const armed = useRef(0)
+
+  /**
+   * The content wait, as state rather than a ref, because it is the one of the two
+   * that has to *re-arm the effect*: a size observer cannot see the placeholder
+   * being replaced by a pill of a different width until after the fact, and the
+   * whole point is to speak once, afterwards.
+   *
+   * `settled || waited` and never `settled` alone: a `widget:state` that never
+   * answers must still produce a pill (DEC-26). What that costs is the placeholder
+   * being measured, which is exactly what the rep used to get immediately.
+   */
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setWaited(true), MEASURE_DEADLINE_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  const drawable = settled || waited
+
   useLayoutEffect(() => {
     const element = box.current
     if (!element || typeof ResizeObserver === 'undefined') return
+    if (armed.current === 0) armed.current = Date.now()
     const send = (): void => {
-      // Nothing is reported in the fallback face — see `FONT_DEADLINE_MS`. The
-      // observer fires on the initial observe too, so the guard has to be here and
+      /*
+       * **And a leaving window asks for nothing more.**
+       *
+       * `Overlay` released it before it sent `widget:leave`, so a `widget:resize`
+       * from here is answered `{ ok: false }` — which is not merely wasted work: the
+       * reply carries `above: false`, and writing that in relaid the card out
+       * mid-fade. The reply is guarded on `ok` below as well, because the same
+       * refusal happens for a measurement that was already on the wire.
+       */
+      if (gone.current) return
+      // Nothing is reported in the fallback face, and nothing is reported of a pill
+      // that is still waiting for the read it draws — see `MEASURE_DEADLINE_MS`. The
+      // observer fires on the initial observe too, so the guards have to be here and
       // not only on the first call.
-      if (!legible.current) return
+      if (!legible.current || !drawable) return
       const frame = element.getBoundingClientRect()
       /*
        * The pill, found in the DOM rather than held in a ref.
@@ -492,7 +676,19 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
         pillTop,
         pillHeight: Math.round(anchor?.height ?? height),
       })
-        .then((placement) => setAbove(placement.above))
+        /*
+         * **`ok: false` is « we did not place you », never « you open downward ».**
+         *
+         * `Overlay.resize` answers that whenever there is no window — the meeting
+         * ended between this measurement and its arrival, which its own docblock
+         * names as the ordinary case — and `above` is then a default rather than an
+         * answer. Writing it in flipped the chevron and relaid the card out during
+         * the exit, which is half of the ~20 px slide measured in
+         * `scratch/r26-e2e-widget-last-frame.cjs` (« ▴ » → « ▾ » at +54 ms).
+         */
+        .then((placement) => {
+          if (placement.ok) setAbove(placement.above)
+        })
         .catch(() => undefined)
     }
     const observer = new ResizeObserver(send)
@@ -561,7 +757,11 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
               }),
           )
           .then(speak, speak)
-        deadline = setTimeout(speak, FONT_DEADLINE_MS)
+        // From the mount, not from this arming — see `MEASURE_DEADLINE_MS`.
+        deadline = setTimeout(
+          speak,
+          Math.max(0, MEASURE_DEADLINE_MS - (Date.now() - armed.current)),
+        )
       }
     }
 
@@ -607,8 +807,18 @@ function Frame({ open, children }: { open: boolean; children: (above: boolean) =
      * while the panel is *shut* moves the pill by nothing, because a single-child
      * `flex-col-reverse` puts it at `HALO` exactly as `flex-col` does, and that
      * one is now silent rather than byte-identical.
+     *
+     * `drawable` is the second entry and it is there for the same reason as the
+     * first: **it is the moment there is something worth measuring, and no size
+     * change announces it.** The placeholder pill and the real one are different
+     * widths, so the observer *would* fire — but a frame later, after the main
+     * process had already been told the placeholder's size and had shown the
+     * window at it. Re-arming here asks again on the transition itself, and the
+     * key then decides whether there is anything to say: a `widget:state` that
+     * answered before the first paint leaves the two measurements identical and
+     * this one silent. It flips at most once per window.
      */
-  }, [above])
+  }, [above, drawable])
 
   /*
    * The pointer over the halo hands the mouse back to whatever is underneath.

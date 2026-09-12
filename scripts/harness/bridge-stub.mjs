@@ -251,6 +251,66 @@ export function installAppBridge(config) {
    */
   const NEOVIA_UNARMED = scenario === 'agenda-appel-imprevu'
 
+  /**
+   * **When the Néovia call actually ran — one timeline, derived from its slot.**
+   *
+   * Three unrelated literals used to answer this and they contradicted each other
+   * and the clock. `scheduledStart` was `at(0, 14, 30)`, `createdAt` `at(0, 14, 28)`
+   * and `startedAt` `now - 22 * MIN` — which against a `now` pinned at 14:35 is
+   * **14:13**: fifteen minutes before the meeting row was created and seventeen
+   * before the invite the product can only arm five minutes early. `updatedAt`
+   * (14:15) was before `createdAt` too. And `SEGMENTS` were spaced 78 seconds
+   * apart from that impossible start, so the transcript spanned 23.5 minutes,
+   * **two of its nineteen turns landed after `now`** (+10 s and +88 s) along with
+   * one of the two marks (+9 s), and `TranscriptReader` prints those as wall clock:
+   * a reader showing a client speaking a minute and a half into the future, under a
+   * pill saying the call had been recording for 22 minutes.
+   *
+   * **The pinned instant is not the root cause, and last round's reading of it was
+   * the wrong one.** One instant is a *feature*: `shot.mjs` pins `page.clock` to
+   * the same value, which is what makes two runs of a stage produce the same pixels.
+   * What was wrong is that three numbers each stated part of one fact. Stated once
+   * here, everything else reads it.
+   *
+   * `STEP_MS` is the other half, and it is the density. 19 turns / 1 595 characters
+   * over 23.5 minutes is **68 characters a minute**; CLAUDE.md's own measurement of
+   * a real call is 124 765 characters over ninety minutes, which is 1 386. At nine
+   * seconds a turn the same nineteen turns span 2 min 52 s — **555 characters a
+   * minute**, with each turn about 6.4 s of speech in a 9 s slot, which is a
+   * conversation rhythm rather than a transcript with 78-second holes in it. The
+   * remaining factor of 2.5 is silence, and silence is real.
+   *
+   * The call therefore starts at its slot and its last turn lands at 14:32:52,
+   * comfortably before `now`. Nothing is in the future, `createdAt ≤ startedAt`, and
+   * `startedAt ≥ scheduledStart`. `harnessFixture.test.ts` asserts all three, on
+   * every meeting, in every scenario — which is what was missing: reverting the one
+   * timing hunk the previous round wrote left all six of its tests passing.
+   */
+  const NEOVIA_SLOT = at(0, 14, 30)
+  const NEOVIA_CREATED = at(0, 14, 28)
+  const NEOVIA_STARTED = NEOVIA_SLOT
+  /**
+   * How long the call ran. Three minutes, which is what nineteen turns nine
+   * seconds apart occupy — the last one ends at 2 min 52 s.
+   *
+   * The **duration** is declared and `STEP_MS` fits inside it, rather than the
+   * other way round, so the meeting row can state its own end without reading a
+   * transcript defined two hundred lines below it. `harnessFixture.test.ts` holds
+   * the two together: every `receivedAt` must fall between `startedAt` and
+   * `endedAt ?? now`, so tightening the rhythm past the end of the call fails
+   * rather than silently dating a turn after the recording stopped.
+   */
+  const NEOVIA_DURATION_MS = 3 * MIN
+  const NEOVIA_ENDED = NEOVIA_STARTED + NEOVIA_DURATION_MS
+  /** Live states — the ones with no end yet. */
+  const NEOVIA_LIVE = !(
+    scenario === 'review' ||
+    scenario === 'compte-rendu' ||
+    scenario === 'enhancement-attente' ||
+    scenario === 'enhancement-echec'
+  )
+  const STEP_MS = 9_000
+
   const MEETINGS = [
     meeting({
       id: 'm-sodexial-staffing',
@@ -298,15 +358,36 @@ export function installAppBridge(config) {
       title: 'Néovia Santé — cadrage renfort data',
       eventId: 'evt-neovia-cadrage',
       clientName: 'Néovia Santé',
-      scheduledStart: at(0, 14, 30),
-      createdAt: at(0, 14, 28),
+      scheduledStart: NEOVIA_SLOT,
+      createdAt: NEOVIA_CREATED,
       // An `idle` meeting has never been recorded, so it has no start instant.
       // A state and a timestamp that contradict each other is the same class of
       // lie as the state itself.
-      startedAt: NEOVIA_UNARMED ? null : now - 22 * MIN,
-      endedAt: null,
+      startedAt: NEOVIA_UNARMED ? null : NEOVIA_STARTED,
+      /*
+       * **And a meeting that has ended has an end**, which this row did not: it
+       * carried `endedAt: null` in the `ended` and `awaiting_confirmation`
+       * branches, i.e. on every stage of the review gate and both enhancement
+       * screens. The recording stops when the last turn has arrived plus the
+       * end-of-meeting grace; `NEOVIA_ENDED` is that instant, and the gate opens
+       * on it roughly a minute and a half later, which is an extraction rather
+       * than a fixture faster than the product.
+       */
+      endedAt: NEOVIA_UNARMED || NEOVIA_LIVE ? null : NEOVIA_ENDED,
       confirmedAt: null,
-      updatedAt: NEOVIA_UNARMED ? at(0, 14, 28) : now - 20 * MIN,
+      /*
+       * A live recording's row was last written when the state changed; segments
+       * are their own log and do not touch it. A finished one was last written by
+       * the extraction, which lands after the call — 45 s here, which is what
+       * puts the gate an unhurried minute and a half before `now` instead of
+       * five seconds after the last word (DEC-39's deferred case is the other
+       * two scenarios, and they are `ended` for exactly that reason).
+       */
+      updatedAt: NEOVIA_UNARMED
+        ? NEOVIA_CREATED
+        : NEOVIA_LIVE
+          ? NEOVIA_STARTED
+          : NEOVIA_ENDED + 45_000,
     }),
     meeting({
       id: 'm-marechal-erp',
@@ -482,7 +563,7 @@ export function installAppBridge(config) {
   ]
 
   const SEGMENTS = LINES.map((line, index) => {
-    const start = index * 78_000 + 4_000
+    const start = index * STEP_MS + 4_000
     return {
       id: 'seg-neovia-' + (index + 1),
       channel: line[0],
@@ -491,9 +572,57 @@ export function installAppBridge(config) {
       endMs: start + 6_400,
       isFinal: true,
       provider: 'local-whisper',
-      receivedAt: now - 22 * MIN + start,
+      // Measured from when the recording began, so no turn can be dated after
+      // the instant the whole fixture is pinned to. See `NEOVIA_STARTED`.
+      receivedAt: NEOVIA_STARTED + start,
     }
   })
+
+  /**
+   * **A span's offsets come from the turn it is in, because the gate prints them.**
+   *
+   * Every one of the eleven field rows draws « vérifié · mm:ss » from
+   * `field.span.startMs` (`Review.tsx:1828`), and `source ▸` then opens the reader
+   * on the turn — which draws *its own* offset (`TranscriptReader.tsx:450`). Those
+   * were two different numbers: the spans were hand-written literals up to
+   * `840_000` ms, i.e. fourteen minutes, and none of them landed on the turn
+   * carrying the quote even under the old 78-second spacing. So the gate said
+   * « vérifié · 14:00 » about evidence the reader placed somewhere else entirely,
+   * on the screen whose whole argument is that a claim is checkable.
+   *
+   * Located rather than declared, by the same fold `locateSegments` uses — accents
+   * dropped, case folded, punctuation collapsed — and the offset within the turn is
+   * apportioned by where the quote sits in it, which is the best a fixture can
+   * honestly say: `modules/transcribe` stamps a segment with its *arrival*, so
+   * there are no acoustic offsets inside a turn anywhere in this product.
+   *
+   * It throws on a quote it cannot find. A span that silently fell back to zero
+   * would put « vérifié · 00:00 » on a row and be exactly the kind of quiet
+   * fixture lie this file has now been caught in five times.
+   */
+  const foldQuote = (text) =>
+    text
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+
+  const spanOf = (quote, channel, segments) => {
+    const needle = foldQuote(quote)
+    const turn = (segments ?? SEGMENTS).find((segment) => foldQuote(segment.text).includes(needle))
+    if (!turn) throw new Error('citation absente de la transcription du harnais : ' + quote)
+    const hay = foldQuote(turn.text)
+    const spoken = turn.endMs - turn.startMs
+    const offset = Math.round((hay.indexOf(needle) / hay.length) * spoken)
+    const length = Math.max(1_200, Math.round((needle.length / hay.length) * spoken))
+    return {
+      quote,
+      channel,
+      startMs: turn.startMs + offset,
+      endMs: Math.min(turn.endMs, turn.startMs + offset + length),
+    }
+  }
 
   /**
    * The rep's own marks (`core/contracts/marks.ts`).
@@ -692,7 +821,7 @@ export function installAppBridge(config) {
       // No `**`: the four deterministic lines are composed in code and carry no
       // emphasis — `compteRendu.ts` says why. The fixture follows the composer.
       'Client : Néovia Santé',
-      `Date : ${crWhen(at(0, 14, 30), at(0, 15, 30))}`,
+      `Date : ${crWhen(NEOVIA_SLOT, NEOVIA_SLOT + HOUR)}`,
       'Interlocuteurs : Élodie Vasseur (elodie.vasseur@neovia-sante.fr), Marc Pontier (marc.pontier@neovia-sante.fr)',
       'Commercial : julien.marchand@synapse-it.fr',
       '',
@@ -891,51 +1020,51 @@ export function installAppBridge(config) {
     sources: [
       {
         text: '**Besoin** : Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
-        span: { quote: 'il nous manque deux data engineers', channel: 'far', startMs: 182_000, endMs: 186_400 },
+        span: spanOf('il nous manque deux data engineers', 'far'),
       },
       {
         text: '**Mode de collaboration** : régie',
-        span: { quote: 'De la régie, clairement', channel: 'far', startMs: 631_000, endMs: 633_800 },
+        span: spanOf('De la régie, clairement', 'far'),
       },
       {
         text: '**TJM évoqué** : 550 €',
-        span: { quote: 'plutôt sur du 550 euros pour un data engineer confirmé', channel: 'far', startMs: 742_000, endMs: 747_500 },
+        span: spanOf('plutôt sur du 550 euros pour un data engineer confirmé', 'far'),
       },
       {
         text: '**Démarrage** : début septembre 2026',
-        span: { quote: 'Idéalement début septembre', channel: 'far', startMs: 498_000, endMs: 500_900 },
+        span: spanOf('Idéalement début septembre', 'far'),
       },
       {
         text: '**Durée de mission** : 12 mois, clause de sortie à 6 mois',
-        span: { quote: 'douze mois, avec une clause de sortie à six mois', channel: 'far', startMs: 552_000, endMs: 556_700 },
+        span: spanOf('douze mois, avec une clause de sortie à six mois', 'far'),
       },
       {
         text: '**Contexte technique** : Databricks et Airflow en place, dbt en cours de généralisation, sortie des pipelines Talend historiques avant fin d’année.',
-        span: { quote: 'Databricks et Airflow, avec du dbt qu’on est en train de généraliser', channel: 'far', startMs: 268_000, endMs: 273_600 },
+        span: spanOf('Databricks et Airflow, avec du dbt qu’on est en train de généraliser', 'far'),
       },
       {
         text: '2 × Data Engineer — confirmé (Databricks, Airflow, dbt)',
-        span: { quote: 'il nous manque deux data engineers', channel: 'far', startMs: 182_000, endMs: 186_400 },
+        span: spanOf('il nous manque deux data engineers', 'far'),
       },
       {
         text: '1 × Lead Data — senior (architecture, cadrage, revue de code)',
-        span: { quote: 'un profil plus senior pour cadrer', channel: 'far', startMs: 186_400, endMs: 189_200 },
+        span: spanOf('un profil plus senior pour cadrer', 'far'),
       },
       {
         text: 'La grille achats plafonne à 550 € sur un profil confirmé — _sans réponse apportée_',
-        span: { quote: 'votre TJM de l’an dernier était un peu haut pour nos achats', channel: 'far', startMs: 700_000, endMs: 705_400 },
+        span: spanOf('votre TJM de l’an dernier était un peu haut pour nos achats', 'far'),
       },
       {
         text: 'Envoyer 3 CV avec les TJM associés — Julien Marchand — avant vendredi',
-        span: { quote: 'Je vous envoie trois CV d’ici vendredi', channel: 'rep', startMs: 788_000, endMs: 791_900 },
+        span: spanOf('Je vous envoie trois CV d’ici vendredi', 'rep'),
       },
       {
         text: 'Mettre Sophie Bertrand en copie — Élodie Vasseur',
-        span: { quote: 'Mettez Sophie en copie', channel: 'far', startMs: 812_000, endMs: 814_300 },
+        span: spanOf('Mettez Sophie en copie', 'far'),
       },
       {
         text: 'Point de calage une fois les profils lus — la semaine suivante',
-        span: { quote: 'un point de calage la semaine prochaine une fois les CV lus', channel: 'rep', startMs: 840_000, endMs: 845_100 },
+        span: spanOf('un point de calage la semaine prochaine une fois les CV lus', 'rep'),
       },
     ],
     intents: [
@@ -943,7 +1072,13 @@ export function installAppBridge(config) {
         id: 'm-neovia-cadrage:crm.task',
         kind: 'crm.task',
         label: 'Tâche compte-rendu (VerySwing)',
-        summary: 'Néovia Santé — cadrage renfort data · 14:30',
+        // The slot, formatted rather than typed: `renderCompteRendu` and this
+        // summary both name the same instant and a literal here could drift off it.
+        summary: `Néovia Santé — cadrage renfort data · ${new Intl.DateTimeFormat('fr-FR', {
+          timeZone: 'Europe/Paris',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(NEOVIA_SLOT)}`,
         available: true,
         reason: null,
       },
@@ -1135,6 +1270,65 @@ export function installAppBridge(config) {
     'Arkelia Logistique',
   ]
 
+  /**
+   * The Lefort call's own turns, named rather than inline so `spanOf` can locate a
+   * citation in *this* transcript. Two of the fixture's spans belong to this
+   * meeting and not to Néovia's, and a helper defaulting to the wrong one would
+   * have thrown — which is how this was found.
+   */
+  const LEFORT_SEGMENTS = [
+      {
+        id: 'rec-lefort-1',
+        channel: 'far',
+        text: 'On a deux départs sur l’équipe plateforme, et la migration Kubernetes ne peut pas attendre.',
+        startMs: 96_000,
+        endMs: 102_400,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: at(-14, 15, 3),
+      },
+      {
+        id: 'rec-lefort-2',
+        channel: 'rep',
+        text: 'Vous cherchez plutôt des profils confirmés ou un lead capable de cadrer ?',
+        startMs: 108_000,
+        endMs: 112_800,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: at(-14, 15, 4),
+      },
+      {
+        id: 'rec-lefort-3',
+        channel: 'far',
+        text: 'Deux ingénieurs DevOps confirmés, un TJM autour de 620 euros, démarrage septembre.',
+        startMs: 118_000,
+        endMs: 124_600,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: at(-14, 15, 5),
+      },
+      {
+        id: 'rec-lefort-4',
+        channel: 'far',
+        text: 'Le sujet qui va coincer, c’est le délai de démarrage : nos achats mettent trois semaines à contractualiser.',
+        startMs: 131_000,
+        endMs: 138_900,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: at(-14, 15, 6),
+      },
+      {
+        id: 'rec-lefort-5',
+        channel: 'rep',
+        text: 'On peut anticiper le sourcing pendant ce temps-là, je vous envoie les premiers profils la semaine prochaine.',
+        startMs: 145_000,
+        endMs: 152_100,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: at(-14, 15, 7),
+      },
+  ]
+
   const RECORDS = {
     'm-lefort-decouverte': {
       meeting: meetingById('m-lefort-decouverte'),
@@ -1156,58 +1350,7 @@ export function installAppBridge(config) {
           segmentId: null,
         },
       ],
-      segments: [
-        {
-          id: 'rec-lefort-1',
-          channel: 'far',
-          text: 'On a deux départs sur l’équipe plateforme, et la migration Kubernetes ne peut pas attendre.',
-          startMs: 96_000,
-          endMs: 102_400,
-          isFinal: true,
-          provider: 'local-whisper',
-          receivedAt: at(-14, 15, 3),
-        },
-        {
-          id: 'rec-lefort-2',
-          channel: 'rep',
-          text: 'Vous cherchez plutôt des profils confirmés ou un lead capable de cadrer ?',
-          startMs: 108_000,
-          endMs: 112_800,
-          isFinal: true,
-          provider: 'local-whisper',
-          receivedAt: at(-14, 15, 4),
-        },
-        {
-          id: 'rec-lefort-3',
-          channel: 'far',
-          text: 'Deux ingénieurs DevOps confirmés, un TJM autour de 620 euros, démarrage septembre.',
-          startMs: 118_000,
-          endMs: 124_600,
-          isFinal: true,
-          provider: 'local-whisper',
-          receivedAt: at(-14, 15, 5),
-        },
-        {
-          id: 'rec-lefort-4',
-          channel: 'far',
-          text: 'Le sujet qui va coincer, c’est le délai de démarrage : nos achats mettent trois semaines à contractualiser.',
-          startMs: 131_000,
-          endMs: 138_900,
-          isFinal: true,
-          provider: 'local-whisper',
-          receivedAt: at(-14, 15, 6),
-        },
-        {
-          id: 'rec-lefort-5',
-          channel: 'rep',
-          text: 'On peut anticiper le sourcing pendant ce temps-là, je vous envoie les premiers profils la semaine prochaine.',
-          startMs: 145_000,
-          endMs: 152_100,
-          isFinal: true,
-          provider: 'local-whisper',
-          receivedAt: at(-14, 15, 7),
-        },
-      ],
+      segments: LEFORT_SEGMENTS,
       notes:
         'Sophie Bertrand pilote côté DSI, Karim Benali côté plateforme.\nBloquant : délai de contractualisation achats (3 semaines).\nPenser à proposer un profil en pré-embauche.',
       compteRendu:
@@ -1218,13 +1361,13 @@ export function installAppBridge(config) {
           key: 'profils',
           label: 'Profils',
           confidence: 'ok',
-          span: { quote: 'deux ingénieurs DevOps confirmés', channel: 'far', startMs: 118_000, endMs: 122_000 },
+          span: spanOf('deux ingénieurs DevOps confirmés', 'far', LEFORT_SEGMENTS),
         },
         {
           key: 'tjm',
           label: 'TJM',
           confidence: 'ok',
-          span: { quote: 'un TJM autour de 620 euros', channel: 'far', startMs: 120_000, endMs: 123_400 },
+          span: spanOf('un TJM autour de 620 euros', 'far', LEFORT_SEGMENTS),
         },
         {
           key: 'objections',
@@ -1960,6 +2103,42 @@ export function installAppBridge(config) {
    * way or the screen would be photographed in an error state that production
    * never reaches.
    */
+  /**
+   * **One conversation, one offer — and the offer is the same fact on both halves
+   * of the Entra axis.**
+   *
+   * This was decided twice, once inside each branch of `agendaSnapshot`, and the
+   * two disagreed. The `entra: false` branch offered `m-adhoc-teams` for
+   * `agenda-appel-imprevu` and `null` otherwise; the `entra: true` branch offered
+   * `m-neovia-cadrage` unconditionally — so on that scenario at `entra: true` the
+   * day's one filled *Enregistrer* landed on the **calendar** meeting while
+   * `m-adhoc-teams` sat beside it in state `armed` wearing an outline *Ouvrir*:
+   * two rows claiming to be the call starting now, and the primary on the wrong
+   * one, on the scenario that exists to photograph detection working.
+   *
+   * Detection does not require Microsoft (DEC-28, DEC-26) — `Agenda` is built over
+   * `NULL_CALENDAR` in both branches of `main.ts` and `core/domain/adHoc.ts`
+   * decides from a microphone reading and a clock — so the ad-hoc offer is the
+   * offer on both halves. `eventId` is null on it because there is no calendar row
+   * to join to, which is the whole point, and it stays null even where a calendar
+   * exists: a call nobody scheduled has no invite either way.
+   *
+   * `review` is the one scenario with nothing armed: the gate is open on a call
+   * that has finished. And the **calendar** offer keeps the Entra axis it always
+   * had — nothing can arm from an invite on a build that cannot read one — which is
+   * the asymmetry: the ad-hoc offer survives `entra: false`, the invite-shaped one
+   * does not.
+   */
+  const ARMED_OFFER = NEOVIA_UNARMED
+    ? { meetingId: 'm-adhoc-teams', eventId: null, subject: 'Appel non planifié — Teams' }
+    : !entra || scenario === 'review'
+      ? null
+      : {
+          meetingId: 'm-neovia-cadrage',
+          eventId: 'evt-neovia-cadrage',
+          subject: 'Néovia Santé — cadrage renfort data',
+        }
+
   const agendaSnapshot = () =>
     entra
       ? {
@@ -1973,14 +2152,24 @@ export function installAppBridge(config) {
             nothing had been looked up — the claim this field exists to stop.
           */
           window: { from: now - 24 * HOUR, to: now + 7 * 24 * HOUR },
-          armed:
-            scenario === 'review'
-              ? null
-              : {
-                  meetingId: 'm-neovia-cadrage',
-                  eventId: 'evt-neovia-cadrage',
-                  subject: 'Néovia Santé — cadrage renfort data',
-                },
+          /*
+           * **And `NEOVIA_UNARMED` applies here too, which it did not.**
+           *
+           * The `entra: false` branch below stages `m-adhoc-teams` as the offer
+           * for `agenda-appel-imprevu` and the meeting row is `idle` there, which
+           * is coherent. This branch went on offering `m-neovia-cadrage`
+           * unconditionally — so at `entra: true` the same scenario put the day's
+           * one filled *Enregistrer* on the **calendar** meeting while
+           * `m-adhoc-teams` sat beside it in state `armed` wearing an outline
+           * *Ouvrir*: two rows claiming to be the call starting now, and the
+           * primary on the wrong one, on the scenario that exists to photograph
+           * detection. No stage drives that combination — `agenda-appel-imprevu`
+           * is `entra: false` — but `harnessFixture.test.ts` walks both halves of
+           * the axis deliberately, because a fixture that is only coherent on the
+           * half somebody happened to stage is a fixture waiting for the next
+           * stage.
+           */
+          armed: ARMED_OFFER,
           reason: '',
         }
       : {
@@ -2000,15 +2189,7 @@ export function installAppBridge(config) {
            * Microsoft account at all. A fixture that kept `null` here would go on
            * photographing the screen the product no longer has.
            */
-          armed:
-            scenario === 'agenda-appel-imprevu'
-              ? {
-                  meetingId: 'm-adhoc-teams',
-                  // Null is the whole point: there is no calendar row to join to.
-                  eventId: null,
-                  subject: 'Appel non planifié — Teams',
-                }
-              : null,
+          armed: ARMED_OFFER,
           reason:
             scenario === 'agenda-appel-imprevu'
               ? 'Teams émet du son hors calendrier'
@@ -2401,22 +2582,11 @@ export function installAppBridge(config) {
       screens.
     */
     /*
-      **Answered after a tick, and the tick is the point.**
-
-      Every other responder here resolves in the same microtask, so a screen's
-      loading state never paints — and the gate's arming guard is keyed by *what
-      the column is showing*, which while this is in flight is a placeholder.
-      With an instant fixture the placeholder does not exist, so no stage could
-      ever reach the defect it caused: one click on *Transcription* covered the
-      column before the transcript did, and *Valider* armed on a compte-rendu at
-      `scrollTop` 0.
-
-      A real answer is a preload hop, a SQLite read and a Zod parse — a few
-      milliseconds, and a painted frame either way. A hundred and fifty is that
-      frame, made reliable enough to drive.
+      The tick this used to carry alone now comes from `LATENCY` at the bottom of
+      this file — see the table there, and the reason it stopped being one
+      channel's private arrangement.
     */
-    'review:transcript': () =>
-      new Promise((resolve) => setTimeout(() => resolve({ segments: SEGMENTS, marks: MARKS }), 150)),
+    'review:transcript': () => ({ segments: SEGMENTS, marks: MARKS }),
 
     /*
       **A confirmation that changes nothing is a fixture showing the product
@@ -2533,15 +2703,39 @@ export function installAppBridge(config) {
       same objet and the same start, so the pill floating over a call and the
       header of the window behind it cannot disagree about which call it is.
     */
-    'widget:state': () => ({
-      meeting: {
-        meetingId: 'm-neovia-cadrage',
-        title: 'Néovia Santé — cadrage renfort data',
-        clientName: 'Néovia Santé',
-        startedAt: now - 22 * MIN,
-        marks: MARKS,
-      },
-    }),
+    /*
+      **And `{ meeting: null }` is an answer this channel really gives**, which the
+      fixture could not produce.
+
+      `app/ipc/register.ts` returns it whenever no meeting is `recording` — twice
+      per call, at the start before the state machine has one and at the end once
+      `stopRecording` has released it — and `Pill` then draws « Aucun
+      enregistrement » with no meter, no clock and no mark button. Five widget
+      stages shared one responder that always carried a meeting, so that face had
+      been visited by none of the 106 stagings and measured by none of the eight
+      checks, on the surface `Widget.tsx`'s whole reveal handshake was written
+      around.
+
+      Two halves, deliberately: `widget-sans-reunion` stages it as a *settled*
+      answer, which is what makes it photographable and measurable; `LATENCY`
+      makes the in-flight version of the same face reachable on every other widget
+      stage, which is what makes the transient real.
+    */
+    'widget:state': () =>
+      scenario === 'widget-sans-reunion'
+        ? { meeting: null }
+        : {
+            meeting: {
+              meetingId: 'm-neovia-cadrage',
+              title: 'Néovia Santé — cadrage renfort data',
+              clientName: 'Néovia Santé',
+              // The one timeline, so the pill's clock and the meeting row agree.
+              // It read `now - 22 * MIN` while the row said 14:30, which put the
+              // pill's elapsed counter seventeen minutes before the invite.
+              startedAt: NEOVIA_STARTED,
+              marks: MARKS,
+            },
+          },
     'meeting:mark': (payload) => {
       /*
         **A refusal is a thing this channel really does, so the fixture has to be
@@ -2692,6 +2886,78 @@ export function installAppBridge(config) {
 
   window.__harness = harness
 
+  /**
+   * **The fixture is never faster than the product, because a fixture that is
+   * hides every loading state the product has.**
+   *
+   * `review:transcript` was given a tick last round and forty-four other
+   * responders were not, so they all resolved **in the same microtask as the
+   * call**: React committed the answer in the same pass as the initial render and
+   * no placeholder ever painted. Which means none of them could be photographed,
+   * measured by any of the six checks, or reached by any of the 106 stagings —
+   * and CLAUDE.md already records what that hid for thirteen rounds. A
+   * placeholder that *filled* the Transcription column was covered the instant it
+   * appeared, the transcript then replaced it, nothing re-measured, and *Valider*
+   * armed on a compte-rendu at `scrollTop` 0. The fixture's speed was the reason
+   * no stage could reproduce it.
+   *
+   * What was unreachable until this table existed, from the audit of every
+   * in-flight rendering in `src/`: the gate's own « Chargement… »
+   * (`Review.tsx:1037` and its second `null`-sentinel gate at 1060) one column over
+   * from that defect; the widget's **placeholder pill** — « Aucun enregistrement »
+   * with no meter, no clock and no mark button, which the product paints at the
+   * start of every recording and which `Widget.tsx`'s whole `MEASURE_DEADLINE_MS`
+   * handshake exists because of; the entire twenty-second `capture:essai` face (a
+   * different heading, a different button label, a `role="status"` line and the
+   * essai `LevelMeter`); Réglages' « Chargement… », « Lecture de l’état… » and
+   * « Lecture du journal… »; *Historique*'s « Chargement… » and « Recherche… »;
+   * and the *Splash*'s three « en cours… » rows.
+   *
+   * **`DEFAULT` is a macrotask, not a duration**, and that is the load-bearing
+   * part: `setTimeout(…, 0)` is enough to put the answer in a *later task* than
+   * the render that asked for it, so every `{ status: 'loading' }` branch commits
+   * at least one frame. It costs a stage nothing measurable and it applies to
+   * every channel, including ones added later — which is the half a table of
+   * spellings cannot give.
+   *
+   * The entries are the channels a *stage* has to be able to catch mid-flight, so
+   * the delay has to survive a `waitFor` and a screenshot. Each one names the
+   * rendering it makes reachable. `harnessFixture.test.ts` holds every key here to
+   * a channel the stub actually answers, so a rename fails loudly instead of
+   * quietly restoring the instant fixture.
+   */
+  const DEFAULT_LATENCY_MS = 0
+  const LATENCY = {
+    // The gate's « Chargement… », and the `edits`/`checked` seeding gate behind it.
+    'review:get': 150,
+    // The Transcription column's placeholder — the one that armed *Valider*.
+    'review:transcript': 150,
+    // The placeholder pill, « Aucun enregistrement », which is what the window is
+    // revealed carrying if the measurement lands before the answer does.
+    'widget:state': 150,
+    // Réglages in full: « Chargement… ».
+    'settings:snapshot': 150,
+    // « Lecture du journal… » under « Erreurs récentes ».
+    'diagnostics:recent': 150,
+    // *Historique*'s « Chargement… » and the search pane's « Recherche… ».
+    'history:record': 150,
+    'history:search': 150,
+    // The session screen's « Chargement… ».
+    'meeting:get': 150,
+    // The splash's three « en cours… » rows.
+    'boot:state': 150,
+    /*
+     * The dry run, and the only entry that is not about a frame. The product
+     * listens for **twenty seconds** and the whole card changes for the duration:
+     * heading, button label, a `role="status"` line and the essai `LevelMeter`.
+     * Twenty seconds × 106 stagings is not a fixture; six hundred milliseconds is
+     * long enough for a stage to wait for that face, photograph it and measure it,
+     * and short enough that the two stages which wait for the *verdict* do not
+     * notice.
+     */
+    'capture:essai': 600,
+  }
+
   window.app = {
     invoke(channel, payload) {
       calls.push({ channel, payload })
@@ -2700,11 +2966,21 @@ export function installAppBridge(config) {
         unanswered.push(channel)
         return Promise.reject(new Error('canal sans réponse dans le harnais: ' + channel))
       }
+      /*
+       * The responder runs immediately — a throw is the main process refusing, and
+       * that has to reach the caller as a rejection whatever the latency is — and
+       * only the *answer* is held back.
+       */
+      let answer
       try {
-        return Promise.resolve(responder(payload || {}))
+        answer = responder(payload || {})
       } catch (error) {
         return Promise.reject(error)
       }
+      const wait = LATENCY[channel] ?? DEFAULT_LATENCY_MS
+      return new Promise((resolve, reject) => {
+        setTimeout(() => Promise.resolve(answer).then(resolve, reject), wait)
+      })
     },
     on(channel, listener) {
       const set = listeners.get(channel) || new Set()

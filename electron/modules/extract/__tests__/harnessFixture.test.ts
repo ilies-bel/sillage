@@ -143,7 +143,72 @@ test('every quotation in the fixture’s compte-rendu is in the fixture’s call
   )
 })
 
-test('every source the fixture offers leads to a turn the fixture’s call contains', () => {
+/**
+ * A bare `window`, so `installAppBridge` can be *run* rather than parsed.
+ *
+ * It assigns `window.app` and answers synchronously, so the fixture's own
+ * responders are reachable from a Node test — which is the only way to hold it to
+ * the shapes the renderer receives. The regexes this file used to lift literals
+ * out with were a second implementation of the fixture, and they broke the first
+ * time the fixture expressed the same fact differently: the sources check below
+ * looked for `quote: '…'` and found **zero** the day those spans started being
+ * located in the transcript instead of written beside it.
+ */
+const withStub = async <T,>(
+  scenario: string,
+  entra: boolean,
+  read: (invoke: (channel: string, payload?: unknown) => Promise<unknown>) => Promise<T>,
+): Promise<T> => {
+  const globals = globalThis as { window?: unknown }
+  const before = globals.window
+  globals.window = { addEventListener: () => {} }
+  try {
+    const installAppBridge = await loadStub()
+    installAppBridge({ scenario, now: PINNED_NOW, entra })
+    const bridge = (globals.window as {
+      app: { invoke: (c: string, p: unknown) => Promise<unknown> }
+    }).app
+    return await read((channel, payload) => bridge.invoke(channel, payload ?? {}))
+  } finally {
+    globals.window = before
+  }
+}
+
+/**
+ * **The instant the whole fixture is pinned to, minted the way `shot.mjs` mints
+ * it** — today at 14:35 Europe/Paris.
+ *
+ * Every timing property below is relative to it, and it is the same number the
+ * harness passes in, so this file asks the fixture the questions a stage asks it.
+ * `Date.now()` would have made the future-dated-turn assertion pass or fail
+ * depending on what time of day the suite ran.
+ */
+const PINNED_NOW = (() => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const read = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const guess = Date.UTC(Number(read.year), Number(read.month) - 1, Number(read.day), 14, 35)
+  const shown = new Date(guess).toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false })
+  return guess - (new Date(shown).getHours() - 14) * 3_600_000
+})()
+
+/** The same fold `locateSegments` applies. */
+const fold = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+type Span = { quote: string; channel: string; startMs: number | null; endMs: number | null }
+type Segment = { id: string; channel: string; text: string; startMs: number; endMs: number; receivedAt: number }
+
+test('every source the fixture offers leads to a turn the fixture’s call contains', async () => {
   /*
    * The document's provenance (DEC-21), held to the same standard as its
    * quotations — and for the same reason, which is that the failure is silent.
@@ -152,25 +217,32 @@ test('every source the fixture offers leads to a turn the fixture’s call conta
    * contain opens the reader on « Cet extrait est introuvable dans la
    * transcription », so a fixture with one invented quote would photograph the
    * feature's *failure* state on the flagship screen and pass every other check
-   * in the repo. The stub has already been caught lying three times, each time
-   * about something that made the app look better than it is.
+   * in the repo.
+   *
+   * **Read off the running fixture, not off its source.** This test regexed
+   * `quote: '…'` out of the file and asserted it found ten; the day the fixture
+   * started *locating* those spans in its own transcript rather than writing them
+   * beside it, the regex matched nothing and the assertion it was guarding
+   * silently stopped being made — caught only by the anti-vacuity floor, which is
+   * the one thing standing between « I looked and found nothing » and « I looked
+   * at nothing ».
    */
-  const source = readFileSync(STUB, 'utf8')
-  const block = /sources: \[([\s\S]*?)\n    \],/.exec(source)?.[1]
-  const lines = /const LINES = \[([\s\S]*?)\n  \]/.exec(source)?.[1]
-  assert.ok(block && lines, 'le harnais a changé de forme — mets ce test à jour')
+  const panel = await withStub('review', true, async (invoke) => {
+    const answer = (await invoke('review:get', { meetingId: 'm-neovia-cadrage' })) as {
+      open: boolean
+      panel: { sources: { text: string; span: Span }[]; edits: { compteRendu: string } }
+    }
+    assert.ok(answer.open, 'le fixture n’ouvre plus la porte de revue — mets ce test à jour')
+    return answer.panel
+  })
+  const record = await withStub('review', true, async (invoke) =>
+    (await invoke('review:transcript', { meetingId: 'm-neovia-cadrage' })) as { segments: Segment[] },
+  )
 
-  const fold = (text: string) =>
-    text
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .trim()
-
-  const call = fold(lines)
-  const quotes = [...block.matchAll(/quote: '((?:[^'\\]|\\.)*)'/g)].map((m) => m[1] ?? '')
+  const call = fold(record.segments.map((segment) => segment.text).join(' '))
+  const quotes = panel.sources.map((source) => source.span.quote)
   assert.ok(quotes.length >= 10, `attendues au moins dix sources, trouvées ${quotes.length}`)
+  assert.ok(record.segments.length >= 10, `attendus au moins dix tours, trouvés ${record.segments.length}`)
 
   const missing = quotes.filter((quote) => !call.includes(fold(quote)))
   assert.deepEqual(
@@ -182,18 +254,50 @@ test('every source the fixture offers leads to a turn the fixture’s call conta
   )
 
   /*
+   * **And the offset the gate prints is the offset the reader prints.**
+   *
+   * `Review.tsx:1828` draws « vérifié · mm:ss » from `span.startMs` on each of the
+   * eleven field rows, and `source ▸` then opens `TranscriptReader`, which draws
+   * the *turn's* own offset. Those were two unrelated numbers: the spans were
+   * hand-written literals up to 840 000 ms — fourteen minutes — over a transcript
+   * that spanned under three, and not one of them landed on the turn holding its
+   * quote even under the old spacing. So the flagship screen said « vérifié · 14:00 »
+   * about evidence the reader placed at 00:02:34, on the surface whose whole
+   * argument is that a claim is checkable.
+   */
+  const drift: string[] = []
+  for (const source of panel.sources) {
+    if (source.span.startMs === null) continue
+    const needle = fold(source.span.quote)
+    const turn = record.segments.find((segment) => fold(segment.text).includes(needle))
+    if (!turn) continue
+    if (source.span.startMs < turn.startMs || source.span.startMs > turn.endMs) {
+      drift.push(
+        `« ${source.span.quote} » : span à ${source.span.startMs} ms, tour ${turn.id} de ` +
+          `${turn.startMs} à ${turn.endMs} ms`,
+      )
+    }
+  }
+  assert.deepEqual(
+    drift,
+    [],
+    'l’horodatage qu’une ligne affiche (« vérifié · mm:ss », Review.tsx) tombe hors du tour ' +
+      'que « source ▸ » ouvre : deux nombres pour une même preuve, sur l’écran dont tout ' +
+      'l’argument est qu’une affirmation est vérifiable.',
+  )
+
+  /*
    * And the other half: a source whose `text` is not a line of the fixture's own
    * compte-rendu matches nothing, so the bullet is drawn plain and the entry is
    * dead weight that no screenshot would reveal.
    */
-  const doc = /compteRendu: \[([\s\S]*?)\n    \]\.join/.exec(source)?.[1] ?? ''
   const written = new Set(
-    [...doc.matchAll(/'- ((?:[^'\\]|\\.)*)'/g)].map((m) =>
-      (m[1] ?? '').replace(/[\s ]*⚠[\s ]*faible[\s ]*$/u, '').trim(),
-    ),
+    panel.edits.compteRendu
+      .split('\n')
+      .filter((line) => line.startsWith('- '))
+      .map((line) => line.slice(2).replace(/[\s\u00a0]*⚠[\s\u00a0]*faible[\s\u00a0]*$/u, '').trim()),
   )
-  const texts = [...block.matchAll(/text:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1] ?? '')
-  const orphans = texts.filter((text) => !written.has(text))
+  const orphans = panel.sources.map((source) => source.text).filter((text) => !written.has(text))
   assert.deepEqual(
     orphans,
     [],
@@ -431,5 +535,80 @@ test('no harness scenario stages an armed meeting beside a recording one', async
       'refuse cette journée (Agenda.#arm, AdHocInput.meetingLive — « une réunion est déjà en ' +
       'cours ou proposée »), donc la capture montre deux boutons primaires pour une seule ' +
       'conversation et fait plaider le fixture pour un défaut.',
+  )
+})
+
+/**
+ * **Four numbers in three files that must stay in one order, and nothing checked it.**
+ *
+ * The widget's first frame is decided by a handshake across a process boundary. The
+ * renderer waits for the type to settle *and* for `widget:state` to answer before it
+ * reports a size (`MEASURE_DEADLINE_MS`); the main process waits for that report before
+ * it shows the window (`FIRST_FRAME_MS`), with a ceiling on the whole appearance
+ * (`APPEARANCE_MS`). And the harness fixture now answers `widget:state` after a delay,
+ * because 43 of its 44 responders resolving in the same microtask is what hid this class
+ * of defect for thirteen rounds.
+ *
+ * Put those numbers out of order and **the handshake is decided by the wrong side**. If
+ * the fixture's latency exceeds the renderer's deadline, the deadline fires every time
+ * and the wait it guards never happens — which is exactly how the first attempt at this
+ * fix measured as working while doing nothing: at 120 ms against a 150 ms answer, the
+ * gate was decided before the content arrived, every run. If the renderer's deadline
+ * exceeds the main process's, the *main process* wins and what it reveals is
+ * `INITIAL_SIZE` — 232×52, forty-nine pixels narrower than the pill, carrying « Aucun
+ * enregistrement » over a live call. That is the defect this whole round closed,
+ * reintroduced by editing a constant, with every test still green.
+ *
+ * Read from source rather than imported, the `preloadUnwrap.test.ts` shape: `Widget.tsx`
+ * is `.tsx` and would need a JSX loader here, `Overlay.ts` pulls in Electron types, and
+ * the stub is deliberately one browser-shaped file. What is being asserted is an
+ * *ordering between files*, so reading the files is the honest instrument.
+ */
+test('the widget’s first-frame deadlines are ordered across the three files that hold them', () => {
+  const read = (rel: string): string => readFileSync(path.resolve(HERE, rel), 'utf8')
+  const number = (source: string, pattern: RegExp, what: string): number => {
+    const found = pattern.exec(source)
+    assert.ok(found, `${what} n’a pas été trouvé — la constante a été renommée ou déplacée`)
+    const value = Number(found[1]?.replace(/_/g, ''))
+    assert.ok(Number.isFinite(value) && value > 0, `${what} n’est pas un nombre: ${found[1]}`)
+    return value
+  }
+
+  const latency = number(
+    read('../../../../scripts/harness/bridge-stub.mjs'),
+    /'widget:state':\s*(\d[\d_]*)\s*,/,
+    "la latence de `widget:state` dans bridge-stub.mjs",
+  )
+  const measure = number(
+    read('../../../../src/widget/Widget.tsx'),
+    /const MEASURE_DEADLINE_MS\s*=\s*(\d[\d_]*)/,
+    'MEASURE_DEADLINE_MS',
+  )
+  const firstFrame = number(
+    read('../../../../electron/app/windows/Overlay.ts'),
+    /export const FIRST_FRAME_MS\s*=\s*(\d[\d_]*)/,
+    'FIRST_FRAME_MS',
+  )
+  const appearance = number(
+    read('../../../../electron/app/windows/Overlay.ts'),
+    /export const APPEARANCE_MS\s*=\s*(\d[\d_]*)/,
+    'APPEARANCE_MS',
+  )
+
+  assert.ok(
+    latency < measure,
+    `le harnais répond à widget:state en ${latency} ms et le rendu abandonne à ${measure} ms — ` +
+      'le délai décide avant que le contenu arrive, donc l’attente qu’il protège n’a jamais lieu',
+  )
+  assert.ok(
+    measure < firstFrame,
+    `le rendu parle au plus tard à ${measure} ms et le processus principal montre la fenêtre à ` +
+      `${firstFrame} ms — dans cet ordre-là c’est le principal qui décide, et ce qu’il montre ` +
+      'est la taille devinée (232×52), quarante-neuf pixels plus étroite que la pilule',
+  )
+  assert.ok(
+    firstFrame < appearance,
+    `le plafond d’apparition (${appearance} ms) doit rester au-delà de ${firstFrame} ms, ` +
+      'sinon il court-circuite la mesure qu’il n’existe que pour secourir',
   )
 })

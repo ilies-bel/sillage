@@ -41,6 +41,22 @@ check could not see it), `--fade`, and `--scrollers`, below. All eight run on ev
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
+**Known fixture debt: the whole stub is pinned to one instant chosen to suit one
+meeting**, and that is the root cause of a family of small impossibilities rather than a
+set of separate bugs. `pinnedNow()` is 14:35 so the 14:30 call can be live — which gives
+every *other* scenario wanting that same meeting finished a five-minute budget for a call,
+an analysis, a review gate and a CRM push. Downstream of it: `m-neovia-cadrage` carries
+`startedAt` **15 minutes before its own `createdAt`** and 17 before an invite the product
+can only arm five minutes early, in twelve of thirteen scenarios; its transcript is 19
+segments and 1 595 characters over 23.6 minutes — about 68 characters a minute against the
+1 390 this repo measured on a real call — and its last turn and both marks are dated in the
+**future**, which `TranscriptReader` prints as wall clock. Fixing any one of them in place
+moves timestamps under every stage that asserts « 14:30 », so the honest fix is to give the
+stub a per-scenario instant rather than one global `pinnedNow()`. Until then a reviewer
+judging density, durations or the compte-rendu's plausibility on these stages is judging a
+day that could not have happened — which is the fifth time this fixture has flattered the
+app and the one shape that is still open.
+
 **`--fade` measures the one thing a resolved colour cannot carry.** A fading mask
 is how every log and every reading column in this product says « there is more
 below », and the widget's transcript had its ramp at twenty pixels under a comment

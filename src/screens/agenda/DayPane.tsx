@@ -234,7 +234,27 @@ function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
         `text-accent` on the word *Prêt* would render it at 2.41:1 on the card.
         `StateDot` makes that unspellable.
       */}
-      {entry.armed ? (
+      {/*
+        **`armed` is a state and « Prêt » is a claim about one, and testing the
+        flag first made the claim unfalsifiable.**
+
+        `Agenda.#arm` keeps `#armed` pointing at the meeting through `recording`,
+        deliberately — « a call under way is precisely the row to show ». This
+        branch read that flag before it read the state, so
+        `STATE_LABEL.recording = 'En cours'` was **unreachable on the agenda for
+        every calendar-armed meeting**, which is the primary path (HR-9). Measured
+        on the shipped screen: at fifty minutes into a recording the row still read
+        « Prêt » and still wore the day's one filled *Enregistrer* — whose whole
+        case (HR-7) is that it points at the one thing the rep is there to do, and
+        it was pointing at a call already being recorded and saying it had not
+        started. Every review round has photographed this on the flagship stage,
+        and `DayPane.test.tsx`'s only fixture sets `armed: false` and never `true`.
+
+        The offer and the recording are two different things to say, so the dot is
+        reserved for the offer: `recording` has its own label and, below, its own
+        verb — *Ouvrir*, because a call under way is opened, never started again.
+      */}
+      {entry.armed && entry.state !== 'recording' ? (
         <StateDot
           tone="armed"
           label="Prêt"
@@ -261,8 +281,11 @@ function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
         picks the earliest), so this stays one primary per view.
       */}
       {meetingId ? (
-        <Button variant={entry.armed ? 'primary' : 'bordered'} onClick={() => onOpen(meetingId)}>
-          {entry.armed ? 'Enregistrer' : 'Ouvrir'}
+        <Button
+          variant={entry.armed && entry.state !== 'recording' ? 'primary' : 'bordered'}
+          onClick={() => onOpen(meetingId)}
+        >
+          {entry.armed && entry.state !== 'recording' ? 'Enregistrer' : 'Ouvrir'}
         </Button>
       ) : entry.eventId !== null && !entry.past ? (
         /*

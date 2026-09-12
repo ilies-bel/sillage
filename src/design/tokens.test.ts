@@ -83,6 +83,97 @@ describe("the rules VISION.md §6 states in prose", () => {
     }
   });
 
+  /*
+   * **The two curves are one curve, and the relation is what is pinned — not a
+   * literal.**
+   *
+   * This file held the durations to ≤150ms and said nothing at all about easing,
+   * and an adversarial round walked straight through the gap: redefining
+   * `--ease-in` to `cubic-bezier(0.22, 1, 0.36, 0.99)` restored the blink the
+   * exit curve exists to end — measured on the shipped `.widget-leaving` element
+   * in Chromium, opacity 0.768 at 9ms, 0.278 at 35ms, 0.018 at 93ms against
+   * 0.999 / 0.998 / 0.909 for the real token — and every check in the repo passed.
+   * `shot.mjs --motion` now measures the *shape* of whatever curve reaches a
+   * departing element, which catches that at the surface; this catches it at the
+   * source, and the two are deliberately independent.
+   *
+   * **Pinning the string would have been the wrong assertion.** `--ease-out` is
+   * the one piece of taste here, and it is allowed to be retuned; what must not
+   * drift is that `--ease-in` follows it, because the entire argument for having
+   * two curves is that they are *the same curve read in two directions* and
+   * therefore only one thing to keep consistent. A literal would freeze the taste
+   * and still permit the pair to come apart at the next retune.
+   *
+   * **The relation is a 180° rotation about (0.5, 0.5), not a reflection in the
+   * diagonal** — `(x1, y1, x2, y2) → (1−x2, 1−y2, 1−x1, 1−y1)`. Reflecting in the
+   * diagonal gives the *inverse* function, `(y1, x1, y2, x2)`, which for
+   * `(0.22, 1, 0.36, 1)` is `(1, 0.22, 1, 0.36)` and is not `--ease-in`. The
+   * rotation is: reverse the time axis *and* the value axis, which is what
+   * « the same motion, played the other way » means. `tokens.css` said
+   * « reflected through the diagonal » for a round — the intent was right and the
+   * geometry was not, and an unasserted claim in a comment is how that survives.
+   */
+  const bezier = (value: string): number[] | null => {
+    const match = /^cubic-bezier\(([^)]*)\)$/.exec(value.trim());
+    if (!match) return null;
+    const numbers = match[1].split(",").map((n) => Number.parseFloat(n));
+    return numbers.length === 4 && numbers.every((n) => Number.isFinite(n)) ? numbers : null;
+  };
+
+  /**
+   * The mean of a cubic-bezier easing's progress over its duration: above 0.5 the
+   * change is front-loaded, which is what makes an arrival feel instant and a
+   * departure a blink. The same measurement `shot.mjs --motion` makes, written
+   * out here rather than imported, because that file runs in a browser page.
+   */
+  const meanProgress = ([x1, y1, x2, y2]: number[]): number => {
+    const cubic = (a: number, b: number) => (t: number) =>
+      3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3;
+    const X = cubic(x1, x2);
+    const Y = cubic(y1, y2);
+    let total = 0;
+    for (let i = 0; i <= 100; i += 1) {
+      let lo = 0;
+      let hi = 1;
+      for (let step = 0; step < 40; step += 1) {
+        const mid = (lo + hi) / 2;
+        if (X(mid) < i / 100) lo = mid;
+        else hi = mid;
+      }
+      total += Y((lo + hi) / 2);
+    }
+    return total / 101;
+  };
+
+  test("--ease-in is --ease-out rotated 180° about the midpoint", () => {
+    const out = bezier(tokens.get("--ease-out") ?? "");
+    const back = bezier(tokens.get("--ease-in") ?? "");
+    expect(out, "--ease-out must be a cubic-bezier").not.toBeNull();
+    expect(back, "--ease-in must be a cubic-bezier").not.toBeNull();
+
+    const rotated = [1 - out![2], 1 - out![3], 1 - out![0], 1 - out![1]];
+    // Rounded to the precision the tokens are written at: the point of this is
+    // the pairing, not float equality.
+    expect(back!.map((n) => Math.round(n * 100) / 100)).toEqual(
+      rotated.map((n) => Math.round(n * 100) / 100),
+    );
+  });
+
+  test("the exit curve spends its change late and the entrance curve early", () => {
+    /*
+     * The property the widget's exit actually depends on, stated directly so it
+     * survives a future decision to pair the two curves differently. Measured:
+     * `--ease-out` 0.827, `--ease-in` 0.173, `linear` exactly 0.5. The bound is
+     * 0.55/0.45 rather than 0.5 so that a curve which is *almost* symmetrical
+     * fails rather than squeaking through on the third decimal — the attack that
+     * defeated the old check measured 0.824.
+     */
+    const early = meanProgress(bezier(tokens.get("--ease-out") ?? "")!);
+    const late = meanProgress(bezier(tokens.get("--ease-in") ?? "")!);
+    expect(early, "--ease-out must be front-loaded").toBeGreaterThan(0.55);
+    expect(late, "--ease-in must be back-loaded — a departure that blinks is the defect this token exists to end").toBeLessThan(0.45);
+  });
+
   test("provenance aliases point at the two tokens DEC-5 names", () => {
     // Rep text `--text-strong`, agent text `--text-muted`. Colour alone, no
     // badges — so these two aliases are the entire provenance mechanism.

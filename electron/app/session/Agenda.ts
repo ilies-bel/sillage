@@ -17,7 +17,12 @@ import { EMPTY_WINDOW } from '../../core/contracts/calendar.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
-import { nextArmable } from '../../core/domain/arming.ts'
+import {
+  ARM_LEAD_MS,
+  calendarClaim,
+  nextArmable,
+  OVERRUN_GRACE_MS,
+} from '../../core/domain/arming.ts'
 import {
   adHocContext,
   adHocMeetingId,
@@ -242,7 +247,7 @@ export class Agenda {
   armNow(eventId: string): { meetingId: string } {
     const event = this.#window.events.find((candidate) => candidate.id === eventId)
     if (!event) throw new Error('Cet événement n’est plus dans le calendrier affiché.')
-    this.#arm(event)
+    this.#arm(event, false)
     /*
      * Read back rather than returned from `#arm`: `#arm` has three exits — a
      * standing offer it keeps, a fresh arming, and a refusal that clears
@@ -258,6 +263,21 @@ export class Agenda {
     // two answers drift.
     this.#publish()
     return { meetingId: armed.meetingId }
+  }
+
+  /**
+   * Is the invite behind a standing offer finished, cancelled or gone?
+   *
+   * The one question the expiry branch above should be asking. An event that has
+   * fallen out of the synced window counts as gone — it cannot be re-armed and the
+   * offer names a row the screen no longer has — and so does an all-day entry, which
+   * `nextArmable` refuses to treat as a call in the first place.
+   */
+  #over(eventId: string, now: number): boolean {
+    const event = this.#window.events.find((candidate) => candidate.id === eventId)
+    if (!event) return true
+    if (event.isCancelled || event.isAllDay) return true
+    return now >= event.context.scheduledEnd + OVERRUN_GRACE_MS
   }
 
   /** Runs a tick now, then keeps ticking until `stop()`. */
@@ -301,10 +321,32 @@ export class Agenda {
 
     if (choice.decision.action === 'arm' && choice.event) {
       this.#arm(choice.event)
-    } else if (this.#armed && this.#armed.eventId !== null) {
-      // The offer expired — the event ended, was cancelled, or the app closed.
-      // Leaving it on screen would have the rep pressing Démarrer on a meeting
-      // that is over.
+    } else if (this.#armed && this.#armed.eventId !== null && this.#over(this.#armed.eventId, now)) {
+      /*
+       * **« Is the event over » and not « did `nextArmable` decline to arm it ».**
+       *
+       * This branch used to fire on *any* non-`arm` answer, and `wait` is one — so
+       * two ordinary things withdrew an offer that was still good.
+       *
+       * `armNow` is the rep pressing *Enregistrer* on an upcoming row, deliberately
+       * without consulting `decideArming` (« the detector guesses, the rep has
+       * said »). Outside `ARM_LEAD_MS` the very next tick answered `wait` and
+       * **undid the press**, logging `disarm` with « la réunion est passée sans
+       * enregistrement » about a call half an hour in the future. Worse, the control
+       * that made it renders only while `entry.meetingId` is null — the press creates
+       * the meeting — so it was gone for the rest of the day: verbatim the defect
+       * `b497664` added that control to end, reachable by pressing the control
+       * `b497664` added. Measured: « Prêt / Enregistrer » → thirty seconds later
+       * « En attente / Ouvrir ».
+       *
+       * And the same on the clock path, which nobody had noticed: inside the window
+       * with no conferencing audio, `decideArming` answers `wait`, so a rep who
+       * closed Teams after the offer appeared had it withdrawn too.
+       *
+       * Over means over — absent from the fold, cancelled, or past
+       * `scheduledEnd + OVERRUN_GRACE_MS`, which is the same boundary
+       * `decideArming` uses for `skip` and `calendarClaim` for its claim.
+       */
       const expired = this.#armed.meetingId
       this.#armed = null
       /*
@@ -386,6 +428,18 @@ export class Agenda {
         heldSince: this.#heldSince,
         meetingLive: live,
         spent: this.#adHocSpent,
+        /*
+         * **The calendar's claim, read from the same fold `nextArmable` just read.**
+         *
+         * Not from `choice`: `nextArmable` answers « which event should be armed
+         * *now* », and outside `ARM_LEAD_MS` that is `wait` — which is exactly the
+         * window a rep joining early falls into, and exactly the window this has to
+         * see. Asking the fold a second, different question is the point.
+         */
+        calendarOffersAt: (() => {
+          const claim = calendarClaim(this.#window.events, now)
+          return claim === null ? null : claim.context.scheduledStart - ARM_LEAD_MS
+        })(),
       })
       /*
        * The horizon is taken from **every** branch, including the one that
@@ -583,7 +637,18 @@ export class Agenda {
     }
   }
 
-  #arm(event: CalendarEvent): void {
+  /**
+   * @param notify whether this arming should raise the OS notification.
+   *
+   * `false` for `armNow`, and DEC-46 is explicit about why: the notification exists
+   * because « something happens at 14:30 », and its click is « the only thing in the
+   * product that navigates without the rep having pressed something inside it ».
+   * `armNow` *is* a press inside the product. It was raising « La réunion commence.
+   * Ouvrir Sillage pour l'enregistrer ? » in answer to the rep's own click, about a
+   * meeting half an hour away, and the click of that notification then navigated them
+   * somewhere they had not asked to go.
+   */
+  #arm(event: CalendarEvent, notify = true): void {
     const meetingId = meetingIdFor(event.id)
     /*
      * **Already armed is not « nothing to do »: the call may have ended since.**
@@ -679,7 +744,7 @@ export class Agenda {
     // throws cannot leave the agenda armed-but-unrecorded — and it is wrapped,
     // because a notification is never a reason a meeting fails to arm (DEC-26).
     try {
-      this.#options.onArmed?.({ meetingId, subject: event.context.subject })
+      if (notify) this.#options.onArmed?.({ meetingId, subject: event.context.subject })
     } catch {
       // The offer is on screen either way; the notification is the extra.
     }

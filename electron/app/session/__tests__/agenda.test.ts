@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Agenda, MAX_SLEEP_MS, SYNC_INTERVAL_MS, meetingIdFor } from '../Agenda.ts'
 import { Orchestrator } from '../Orchestrator.ts'
 import { openMemoryStore } from '../../../modules/store/index.ts'
-import { ARM_LEAD_MS, ARM_POLL_MS } from '../../../core/domain/arming.ts'
+import { ARM_LEAD_MS, ARM_POLL_MS, OVERRUN_GRACE_MS } from '../../../core/domain/arming.ts'
 import { AD_HOC_DWELL_MS, AD_HOC_IDLE_POLL_MS, AD_HOC_POLL_MS } from '../../../core/domain/adHoc.ts'
 import type { CalendarEvent, CalendarPort, CalendarWindow } from '../../../core/contracts/calendar.ts'
 import type { ConnectorHealth } from '../../../core/contracts/health.ts'
@@ -154,12 +154,30 @@ test('a restart re-arms the meeting it already created', async () => {
   h.store.close()
 })
 
-test('the offer disappears when the meeting is over', async () => {
+test('the offer disappears when the meeting is over — and « over » means the grace', async () => {
+  /*
+   * **`scheduledEnd + OVERRUN_GRACE_MS`, and it used to be `scheduledEnd + 1ms`.**
+   *
+   * This asserted withdrawal one millisecond past the slot, and that contradicted
+   * every other place the product decides whether a call is behind the rep:
+   * `decideArming` arms an *overrunning* event on the strength of a held microphone
+   * until exactly this boundary, `entries.ts`'s `isPast` keeps the row's own control
+   * until it, and `calendarClaim` claims the conversation until it. DEC-9 says sales
+   * calls overrun constantly — withdrawing the offer at +1 ms left the row drawing
+   * « Enregistrer » through the `eventId` path while the armed offer behind it was
+   * already gone.
+   *
+   * Both sides are asserted, because a boundary with only one side tested is a
+   * boundary that can move.
+   */
   const h = harness([event('AAA')])
   await h.agenda.tick({ now: T0 - 60_000 })
   assert.ok(h.agenda.snapshot().armed)
 
-  await h.agenda.tick({ now: T0 + 3_600_001 })
+  await h.agenda.tick({ now: T0 + 3_600_000 + OVERRUN_GRACE_MS - 1_000 })
+  assert.ok(h.agenda.snapshot().armed, 'a call that has just run over is the row to show')
+
+  await h.agenda.tick({ now: T0 + 3_600_000 + OVERRUN_GRACE_MS + 1_000 })
   // Leaving it on screen would put Démarrer on a finished conversation.
   assert.equal(h.agenda.snapshot().armed, null)
   h.store.close()
@@ -264,7 +282,10 @@ test('a calendar that will not sync keeps the last fold armable', async () => {
 test('every tick publishes a snapshot, so the renderer never polls', async () => {
   const h = harness([event('AAA')])
   await h.agenda.tick({ now: T0 - 60_000 })
-  await h.agenda.tick({ now: T0 + 3_600_001 })
+  // Past the overrun grace, which is where the offer is actually withdrawn — see
+  // « the offer disappears when the meeting is over » for why the boundary is that
+  // and not the scheduled end.
+  await h.agenda.tick({ now: T0 + 3_600_000 + OVERRUN_GRACE_MS + 1_000 })
   assert.equal(h.snapshots.length, 2)
   assert.equal(h.snapshots[0]?.armed?.eventId, 'AAA')
   assert.equal(h.snapshots[1]?.armed, null)
@@ -1002,7 +1023,19 @@ test('arming a calendar row over a standing offer does not strand the offer for 
    * Verbatim the harm `#trackHold`'s docblock says it ended for the Teams→Zoom case,
    * reintroduced one caller over.
    */
-  const upcoming = event('AAA', { scheduledStart: T0 + 30 * 60_000, scheduledEnd: T0 + 90 * 60_000 })
+  /*
+   * **The event has to be one the calendar does not claim**, and in the version of
+   * this test written for round 25 it was thirty minutes away — inside
+   * `CALENDAR_CLAIM_MS`, so round 26's fix correctly refuses to offer an unscheduled
+   * meeting at all and the setup could no longer reach the thing being tested. The
+   * property is unchanged and still real: a rep prepping for a 16:00 call while
+   * taking an unscheduled 15:00 one presses *Enregistrer* on a row that is hours
+   * away, and the standing offer must be withdrawn rather than stranded.
+   */
+  const upcoming = event('AAA', {
+    scheduledStart: T0 + 4 * 60 * 60_000,
+    scheduledEnd: T0 + 5 * 60 * 60_000,
+  })
   const h = harness([upcoming], null, 'Teams')
 
   await h.agenda.tick({ now: T0 })
@@ -1026,9 +1059,26 @@ test('arming a calendar row over a standing offer does not strand the offer for 
   )
 
   /*
-   * And the feature under review is still alive — which is the cost that was
-   * invisible, because it looks like the detector simply deciding not to offer.
+   * **And the feature under review is still alive**, which is the cost that was
+   * invisible, because it looks exactly like the detector deciding not to offer.
+   *
+   * The rep's armed meeting has to settle first, and that is not a weakening of the
+   * assertion — it is the assertion being about the right thing. While *any* meeting
+   * is armed the detector is correctly silent (`meetingLive`): a rep who pressed
+   * *Enregistrer* is telling the product to record this conversation, and a second
+   * offer would put a second filled primary on the day. An earlier draft asserted an
+   * offer arriving *while* that meeting was armed, which is the defect one screen up
+   * rather than the property.
+   *
+   * What round 25 broke is that the stranded row made this state **permanent**. So:
+   * settle it the way a rep does, change the hold — a new conversation — and the offer
+   * must come.
    */
+  h.orchestrator.dispatch(
+    h.agenda.snapshot().armed!.meetingId,
+    'disarm',
+    'le commercial a renoncé',
+  )
   h.setHeld(null)
   await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 5_000 })
   h.setHeld('Zoom')
@@ -1124,5 +1174,160 @@ test('but a meeting waiting for ever on a model does not deafen the detector', a
     'an unscheduled call three hours later is still offered',
   )
   assert.equal(h.orchestrator.stateOf('man-3'), 'ended', 'and the waiting meeting cost nothing')
+  h.store.close()
+})
+
+// ── round 26: the axis was wrong, for three rounds ───────────────────────────
+//
+// « One conversation, one offer » was rewritten three times around the question *is a
+// meeting live*. The conversation it could not see is the most ordinary one a sales rep
+// has: joining their own scheduled Teams call early. There is no live meeting, no armed
+// meeting and a microphone held by Teams — so the detector offered an unscheduled
+// meeting for the scheduled call, and the calendar then armed the same conversation a
+// second time. The question is not « is a meeting live » but « does the calendar already
+// account for a call happening now ».
+
+test('a rep who joins their own call early gets one offer, and it is the calendar’s', async () => {
+  /*
+   * Measured on the shipped Agenda before the fix, at every distance from 5 min 25 s
+   * — `ARM_LEAD_MS + AD_HOC_DWELL_MS` — outwards: « Appel non planifié — Teams »
+   * plus « Sodexial », two rows on the day, two OS notifications. The first names no
+   * client, wears the day's one filled primary, and carries `eventId: null`, which
+   * `DayPane`'s own comment prices: no attendees, no « Interlocuteurs », no chance for
+   * `speakerLabel` to name the far channel after a person, and the weakest possible
+   * account resolution. « The rep pays that for being on time. »
+   */
+  for (const early of [5.5, 8, 15, 29]) {
+    const h = harness([event('AAA', { subject: 'Sodexial — comité' })], null, null)
+    const joined = T0 - early * 60_000
+    h.setHeld('Teams')
+    await h.agenda.tick({ now: joined })
+    // Well past the dwell, so nothing here is waiting on evidence.
+    await h.agenda.tick({ now: joined + AD_HOC_DWELL_MS + 1_000 })
+
+    const armed = h.agenda.snapshot().armed
+    assert.ok(
+      armed === null || armed.eventId !== null,
+      `joined ${early} min early and got an unscheduled offer: ${JSON.stringify(armed)}`,
+    )
+    assert.ok(
+      h.armed.every((a) => !a.subject.startsWith('Appel non planifié')),
+      `joined ${early} min early and the OS announced an unscheduled call: ${JSON.stringify(h.armed)}`,
+    )
+    h.store.close()
+  }
+})
+
+test('and the offer it does get names the client, once', async () => {
+  const h = harness([event('AAA', { subject: 'Sodexial — comité' })], null, null)
+  h.setHeld('Teams')
+  await h.agenda.tick({ now: T0 - 8 * 60_000 })
+  await h.agenda.tick({ now: T0 - 8 * 60_000 + AD_HOC_DWELL_MS + 1_000 })
+  /*
+   * Nothing yet: the calendar has claimed the conversation and its own offer is not
+   * due until `ARM_LEAD_MS`. Deferring, never refusing.
+   *
+   * The sentence on screen stays the **calendar's** — « la fenêtre n'est pas encore
+   * ouverte » — because the ad-hoc branch overwrites `#reason` only for `offer` and
+   * `wait`, and that is the right way round: the rep wants to know about the meeting,
+   * not about the detector's internal deferral. Asserted so that a change to either
+   * has to be deliberate.
+   */
+  assert.equal(h.agenda.snapshot().armed, null)
+  assert.equal(h.agenda.snapshot().reason, 'la fenêtre n’est pas encore ouverte')
+
+  await h.agenda.tick({ now: T0 - ARM_LEAD_MS + 1_000 })
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Sodexial — comité')
+  assert.deepEqual(
+    h.armed.map((a) => a.subject),
+    ['Sodexial — comité'],
+    'exactly one announcement, and it is the one carrying the client',
+  )
+  h.store.close()
+})
+
+test('a call the calendar knows nothing about is still offered', async () => {
+  /*
+   * The other side of the boundary, and the reason `CALENDAR_CLAIM_MS` is a number
+   * rather than « any event today ». A rep with a 16:00 invite who takes an
+   * unscheduled call at noon must still be offered it — that is the whole feature.
+   */
+  const far = event('AAA', { scheduledStart: T0 + 4 * 60 * 60_000, scheduledEnd: T0 + 5 * 60 * 60_000 })
+  const h = harness([far], null, 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Teams')
+  h.store.close()
+})
+
+test('a call that outlives its slot becomes the unscheduled call it has become', async () => {
+  /*
+   * The claim is asked on every tick and never latched. A 14:00–15:00 call still going
+   * at 15:25 — past `scheduledEnd + OVERRUN_GRACE_MS`, which is where every other rule
+   * in the product stops calling it that meeting — is a conversation the calendar no
+   * longer accounts for, and if the rep never recorded it they should be offered it.
+   */
+  const h = harness([event('AAA')], null, 'Teams')
+  await h.agenda.tick({ now: T0 + 3_600_000 + OVERRUN_GRACE_MS + 60_000 })
+  await h.agenda.tick({ now: T0 + 3_600_000 + OVERRUN_GRACE_MS + 60_000 + AD_HOC_DWELL_MS })
+  assert.equal(h.agenda.snapshot().armed?.eventId, null, 'the offer is the unscheduled one')
+  h.store.close()
+})
+
+test('the rep’s own press survives the next tick, and raises no notification', async () => {
+  /*
+   * **Two defects in one gesture.**
+   *
+   * `armNow` deliberately does not consult `decideArming` — « the detector guesses,
+   * the rep has said ». The tick does, and the expiry branch treated *any* non-`arm`
+   * answer as « the offer expired », so one ordinary tick undid the press and logged
+   * `disarm` with « la réunion est passée sans enregistrement » about a call thirty
+   * minutes in the future. The control that made it renders only while the row has no
+   * meeting, so it was gone for the rest of the day — the defect that control was
+   * added to end, reachable by pressing it. `wait` is not `over`.
+   *
+   * And the arming raised an OS notification « La réunion commence » in answer to the
+   * rep's own click inside the app, about a meeting half an hour away — whose click is
+   * the one thing in the product that navigates without a press inside it (DEC-46).
+   */
+  const later = event('AAA', { scheduledStart: T0 + 30 * 60_000, scheduledEnd: T0 + 90 * 60_000 })
+  const h = harness([later], null, null)
+  const { meetingId } = h.agenda.armNow('AAA')
+
+  assert.deepEqual(h.armed, [], 'the rep’s own press announced itself to the OS')
+
+  await h.agenda.tick({ now: T0 + 30_000 })
+  assert.equal(h.orchestrator.stateOf(meetingId), 'armed', 'one tick undid the rep’s press')
+  assert.equal(h.agenda.snapshot().armed?.meetingId, meetingId)
+
+  // And inside the lead, with no conferencing application running at all — which is
+  // `wait`, not `over`, and used to withdraw it on the clock path too.
+  await h.agenda.tick({ now: T0 + 30 * 60_000 - ARM_LEAD_MS + 1_000 })
+  assert.equal(h.orchestrator.stateOf(meetingId), 'armed')
+  h.store.close()
+})
+
+test('one recording at a time, and the refusal says which', async () => {
+  /*
+   * `MeetingSession`'s table is per meeting, so `idle → recording` was legal for every
+   * session independently: `liveStates = ["recording","recording"]`, two microphone and
+   * two system-audio handles on the same devices, two transcripts, two compte-rendus
+   * and two pushes to a CRM with no idempotency key and no delete verb — for one
+   * conversation. `Orchestrator.recording()` already answered this and had one caller,
+   * the onboarding dry run; the state machine never asked it.
+   */
+  const h = harness([], null, null)
+  h.orchestrator.create({ id: 'man-a', title: 'Premier appel', context: null })
+  h.orchestrator.create({ id: 'man-b', title: 'Second appel', context: null })
+  assert.equal(h.orchestrator.dispatch('man-a', 'start', 'le commercial a démarré').ok, true)
+
+  const refused = h.orchestrator.dispatch('man-b', 'start', 'le commercial a démarré')
+  assert.equal(refused.ok, false)
+  assert.equal(refused.ok === false && refused.reason, 'une autre réunion est déjà en cours d’enregistrement')
+  assert.deepEqual(h.orchestrator.liveStates().filter((s) => s === 'recording'), ['recording'])
+
+  // And it is a refusal, not a park: the second is recordable once the first is done.
+  h.orchestrator.dispatch('man-a', 'end', 'le commercial a terminé')
+  assert.equal(h.orchestrator.dispatch('man-b', 'start', 'le commercial a démarré').ok, true)
   h.store.close()
 })

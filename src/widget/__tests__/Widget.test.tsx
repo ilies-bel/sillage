@@ -534,6 +534,106 @@ test('the widget fades out when the recording ends, and says how long that takes
   expect(screen.getByText('Enregistrement en cours')).toBeTruthy()
 })
 
+/**
+ * **The last frame is the call, and this is what the test above could not see.**
+ *
+ * The assertion beside it — « the pill still says what the call was » — passed for
+ * as long as it existed and proved nothing, because it never delivered the
+ * broadcast that actually arrives: `main.ts` fans `session:changed` out to *every*
+ * window and only then calls `syncOverlay()` → `dismiss()` → `widget:leave`. So the
+ * leaving renderer reloaded `widget:state`, got `{ meeting: null }`, and dropped the
+ * `LevelMeter`, the elapsed time, the mark counter and 41 px of width **17 ms into a
+ * 150 ms fade, at opacity 0.998** — measured in the packaged app,
+ * `scratch/r26-e2e-widget-last-frame.cjs`. A fixture that omits the one message
+ * responsible is a test of a property the product does not have.
+ *
+ * Both orders are driven, because the *rule* is not about the order — and they fail
+ * for different reasons, which is why neither is redundant. `session:changed` first
+ * is what `main.ts` actually sends, and it is the freeze that holds it: the latch is
+ * set after the read is already on the wire. `widget:leave` first is held by the
+ * latch alone, because the reload is then never fired at all. So a future reordering
+ * in `main.ts` cannot quietly make the freeze look unnecessary, and removing the
+ * freeze cannot be hidden by reordering. Measured both ways in the packaged app:
+ * with the reload suppressed and the freeze reverted, it still blanked the card at
+ * +48 ms, at opacity 0.99998 (`scratch/r26-e2e-widget-last-frame.cjs`).
+ *
+ * jsdom measures every box as zero, so what is asserted here is what jsdom *can*
+ * see and what was wrong: the text and the controls on the card. The width, the
+ * opacity and the slide are the harness's and the probe's.
+ */
+for (const first of ['widget:leave', 'session:changed'] as const) {
+  test(`la dernière image reste l’appel — ${first} d’abord`, async () => {
+    bridge.when('widget:left', () => ({ ok: true }))
+    render(<Widget />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+    await act(async () => {
+      bridge.emit('moment:marked', {
+        meetingId: 'm1',
+        mark: { id: 'k1', at: STARTED + 30_000, note: '', segmentId: null },
+      })
+    })
+    const marked = await screen.findByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })
+    expect(marked).toBeTruthy()
+    const elapsed = screen.getByLabelText('Durée d’enregistrement').textContent
+
+    // The meeting is over on the main process's side from here on: any read of
+    // `widget:state` now answers the truth, which is that nothing is recording.
+    bridge.when('widget:state', () => ({ meeting: null }))
+
+    await act(async () => {
+      if (first === 'widget:leave') {
+        bridge.emit('widget:leave', {})
+        bridge.emit('session:changed', { meetingId: 'm1', state: 'ended' })
+      } else {
+        bridge.emit('session:changed', { meetingId: 'm1', state: 'ended' })
+        bridge.emit('widget:leave', {})
+      }
+    })
+    // Long enough for a reload that was already on the wire to land.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('Aucun enregistrement')).toBeNull()
+    expect(screen.getByLabelText('Durée d’enregistrement').textContent).toBe(elapsed)
+    expect(screen.getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })).toBeTruthy()
+  })
+}
+
+/**
+ * **The card does not relayout on its way out either, and this is the channel that
+ * would move the card rather than its content.**
+ *
+ * `above` flips `flex-col` to `flex-col-reverse`, so a `widget:placed` arriving
+ * during the fade moves the pill by the panel's whole height. It is the same rule as
+ * the two tests above — a window that has been told to go away stops taking state —
+ * on the one broadcast jsdom can deliver end to end.
+ *
+ * The other half of that rule cannot be reached from here and is not pretended
+ * otherwise: `widget:resize` is answered `{ ok: false, above: false }` once `Overlay`
+ * has released the window, and the renderer used to write that default into its own
+ * layout — which is the « ▴ » → « ▾ » flip in the packaged-app measurement. The
+ * renderer only sends a measurement for a box with a non-zero width and jsdom
+ * measures every box as zero, so no reply ever arrives here. That one is proved in
+ * Chromium, against real layout: `scratch/r26b-refused-place.mjs` opens the panel
+ * with every `widget:resize` refused (« ▾ » kept; « ▴ » when the guard is reverted).
+ */
+test('une carte qui s’en va ne se remet pas en page', async () => {
+  render(<Widget />)
+
+  const toggle = await screen.findByRole('button', { name: /^Ouvrir le panneau/ })
+  // The stub answers `above: false`, so a shut panel points down.
+  expect(toggle.textContent).toBe('▾')
+
+  await act(async () => {
+    bridge.emit('widget:leave', {})
+    bridge.emit('widget:placed', { above: true })
+  })
+  expect(screen.getByRole('button', { name: /^Ouvrir le panneau/ }).textContent).toBe('▾')
+})
+
 function assertShell(node: Element | null): asserts node is Element {
   if (node === null) throw new Error('la coque du widget n’a pas été trouvée')
 }

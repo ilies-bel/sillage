@@ -33,6 +33,68 @@ import { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
 export const ARM_LEAD_MS = 5 * 60_000
 
 /**
+ * **How early a scheduled call may be joined and still be that call.**
+ *
+ * The calendar's *claim* on a conversation is wider than its readiness to *arm* one,
+ * and conflating the two is how « one conversation, one offer » was broken for a
+ * fourth round. `ARM_LEAD_MS` answers « should the offer be on screen yet »;
+ * this answers « is the microphone I can hear the scheduled call ». They are
+ * different questions and the second has a longer reach.
+ *
+ * Measured on the shipped `Agenda`: a rep joining their own 14:30 Teams call
+ * **5 min 25 s** early — `ARM_LEAD_MS + AD_HOC_DWELL_MS`, so anything from five and
+ * a half minutes — got a *second* offer, « Appel non planifié — Teams », because the
+ * ad-hoc detector saw a held microphone that no calendar rule had claimed yet. Take
+ * that offer, which is the one the OS notification points at, and at 14:25 the
+ * calendar arms the same conversation a second time: `liveStates` becomes
+ * `["recording","armed"]`, two rows sit on the day and the second notification's
+ * click navigates the rep off their own live recording. Joining early is not an edge
+ * case; it is what a sales rep does before a call that matters.
+ *
+ * Thirty minutes, and the number is chosen from the **asymmetry of being wrong**
+ * rather than from a study of behaviour. Too wide and a genuinely unscheduled call
+ * taken in the half hour before a meeting gets no offer — a cost with a remedy the
+ * rep already has and which is the *fast* route anyway (« Démarrer une réunion »).
+ * Too narrow and the product creates a duplicate meeting whose push to VerySwing has
+ * no idempotency key and no delete verb. One of those is a missing convenience and
+ * the other is a row in a client's system of record.
+ *
+ * It deliberately does **not** widen `ARM_LEAD_MS`. Arming *on* a held microphone is
+ * a claim that this call is that event, and the further from the slot, the weaker it
+ * is: a rep on an unrelated call twenty minutes early would be offered the wrong
+ * client's objet. So the calendar stays silent until its own lead, and what this
+ * changes is only that the ad-hoc detector stops speaking over it.
+ */
+export const CALENDAR_CLAIM_MS = 30 * 60_000
+
+/**
+ * Does the calendar already account for a call happening **now**?
+ *
+ * The one fact `decideAdHoc` cannot work out for itself, and the reason it is here
+ * rather than in `adHoc.ts` is that it is a statement about *events* — cancelled and
+ * all-day entries are not calls to record, and that rule is already written down in
+ * `nextArmable` one screen below. Returning the event rather than a boolean so the
+ * caller can take the **horizon** from it: the offer the rep should get is the
+ * calendar's, and it becomes available at `scheduledStart - ARM_LEAD_MS`.
+ */
+export const calendarClaim = (
+  events: readonly CalendarEvent[],
+  now: number,
+): CalendarEvent | null => {
+  let claim: CalendarEvent | null = null
+  for (const event of events) {
+    if (event.isCancelled || event.isAllDay) continue
+    const { scheduledStart, scheduledEnd } = event.context
+    if (now < scheduledStart - CALENDAR_CLAIM_MS) continue
+    if (now >= scheduledEnd + OVERRUN_GRACE_MS) continue
+    // The earliest claimant, for the same reason `nextArmable` prefers it: the
+    // conversation the rep is in is the one whose slot they reached first.
+    if (!claim || scheduledStart < claim.context.scheduledStart) claim = event
+  }
+  return claim
+}
+
+/**
  * How often to re-ask, once the window is open and no conferencing app is up
  * yet.
  *

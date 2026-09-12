@@ -135,7 +135,7 @@ machine) or in `core/domain/` — never in an IPC handler.
   that pops. `scripts/e2e.mjs` asserts the window is gone within three seconds rather than
   fifteen — a tolerance that would pass on a handshake nothing completed.
 - **And the entrance, which was worse than the exit and had never been looked at**
-  (`FIRST_FRAME_MS`, `FONT_DEADLINE_MS`). Polishing the exit is what exposed it: the pill
+  (`FIRST_FRAME_MS`, `APPEARANCE_MS`, `MEASURE_DEADLINE_MS`). Polishing the exit is what exposed it: the pill
   faded out beautifully and *arrived* as a card **clipped by 49 pixels** that then settled in
   three steps. `INITIAL_SIZE` is 232×52 and its own docblock calls it « a starting guess and
   never the truth »; the shipped renderer asks for **281×78**, and `showInactive()` fired on
@@ -162,6 +162,31 @@ machine) or in `core/domain/` — never in an IPC handler.
   Result: one measurement, and the first frame the rep sees is the real pill in its real place.
   The `Overlay` test asserts the *order* — bounds before show — because a counter of
   `showInactive` calls cannot tell a correct first frame from a clipped one sliding into place.
+  **And waiting for the font was half a gate.** `Pill` draws « Aucun enregistrement » with no
+  meter, no clock and no mark button while `widget:state` is in flight, so the measurement the
+  main process was waiting for could be a measurement of a pill saying the recording is not
+  happening — and the window was then revealed carrying it. Measured in the **packaged** app:
+  the placeholder at 619 ms, the real pill at 636 ms. Seventeen milliseconds, which is why the
+  first version of this looked correct: the margin was doing the work, not the construction, on
+  the machine that is not the primary platform, at the instant `startRecording` is opening two
+  audio devices and booting a transcriber. `FONT_DEADLINE_MS` is `MEASURE_DEADLINE_MS` now and
+  waits for the type **and** for `widget:state` to settle *either way* — a `{ meeting: null }`
+  answer is an answer — with both waits absolute from mount, because content arriving re-arms
+  the effect and a restarting deadline would land past the main process's.
+  **Four numbers in three files, and they must stay in one order.** The harness's
+  `widget:state` latency < `MEASURE_DEADLINE_MS` < `FIRST_FRAME_MS` < `APPEARANCE_MS`, held by
+  a test in `harnessFixture.test.ts` that reads all three files. Out of order the handshake is
+  decided by the wrong side and every suite stays green: at 120 ms against a 150 ms answer the
+  renderer's deadline fired every run, so the wait it guards never happened and the first
+  attempt at this fix measured as working while doing nothing; and with the renderer slower
+  than the main process it is `INITIAL_SIZE` that gets revealed — the 232×52 guess, carrying
+  « Aucun enregistrement » over a live call. `APPEARANCE_MS` is armed at *creation* and closes
+  a hole with teeth: Electron does not promise `ready-to-show` for a transparent window, so a
+  renderer that was alive and measuring could have been shown never.
+  **And `ok: false` is not an answer.** `Overlay.resize` returns `{ ok: false, above: false }`
+  when there is no window, and the renderer did `.then((placement) => setAbove(placement.above))`
+  — believing a refusal. `above: false` there is a *default*, not a measurement: that is the
+  chevron flipping ▴→▾ and half of the 20 px slide on the way out.
 - **The pill's anchor is the pill** (DEC-49, `overlayPlacement.ts`). The first version
   anchored a window *edge* — bottom edge in the bottom half of the display, like a menu — and
   the pill is drawn at the **top** of the content with the panel under it, so holding the
@@ -816,13 +841,66 @@ machine) or in `core/domain/` — never in an IPC handler.
   could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
   never by name, because they are open all day.
 
-- **One conversation, one offer — and the unit is the *hold*, not the state and not the
-  meeting** (`AdHocInput.spent`, `Agenda.#adHocArmed`). This rule has been the finding in
-  **three consecutive rounds**, and the pattern in the three failures is worth more than any
-  of them: every fix reached for the *predicate*, and the predicate was never the problem.
-  Round 23 found the horizon. Round 24 found that `calendarArmed` was passed a hard-coded
-  `false`, so the rule it named was never applied at all. Round 25 found it broken in two
-  more places, both structural.
+- **One conversation, one offer — and the question is « does the calendar already account
+  for a call happening now », not « is a meeting live »** (`AdHocInput.calendarOffersAt`,
+  `calendarClaim`, `AdHocInput.spent`, `Agenda.#adHocArmed`). This rule has been the finding
+  in **four consecutive rounds**, and the pattern matters more than any of the instances:
+  rounds 23, 24 and 25 each reached for the *predicate* — the horizon, then a hard-coded
+  `false`, then two states out of six — and the predicate was never the problem. Round 26
+  found that the whole **axis** was wrong.
+  **A rep joining their own scheduled Teams call early has no live meeting, no armed meeting
+  and a held microphone**, so every version of the live-meeting predicate answered « nothing
+  is happening » and the detector offered an unscheduled meeting for a scheduled call. The
+  boundary was `ARM_LEAD_MS + AD_HOC_DWELL_MS` — anything from **five and a half minutes**
+  early, measured, and joining early is what a sales rep does before a call that matters. Take
+  the offer the OS notification points at and at `scheduledStart − 5 min` the calendar arms the
+  same conversation again: `liveStates` becomes `["recording","armed"]`, which is *verbatim* the
+  string `meetingLive`'s own docblock quotes as the defect round 24 fixed, with two rows on the
+  day and a second notification whose click navigates the rep off their live recording.
+  `calendarClaim` is the fix and it is a **deferral, not a refusal**: `decideAdHoc` returns
+  `none` with the calendar's own offer instant as its horizon, so the rep gets the *better*
+  offer — attendees, objet, `speakerLabel`, account resolution — at the first moment it exists.
+  `CALENDAR_CLAIM_MS` is 30 minutes and is deliberately **wider than `ARM_LEAD_MS`**: the
+  calendar's claim on a conversation reaches further than its readiness to arm one, and
+  conflating the two is what made this a four-round bug. The number comes from the asymmetry of
+  being wrong — too wide costs a missing offer, which has a remedy the rep already has and
+  which is the *fast* route (« Démarrer une réunion »); too narrow costs a duplicate row in a
+  client's CRM, where `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete
+  verb. It deliberately does **not** widen `ARM_LEAD_MS`, because arming *on* a held microphone
+  claims this call is that event, and the further from the slot the weaker that claim is.
+- **One recording at a time, and only `dispatch` can say so** (`Orchestrator.dispatch`).
+  `MeetingSession`'s transition table is per meeting, so `idle → recording` was legal for every
+  session independently and nothing above it asked. Measured: `liveStates =
+  ["recording","recording"]` — two `startRecording` calls, **two microphone and two
+  system-audio handles on the same devices**, two transcribers, two compte-rendus and two CRM
+  pushes for one conversation; and the widget adopts whichever `widget:state`'s `.find()`
+  returns, then silently re-points at the other on the next `session:changed`, carrying a
+  different `startedAt` and a different mark list. `Orchestrator.recording()` already answered
+  this question and had exactly **one** caller — the onboarding dry run, which asks precisely so
+  it will not open a second handle on the same devices. The state machine never asked it. The
+  guard is in `dispatch` because that is the one chokepoint every route goes through, and it is
+  a refusal with a sentence rather than a silent no-op (DEC-26).
+- **« Over » means over, and `wait` is not `over`** (`Agenda.#over`). The expiry branch
+  withdrew a standing calendar offer on *any* non-`arm` answer from `nextArmable`, and `wait` is
+  one of them. Two ordinary things therefore destroyed a good offer. `armNow` — the rep pressing
+  *Enregistrer* on an upcoming row, deliberately without consulting `decideArming` because « the
+  detector guesses, the rep has said » — was **undone by the very next tick** outside
+  `ARM_LEAD_MS`, logging `disarm` with « la réunion est passée sans enregistrement » about a call
+  half an hour in the future; and since that control renders only while the row has no meeting,
+  and the press creates one, it was gone for the rest of the day: the defect `b497664` added
+  that control to end, reachable by pressing the control `b497664` added. The same on the clock
+  path, which nobody had noticed — inside the window with no conferencing audio `decideArming`
+  answers `wait`, so a rep who closed Teams after the offer appeared lost it. Over means absent
+  from the fold, cancelled, or past `scheduledEnd + OVERRUN_GRACE_MS`, which is the boundary
+  `decideArming`, `entries.ts`'s `isPast` and `calendarClaim` all already use; the test asserting
+  withdrawal at `scheduledEnd + 1ms` was encoding a boundary that contradicted all three.
+  And **`armNow` raises no notification**: DEC-46 says the OS notification's click is « the only
+  thing in the product that navigates without the rep having pressed something inside it », and
+  `armNow` *is* a press inside it.
+- **The three that came before, kept because the sequence is the lesson**
+  (`AdHocInput.spent`, `Agenda.#adHocArmed`). Round 23 found the horizon. Round 24 found that
+  `calendarArmed` was passed a hard-coded `false`, so the rule it named was never applied at all.
+  Round 25 found it broken in two more places, both structural.
 
   **The withdrawal must not read its target out of the field being overwritten.**
   `#withdrawAdHoc` took the meeting id from `#armed`, and `#arm(event)` *overwrites* `#armed`.
@@ -885,6 +963,32 @@ machine) or in `core/domain/` — never in an IPC handler.
   with `--no-png` anyway. The reasoning that shipped the wrong curve was « the difference is
   imperceptible at 150 ms », which is what reasoning instead of measuring looks like on a
   project whose method is to measure the shipped box.
+- **A check's own self-test is a check, and this one measured nothing while reporting green**
+  — the fifth instance of that shape in this repo, and the first found *inside* an
+  instrument. `SILLAGE_MOTION_ATTACK=1`, offered in `motion()`'s docblock to « anyone touching
+  this function », injected its rules at `#root h1` and `h2::after`. The widget renderer has
+  no `h1`, so on `widget-sortie` — the one stage that exists to look at the only exit animation
+  in the product — the self-test **exited 0**. It injects into `#root` itself now and reports
+  five attacks caught with a sixth left deliberately silent as the control, so a pass says what
+  it measured.
+  Three more holes in the direction rule, all one round old and none found by its author.
+  Renaming `--ease-out` turned the whole rule **off** rather than red, because `enterCurve`
+  became `''` and `allowedEase.has('')` is false. An `SVGElement`'s `className` is an
+  `SVGAnimatedString`, so `.toString()` is the literal `"[object SVGAnimatedString]"` and an SVG
+  could never say it was leaving. And `tailwind.config.js` ships the utility class `ease-out`,
+  which the word-boundary regex matched as `out` — a false positive one keystroke from a
+  developer writing an ordinary class name, and a false positive here is worse than the hole,
+  because a check people work around is gone.
+- **`--ease-in` is pinned by its *shape*, not its string** (`tokens.test.ts`). Redefining it to
+  `cubic-bezier(0.22, 1, 0.36, 0.99)` restores the blink and passed every check, because the
+  allowed-curve set is built from `:root` — deliberately, so a new token is honoured the moment
+  it is declared — and nothing asked what the curve *does*. Two assertions now, and the second
+  is the one that matters: the property is **rotation by 180° about the midpoint**, which is
+  what reversing an easing actually is, and there is a trap in the obvious version worth
+  recording — naively reversing `(0.22, 1, 0.36, 1)` gives `(1, 0.22, 1, 0.36)`, which is not
+  the mirror and not `--ease-in`. Beside it, a behavioural test: an exit curve must be
+  **back-loaded**, measured as progress at an early fraction of the duration, so *any*
+  front-loaded curve fails and not only the one that shipped.
 
 - **A synthesised end is not a scheduled end** (`Orchestrator.#startEndWatch`). `graceFor`
   shortens the end-of-meeting grace from 75 s to 25 s once the silence begins past
@@ -1011,10 +1115,43 @@ machine) or in `core/domain/` — never in an IPC handler.
   `core/contracts/` must be called from outside the module that implements it, or
   be listed in `UNWIRED` with the reason and what wiring it would cost — the
   `check-platform.mjs` shape, including the half that matters most, which is that
-  an allowance whose method has since disappeared also fails. Two are listed
-  today: `attachTranscript` and `createContact` both *write into the client's
-  systems* and belong in the gate's intent list as a decision, not as a side
-  effect of extraction.
+  an allowance whose method has since disappeared also fails.
+
+  **And for a dozen rounds it asked that of one port out of nine**, while this
+  paragraph and its own docblock both said « every method on a port declared in
+  `core/contracts/` ». `PORTS` was a hand-written list with `CrmPort` in it, « because
+  that is where it was first asked ». Ports are **discovered** now — every
+  `export interface` in `core/contracts/` with at least one method, and a discovered
+  port with no declared home fails, so the list cannot rot back into one entry — which
+  took it from 6 methods to 28 and surfaced `LlmPort.complete`, declared, implemented,
+  unit-tested seventeen times and called by nothing.
+
+  Two things about the *caller* test were worse than its scope, and both are the shape
+  this repo keeps finding. It was `[.\w]${method}\s*\(`, which lets the method name be
+  the **tail of another identifier**: `CalendarPort.sync` matched forty files, of which
+  two really call it, satisfied by `readFileSync(`, `execFileSync(` — and by **`async (`**.
+  A port method was therefore reported as wired because the file contained the word
+  `async`. And it demanded `(` immediately after the name, so every generic call was
+  invisible: all three real callers of `LlmPort.structured` write `.structured<T>({`, so
+  turning the widened check on unchanged would have reported the live compte-rendu, the
+  signal rail and *Demander* as dead code — a false positive that gets working code
+  deleted, which is worse than the hole it was fixing. The test is receiver-aware now,
+  with the receivers derived from the tree's own `: PortName` annotations, and an empty
+  receiver set is itself a finding.
+
+  Three are listed today. `attachTranscript` and `createContact` both *write into the
+  client's systems* and belong in the gate's intent list as a decision, not as a side
+  effect of extraction. `LlmPort.complete` is different and is **declared debt rather
+  than pending work**: the honest resolution is to delete it, because `SignalExtractor`'s
+  own docblock carries a section headed « Why `structured` and not `complete` », and
+  `recipe.test.ts` stubs it to *reject*, so wiring it would be a decision against « Zod
+  schemas for every LLM output ». It is still there because `OpenAiCompatibleLlm`'s seven
+  HTTP-error tests drive `#chat` *through* it, and moving them onto `structured` folds
+  schema parsing into tests whose whole job is to check that a 429 becomes a `quota`
+  error. Leaving it is not free and the cost is named here so it is argued rather than
+  missed: `llm.ts`'s « Two verbs, because there are exactly two jobs » is false
+  documentation of the contract every adapter implements, and an un-schema'd prose
+  channel on that contract is standing permission.
 - **And the fourth boundary is a class method in `app/session/`, where it costs most.**
   The nineteenth round said the check below asks the right question at three places and
   `check:ports` at a fourth, and that **none of them asks it of a method on a class in

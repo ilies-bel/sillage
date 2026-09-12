@@ -182,6 +182,30 @@ export interface AdHocInput {
    * would disable detection permanently.
    */
   spent: boolean
+  /**
+   * **The instant the calendar's own offer for this conversation becomes available,
+   * or null when the calendar does not account for a call happening now.**
+   *
+   * The axis this rule was on for three rounds was « is a meeting live », and that is
+   * not the question. A rep joining their own 14:30 Teams call at 14:22 has no live
+   * meeting, no armed meeting and a microphone held by Teams — so the detector
+   * offered « Appel non planifié — Teams », the OS said « La réunion commence » about
+   * a card naming no client, and at 14:25 the calendar armed the *same* conversation
+   * a second time. Two rows, two notifications, and four presses to two simultaneous
+   * recordings of one call.
+   *
+   * A number rather than a boolean, because the answer is not « refuse » but
+   * « **defer** »: the offer the rep should get is the calendar's — it carries the
+   * attendees, the objet, `speakerLabel`'s one chance to name the far channel after a
+   * person, and the strongest signal account resolution has — and this is when it
+   * arrives. `decideAdHoc` returns `none` with that as its horizon, so the rep gets
+   * the good offer at the first instant it exists instead of a worse one now.
+   *
+   * `calendarClaim` in `core/domain/arming.ts` computes it, and the window is
+   * `CALENDAR_CLAIM_MS`, deliberately wider than `ARM_LEAD_MS`: the calendar's claim
+   * on a conversation reaches further than its readiness to arm one.
+   */
+  calendarOffersAt: number | null
 }
 
 /**
@@ -200,13 +224,32 @@ export type AdHocDecision =
   | { action: 'none'; untilMs: number; reason: string }
 
 export const decideAdHoc = (input: AdHocInput): AdHocDecision => {
-  const { micHeldBy, now, heldSince, meetingLive, spent } = input
+  const { micHeldBy, now, heldSince, meetingLive, spent, calendarOffersAt } = input
 
   if (!micHeldBy) {
     return {
       action: 'none',
       untilMs: now + AD_HOC_IDLE_POLL_MS,
       reason: 'aucun appel en cours hors du calendrier',
+    }
+  }
+
+  /*
+   * **The calendar gets first claim on the conversation.** Asked before `meetingLive`
+   * and before the dwell, because a scheduled call is not an unscheduled one at any
+   * point in its dwell — and asked on every tick rather than latched, so a rep whose
+   * call runs past `scheduledEnd + OVERRUN_GRACE_MS` and keeps talking is eventually
+   * offered the unscheduled meeting the conversation has become.
+   *
+   * The horizon is the calendar's own offer instant, never the poll interval: there is
+   * nothing to re-ask until then, and naming it is what stops the rep waiting a full
+   * `AD_HOC_IDLE_POLL_MS` past the moment the good offer became available.
+   */
+  if (calendarOffersAt !== null) {
+    return {
+      action: 'none',
+      untilMs: calendarOffersAt > now ? calendarOffersAt : now + AD_HOC_POLL_MS,
+      reason: 'cet appel est au calendrier',
     }
   }
 

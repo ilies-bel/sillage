@@ -284,6 +284,45 @@ export class Orchestrator {
     if (!session) {
       return { ok: false, state: 'idle', reason: `réunion inconnue: ${meetingId}` }
     }
+
+    /*
+     * **One recording at a time, and this is the only place that can say so.**
+     *
+     * `MeetingSession`'s transition table is per meeting, so `idle → recording` is
+     * legal for every session independently and nothing above it asked whether
+     * another was already capturing. Measured on the shipped orchestrator:
+     * `liveStates = ["recording","recording"]`. That is two `startRecording` calls,
+     * **two microphone and two system-audio handles on the same devices**, two
+     * transcribers, two compte-rendus and two pushes to VerySwing — where
+     * `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb —
+     * for one conversation. The widget adopts whichever `widget:state`'s `.find()`
+     * returns and silently re-points at the other on the next `session:changed`,
+     * carrying a different `startedAt` and a different mark list, so the one surface
+     * that exists to prove the rep is being heard cannot say which call it means.
+     *
+     * `Orchestrator.recording()` already answered this question and had exactly one
+     * caller — the onboarding dry run, which asks so it can refuse to open a second
+     * handle on the same devices. The state machine never asked it.
+     *
+     * Here rather than in `MeetingSession`: this is a fact about the *process*, not
+     * about a meeting, and `dispatch` is the one chokepoint every route goes through
+     * — the IPC handler, `Agenda`, `Enhancement`, the boot re-drain. A refusal and
+     * never a silent no-op, because DEC-26 wants a sentence the rep can act on, and
+     * the sentence names the other call rather than the rule.
+     */
+    if (command === 'start') {
+      const other = this.liveIds().find(
+        (id) => id !== meetingId && this.stateOf(id) === 'recording',
+      )
+      if (other !== undefined) {
+        return {
+          ok: false,
+          state: session.state,
+          reason: 'une autre réunion est déjà en cours d’enregistrement',
+        }
+      }
+    }
+
     const outcome = session.dispatch(command, reason)
     if (outcome.ok) this.#broadcast('session:changed', { meetingId, state: outcome.to })
 

@@ -188,10 +188,27 @@
    * holding its place over the rep's call.
    *
    * Mirrored deliberately rather than chosen: `cubic-bezier(0.64, 0, 0.78, 0)` is
-   * `--ease-out` reflected through the diagonal, so the two are one curve read in
-   * two directions and there is no second piece of taste to keep consistent. It
-   * collapses under `prefers-reduced-motion` with everything else, because the
-   * durations are what collapse and a curve over 0ms is not applied.
+   * `--ease-out` **rotated 180° about (0.5, 0.5)** — `(x1, y1, x2, y2)` becomes
+   * `(1−x2, 1−y2, 1−x1, 1−y1)` — so the two are one curve read in two directions
+   * and there is no second piece of taste to keep consistent. `--ease-out` is the
+   * taste; this follows it. It collapses under `prefers-reduced-motion` with
+   * everything else, because the durations are what collapse and a curve over 0ms
+   * is not applied.
+   *
+   * This comment said « reflected through the diagonal » for a round, which is a
+   * *different* operation — the reflection is the inverse function,
+   * `(y1, x1, y2, x2)`, and on `(0.22, 1, 0.36, 1)` it gives `(1, 0.22, 1, 0.36)`,
+   * not this. The intent was right and the geometry was not, and nothing could
+   * tell, because the file asserting this palette held the durations to ≤150ms and
+   * contained no easing at all: redefining this token to
+   * `cubic-bezier(0.22, 1, 0.36, 0.99)` restored the blink exactly — measured on
+   * the shipped `.widget-leaving` element in Chromium, opacity 0.768 at 9ms, 0.278
+   * at 35ms, 0.018 at 93ms, against 0.999 / 0.998 / 0.909 here — and every check
+   * in the repo passed. `tokens.test.ts` asserts the **relation** rather than the
+   * literal (so `--ease-out` stays free to be retuned and this has to follow it),
+   * and, independently, that this curve's mean progress is under 0.45 while
+   * `--ease-out`'s is over 0.55. `shot.mjs --motion` measures the same shape on
+   * whatever curve actually reaches a departing element.
    */
   --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
 

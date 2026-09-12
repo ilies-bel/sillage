@@ -96,10 +96,53 @@ export const EXIT_FALLBACK_MS = 500
  * So the first show waits for the renderer's own measurement, and this is the
  * deadline on that wait — never a requirement, because DEC-26 says everything fails
  * open and a widget that does not appear is worse than one that appears wrong. A
- * renderer that crashes, or a font that never loads, costs the rep 200 ms and then
- * the guess, which is exactly what they used to get immediately.
+ * font that never loads costs the rep this long and then the guess, which is exactly
+ * what they used to get immediately.
+ *
+ * It is armed by the **first paint**, deliberately: before that there is nothing
+ * worth showing, and counting from `load()` would spend the budget on the renderer
+ * booting and reveal the guess on a slow machine, which is the machine this matters
+ * on. Which leaves a renderer that never paints with no deadline at all — that one
+ * is `APPEARANCE_MS` below, and it is a different promise.
+ *
+ * **300 and not 200, because the renderer has two waits of its own and this one has
+ * to outlast both.** `MEASURE_DEADLINE_MS` in `src/widget/Widget.tsx` is the pill
+ * refusing to report a size measured in the fallback face or drawn before
+ * `widget:state` answered; that answer is two SQLite reads over a preload hop, and
+ * the harness fixture gives the channel 150 ms so a stage can catch the placeholder
+ * mid-flight. At 200 here and 120 there, *this* deadline won — and what it reveals
+ * when it wins is `INITIAL_SIZE`, which is 49 px narrower than the pill, so the side
+ * with the worse answer was deciding. The renderer answers by ~216 ms; this leaves
+ * it 84 ms of margin and costs a mute renderer 100 ms more before it gets the guess.
  */
-export const FIRST_FRAME_MS = 200
+export const FIRST_FRAME_MS = 300
+
+/**
+ * The ceiling on the widget appearing **at all**, armed at creation.
+ *
+ * `FIRST_FRAME_MS` above calls itself « a deadline and never a requirement »,
+ * and for as long as it existed it was half of one: it was armed *inside* the
+ * `ready-to-show` handler, so a renderer that never painted had no timer at all.
+ * Measured on the shipped class with no paint (`scratch/r26-overlay-edges.mjs`):
+ * « after 600 ms: ["create w1"] », « active timers: 0 ». There was no path to a
+ * visible pill, ever, and `#show` refuses on `#painted` — so a renderer that is
+ * alive and *measuring* while `ready-to-show` never fires (which Electron does
+ * not promise for a transparent window) was in the same hole: the main process
+ * had its size, had placed it, and would not show it.
+ *
+ * So `#painted` stops being a requirement once this has passed. It is not a
+ * measurement wait and must not be confused with one — it is « the rep asked for
+ * a recording and something has to be on screen », which is DEC-26's reading of
+ * the same trade `FIRST_FRAME_MS` states. A second, because the packaged app
+ * creates the window and reveals it **146 ms** later on this machine
+ * (`scratch/r26-e2e-widget-visible.cjs`: created at +335 ms invisible, shown at
+ * +481 ms at 276×78), so an ordinary launch is nowhere near it and only a broken
+ * one gets here. What it then shows may be an empty transparent window — which is
+ * the honest state of a renderer that has drawn nothing, and is strictly better
+ * than a window that can never be shown again: `#shown` is what a later paint
+ * arrives into.
+ */
+export const APPEARANCE_MS = 1_000
 
 export interface OverlayHost {
   /** `new BrowserWindow(...)`, injected so this file is reachable in a test. */
@@ -192,11 +235,25 @@ export class Overlay {
    * us how big it really is. Both, because showing on the measurement alone can
    * reveal a window that has not painted, and showing on the paint alone is the
    * clipped card this exists to end.
+   *
+   * And **the measurement is worth waiting for on the renderer's side too**: it
+   * reports nothing until the type has settled *and* the read it draws has landed,
+   * so a measurement arriving here is a measurement of the real pill rather than of
+   * « Aucun enregistrement » — see `MEASURE_DEADLINE_MS` in `src/widget/Widget.tsx`.
+   * Neither wait is unbounded in either process: `#forced` is this side's ceiling.
    */
   #painted = false
   #measured = false
   #shown = false
   #reveal: ReturnType<typeof setTimeout> | null = null
+  /**
+   * The ceiling on appearing at all — see `APPEARANCE_MS`. Armed at creation,
+   * which is the half `#reveal` cannot be: it is armed by the first paint, so it
+   * has nothing to say about a renderer that never paints.
+   */
+  #ceiling: ReturnType<typeof setTimeout> | null = null
+  /** True once `APPEARANCE_MS` has passed: the paint stops being required. */
+  #forced = false
   /**
    * Windows playing their exit, with the timer that will destroy each one.
    *
@@ -232,6 +289,30 @@ export class Overlay {
   show(): void {
     if (this.#window && !this.#window.isDestroyed()) return
 
+    /*
+     * **A new pill reaps the old one rather than joining it.**
+     *
+     * `dismiss()` deliberately leaves a live window on screen for up to
+     * `EXIT_FALLBACK_MS`, and a rep taking the next call inside that window got
+     * *two* frameless always-on-top cards at the same saved origin — measured on
+     * this class (`scratch/r26-overlay-edges.mjs` B: create w1, show, leave→w1,
+     * create w2, show). The comment on `left()` argues that settling a leaving
+     * window early is harmless, and it is; what is not harmless is the overlap,
+     * and it got worse the moment the renderer started **freezing its content**
+     * for the exit (see `leaving` in `src/widget/Widget.tsx`): the fading card
+     * keeps « Enregistrement en cours » and call A's elapsed time, so the rep
+     * would see two cards claiming to be recording, with two different clocks,
+     * one on top of the other. That is the « three statements about one meeting,
+     * two of them false » shape, over a client's face.
+     *
+     * The fade exists so a card does not vanish between two frames while the rep
+     * is looking at it. A new pill arriving at the same coordinates is a larger
+     * change than the one the fade was smoothing, so it wins — and the previous
+     * card's renderer has already sent its `widget:left`, which nothing was
+     * waiting on.
+     */
+    this.#settleLeaving()
+
     this.#size = INITIAL_SIZE
     this.#pillTop = 0
     this.#pillHeight = INITIAL_SIZE.height
@@ -239,6 +320,7 @@ export class Overlay {
     this.#painted = false
     this.#measured = false
     this.#shown = false
+    this.#forced = false
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
@@ -307,6 +389,17 @@ export class Overlay {
       if (this.#window === window) this.#window = null
     })
 
+    /*
+     * Armed here and not in `ready-to-show`: this is the deadline on the widget
+     * *appearing*, and the thing it has to survive is a renderer that never
+     * paints — see `APPEARANCE_MS`.
+     */
+    this.#ceiling = setTimeout(() => {
+      this.#ceiling = null
+      this.#forced = true
+      this.#show(window)
+    }, APPEARANCE_MS)
+
     this.#host.load(window)
     window.once('ready-to-show', () => {
       if (window.isDestroyed()) return
@@ -345,15 +438,8 @@ export class Overlay {
   hide(): void {
     const window = this.#window
     this.#window = null
-    if (this.#reveal !== null) {
-      clearTimeout(this.#reveal)
-      this.#reveal = null
-    }
-    for (const [leaving, timer] of this.#leaving) {
-      clearTimeout(timer)
-      if (!leaving.isDestroyed()) leaving.destroy()
-    }
-    this.#leaving.clear()
+    this.#disarm()
+    this.#settleLeaving()
     if (window && !window.isDestroyed()) window.destroy()
   }
 
@@ -394,10 +480,7 @@ export class Overlay {
       return
     }
     this.#window = null
-    if (this.#reveal !== null) {
-      clearTimeout(this.#reveal)
-      this.#reveal = null
-    }
+    this.#disarm()
 
     try {
       window.setIgnoreMouseEvents(true, { forward: false })
@@ -450,14 +533,39 @@ export class Overlay {
    */
   #show(window: BrowserWindow): void {
     if (this.#shown || window.isDestroyed()) return
-    if (!this.#painted) return
+    // `#forced` is `APPEARANCE_MS` having passed, which is the only thing that
+    // makes the paint optional — see the constant.
+    if (!this.#painted && !this.#forced) return
     if (!this.#measured && this.#reveal !== null) return
     this.#shown = true
+    this.#disarm()
+    window.showInactive()
+  }
+
+  /** Both waits, dropped: the window has been shown, or it has gone. */
+  #disarm(): void {
     if (this.#reveal !== null) {
       clearTimeout(this.#reveal)
       this.#reveal = null
     }
-    window.showInactive()
+    if (this.#ceiling !== null) {
+      clearTimeout(this.#ceiling)
+      this.#ceiling = null
+    }
+  }
+
+  /**
+   * Every window playing its exit, destroyed now.
+   *
+   * Shared by `hide()` — a quit, one line before `store.close()` — and by
+   * `show()`, where the reason is different and is argued there.
+   */
+  #settleLeaving(): void {
+    for (const [leaving, timer] of this.#leaving) {
+      clearTimeout(timer)
+      if (!leaving.isDestroyed()) leaving.destroy()
+    }
+    this.#leaving.clear()
   }
 
   #reap(window: BrowserWindow): void {

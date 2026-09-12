@@ -1034,9 +1034,12 @@ const boot = async (): Promise<void> => {
       // away, or a drag across the display's midline. See `widget:placed`.
       placed: ({ above }) => broadcast('widget:placed', { above }),
       /*
-       * Addressed to the leaving window and never broadcast: two widget windows
-       * exist for a moment when one recording ends and the next begins, and a
-       * fan-out would tell the new pill to fade out too. See `widget:leave`.
+       * Addressed to the leaving window and never broadcast: a fan-out would tell
+       * a new pill to fade out too. `Overlay.show()` now reaps a leaving window
+       * rather than letting the two overlap, so the two-windows-at-once case is
+       * shorter than it was — and « shorter » is not « impossible », and the
+       * addressing is what makes this correct rather than lucky. See
+       * `widget:leave`.
        */
       leave: (window) => {
         if (!window.isDestroyed()) window.webContents.send('widget:leave', {})
@@ -1412,6 +1415,21 @@ const boot = async (): Promise<void> => {
      * re-derived here. Wrapping the broadcaster is what guarantees it: every
      * transition goes through `session:changed`, so there is no path that moves
      * the machine and forgets to refresh the gate.
+     */
+    /*
+     * **And the order of these two is deliberately not load-bearing.**
+     *
+     * `session:changed` reaches the widget's renderer, which used to reload
+     * `widget:state` and redraw the pill as « Aucun enregistrement » *while it was
+     * fading out* — measured in the packaged app at 17 ms into a 150 ms fade. The
+     * obvious fix is here: call `syncOverlay()` first, so `widget:leave` arrives
+     * before the transition does. It was rejected. `useInvoke.reload()` keeps its
+     * previous value until the new one lands, so the read that blanks the card can
+     * already be in flight; and the card is changed by five other broadcasts as
+     * well, none of which this function orders. The rule belongs where the window
+     * is — a window that has been told to go away stops taking state — and it is
+     * in `src/widget/Widget.tsx`, with the measurement. Reordering here would look
+     * like a fix and would move the problem out of sight of the test that holds it.
      */
     broadcast: (channel, payload) => {
       broadcast(channel, payload)

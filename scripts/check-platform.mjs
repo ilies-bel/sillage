@@ -16,6 +16,65 @@
  * governs. `electron/services/`, `electron/utils/` and the rest of the
  * not-yet-in-a-layer files are the old product's; they are covered when they
  * move (ARCHITECTURE.md §3).
+ *
+ * ## Round 26: it was a list of spellings, and the list was keyed by file
+ *
+ * Two holes, reproduced before either was touched, both measured by writing a
+ * probe into a scanned root and running this gate for real.
+ *
+ * **Nine spellings of « read the host » exited 0.** `navigator.appVersion`,
+ * `navigator.vendor`, `nav['plat' + 'form']`, `os.type() === 'Darwin'`,
+ * `execFileSync('vm_stat', …)`, `path.sep === '\\'`, `process.env.APPDATA`,
+ * `'C:/Users/…'` with forward slashes, and `/proc/meminfo`. Two of those are not
+ * hypothetical: `modules/transcribe/whisper/onnx.ts` shells out to `vm_stat` on
+ * line 98 and reads `/proc/meminfo` on line 111, and that file was caught only
+ * *incidentally*, by a `process.platform` forty lines further down. Move those
+ * three lines into a helper and the file goes undeclared.
+ *
+ * The answer is not a longer list of tool names — that is what was there. It is
+ * the general form behind each one, and there are only four:
+ *
+ *   1. **reading a host descriptor** — `process.platform`, `process.arch`,
+ *      `os.platform/type/release/arch`, `path.sep/delimiter/win32/posix`,
+ *      `navigator.<anything that answers "which machine">`;
+ *   2. **naming a platform** — `'darwin'`, `'win32'`, `'linux'`, `'Darwin'`,
+ *      `'Windows_NT'`, `'macOS'`;
+ *   3. **shelling out to an OS binary** — any `child_process` call whose first
+ *      argument is a string literal. That is the branch with no `if` in front of
+ *      it: `execFileSync('vm_stat', …)` fails on Windows with ENOENT at the
+ *      moment the rep needs it;
+ *   4. **spelling a path or an environment variable only one platform has** —
+ *      `/Applications`, `/proc/`, `C:\`, `C:/`, `%APPDATA%`, `$HOME`.
+ *
+ * **Every one of the four was measured against the tree before it was added, and
+ * the widened set produces hits in exactly the six files that were already
+ * declared — zero new violations.** That number is the whole reason to trust it:
+ * a new false positive is worse than the hole, because a check developers learn
+ * to work around is a check that is gone. Two candidates were measured and
+ * **rejected** for exactly that reason and are recorded below so the next round
+ * does not re-add them.
+ *
+ * **And `ALLOWED` was keyed by file.** Appending
+ *
+ *     export const r26MacOnlyShortcut = process.platform === 'darwin' ? 'Cmd' : 'Ctrl'
+ *     export const r26Tasklist = 'tasklist /fi "imagename eq Teams.exe"'
+ *
+ * to `electron/app/main.ts` — a brand-new, undeclared, mac-first branch plus a
+ * Windows shell-out — printed `platform ok — 210 files scanned` and exited 0,
+ * measured. That is verbatim the cost `check-diag.mjs`'s own `PENDING` docblock
+ * records for itself (« keyed by **file**, so listing `register.ts` exempted
+ * every future `.record({…})` written there »), and the answer is the one
+ * `NOT_RECORDERS` already uses: **an allowance keyed by something narrower than a
+ * file, where an entry that is no longer needed fails too.**
+ *
+ * Narrower than a file, here, is the **signal**, with the number of times it
+ * fires. `main.ts` declares four `platform-branch`, two `host-descriptor` and one
+ * `darwin-literal`; a fifth `process.platform` fails, and so does deleting one of
+ * the four. It is not a hash of the lines — a reformat or a rename would fail for
+ * no reason, which is the noise that kills a check — and it is not the file, which
+ * is what was wrong. What it costs is a number to update when a declared file
+ * genuinely gains or loses a branch, and that is the event that deserves the
+ * re-read.
  */
 import { readFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
@@ -28,25 +87,101 @@ const ROOTS = ['electron/core', 'electron/modules', 'electron/app', 'src']
 const EXTENSIONS = new Set(['.ts', '.tsx', '.mjs', '.js'])
 
 /**
- * What counts as a platform commitment.
+ * What counts as a platform commitment — the four general forms, not a list of
+ * tool names.
  *
- * Shell tools are in here because they are the branch that does not look like
- * one: `execFile('sysctl', …)` has no `if` in front of it and fails on Windows
- * with ENOENT at the moment the rep needs it.
+ * `spawn-literal` is the one that needed stating twice. A `child_process` call
+ * whose first argument is a quoted literal *is* a platform commitment whatever
+ * the binary is called, and it is the branch that does not look like one: there
+ * is no `if`, and the failure is an ENOENT on the primary platform. It is
+ * anchored on the **quote** rather than on the function alone, and that is not
+ * fastidiousness: `\b(?:execFile|exec|spawn)\s*\(` over this tree matches
+ * `MODEL_VENDOR.exec(value)`, `/```(?:json)?…/.exec(raw)` and nineteen
+ * `this.db.exec(DDL)` in `modules/store/` — twenty hits across twelve files, ten
+ * of them undeclared, i.e. a check that fails on the first run and is deleted on
+ * the second. Anchored on the quote it is **one hit in the whole tree**, the
+ * declared `execFileSync('vm_stat', …)`. The injected-seam form
+ * (`this.#options.spawn(modelId)`, `spawn(workerPath)`) is deliberately *not*
+ * matched: those are our own worker seams, not the host's binaries.
+ *
+ * `macos-tool` and `windows-tool` survive alongside it, narrower than it and
+ * kept on purpose: they name a binary a reader recognises, so the error message
+ * says *what* the code is reaching for rather than only *that* it shells out, and
+ * they still catch a tool name that arrives as a variable or inside a string
+ * built elsewhere.
+ *
+ * **Two candidates were measured and rejected.** A bare
+ * `\b(?:exec|execFile|spawn)\s*\(` with a non-literal first argument: three hits,
+ * two of them our own injected worker seams — noise, and the noisiest kind, in
+ * `modules/transcribe`. And `os.homedir()`, `os.tmpdir()`, `os.EOL`: those are
+ * the *portable* APIs, the opposite of a commitment, and flagging them would
+ * push code towards hand-rolled per-platform paths, which is the failure this
+ * file exists to prevent. Do not re-add either.
  */
 const SIGNALS = [
-  { id: 'platform-branch', re: /\bprocess\.platform\b|\bos\.platform\(\)/ },
-  { id: 'darwin-literal', re: /['"`]darwin['"`]|['"`]win32['"`]/ },
-  { id: 'macos-tool', re: /\b(otool|install_name_tool|lipo|sw_vers|osascript|mdfind|sysctl|codesign)\b/ },
-  { id: 'windows-tool', re: /\b(tasklist|powershell\.exe|reg\.exe|wmic)\b/ },
-  { id: 'posix-path', re: /['"`](\/Applications|\/usr\/|\/tmp\/|\/Library\/|~\/Library)/ },
-  { id: 'windows-path', re: /['"`][A-Z]:\\\\/ },
+  { id: 'platform-branch', re: /\bprocess\.platform\b|\bos\.platform\s*\(\)/ },
+  { id: 'host-descriptor', re: /\bos\.(?:type|release|arch)\s*\(\)|\bprocess\.arch\b/ },
+  { id: 'darwin-literal', re: /['"`](?:darwin|win32|linux|Darwin|Windows_NT|macOS|Windows)['"`]/ },
+  {
+    id: 'macos-tool',
+    re: /\b(otool|install_name_tool|lipo|sw_vers|osascript|mdfind|sysctl|codesign|vm_stat|diskutil|launchctl|pmset|xcrun)\b/,
+  },
+  {
+    id: 'windows-tool',
+    re: /\b(tasklist|powershell\.exe|reg\.exe|wmic|cmd\.exe|where\.exe|sc\.exe)\b/,
+  },
+  { id: 'spawn-literal', re: /\b(?:execFile|execFileSync|execSync|spawn|spawnSync)\s*\(\s*['"`]/ },
+  {
+    id: 'posix-path',
+    re: /['"`](?:\/Applications|\/usr\/|\/tmp\/|\/Library\/|~\/Library|\/proc\/|\/etc\/|\/opt\/|\/private\/|\/Volumes\/|\/System\/|\/var\/)/,
+  },
+  // A quote, then a drive letter, then either slash — `'C:/Users/…'` is the same
+  // commitment as `'C:\\Users\\…'` and used to walk straight through. The quote
+  // is what keeps `https://` out: the character after it is not a colon.
+  { id: 'windows-path', re: /['"`][A-Za-z]:[\\/]/ },
+  { id: 'path-host-shape', re: /\bpath\.(?:sep|delimiter|win32|posix)\b/ },
+  {
+    id: 'host-env',
+    re: /\bprocess\.env\.(?:APPDATA|LOCALAPPDATA|USERPROFILE|ProgramFiles|ProgramW6432|SystemRoot|windir|ComSpec|COMPUTERNAME|HOME|SHELL|XDG_[A-Z_]+)\b|\bprocess\.env\[\s*['"](?:APPDATA|LOCALAPPDATA|USERPROFILE|ProgramFiles|SystemRoot|windir|HOME|SHELL)['"]\s*\]/,
+  },
   { id: 'bundle-assumption', re: /\.app\/Contents|Program Files/ },
 ]
 
 const NAVIGATOR = /\bnavigator\b/
-const SNIFFED_PROPERTY = /\b(?:platform|userAgent)\b/
+/**
+ * The properties of `navigator` that answer « which machine is this ».
+ *
+ * Round 26 widened this from `platform|userAgent`, which was two thirds of a
+ * sniff: `navigator.appVersion` (« 5.0 (Macintosh) ») and `navigator.vendor`
+ * (« Apple Computer, Inc. ») are the two everybody reaches for the week
+ * `platform` is deprecated, and both exited 0, measured. `oscpu` is Firefox's,
+ * `maxTouchPoints` is how the modern advice tells you to tell a Mac from an iPad,
+ * and `platformVersion` is a `userAgentData` high-entropy hint.
+ *
+ * **Widening this list costs nothing, which is the point of where it lives**: it
+ * is only ever evaluated in a file that mentions `navigator`, and exactly one
+ * file in the tree does — `src/lib/clipboard.ts`, which reads
+ * `navigator.clipboard` and none of these. A property name is a common word;
+ * `appVersion` alone appears on eight lines of `core/contracts/diagnostics.ts`
+ * and `app/ipc/register.ts`, where it is the app's own version and no business
+ * of this check. Add a property here, never to `SIGNALS`.
+ */
+const SNIFFED_PROPERTY = /\b(?:platform|userAgent|appVersion|vendor|oscpu|maxTouchPoints|platformVersion)\b/
 const MODERN_SNIFF = /\buserAgentData\b/
+/**
+ * An identifier this file binds from `navigator`, so a **computed** read off it
+ * can be caught: `nav['plat' + 'form']` contains no sniffable property name at
+ * all and exited 0, measured.
+ *
+ * What this does *not* claim: a computed read is undecidable in general — the key
+ * can arrive from anywhere, and `nav[k]` where `k` is a parameter cannot be
+ * resolved by a grep in any granularity. What it does claim is narrower and still
+ * worth having: a bracket read off a binding whose value came from `navigator` is
+ * a sniff whatever is inside the bracket, because there is nothing else on that
+ * object worth indexing by a computed key. Cost, measured: the one
+ * navigator-bearing file in the tree binds nothing from it, so zero.
+ */
+const NAVIGATOR_BINDING = /(?:const|let|var)\s+(?:\{\s*)?([A-Za-z_$][\w$]*)[^=\n]*=\s*[^\n]*\bnavigator\b/
 
 /**
  * **Signals that need more than one line to see.**
@@ -54,7 +189,7 @@ const MODERN_SNIFF = /\buserAgentData\b/
  * `SIGNALS` is matched a line at a time, which is right for every one of them:
  * each is a single contiguous token — `process.platform`, `'darwin'`, `sysctl`,
  * `C:\`. The renderer's platform sniff is not, and that is the whole story of
- * this signal, which has now been wrong twice in the same direction.
+ * this signal, which has now been wrong three times in the same direction.
  *
  * **What it is for.** `SIGNALS` was built out of the ways *main-process* code
  * learns what it is running on, and `src/` is in `ROOTS` — so a renderer
@@ -94,6 +229,9 @@ const MODERN_SNIFF = /\buserAgentData\b/
  * cost the check**, so the pairing is evaluated over the *file* now and the
  * message is paid for instead: the hit is reported on the property line, which is
  * the branch, with the nearest `navigator` line named beside it.
+ *
+ * **Round 26: the property list was two thirds of a sniff, and a computed read
+ * was none of it.** See `SNIFFED_PROPERTY` and `NAVIGATOR_BINDING`.
  *
  * The scope stays the file's **code** lines — the same documentation filter the
  * per-line scan uses — and that is what keeps this from being a ban on the
@@ -172,12 +310,31 @@ const FILE_SIGNALS = [
       const objects = code.filter((entry) => NAVIGATOR.test(entry.text))
       if (objects.length === 0) return [...hits.values()]
 
-      for (const entry of code) {
-        if (!SNIFFED_PROPERTY.test(entry.text)) continue
-        const nearest = objects.reduce((best, candidate) =>
+      const nearest = (entry) =>
+        objects.reduce((best, candidate) =>
           Math.abs(candidate.line - entry.line) < Math.abs(best.line - entry.line) ? candidate : best,
         )
-        record(entry, nearest.line === entry.line ? undefined : `navigator is on line ${nearest.line}`)
+
+      for (const entry of code) {
+        if (!SNIFFED_PROPERTY.test(entry.text)) continue
+        const near = nearest(entry)
+        record(entry, near.line === entry.line ? undefined : `navigator is on line ${near.line}`)
+      }
+
+      // A computed read off a binding taken from `navigator` — `nav['plat' + 'form']`
+      // carries no property name and is invisible to everything above.
+      const bound = new Set()
+      for (const entry of code) {
+        const match = NAVIGATOR_BINDING.exec(entry.text)
+        if (match) bound.add(match[1])
+      }
+      for (const name of bound) {
+        const re = new RegExp(`\\b${name.replace(/\$/g, '\\$')}\\s*\\[`)
+        for (const entry of code) {
+          if (!re.test(entry.text)) continue
+          const near = nearest(entry)
+          record(entry, `computed read off \`${name}\`, bound from navigator on line ${near.line}`)
+        }
       }
       return [...hits.values()]
     },
@@ -212,49 +369,92 @@ const FILE_SIGNALS = [
   },
 ]
 
+const SIGNAL_IDS = new Set([...SIGNALS, ...FILE_SIGNALS].map((s) => s.id))
+
 /**
- * Every file allowed to know what it is running on, and why it cannot be
- * written any other way. Keep the reasons in French-free English — they are for
- * whoever adds the next one.
+ * Every file allowed to know what it is running on, why it cannot be written any
+ * other way, and **how many times each signal is allowed to fire in it**. Keep
+ * the reasons in French-free English — they are for whoever adds the next one.
+ *
+ * The counts are the round-26 narrowing and they are what makes this a list of
+ * real exceptions rather than a list of exempt files. Both directions fail: one
+ * more `process.platform` in `main.ts` than the four declared is an undeclared
+ * branch in a declared file, which is what used to pass silently; one fewer is an
+ * allowance that has started to rot. When a number is wrong the failure prints
+ * every hit of that signal with its line, so updating it is a matter of reading
+ * what changed.
  */
 const ALLOWED = new Map([
   [
     'electron/app/main.ts',
-    'window-all-closed quits off macOS, where closing the last window ends the app; ' +
-      'the boot diagnostic records which platform produced a report; ' +
-      'and the two macOS privacy panes are the only remedy for a capture permission ' +
-      'the rep has already refused — the OS will not prompt a second time. Those two ' +
-      'URLs are opened by capability, never by a platform test: `openExternal` on a ' +
-      'scheme the host does not know simply rejects, and Windows has no such ' +
-      'permission to refuse, so the branch never runs there.',
+    {
+      hits: { 'platform-branch': 4, 'host-descriptor': 2, 'darwin-literal': 1 },
+      why:
+        'window-all-closed quits off macOS, where closing the last window ends the app; ' +
+        'the boot diagnostic records which platform and arch produced a report; ' +
+        'and the two macOS privacy panes are the only remedy for a capture permission ' +
+        'the rep has already refused — the OS will not prompt a second time. Those two ' +
+        'URLs are opened by capability, never by a platform test: `openExternal` on a ' +
+        'scheme the host does not know simply rejects, and Windows has no such ' +
+        'permission to refuse, so the branch never runs there.',
+    },
   ],
   [
     'electron/core/domain/updateTrust.ts',
-    'whether a downloaded update can be verified before it runs *is* a question about ' +
-      'the platform’s own verification mechanism, so there is nothing to probe: on ' +
-      'Windows `electron-updater` checks an Authenticode signature against a publisher ' +
-      'the packaging config declares, and on macOS the OS verifies the app bundle ' +
-      'itself. The platform is a **parameter** here rather than `process.platform`, so ' +
-      'both branches are unit-tested on either host, and the one caller passes it in.',
+    {
+      hits: { 'darwin-literal': 1 },
+      why:
+        'whether a downloaded update can be verified before it runs *is* a question about ' +
+        'the platform’s own verification mechanism, so there is nothing to probe: on ' +
+        'Windows `electron-updater` checks an Authenticode signature against a publisher ' +
+        'the packaging config declares, and on macOS the OS verifies the app bundle ' +
+        'itself. The platform is a **parameter** here rather than `process.platform`, so ' +
+        'both branches are unit-tested on either host, and the one caller passes it in.',
+    },
   ],
   [
     'electron/modules/capture/MeetingApps.ts',
-    'process enumeration has no portable form: `tasklist` on Windows, `ps` elsewhere. ' +
-      'The platform is injectable so the parsing of both is unit-tested on either host.',
+    {
+      hits: { 'platform-branch': 1, 'darwin-literal': 1, 'windows-tool': 1 },
+      why:
+        'process enumeration has no portable form: `tasklist` on Windows, `ps` elsewhere. ' +
+        'The platform is injectable so the parsing of both is unit-tested on either host.',
+    },
   ],
   [
     'electron/modules/capture/nativeModule.ts',
-    'napi-rs names its artefacts by platform and arch; this maps one to the other. ' +
-      'It is the one place a binary name is spelled, and it spells all of them.',
+    {
+      hits: { 'platform-branch': 2, 'host-descriptor': 2 },
+      why:
+        'napi-rs names its artefacts by platform and arch; this maps one to the other. ' +
+        'It is the one place a binary name is spelled, and it spells all of them.',
+    },
   ],
   [
     'electron/modules/transcribe/whisper/inference.ts',
-    'thread-count heuristics differ per platform; the platform is a parameter, not a read.',
+    {
+      hits: { 'platform-branch': 1, 'host-descriptor': 1, 'darwin-literal': 2 },
+      why: 'thread-count heuristics differ per platform; the platform is a parameter, not a read.',
+    },
   ],
   [
     'electron/modules/transcribe/whisper/onnx.ts',
-    'available-memory probing: `vm_stat` on macOS, /proc/meminfo on Linux, ' +
-      "os.freemem() on Windows — where it already means what the other two compute.",
+    {
+      hits: {
+        'platform-branch': 3,
+        'darwin-literal': 2,
+        'macos-tool': 1,
+        'spawn-literal': 1,
+        'posix-path': 1,
+      },
+      why:
+        'available-memory probing: `vm_stat` on macOS, /proc/meminfo on Linux, ' +
+        'os.freemem() on Windows — where it already means what the other two compute. ' +
+        'The shell-out and the /proc read are each declared in their own right now: ' +
+        'before round 26 this file was caught only by the `process.platform` forty lines ' +
+        'below them, so moving those three lines into a helper would have taken the ' +
+        'whole declaration with it.',
+    },
   ],
 ])
 
@@ -274,7 +474,10 @@ const walk = async (dir) => {
 
 const files = (await Promise.all(ROOTS.map((r) => walk(path.join(ROOT, r))))).flat()
 
+/** Undeclared files. */
 const violations = []
+/** Declared files whose count for a signal no longer matches the declaration. */
+const drifted = []
 const seen = new Set()
 
 for (const file of files) {
@@ -296,19 +499,50 @@ for (const file of files) {
     for (const hit of signal.find(code)) hits.push({ signal: signal.id, ...hit })
   }
   hits.sort((a, b) => a.line - b.line)
-  if (hits.length === 0) continue
-  if (ALLOWED.has(rel)) {
-    seen.add(rel)
+  const allowance = ALLOWED.get(rel)
+  if (!allowance) {
+    if (hits.length > 0) violations.push({ rel, hits })
     continue
   }
-  violations.push({ rel, hits })
+  // A declared file with no hits at all is a rotted allowance, and `stale` says
+  // so in one sentence rather than as a per-signal drift over nothing.
+  if (hits.length === 0) continue
+  seen.add(rel)
+
+  const counted = new Map()
+  for (const hit of hits) counted.set(hit.signal, (counted.get(hit.signal) ?? 0) + 1)
+  for (const id of new Set([...counted.keys(), ...Object.keys(allowance.hits)])) {
+    const found = counted.get(id) ?? 0
+    const declared = allowance.hits[id] ?? 0
+    if (found !== declared) {
+      drifted.push({ rel, id, found, declared, hits: hits.filter((h) => h.signal === id) })
+    }
+  }
 }
 
+/** A declared file that no longer branches at all, or a signal id that is a typo. */
 const stale = [...ALLOWED.keys()].filter((rel) => !seen.has(rel))
+const unknownSignals = []
+for (const [rel, allowance] of ALLOWED) {
+  for (const id of Object.keys(allowance.hits)) {
+    if (!SIGNAL_IDS.has(id)) unknownSignals.push({ rel, id })
+  }
+}
 
-if (violations.length === 0 && stale.length === 0) {
+const declaredCommitments = [...ALLOWED.values()].reduce(
+  (total, a) => total + Object.values(a.hits).reduce((s, n) => s + n, 0),
+  0,
+)
+
+if (
+  violations.length === 0 &&
+  drifted.length === 0 &&
+  stale.length === 0 &&
+  unknownSignals.length === 0
+) {
   console.log(
-    `platform ok — ${files.length} files scanned, ${ALLOWED.size} declared platform branches (HR-2)`,
+    `platform ok — ${files.length} files scanned, ${SIGNALS.length + FILE_SIGNALS.length} signals, ` +
+      `${ALLOWED.size} declared files / ${declaredCommitments} declared platform commitments (HR-2)`,
   )
   process.exit(0)
 }
@@ -322,6 +556,29 @@ for (const { rel, hits } of violations) {
   if (hits.length > 4) console.error(`    … and ${hits.length - 4} more`)
 }
 
+for (const { rel, id } of unknownSignals) {
+  console.error(
+    `\n✗ ${rel} declares a count for \`${id}\`, which is not a signal this check has — ` +
+      `a typo in an allowance is an allowance that never fires. Known: ${[...SIGNAL_IDS].join(', ')}.`,
+  )
+}
+
+for (const { rel, id, found, declared, hits } of drifted) {
+  const verb =
+    found > declared
+      ? `${found - declared} undeclared ${id} in an already-declared file`
+      : `${declared - found} declared ${id} that no longer fires`
+  console.error(
+    `\n✗ ${rel} — ${verb}: the allowance says ${declared}, the file has ${found}.` +
+      `\n    Read the ${found} hit(s) below, then set \`hits['${id}']\` in scripts/check-platform.mjs` +
+      `\n    to ${found} and make sure the reason beside it still covers all of them.`,
+  )
+  for (const hit of hits) {
+    const where = hit.note ? `  (${hit.note})` : ''
+    console.error(`    ${rel}:${hit.line}  [${hit.signal}]  ${hit.text.slice(0, 96)}${where}`)
+  }
+}
+
 for (const rel of stale) {
   console.error(
     `\n✗ ${rel} is declared in scripts/check-platform.mjs but no longer branches on the platform — ` +
@@ -330,7 +587,8 @@ for (const rel of stale) {
 }
 
 console.error(
-  '\nEither write the code so both platforms take the same path, or add the file to ' +
-    '`ALLOWED` in scripts/check-platform.mjs with the reason it cannot be.\n',
+  '\nEither write the code so both platforms take the same path, or declare it in ' +
+    '`ALLOWED` in scripts/check-platform.mjs — the file, the per-signal count, and the ' +
+    'reason it cannot be written portably.\n',
 )
 process.exit(1)
