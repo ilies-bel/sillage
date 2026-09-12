@@ -754,15 +754,28 @@ test('nothing the fixture stages is dated after the instant the fixture is pinne
   let turns = 0
   let densities = 0
   /*
-   * **The density, which is the half a clock cannot see — measured on every record,
-   * not on whichever one the loop looked at last.**
+   * **The density, which is the half a clock cannot see — measured over the
+   * *recording*, and measuring it over the turns is how the first version of this
+   * check read 591 on a transcript that holds 26.**
    *
-   * Nineteen turns of 1 595 characters over 23.5 minutes is 68 characters a minute: a
-   * transcript with 78-second holes in it, which is what every screenshot of the reader
-   * and the gate was taken against. CLAUDE.md's measurement of a real call is 124 765
-   * characters over ninety minutes — 1 386. The band is deliberately wide: what is
-   * refused is an order of magnitude, not a rhythm, and silence is real, so a fixture
-   * between a fifth and twice a real call's density is honest.
+   * It divided the characters by `max(receivedAt) − min(receivedAt)`, which **excludes
+   * the silence by construction** — and the silence is the whole thing being asked
+   * about. Measured against it: `m-lefort-cv` is a 62-minute recording whose nineteen
+   * turns stop after 2 min 52 and are followed by **fifty-nine minutes of nothing**, so
+   * 1 595 characters over 62 minutes is 26 a minute, and the check reported 591 and
+   * passed. Nine of the day's meetings carried those same nineteen turns, at 26, 33, 35,
+   * 39 and 48 a minute; `m-lefort-decouverte`'s five turns over 57 minutes were **8**.
+   * A real call measures about 1 386 (CLAUDE.md: 124 765 characters over ninety
+   * minutes). So every judgement about *Historique*'s panes, `TranscriptReader`'s
+   * scroll, `ReadingColumn`'s « how much is left », the `--fade` ramp and the citation
+   * scroll was made against a document up to fifty times shorter than the product's —
+   * the sixth time this fixture has flattered the app, found by the check written last
+   * round to stop exactly that.
+   *
+   * The window is the recording: `startedAt` to `endedAt ?? now`, the same one the turns
+   * are required to fall inside. The band stays deliberately wide — what is refused is
+   * an order of magnitude, not a rhythm, and silence is real, so a fixture between a
+   * fifth and twice a real call's density is honest.
    */
   const MIN_CHARS_PER_MINUTE = 250
   const MAX_CHARS_PER_MINUTE = 2_800
@@ -858,18 +871,17 @@ test('nothing the fixture stages is dated after the instant the fixture is pinne
               )
             }
           }
-          const spanMs =
-            Math.max(...segments.map((s) => s.receivedAt)) -
-            Math.min(...segments.map((s) => s.receivedAt))
+          const recordedMs = to - from
           const chars = segments.reduce((total, s) => total + s.text.length, 0)
-          if (spanMs > 0) {
+          if (recordedMs > 0) {
             densities += 1
-            const perMinute = chars / (spanMs / 60_000)
+            const perMinute = chars / (recordedMs / 60_000)
             if (perMinute < MIN_CHARS_PER_MINUTE || perMinute > MAX_CHARS_PER_MINUTE) {
               offences.push(
-                `${where} · ${m.id}: ${Math.round(perMinute)} caractères par minute de ` +
-                  'transcript — un vrai appel en fait environ 1 386 (CLAUDE.md), et un fixture ' +
-                  'plus clairsemé que le produit flatte toutes les mises en page où il apparaît',
+                `${where} · ${m.id}: ${Math.round(perMinute)} caractères de transcript par ` +
+                  `minute **d’enregistrement** (${Math.round(recordedMs / 60_000)} min) — un vrai ` +
+                  'appel en fait environ 1 386 (CLAUDE.md), et un fixture plus clairsemé que le ' +
+                  'produit flatte toutes les mises en page où il apparaît',
               )
             }
           }

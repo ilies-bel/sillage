@@ -1419,11 +1419,131 @@ test('a meeting the rep has already finished stops claiming the conversation', a
   }
 
   assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Teams')
+  /*
+   * **And round 28 removed the refusal from this path entirely, which is better than
+   * making it an edge.** The rate assertion used to live here: `nextArmable` went on
+   * recommending the finished event on every tick and `#arm` refused it, ninety-four
+   * times over eighty-five minutes. A conversation the product has finished is not a
+   * candidate any more — see `#spent` — so there is nothing to refuse and nothing to
+   * record. The edge property still matters and is still driven, on the path where an
+   * already-`armed` meeting is legitimately recommended: see the test below.
+   */
+  assert.deepEqual(
+    h.diagnostics.filter((d) => d.code === 'agenda.arm.refused'),
+    [],
+    'the calendar is still being told to arm a call the rep finished',
+  )
+  h.store.close()
+})
+
+test('a refused arming is recorded once per meeting, not once per attempt', async () => {
+  /*
+   * **Ninety-four identical `warn` rows came down a path round 28 closed, so the edge is
+   * driven on the one that is left: the rep's own press.**
+   *
+   * `#arm` refuses a meeting past `armed`, and it used to be reached from every tick for
+   * as long as `nextArmable` recommended the finished event — measured at ninety-four
+   * rows over eighty-five minutes, all saying « Compte-rendu en attente d'analyse. »
+   * about a meeting the rep had finished, in the bundle whose own button reads « Sans
+   * contenu de conversation. Peut être envoyé au support. » A conversation the product
+   * has finished is not a candidate any more (`#spent`), so the tick no longer asks.
+   *
+   * `armNow` still does, and deliberately: it is the rep pressing *Enregistrer*, which
+   * consults no detector (« the detector guesses, the rep has said »). A row drawn before
+   * the calendar armed and recorded that call is a stale row, and pressing it is how a
+   * refusal is genuinely reached. The set makes it one row however many times it is
+   * pressed — and `armNow` throws, so the rep is told each time.
+   */
+  const h = harness([event('AAA')], 'Teams', null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const meetingId = meetingIdFor('AAA')
+  h.orchestrator.dispatch(meetingId, 'start', 'le commercial a démarré')
+  h.orchestrator.dispatch(meetingId, 'end', 'le commercial a terminé')
+  // The tick withdraws the now-spent offer, which is the fix above this one.
+  await h.agenda.tick({ now: T0 + 20 * 60_000 })
+  assert.equal(h.agenda.snapshot().armed, null)
+
+  for (let i = 0; i < 5; i++) {
+    assert.throws(() => h.agenda.armNow('AAA'), /ne peut plus être démarrée/)
+  }
+
   const refusals = h.diagnostics.filter((d) => d.code === 'agenda.arm.refused')
   assert.equal(
     refusals.length,
     1,
-    `the refusal is an edge, not a per-tick row: got ${refusals.length} over 30 ticks`,
+    `the refusal is an edge, not a row per attempt: got ${refusals.length} over 5 presses`,
   )
+  h.store.close()
+})
+
+// ── round 28: the claim of the *other* slot went with the spent one ───────────
+
+test('a finished slot does not hand the next one to the unscheduled detector', async () => {
+  /*
+   * **Sixth consecutive round on the arbitration rule, and the fifth time the previous
+   * fix was right about the axis the round before it named.**
+   *
+   * Round 27 gave `#calendarOffersAt` the right question — « is the calendar *done* with
+   * this conversation » — and asked it of `calendarClaim`, which answers **one** event.
+   * So when the earliest claimant was spent, the conclusion was « the calendar accounts
+   * for nothing », discarding the claim of every other slot covering the same instant.
+   *
+   * The rep records their 14:00–15:00 call, ends it at 14:20 — which DEC-39 leaves in
+   * `ended` for ever on the demo build DEC-28 ships first — and at 14:50 joins their own
+   * 15:00 Teams invite. Round 26 established that joining early is what a sales rep does
+   * before a call that matters. Measured on the shipped `Agenda`: « Appel non planifié —
+   * Teams » armed at 14:50:25 with the DEC-46 notification behind it, and then the
+   * calendar arming *the same conversation* at 15:00 — `liveStates = ["recording","armed"]`,
+   * two rows on the day, and a second notification whose click navigates the rep off
+   * their live recording. Twenty-five minutes wide for every adjacent pair of slots.
+   *
+   * What it costs is the whole value of having consulted the calendar: no attendees, no
+   * objet, « Client » instead of the person's name, no account resolution — so no
+   * opportunity — and a VerySwing task titled « Appel non planifié — Teams » with no
+   * idempotency key and no delete verb.
+   *
+   * Every `calendarClaim` test was single-event and this harness's own round-27 test
+   * stages one event, so nothing in the repo put two slots and a session state together.
+   */
+  const HOUR = 3_600_000
+  const a = event('AAA', { scheduledStart: T0, scheduledEnd: T0 + HOUR })
+  const b = event('BBB', {
+    subject: 'Néovia — cadrage',
+    scheduledStart: T0 + HOUR,
+    scheduledEnd: T0 + 2 * HOUR,
+  })
+  const h = harness([a, b], 'Teams', null)
+
+  // 13:55 — the calendar offers the 14:00 call, the rep takes it and ends it at 14:20.
+  await h.agenda.tick({ now: T0 - 5 * 60_000 })
+  const first = meetingIdFor('AAA')
+  assert.equal(h.orchestrator.stateOf(first), 'armed', 'the first call was never offered')
+  h.orchestrator.dispatch(first, 'start', 'le commercial a démarré')
+  h.orchestrator.dispatch(first, 'end', 'le commercial a terminé')
+  assert.equal(h.orchestrator.stateOf(first), 'ended')
+
+  // 14:50 — the rep joins their own 15:00 Teams call. Ten minutes early, and inside the
+  // first slot, which is still running as far as the calendar is concerned.
+  h.setHeld('Teams')
+  await h.agenda.tick({ now: T0 + 50 * 60_000 })
+  await h.agenda.tick({ now: T0 + 50 * 60_000 + AD_HOC_DWELL_MS })
+
+  assert.notEqual(
+    h.agenda.snapshot().armed?.subject,
+    'Appel non planifié — Teams',
+    'the detector offered an unscheduled meeting for a call the calendar holds — the ' +
+      'compte-rendu loses the attendees, the objet, the speaker names and the account',
+  )
+
+  // 14:55 — `ARM_LEAD_MS` before the slot, which is when the *better* offer exists.
+  await h.agenda.tick({ now: T0 + HOUR - ARM_LEAD_MS })
+  assert.equal(h.agenda.snapshot().armed?.eventId, 'BBB')
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Néovia — cadrage')
+
+  // And one offer for one conversation: never two live rows for the 15:00 call.
+  const live = h.orchestrator
+    .liveStates()
+    .filter((state) => state === 'armed' || state === 'recording')
+  assert.equal(live.length, 1, `two offers for one conversation: ${JSON.stringify(live)}`)
   h.store.close()
 })

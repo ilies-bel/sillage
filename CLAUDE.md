@@ -183,6 +183,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   « Aucun enregistrement » over a live call. `APPEARANCE_MS` is armed at *creation* and closes
   a hole with teeth: Electron does not promise `ready-to-show` for a transparent window, so a
   renderer that was alive and measuring could have been shown never.
+  **Two edges on that handshake, both about a timer handle answering a question it cannot.**
+  A fired `setTimeout` is `null` and so is one that was never armed, and `ready-to-show`
+  arms on `null` — so a renderer that reported its deadline *before* painting had the
+  deadline fire against an unpainted window, refuse, clear itself, and then get a **fresh**
+  `FIRST_FRAME_MS` out of the paint: measured, a mute renderer shown at **+589 ms** instead
+  of +300. An elapsed deadline is elapsed. And **every other field is reset when a window is
+  created; the two timers were not** — so a window replaced without `dismiss()` or `hide()`
+  (a renderer that crashed, a window the OS closed, which `on('closed')` handles by setting
+  `#window = null` and nothing else) left `#reveal` running, the new window's
+  `ready-to-show` found it non-null and armed nothing, the stale timer fired against a
+  destroyed window, and the only thing left to reveal the live pill was the appearance
+  ceiling: **+1 351 ms** against its own 300 ms deadline, at `INITIAL_SIZE`. Two calls back
+  to back is the ordinary shape of a rep's afternoon. The test fake emits `closed` from
+  `destroy()` now, the way Electron does, because a fake that died silently could not
+  reproduce either.
   **And an order between constants is not an order between expiries, because the two were
   armed from two different clocks** (`widget:measuring`, `Overlay.measuring`,
   `FIRST_FRAME_SLACK_MS`). That test read all four numbers, asserted them in order, and could
@@ -843,9 +858,29 @@ machine) or in `core/domain/` — never in an IPC handler.
   halves of the Entra axis**, because the day the stub stages differs on all three: nothing
   dated after the pinned instant, `createdAt ≤ startedAt ≤ endedAt ≤ confirmedAt`, `startedAt`
   no more than `ARM_LEAD_MS` ahead of its slot, every `receivedAt` and every mark inside its
-  own recording's window — and the **density**, which a clock cannot see: 68 characters a
-  minute against roughly 1 386 on a real call is a transcript with 78-second holes in it, and a
-  fixture sparser than the product flatters every layout it appears in. Both readings are
+  own recording's window — and the **density**, which a clock cannot see.
+  That last one was wrong in its first version and is the sixth time this fixture has
+  flattered the app: it divided the characters by the span of the *turns*, which **excludes
+  the silence by construction** — the one thing being asked about — and read 591 characters
+  a minute on a transcript that holds 26. Measured against the *recording*: `m-lefort-cv`
+  is a 62-minute call whose nineteen turns stop after 2 min 52 and are followed by
+  **fifty-nine minutes of nothing**; nine of the day's meetings carried those same nineteen
+  turns at 26, 33, 35, 39 and 48 a minute, and `m-lefort-decouverte`'s five turns over
+  57 minutes were **8**. A real call measures about 1 386 (124 765 characters over ninety
+  minutes). So every judgement about *Historique*'s four panes, `TranscriptReader`'s scroll,
+  `ReadingColumn`'s « how much is left », the `--fade` ramp and the citation scroll was made
+  against a document up to **fifty times shorter** than the product's. `fillCall` tiles the
+  shared turns across each call's own window at `STEP_MS` — the call's own cited turns
+  first, keeping their ids so `spanOf` still locates and `MARKS` still pins — and every
+  record now runs at ~556 a minute for as long as its recording: `m-lefort-cv` is 413 turns
+  and 34 658 characters. **Which found the defect the sparse fixture was hiding, on its
+  first run**: *Historique*'s transcript rows, the gate reader's, the widget's and
+  *Demander*'s citations all drew turn text with `text-body min-w-0 flex-1` and **no
+  `.measure`** — 97 characters a line at 12px in the 599px pane, which is the number that
+  class exists to end. `--prose` now prints the first words of the offending run, because
+  « span.text-body [hors .measure] » names a class fifteen elements share, and narrowing one
+  finding to a file by elimination took three runs of a check that had the string in hand.
+  Both readings are
   derived: the scenarios come out of the stub's own branches, and `now` from
   `scripts/harness/pinnedNow.mjs` — extracted because `shot.mjs` and `serve.mjs` each held a
   character-for-character copy, and a test asking « is anything dated after the instant the
@@ -883,6 +918,45 @@ machine) or in `core/domain/` — never in an IPC handler.
   could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
   never by name, because they are open all day.
 
+- **Every claimant, and every candidate — one spent slot took the whole calendar's word
+  with it** (`calendarClaims`, `Agenda.#spent`). **Sixth consecutive round on the
+  arbitration rule**, and the fifth time the previous fix was right about the axis the
+  round before it named. Round 27 gave `#calendarOffersAt` the right question — « is the
+  calendar *done* with this conversation » — and asked it of `calendarClaim`, which
+  answers **one** event: the earliest. So when that one was spent, the conclusion was « the
+  calendar accounts for nothing », discarding the claim of every *other* slot covering the
+  same instant. Measured: a 14:00 call the rep ended at 14:20, the rep joining their own
+  15:00 Teams invite at 14:50 — the thing round 26 established as what a sales rep does
+  before a call that matters — and « Appel non planifié — Teams » armed at **14:50:25**
+  with the DEC-46 notification behind it; take that offer and at 15:00:25 `liveStates` is
+  `["recording","armed"]`, two rows on the day, a second notification whose click
+  navigates the rep off their live recording. Twenty-five minutes wide for every adjacent
+  pair of slots, and on the demo build DEC-28 ships first *every* recorded call is `ended`
+  for ever (DEC-39), so every slot following one was exposed. What it costs is the whole
+  value of having consulted the calendar: no attendees, no objet, « Client » instead of the
+  person's name, no account resolution — therefore no opportunity — and a VerySwing task
+  titled « Appel non planifié — Teams », with no idempotency key and no delete verb.
+  **And the same shape one function over, which fixing the first exposed.** `nextArmable`
+  prefers the earliest event whose slot contains `now` and knows nothing about session
+  state, so the finished 14:00 call went on winning that comparison until its own slot
+  closed while `#arm` refused it — and the 15:00 invite behind it was never reached.
+  Measured: offered at **15:00** instead of 14:55, which is DEC-46's « something happens at
+  14:30 » and the whole point of `ARM_LEAD_MS`; the notification now fires with the client
+  already on the line. `#spent` is the one predicate for both — « has the product finished
+  with this conversation », `AFTER_THE_CALL` from `core/contracts/` — and `armed` and
+  `recording` are deliberately **not** in it, or the calendar would arm the 15:00 slot
+  beside a 14:00 call still recording, which is the defect round 24 closed.
+  **Fixing it moved a withdrawal out from under its only caller**, which is worth recording
+  on its own: the re-check that drops a standing offer whose call has *ended* lived inside
+  `#arm`, reachable only because `nextArmable` kept naming the finished event. Filtering it
+  out took that path with it, and a rep who finished at minute 20 of a 60-minute slot kept
+  « Prêt » and the day's one filled *Enregistrer* for forty minutes. The tick asks now, so
+  the answer does not depend on which event `nextArmable` happened to pick. And the
+  `agenda.arm.refused` edge — ninety-four identical rows in round 26 — is no longer
+  reachable from the tick at all; it is driven on `armNow`, the rep's own press, because a
+  test asserting a rate on a path nothing can take is the first shape on this list.
+  Every `calendarClaim` test was single-event and `agenda.test.ts`'s own round-27 test
+  stages one event, so nothing in the repo put two slots and a session state together.
 - **One conversation, one offer — and the question is « does the calendar already account
   for a call happening now », not « is a meeting live »** (`AdHocInput.calendarOffersAt`,
   `calendarClaim`, `AdHocInput.spent`, `Agenda.#adHocArmed`). This rule has been the finding
@@ -910,6 +984,31 @@ machine) or in `core/domain/` — never in an IPC handler.
   client's CRM, where `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete
   verb. It deliberately does **not** widen `ARM_LEAD_MS`, because arming *on* a held microphone
   claims this call is that event, and the further from the slot the weaker that claim is.
+- **What the process is *doing* is not what it has looked at** (`Orchestrator.#touched`).
+  `liveStates()` and `liveIds()` were `#sessions`, and `#sessions` is the **rehydration
+  cache**: `session()` loads a meeting from the log on demand and keeps it, so *asking a
+  question about a meeting made it live for the rest of the process*. The docblock two
+  lines above `liveStates()` stated the property that breaks — « a meeting finished last
+  week sits in the log and blocks nothing » — and it was false of every read path in the
+  product: `meeting:get`, `review:get`, `history:record` and `Agenda`'s own calendar poll
+  all call `stateOf` or `session`. Measured on a store a previous launch filled: boot
+  answers `[]` and `{ safe: true }`; **one read of a call that ended yesterday** answers
+  `["ended"]` and « un compte-rendu est en cours de rédaction », for the life of the
+  process. So opening *Historique* on a past call refused every installer for the rest of
+  the session, on the primary platform (HR-2), with a sentence that is false — and on the
+  demo build that is every call ever recorded, because `ended` persists indefinitely with
+  no model (DEC-39). **Third instance of « the app could never install an update again »**,
+  and round 27 made it certain rather than merely likely: `#calendarOffersAt` asks `stateOf`
+  on the thirty-second tick, so one tick of an ordinary morning — no conferencing audio,
+  nothing armed — was enough. The cache stays a cache, because a `MeetingSession` is the
+  writer for its own log and two instances would be two objects appending to it; what was
+  wrong was reading it as the answer to a different question. `create` and `dispatch` are
+  the only things that mint or move a state, so those two are « work in flight in this
+  process » — which covers the boot re-drain, a crash-recovered `recording` and
+  `before-quit`'s search for the live call, and excludes a screen that read a row.
+  `Orchestrator` had **no test file of its own** for twenty-eight rounds, and
+  `agenda.test.ts` could not have caught this by construction: it dispatches into the same
+  orchestrator it then questions, so the session is in the acted-on set either way.
 - **One recording at a time, and only `dispatch` can say so** (`Orchestrator.dispatch`).
   `MeetingSession`'s transition table is per meeting, so `idle → recording` was legal for every
   session independently and nothing above it asked. Measured: `liveStates =
@@ -1013,6 +1112,9 @@ machine) or in `core/domain/` — never in an IPC handler.
   in the product — the self-test **exited 0**. It injects into `#root` itself now and reports
   five attacks caught with a sixth left deliberately silent as the control, so a pass says what
   it measured.
+  **And a ninth probe, for the split-rule spelling**, because the eight before it all wrote
+  the endpoint and the motion in one declaration block — which is exactly how the rule they
+  were testing came to have that hole.
   **And then the fifth of those five probes was measuring the first one's artefact.** It was
   `persisting.length > 0` with the infinite animation riding on probe 1's element — and that
   element also carries a literal `777ms` *transition*, which survives reduced motion for
@@ -1038,6 +1140,26 @@ machine) or in `core/domain/` — never in an IPC handler.
   said computed.** A computed zero under a live duration is the reveal-on-hover mark button —
   resting at zero and *arriving* — which is the seven false findings that rule was rebuilt to
   lose. The code was right; the prose describing it was one word too broad.
+  **And « the endpoint and the motion are declared in the same block » was the wrong
+  discriminator, defeated by the most ordinary way to write an exit.** That rule was
+  measured and it was right about the seven mark buttons on `widget-ouvert` —
+  `opacity-0 transition group-hover:opacity-100`, an affordance in the layout at all times
+  that fades *in* on hover — and it was wrong about the property. Split the product's own
+  exit the way almost everyone writes a state-class exit — `transition` on
+  `.widget-shell`, `opacity: 0` on `.widget-leaving` — and the widget leaves the direction
+  rule entirely: « 0 sélecteur(s) « opacity: 0 », 0 qui s'en vont, dans le bon sens »,
+  exit **0** at both sizes, twelve gates green, 130 renderer tests green — on `--ease-out`,
+  the 83 %-front-loaded curve, which is the exact blink the rule exists to end. The
+  self-test could not see it either: all its fade probes declared the pair in one block.
+  What actually separates the two is **whether the transparency has an escape**. A
+  reveal-on-hover is escaped by a state, and the rule granting the opacity back carries
+  `:hover`, `:focus` or one of their family in its own selector; a departure has no such
+  rule, because the element is going away and nothing the rep can do brings it back. So the
+  question is asked of the element with the state stripped off the selector — « does this
+  element have a hover that lights it up » — which needs no opinion about Tailwind, about
+  class names, or about which end of a block something was written in. Measured across all
+  108 stagings: no false positive, and `widget-ouvert` still reports zero departures over
+  twelve animated elements.
   Three more holes in the direction rule, all one round old and none found by its author.
   Renaming `--ease-out` turned the whole rule **off** rather than red, because `enterCurve`
   became `''` and `allowedEase.has('')` is false. An `SVGElement`'s `className` is an
@@ -1192,6 +1314,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   port with no declared home fails, so the list cannot rot back into one entry — which
   took it from 6 methods to 28 and surfaced `LlmPort.complete`, declared, implemented,
   unit-tested seventeen times and called by nothing.
+
+  **And the one escape hatch the per-file scoping had to keep reopened it for the one name
+  that collides with an Electron global.** `ambient` — receivers a `.d.ts` or a
+  `declare global` makes available — was a flat set, and `src/vite-env.d.ts` declares
+  `app: AppBridge`, so `app` counted as a receiver of `AppBridge` in **every** file,
+  including `electron/app/main.ts` where `app` is Electron's own `App`. Measured:
+  `AppBridge.on` reported five callers, four of them `app.on('before-quit')`,
+  `app.on('second-instance')`, `app.on('window-all-closed')` and `app.on('activate')`. The
+  verb is genuinely wired by the fifth, so it was a measurement hole rather than a live
+  false green — and it could never have gone red while `main.ts` registers a lifecycle
+  handler, which it always will. An ambient declaration is scoped by the *project* that
+  includes it, and `src/` and `electron/` have separate tsconfigs, so the tree of the
+  declaring file is the honest scope. **And `HOMES` named `electron/app/preload.ts`, which
+  has never existed** — the preload is `electron/preload.ts` — so `inHome` excluded nothing,
+  the implementation was scanned as a caller of its own port, and the sentence a failure
+  prints pointed at a file nobody could open. A home that is not on disk fails now, which is
+  the `check-platform.mjs` half that matters most.
 
   Two things about the *caller* test were worse than its scope, and both are the shape
   this repo keeps finding. It was `[.\w]${method}\s*\(`, which lets the method name be

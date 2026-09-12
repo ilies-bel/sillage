@@ -699,7 +699,7 @@ function Transcript({
                 {formatTime(row.mark.at)}
               </span>
               <span className="text-brand-700 w-12 shrink-0 text-[11px] font-semibold">marqué</span>
-              <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2">
+              <span className="text-strong measure border-brand-500 min-w-0 flex-1 border-l-2 pl-2">
                 {row.mark.note === '' ? 'Marqué pendant l’appel.' : row.mark.note}
               </span>
             </li>
@@ -722,7 +722,14 @@ function Transcript({
             <span className="text-muted w-12 shrink-0 text-[11px]">
               {speakerLabel(segment.channel, interlocuteurs)}
             </span>
-            <span className="text-body min-w-0 flex-1">{segment.text}</span>
+            {/*
+              `.measure` because this is prose and the column is wide: at `text-xs` in
+              the 599px pane a turn drew **97 characters a line**, which is the number
+              the class exists to end — and no stage could see it until the fixture's
+              transcript lasted as long as its call, because five short turns either fit
+              in one line under the ceiling or wrapped into two well under it.
+            */}
+            <span className="text-body measure min-w-0 flex-1">{segment.text}</span>
           </li>
         )
       })}

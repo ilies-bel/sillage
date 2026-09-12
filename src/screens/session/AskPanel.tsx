@@ -354,7 +354,7 @@ function Answer({
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {time}
                     </span>
-                    <span className="text-body min-w-0 flex-1 text-ui leading-relaxed">
+                    <span className="text-body measure min-w-0 flex-1 text-ui leading-relaxed">
                       « {citation.span.quote} »
                     </span>
                   </button>
@@ -379,7 +379,7 @@ function Answer({
                   {/* No time claimed, because there is nowhere to point. */}
                   {time}
                 </span>
-                <span className="min-w-0 flex-1 text-ui leading-relaxed">
+                <span className="measure min-w-0 flex-1 text-ui leading-relaxed">
                   <span className="text-body decoration-warn underline decoration-dotted decoration-from-font underline-offset-4">
                     « {citation.span.quote} »
                   </span>{' '}

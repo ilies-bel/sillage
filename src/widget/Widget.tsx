@@ -1438,7 +1438,7 @@ function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () =
         */}
         {speakerLabel(segment.channel, [])}
       </span>
-      <span className="text-body min-w-0 flex-1 text-ui leading-relaxed">{segment.text}</span>
+      <span className="text-body measure min-w-0 flex-1 text-ui leading-relaxed">{segment.text}</span>
       <button
         type="button"
         onClick={onMark}

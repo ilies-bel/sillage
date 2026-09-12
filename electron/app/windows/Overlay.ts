@@ -267,6 +267,20 @@ export class Overlay {
    */
   #revealAt: number | null = null
   /**
+   * True once the first-frame deadline has actually elapsed.
+   *
+   * A fired timer is `null`, which is indistinguishable from one that was never armed —
+   * and `ready-to-show` arms on `null`. So a renderer that reported its measurement
+   * deadline *before* painting had the deadline fire against an unpainted window, refuse,
+   * clear itself, and then get a **fresh** `FIRST_FRAME_MS` from the paint: measured
+   * (`scratch/r28-overlay-measuring.mjs`), a mute renderer shown at **+589 ms** instead
+   * of +300, still at `INITIAL_SIZE`. Electron does not promise `ready-to-show` for a
+   * transparent window — which is what `APPEARANCE_MS` is for — so a paint arriving after
+   * the renderer has spoken is the case this has to be right about. An elapsed deadline
+   * is elapsed: the paint is the only thing still waited on, and it shows at once.
+   */
+  #revealDue = false
+  /**
    * The ceiling on appearing at all — see `APPEARANCE_MS`. Armed at creation,
    * which is the half `#reveal` cannot be: it is armed by the first paint, so it
    * has nothing to say about a renderer that never paints.
@@ -342,6 +356,22 @@ export class Overlay {
     this.#shown = false
     this.#forced = false
     this.#revealAt = null
+    this.#revealDue = false
+    /*
+     * **And the previous window's timers go with it.**
+     *
+     * Every other field is reset here and the two timers were not, so a window replaced
+     * without `dismiss()` or `hide()` — a renderer that crashed, a window the OS closed,
+     * which `on('closed')` handles by setting `#window = null` and nothing else — left
+     * its `#reveal` and `#ceiling` running. The new window's `ready-to-show` then found
+     * `#reveal` non-null and armed nothing, the stale timer fired against a destroyed
+     * window and did nothing, and the *only* thing left to reveal the live pill was the
+     * appearance ceiling: measured (`scratch/r28-overlay-measuring.mjs`), the second
+     * window shown at **+1 063 ms** at `INITIAL_SIZE` — 232×52, forty-nine pixels
+     * narrower than the pill, carrying « Aucun enregistrement » over a live call. Two
+     * calls back to back is the ordinary shape of a sales rep's afternoon.
+     */
+    this.#disarm()
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
@@ -431,7 +461,7 @@ export class Overlay {
        * budget on the renderer booting and reveal the guess on a slow machine —
        * which is the machine this matters on. See `FIRST_FRAME_MS`.
        */
-      if (this.#reveal === null) {
+      if (this.#reveal === null && !this.#revealDue) {
         this.#revealAt = Date.now() + FIRST_FRAME_MS
         this.#reveal = setTimeout(() => {
           /*
@@ -440,6 +470,7 @@ export class Overlay {
            * expired timer holds a reference that is no longer a promise about anything.
            */
           this.#reveal = null
+          this.#revealDue = true
           this.#show(window)
         }, FIRST_FRAME_MS)
       }
@@ -488,6 +519,7 @@ export class Overlay {
     this.#reveal = setTimeout(() => {
       // Cleared before the call, for the reason the `ready-to-show` arming states.
       this.#reveal = null
+      this.#revealDue = true
       this.#show(window)
     }, at - Date.now())
     return true

@@ -73,15 +73,40 @@ export const CALENDAR_CLAIM_MS = 30 * 60_000
  * The one fact `decideAdHoc` cannot work out for itself, and the reason it is here
  * rather than in `adHoc.ts` is that it is a statement about *events* — cancelled and
  * all-day entries are not calls to record, and that rule is already written down in
- * `nextArmable` one screen below. Returning the event rather than a boolean so the
- * caller can take the **horizon** from it: the offer the rep should get is the
+ * `nextArmable` one screen below. Returning the events rather than a boolean so the
+ * caller can take the **horizon** from one: the offer the rep should get is the
  * calendar's, and it becomes available at `scheduledStart - ARM_LEAD_MS`.
+ *
+ * **All of them, earliest first, and returning only the earliest was the arbitration
+ * rule's sixth consecutive round.** This answered one event — « the conversation the
+ * rep is in is the one whose slot they reached first » — and the caller that has to
+ * finish the question, `Agenda.#calendarOffersAt`, can only finish it for the event it
+ * is given: it asks whether that meeting is over and, if it is, concludes the calendar
+ * accounts for nothing. Which throws away every *other* event that also claims the
+ * conversation. Measured (`scratch/r28-claim-earliest.mjs`): a 14:00 call recorded and
+ * ended at 14:20, the rep joining their own 15:00 Teams call at 14:50 — the thing round
+ * 26 established as what a sales rep does before a call that matters — and at 14:50:25
+ * « Appel non planifié — Teams » is armed with the DEC-46 notification behind it; take
+ * it, and at 15:00:25 `liveStates` is `["recording","armed"]` with two rows on the day
+ * and a second notification whose click navigates the rep off their live recording.
+ *
+ * The window is twenty-five minutes wide per adjacent pair of slots and needs nothing
+ * unusual — on the demo build DEC-28 ships first, *every* recorded call is `ended` for
+ * ever (DEC-39), so every slot following one is exposed. What it costs is the whole
+ * value of the calendar being consulted at all: the conversation is recorded as
+ * unscheduled, so no attendees, no objet, no `speakerLabel` (« Client » rather than the
+ * person's name), no account resolution — therefore no opportunity — and the VerySwing
+ * task ships as an orphan titled « Appel non planifié — Teams », with no idempotency
+ * key and no delete verb.
+ *
+ * `calendarClaim` is kept as « the first of these » for the tests and for any caller
+ * that genuinely wants one event, so the two can never disagree about the filter.
  */
-export const calendarClaim = (
+export const calendarClaims = (
   events: readonly CalendarEvent[],
   now: number,
-): CalendarEvent | null => {
-  let claim: CalendarEvent | null = null
+): readonly CalendarEvent[] => {
+  const claims: CalendarEvent[] = []
   for (const event of events) {
     if (event.isCancelled || event.isAllDay) continue
     /*
@@ -98,12 +123,18 @@ export const calendarClaim = (
     const { scheduledStart, scheduledEnd } = event.context
     if (now < scheduledStart - CALENDAR_CLAIM_MS) continue
     if (now >= scheduledEnd + OVERRUN_GRACE_MS) continue
-    // The earliest claimant, for the same reason `nextArmable` prefers it: the
-    // conversation the rep is in is the one whose slot they reached first.
-    if (!claim || scheduledStart < claim.context.scheduledStart) claim = event
+    claims.push(event)
   }
-  return claim
+  // Earliest first, for the same reason `nextArmable` prefers it: the conversation the
+  // rep is in is the one whose slot they reached first. The caller walks the rest.
+  return claims.sort((a, b) => a.context.scheduledStart - b.context.scheduledStart)
 }
+
+/** The earliest claimant, which is what a caller wanting one event means. */
+export const calendarClaim = (
+  events: readonly CalendarEvent[],
+  now: number,
+): CalendarEvent | null => calendarClaims(events, now)[0] ?? null
 
 /**
  * How often to re-ask, once the window is open and no conferencing app is up

@@ -579,6 +579,54 @@ export function installAppBridge(config) {
   })
 
   /**
+   * **A transcript that lasts as long as the call it belongs to.**
+   *
+   * Every record in this fixture carried the same nineteen turns — 1 595 characters
+   * crammed into the first 2 minutes 52 of the call, whatever the call's length. Against
+   * the *recording* that is **26 characters a minute** on `m-lefort-cv`, a 62-minute call
+   * whose transcript stops after three minutes and is followed by **fifty-nine minutes of
+   * silence**; 8 a minute on `m-lefort-decouverte`; 33, 35, 39 on the rest. A real call
+   * measures about 1 386 (CLAUDE.md: 124 765 characters over ninety minutes). So every
+   * judgement about *Historique*'s four panes, `TranscriptReader`'s scroll,
+   * `ReadingColumn`'s « how much is left », the `--fade` ramp, the citation scroll and
+   * `interleaveMarks` was made against a document up to **fifty times shorter** than
+   * what the product produces — the sixth time this fixture has flattered the app, and
+   * the exact shape this file's header records.
+   *
+   * The round-27 density check could not see it: it divided by the span of the *turns*,
+   * which excludes the silence by construction, and read 591 a minute. It measures the
+   * recording now.
+   *
+   * The call's own turns stay first and keep their ids and offsets — `spanOf` locates
+   * citations in them and `MARKS` pins to them by id, and a fixture whose marks silently
+   * stop pointing at anything is the failure this file's own comment warns about. The
+   * rest of the call is filled from `LINES` at `STEP_MS`, which is a conversation rhythm
+   * rather than a hole: about 550 characters a minute, with the remaining factor of two
+   * and a half being silence, and silence is real.
+   */
+  const fillCall = (own, from, until, prefix) => {
+    const out = own.map((segment) => ({ ...segment, receivedAt: from + segment.startMs }))
+    let start = (out.length > 0 ? out[out.length - 1].startMs : -STEP_MS + 4_000) + STEP_MS
+    let index = 0
+    while (from + start + 6_400 <= until) {
+      const line = LINES[index % LINES.length]
+      out.push({
+        id: `${prefix}-${index + 1}`,
+        channel: line[0],
+        text: line[1],
+        startMs: start,
+        endMs: start + 6_400,
+        isFinal: true,
+        provider: 'local-whisper',
+        receivedAt: from + start,
+      })
+      start += STEP_MS
+      index += 1
+    }
+    return out
+  }
+
+  /**
    * **A span's offsets come from the turn it is in, because the gate prints them.**
    *
    * Every one of the eleven field rows draws « vérifié · mm:ss » from
@@ -1368,7 +1416,18 @@ export function installAppBridge(config) {
           segmentId: null,
         },
       ],
-      segments: LEFORT_SEGMENTS,
+      /*
+        Its own five cited turns first, then the rest of its fifty-seven minutes — see
+        `fillCall`. Five turns and 461 characters over a 57-minute recording is **eight
+        characters a minute**, which is what *Historique*'s panes and the reader's scroll
+        were judged against.
+      */
+      segments: fillCall(
+        LEFORT_SEGMENTS,
+        LEFORT_STARTED,
+        meetingById('m-lefort-decouverte').endedAt,
+        'rec-lefort-suite',
+      ),
       notes:
         'Sophie Bertrand pilote côté DSI, Karim Benali côté plateforme.\nBloquant : délai de contractualisation achats (3 semaines).\nPenser à proposer un profil en pré-embauche.',
       compteRendu:
@@ -1464,7 +1523,7 @@ export function installAppBridge(config) {
         This file's own header records that a fixture shorter than the output
         flatters every layout it appears in; this was the fourth time.
       */
-      segments: SEGMENTS.map((seg) => ({ ...seg, receivedAt: seg.receivedAt + shift })),
+      segments: fillCall(SEGMENTS, from, m.endedAt || now, `seg-${meetingId}`),
       notes: 'Rien de particulier à signaler sur cet appel.',
       compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',
       fields: [{ key: 'account', label: 'Client', confidence: 'ok', span: null }],

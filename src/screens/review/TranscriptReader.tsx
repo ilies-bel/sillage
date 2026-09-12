@@ -449,7 +449,7 @@ export function TranscriptReader({
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {formatOffset(segment.startMs)}
                     </span>
-                    <span className="text-body min-w-0 flex-1 text-ui leading-relaxed">
+                    <span className="text-body measure min-w-0 flex-1 text-ui leading-relaxed">
                       {segment.text}
                     </span>
                   </button>

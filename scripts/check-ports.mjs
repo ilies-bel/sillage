@@ -109,7 +109,7 @@
  * **empty** is a finding in its own right, and a `HOMES` entry that is no longer
  * discovered as a port with methods is a finding too.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -143,7 +143,7 @@ const HOMES = new Map([
   // The renderer bridge. `preload.ts` is the implementation; `src/app/bridge.ts`
   // is the caller. Its *channels* are checked by `check-surfaces.mjs`; what is
   // checked here is only that the two verbs carrying them are reached.
-  ['AppBridge', 'electron/app/preload.ts'],
+  ['AppBridge', 'electron/preload.ts'],
 ])
 
 /**
@@ -204,6 +204,13 @@ const walk = (dir) => {
  */
 const CALLER_ROOTS = ['electron', 'src']
 for (const dir of CALLER_ROOTS) walk(path.join(ROOT, dir))
+/**
+ * Which of the two source trees a path is in — the scope an ambient declaration has.
+ *
+ * `src/` and `electron/` are separate TypeScript projects with separate globals, so a
+ * `declare global` in one is invisible to the other. See `ambient`.
+ */
+const treeOf = (file) => CALLER_ROOTS.find((root) => file.startsWith(`${root}/`)) ?? file
 const text = new Map(sources.map((file) => [file, readFileSync(path.join(ROOT, file), 'utf8')]))
 
 const isTest = (file) => /__tests__|\.test\.|\.spec\./.test(file)
@@ -255,8 +262,26 @@ for (const port of discovered) {
   // Receivers: every identifier this tree annotates with the port's type. Derived
   // rather than listed, so they cannot go stale.
   const receivers = new Set()
-  /** Receivers declared in a `.d.ts` or an ambient `declare`, which count everywhere. */
-  const ambient = new Set()
+  /**
+   * Receivers a `.d.ts` or an ambient `declare` makes available — **mapped to the tree
+   * that can see them**, not to the whole repo.
+   *
+   * It was a flat set, and `src/vite-env.d.ts` declares `app: AppBridge` inside
+   * `declare global`, so `app` counted as a receiver of `AppBridge` in **every** file —
+   * including `electron/app/main.ts`, where `app` is *Electron's* `App` object. Measured
+   * (`scratch/r28-ports-callers.mjs`): `AppBridge.on` reported five callers, four of them
+   * `app.on('before-quit')`, `app.on('second-instance')`, `app.on('window-all-closed')`
+   * and `app.on('activate')`. The verb is genuinely wired today by the fifth, so it was a
+   * measurement hole rather than a live false green — and it could never have gone red
+   * while `main.ts` registers an Electron lifecycle handler, which it always will.
+   *
+   * The same shape round 27 scoped per file to stop `port.close(` in a whisper worker
+   * adopting a dead `CrmPort.close`, reopened by the one escape hatch that had to exist.
+   * An ambient declaration is scoped by the *project* that includes it — `src/` and
+   * `electron/` have separate tsconfigs, and the renderer's globals are not the main
+   * process's — so the tree of the declaring file is the honest scope.
+   */
+  const ambient = new Map()
   /**
    * Receivers **per file**, because a bare name is not a port.
    *
@@ -282,7 +307,7 @@ for (const port of discovered) {
       here.add(hit[1])
       receivers.add(hit[1])
       if (/\.d\.ts$/.test(file) || /declare\s+(?:global|module|const|let|var)/.test(source)) {
-        ambient.add(hit[1])
+        ambient.set(hit[1], treeOf(file))
       }
     }
     perFile.set(file, here)
@@ -307,7 +332,12 @@ for (const port of discovered) {
    */
   const alternationOf = new Map()
   for (const file of sources) {
-    const here = [...(perFile.get(file) ?? []), ...ambient]
+    const tree = treeOf(file)
+    const here = [
+      ...(perFile.get(file) ?? []),
+      // Only the ambient names this file's own project can see — see `ambient`.
+      ...[...ambient].filter(([, where]) => where === tree).map(([name]) => name),
+    ]
     if (here.length === 0) continue
     alternationOf.set(file, here.sort().map((r) => r.replace(/\$/g, '\\$')).join('|'))
   }
@@ -364,7 +394,25 @@ for (const entry of UNWIRED) {
     )
   }
 }
-for (const [name] of HOMES) {
+for (const [name, home] of HOMES) {
+  /*
+   * **A home that is not there is not a home** — and this table named
+   * `electron/app/preload.ts`, which has never existed: the preload is
+   * `electron/preload.ts`. So `inHome` excluded nothing, the *implementation* was
+   * scanned as a caller of its own port, and the sentence a failure prints pointed at a
+   * file nobody could open. The `check-platform.mjs` half that matters most is that an
+   * allowance whose target has gone fails rather than quietly widening; this table had no
+   * such rule, and a wrong path here loosens the check in exactly the direction it must
+   * not loosen.
+   */
+  const target = path.join(ROOT, home)
+  if (!existsSync(target)) {
+    problems.push(
+      `HOMES place ${name} dans ${home}, qui n’existe pas — un dossier d’implémentation ` +
+        'introuvable n’exclut rien, donc le fichier qui implémente le port est compté ' +
+        'parmi ses appelants et la phrase d’échec désigne un fichier inexistant.',
+    )
+  }
   if (!discovered.some((port) => port.interface === name)) {
     problems.push(
       `HOMES déclare ${name}, que ce contrôle ne trouve plus comme port à méthodes dans ` +

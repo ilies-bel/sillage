@@ -7,6 +7,7 @@ import {
   OVERRUN_GRACE_MS,
   CALENDAR_CLAIM_MS,
   calendarClaim,
+  calendarClaims,
   decideArming,
   isCallLike,
   nextArmable,
@@ -402,4 +403,39 @@ test('the earliest claimant wins, for the same reason nextArmable prefers it', (
     scheduledEnd: T0 + 90 * 60_000,
   })
   assert.equal(calendarClaim([second, first], T0 + 60_000)?.id, 'tôt')
+})
+
+test('but every claimant is answered, earliest first, and not only the first', () => {
+  /*
+   * `calendarClaim` answered one event and its one caller has to finish the question —
+   * `Agenda.#calendarOffersAt` asks whether that meeting is over. So a spent earliest
+   * slot took every *other* claim on the conversation with it, and the unscheduled
+   * detector spoke over a scheduled call: measured, an offer at 14:50:25 for a 15:00
+   * invite the rep had joined early, then the calendar arming the same conversation ten
+   * minutes later. Every test of this function was single-event, which is why nothing
+   * could see it — the property is about two.
+   */
+  const first = calendarEvent('tôt', { scheduledStart: T0, scheduledEnd: T0 + 3_600_000 })
+  const second = calendarEvent('tard', {
+    scheduledStart: T0 + 60 * 60_000,
+    scheduledEnd: T0 + 120 * 60_000,
+  })
+  const block = calendarEvent('bloc', {
+    attendees: [],
+    onlineMeetingJoinUrl: null,
+    scheduledStart: T0 + 30 * 60_000,
+    scheduledEnd: T0 + 45 * 60_000,
+  })
+
+  // At 50 minutes past the first slot's start, the first is still running and the
+  // second is inside `CALENDAR_CLAIM_MS` of its own.
+  assert.deepEqual(
+    calendarClaims([second, block, first], T0 + 50 * 60_000).map((e) => e.id),
+    ['tôt', 'tard'],
+    'the self-written block must not claim, and both real slots must',
+  )
+  // And the order is the property the caller depends on: it takes the first unspent
+  // claimant's offer instant, so a spent slot must not push the horizon past the one
+  // about to arm.
+  assert.equal(calendarClaim([second, block, first], T0 + 50 * 60_000)?.id, 'tôt')
 })

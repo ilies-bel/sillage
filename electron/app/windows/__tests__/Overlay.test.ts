@@ -87,7 +87,15 @@ const fakeWindow = (x: number, y: number, width: number, height: number) => {
     },
     once: (event: string, fn: () => void) => window.on(event, fn),
     showInactive: () => void state.seen.push('show'),
-    destroy: () => void (state.destroyed = true),
+    /*
+     * Electron emits `closed` from here, and so does this — a fake that destroyed
+     * silently could not reproduce a window the renderer or the OS took away, which is
+     * the one path that left the *next* pill inheriting this one's timers.
+     */
+    destroy: () => {
+      state.destroyed = true
+      for (const fn of handlers.get('closed') ?? []) fn()
+    },
     setIgnoreMouseEvents: (through: boolean, options?: { forward?: boolean }) =>
       void state.mouse.push({ through, forward: options?.forward }),
   }
@@ -100,7 +108,11 @@ const fakeWindow = (x: number, y: number, width: number, height: number) => {
     Object.assign(state, to)
     for (const fn of handlers.get('moved') ?? []) fn()
   }
-  return { window: window as unknown as BrowserWindow, state, drag, paint }
+  /** Any other lifecycle event Electron would emit on this window. */
+  const emit = (event: string) => {
+    for (const fn of handlers.get(event) ?? []) fn()
+  }
+  return { window: window as unknown as BrowserWindow, state, drag, paint, emit }
 }
 
 type Fake = ReturnType<typeof fakeWindow>
@@ -807,4 +819,70 @@ test('the appearance ceiling still outranks the renderer’s clock', (t) => {
 
   t.mock.timers.tick(100)
   assert.deepEqual(staging.window.state.seen, ['show'], 'the ceiling did not fire')
+})
+
+test('a measurement deadline that has already elapsed is not started again by the paint', (t) => {
+  /*
+   * **A fired timer is `null`, and so is one that was never armed.**
+   *
+   * `ready-to-show` arms `#reveal` when it finds `null`, so a renderer that reported its
+   * deadline *before* painting had that deadline fire against an unpainted window,
+   * refuse, clear itself — and then get a **fresh** `FIRST_FRAME_MS` out of the paint.
+   * Measured on the shipped class (`scratch/r28-overlay-measuring.mjs`): a mute renderer
+   * shown at **+589 ms** instead of +300, still at `INITIAL_SIZE`. Electron does not
+   * promise `ready-to-show` for a transparent window — which is the whole reason
+   * `APPEARANCE_MS` exists — so a paint arriving after the renderer has spoken is
+   * precisely the case this has to be right about. It fails open either way; what it
+   * costs is twice the wait, on the surface drawn over a client's face.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  // The renderer's layout effect runs before the browser paints, so this order is real.
+  assert.equal(staging.overlay.measuring(200), true)
+  t.mock.timers.tick(200 + FIRST_FRAME_SLACK_MS)
+  assert.deepEqual(staging.window.state.seen, [], 'shown before anything had painted')
+
+  staging.window.paint()
+  assert.deepEqual(
+    staging.window.state.seen,
+    ['show'],
+    'the paint started the deadline over instead of satisfying the one that had passed',
+  )
+})
+
+test('a second pill gets its own deadline, not the ceiling the first one left behind', (t) => {
+  /*
+   * **Every other field is reset when a window is created; the two timers were not.**
+   *
+   * A window replaced without `dismiss()` or `hide()` — the renderer crashed, or the OS
+   * closed it, which `on('closed')` handles by setting `#window = null` and nothing else
+   * — left `#reveal` running. The new window's `ready-to-show` then found it non-null and
+   * armed nothing, the stale timer fired against a destroyed window and did nothing, and
+   * the only thing left to reveal the live pill was `APPEARANCE_MS`. Measured
+   * (`scratch/r28-overlay-second-window.mjs`): **+1 351 ms** against its own 300 ms
+   * deadline, at `INITIAL_SIZE` — 232×52, forty-nine pixels narrower than the pill,
+   * carrying « Aucun enregistrement » over a live call. Two calls back to back is the
+   * ordinary shape of a sales rep's afternoon.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  // The first pill is waiting on its measurement when its renderer dies.
+  staging.window.window.destroy()
+  assert.equal(staging.overlay.window, null, 'closed did not release the window')
+
+  staging.overlay.show()
+  const second = staging.built[1]
+  assert.ok(second, 'a second window was not created')
+  second.paint()
+  assert.deepEqual(second.state.seen, [], 'shown before it knew its size')
+
+  t.mock.timers.tick(FIRST_FRAME_MS)
+  assert.deepEqual(
+    second.state.seen,
+    ['show'],
+    'the second pill inherited the first one’s timer and waited for the appearance ceiling',
+  )
 })

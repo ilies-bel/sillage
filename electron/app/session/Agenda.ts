@@ -20,7 +20,7 @@ import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import { AFTER_THE_CALL } from '../../core/contracts/meeting.ts'
 import {
   ARM_LEAD_MS,
-  calendarClaim,
+  calendarClaims,
   nextArmable,
   OVERRUN_GRACE_MS,
 } from '../../core/domain/arming.ts'
@@ -300,13 +300,48 @@ export class Agenda {
    * `AFTER_THE_CALL` is read from `core/contracts/` rather than restated, because
    * *Historique* asks the same question one layer up and two copies of that list are
    * two answers to « is this conversation over ».
+   *
+   * **Every claimant, not the earliest one.** This asked `calendarClaim`, which answers
+   * one event, and concluded « the calendar accounts for nothing » when *that* meeting
+   * was over — discarding the claim of every other event whose slot also covers now.
+   * Measured (`scratch/r28-claim-earliest.mjs`): a 14:00 call ended at 14:20 and the rep
+   * joining their own 15:00 invite at 14:50 got « Appel non planifié — Teams » at
+   * 14:50:25, then the calendar arming the same conversation at 15:00 —
+   * `liveStates = ["recording","armed"]`, two rows, two notifications, the second
+   * navigating them off a live recording. Twenty-five minutes wide per adjacent pair,
+   * and on the demo build every slot after a recorded one is exposed, for ever (DEC-39).
+   * Sixth consecutive round on this rule, and the fifth time the previous fix was right
+   * about the axis the round before it named.
+   *
+   * The offer instant is the **earliest unspent** claimant's, which is also why the list
+   * arrives sorted: a spent slot must not push the horizon past the one that is about to
+   * arm. Every claimant is inside `CALENDAR_CLAIM_MS`, so the answer is never more than
+   * twenty-five minutes out — a bounded deferral, which is what `decideAdHoc` wants.
    */
   #calendarOffersAt(now: number): number | null {
-    const claim = calendarClaim(this.#window.events, now)
-    if (claim === null) return null
-    const state = this.#options.orchestrator.stateOf(meetingIdFor(claim.id))
-    if (state !== null && AFTER_THE_CALL.has(state)) return null
-    return claim.context.scheduledStart - ARM_LEAD_MS
+    for (const claim of calendarClaims(this.#window.events, now)) {
+      if (this.#spent(claim.id)) continue
+      return claim.context.scheduledStart - ARM_LEAD_MS
+    }
+    return null
+  }
+
+  /**
+   * Has the product already finished with this event's conversation?
+   *
+   * One predicate for the two places that ask it — which slot may still be armed, and
+   * which slot still claims the microphone — because they are the same question and two
+   * copies of it are two answers. `AFTER_THE_CALL` lives in `core/contracts/` for the
+   * reason `meetingAnchor` does: *Historique* asks it one layer up.
+   *
+   * `armed` and `recording` are deliberately **not** in it. A conversation that is
+   * offered or under way is the opposite of finished, and treating it as spent would let
+   * the calendar arm the next slot beside a live recording — `["recording","armed"]`,
+   * the defect round 24 closed.
+   */
+  #spent(eventId: string): boolean {
+    const state = this.#options.orchestrator.stateOf(meetingIdFor(eventId))
+    return state !== null && AFTER_THE_CALL.has(state)
   }
 
   #over(eventId: string, now: number): boolean {
@@ -352,12 +387,40 @@ export class Agenda {
     const signal = this.#options.meetingSignal()
     this.#trackHold(signal.inCall, now)
 
-    const choice = nextArmable(this.#window.events, now, signal.running, signal.inCall)
+    /*
+     * **A conversation the product has already finished is not a candidate, and
+     * leaving it in cost the next call its five minutes of anticipation.**
+     *
+     * `nextArmable` prefers the earliest event whose slot contains `now` — correctly,
+     * and its own split between `current` and `overrun` exists so a call running over
+     * does not beat the one the rep is in. What it cannot know is session state, so a
+     * 14:00–15:00 call the rep *ended at 14:20* went on winning that comparison until
+     * its own slot closed, and `#arm` then refused it (`arm` is illegal past `armed`)
+     * without ever reaching the 15:00 invite behind it. Measured
+     * (`scratch/r28-nextarmable-spent.mjs`): the 15:00 call is offered at **15:00**
+     * instead of 14:55 — DEC-46's « something happens at 14:30 » is the whole point of
+     * `ARM_LEAD_MS`, and the notification now fires while the client is already on the
+     * line. On the demo build DEC-28 ships first that is every call after the first,
+     * every day, because `ended` persists for ever with no model (DEC-39).
+     *
+     * `AFTER_THE_CALL` and deliberately not « anything past `idle` »: `armed` and
+     * `recording` must keep blocking, or the calendar would arm the 15:00 slot beside a
+     * 14:00 call still being recorded — `liveStates = ["recording","armed"]`, two rows
+     * for two conversations where one is live, which is the defect round 24 closed. The
+     * same predicate `#calendarOffersAt` uses, from the same set in `core/contracts/`,
+     * because « is the calendar done with this conversation » must not have two answers.
+     */
+    const candidates = this.#window.events.filter((event) => !this.#spent(event.id))
+    const choice = nextArmable(candidates, now, signal.running, signal.inCall)
     this.#reason = choice.decision.reason
 
     if (choice.decision.action === 'arm' && choice.event) {
       this.#arm(choice.event)
-    } else if (this.#armed && this.#armed.eventId !== null && this.#over(this.#armed.eventId, now)) {
+    } else if (
+      this.#armed &&
+      this.#armed.eventId !== null &&
+      (this.#over(this.#armed.eventId, now) || this.#spent(this.#armed.eventId))
+    ) {
       /*
        * **« Is the event over » and not « did `nextArmable` decline to arm it ».**
        *
@@ -382,6 +445,18 @@ export class Agenda {
        * Over means over — absent from the fold, cancelled, or past
        * `scheduledEnd + OVERRUN_GRACE_MS`, which is the same boundary
        * `decideArming` uses for `skip` and `calendarClaim` for its claim.
+       *
+       * **Or spent, which used to be answered from inside `#arm` and no longer can be.**
+       * The re-check of a standing offer whose call has *ended* lived in `#arm`'s
+       * already-armed branch, and it was reachable only because `nextArmable` went on
+       * naming the finished event — which is the defect above this one: the next slot
+       * was never reached. Filtering spent events out of the candidates closed that and
+       * took the withdrawal's only path with it, so a rep who finished at minute 20 of a
+       * 60-minute slot kept « Prêt » and the day's one filled *Enregistrer* on a row whose
+       * meeting is `awaiting_confirmation`, for forty minutes. `#arm`'s own check stays —
+       * it is a state read and it still catches the case where another event is armed in
+       * the same tick — but the question is asked here too, where the answer is not
+       * conditional on which event `nextArmable` happened to pick.
        */
       const expired = this.#armed.meetingId
       this.#armed = null
@@ -793,6 +868,14 @@ export class Agenda {
        * recommended and refused. `#refused` is cleared when the meeting is armed
        * successfully, so a genuine second refusal after a successful arming is still
        * heard.
+       *
+       * **Round 28 closed the path those ninety-four rows came down**, and the set stays
+       * because the remaining one is real. A conversation the product has finished is no
+       * longer a candidate at all (`#spent`), so the tick never asks — which is better
+       * than asking and collapsing the answer. What still reaches here is `armNow`: the
+       * rep pressing *Enregistrer* on a row drawn before the calendar armed and recorded
+       * that call, which consults no detector by design. Once per meeting however many
+       * times it is pressed, and `armNow` throws each time, so the rep is told.
        */
       if (this.#refused.has(meetingId)) return
       this.#refused.add(meetingId)

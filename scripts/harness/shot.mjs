@@ -2056,7 +2056,7 @@ async function main() {
    *     /dev/null --no-png --motion
    *
    * must exit **10** on every stage, and it now also exits **11** — with the
-   * probe named — if any one of its eight attacks provoked nothing. It exited 0 on
+   * probe named — if any one of its nine attacks provoked nothing. It exited 0 on
    * all five widget stages for a round, which is the finding below.
    */
   if (process.env.SILLAGE_MOTION_ATTACK) {
@@ -2071,7 +2071,7 @@ async function main() {
      * page and the run exited 0. The stage where the exit animation this rule was
      * written for actually lives was the one stage the attack could not reach.
      *
-     * Eight probes that must fire and one that must not, each aimed at a hole the
+     * Nine probes that must fire and one that must not, each aimed at a hole the
      * rule has had — and **every one of them asserted by the name of the element it
      * created**, because a count cannot say which shape stopped being seen:
      *
@@ -2079,12 +2079,14 @@ async function main() {
      *   2. a `steps(9)` curve in `animation-timing-function`, which a check
      *      reading `transition-timing-function` cannot see → `offCurve`
      *   3. a transition on a `::after`, out of reach of `querySelectorAll`
-     *   4. four departures on an arrival curve: a **child** of the leaving
+     *   4. five departures on an arrival curve: a **child** of the leaving
      *      element (the class name says nothing), a **`@keyframes`** exit (neither
      *      half of the old rule could see inside one), a **`to`-only `@keyframes`**
      *      (the census read declaration order and saw no exit at all), and an
      *      **`<svg>`** (whose `className.toString()` is the literal
-     *      `"[object SVGAnimatedString]"`)
+     *      `"[object SVGAnimatedString]"`), and one whose endpoint and motion sit in
+     *      **two rules** — which is how almost everyone writes a state-class exit, and
+     *      which every one of the other probes hid by declaring the pair in one block
      *   5. a looping animation **on its own element and on a literal duration**,
      *      which `prefers-reduced-motion` cannot collapse. It had neither: it rode
      *      on probe 1's element, and `persisting.length > 0` was satisfied by that
@@ -2102,7 +2104,7 @@ async function main() {
      *      can only fail loudly cannot prove it does not fire, so this probe is
      *      asserted the other way round.
      *
-     * The curve on the four departures is `cubic-bezier(0.22, 1, 0.36, 0.99)` —
+     * The curve on the five departures is `cubic-bezier(0.22, 1, 0.36, 0.99)` —
      * the near-identical respelling of `--ease-out` that defeated the token
      * comparison, measured at 0.768 / 0.278 / 0.018 opacity on the shipped
      * element, which is the same blink. So the attack proves the *shape* rule and
@@ -2140,6 +2142,12 @@ async function main() {
       #sillage-attack-svg {
         opacity: 0;
         transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      /* Probe 8: the endpoint and the motion in **two** rules, which is the most
+         ordinary way to write a state-class exit and the spelling that defeated the
+         « same declaration block » discriminator. No keyframes, no inline style. */
+      #sillage-attack-scinde {
+        transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      .sillage-attack-parti { opacity: 0 }
       /* Probe 6, the one that must stay silent: arriving, on the arrival curve,
          wearing the word that used to be read as « leaving ». */
       #sillage-attack-arrivee {
@@ -2168,6 +2176,7 @@ async function main() {
       parent.append(child)
       add('sillage-attack-keyframe')
       add('sillage-attack-to')
+      add('sillage-attack-scinde', 'sillage-attack-parti')
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
       svg.id = 'sillage-attack-svg'
       svg.setAttribute('width', '8')
@@ -2314,7 +2323,8 @@ async function main() {
       console.log(
         `  mouvement: ${seen} élément(s) animé(s) dont ${departures} qui s’en vont, tous par ` +
           'les jetons, dans le bon sens, tous muets sous prefers-reduced-motion ' +
-          `(${declared.selectors} sélecteur(s) « opacity: 0 », ${declared.keyframes} @keyframes de sortie` +
+          `(${declared.selectors} sélecteur(s) « opacity: 0 », ${declared.reveals} règle(s) ` +
+          `qui la rendent sous un état, ${declared.keyframes} @keyframes de sortie` +
           `${unreadable > 0 ? `, ${unreadable} feuille(s) illisible(s)` : ''})`,
       )
     } else {
@@ -2400,6 +2410,11 @@ async function main() {
           backwards.some((m) => m.what.includes('sillage-attack-svg')),
           'un départ sur un <svg>, dont className.toString() est « [object SVGAnimatedString] »',
         ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-scinde')),
+          'un départ dont le point d’arrivée et le mouvement sont dans deux règles ' +
+            'séparées — la façon la plus banale d’écrire une sortie par classe d’état',
+        ],
         /*
          * **On its own element, named, and described by what `persisting` can
          * actually measure.**
@@ -2448,7 +2463,7 @@ async function main() {
         process.exitCode = 11
       } else {
         console.log(
-          '  auto-test du mouvement: les huit attaques signalées, la neuvième restée muette',
+          '  auto-test du mouvement: les neuf attaques signalées, la dixième restée muette',
         )
       }
     }
@@ -2466,7 +2481,10 @@ async function main() {
     else {
       console.log(`  ✗ mesure: ${long.length} surface(s) au-delà de 75 caractères`)
       for (const item of long.slice(0, 8)) {
-        console.log(`   ✗ ${item.chars} car./ligne — ${item.what} (${item.size}, ${item.box}px)`)
+        console.log(
+          `   ✗ ${item.chars} car./ligne — ${item.what} (${item.size}, ${item.box}px) ` +
+            `« ${item.text}… »`,
+        )
       }
       process.exitCode = 6
     }
@@ -2869,7 +2887,20 @@ async function prose(page) {
       const key = `${what}:${chars}`
       if (seen.has(key)) continue
       seen.add(key)
-      out.push({ what, chars, box: Math.round(box), size: style.fontSize })
+      /*
+       * **And the first words of it**, because « span.text-body [hors .measure] » names
+       * a class that fifteen elements in this product share. Round 28 spent three runs
+       * narrowing one 97-character finding down to a file by elimination; the check had
+       * the string in its hand the whole time. Short enough not to put a client's
+       * sentence in a terminal scrollback beyond recognising which element it is.
+       */
+      out.push({
+        what,
+        chars,
+        box: Math.round(box),
+        size: style.fontSize,
+        text: (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 48),
+      })
     }
     return out
   })
@@ -3467,17 +3498,27 @@ async function motion(page) {
        * own origin, so the expected count is zero.
        */
       const leavingSelectors = []
+      const revealSelectors = []
       const leavingKeyframes = new Set()
       let unreadableSheets = 0
+      /**
+       * The state variants a reveal is escaped by — `:hover` and its family.
+       *
+       * Tailwind's `group-hover:opacity-100` compiles to
+       * `.group:hover .group-hover\:opacity-100`, so the *word* is in the selector and
+       * this needs no opinion about Tailwind.
+       */
+      const STATE = /:(?:hover|focus|focus-visible|focus-within|active|checked|target|open)\b/
       const walk = (rules) => {
         for (const rule of rules) {
           if (rule.type === CSSRule.STYLE_RULE) {
             const opacity = rule.style.getPropertyValue('opacity').trim()
-            const moves = ['transition', 'transition-duration', 'transition-property', 'animation', 'animation-name'].some(
-              (property) => rule.style.getPropertyValue(property).trim() !== '',
-            )
-            if (opacity !== '' && Number.parseFloat(opacity) === 0 && moves) {
-              leavingSelectors.push(rule.selectorText)
+            if (opacity !== '') {
+              const value = Number.parseFloat(opacity)
+              if (value === 0) leavingSelectors.push(rule.selectorText)
+              else if (value > 0 && STATE.test(rule.selectorText)) {
+                revealSelectors.push(rule.selectorText)
+              }
             }
           } else if (rule.type === CSSRule.KEYFRAMES_RULE) {
             /*
@@ -3536,12 +3577,51 @@ async function motion(page) {
           unreadableSheets += 1
         }
       }
+      /**
+       * **Is this element's transparency something a state gets it out of?**
+       *
+       * The discriminator that replaced « the endpoint and the motion are declared in
+       * the same block ». That one was measured and it was right about the seven mark
+       * buttons on `widget-ouvert` — `opacity-0 transition group-hover:opacity-100`,
+       * an affordance in the layout at all times that fades *in* on hover — and it was
+       * wrong about the property, because the most ordinary way to write a state-class
+       * exit splits the pair too:
+       *
+       *   .widget-shell   { transition: opacity var(--motion) … }
+       *   .widget-leaving { opacity: 0 }
+       *
+       * Measured on the product's own exit rewritten that way, with `var(--ease-out)`
+       * — the 83 %-front-loaded curve, the exact blink the rule exists to end: « 0
+       * sélecteur(s) « opacity: 0 », 0 qui s'en vont, dans le bon sens », exit 0 at
+       * both sizes, all twelve gates green, and the self-test's eight probes all
+       * declaring the pair in one block so none of them could see it either.
+       *
+       * What actually separates the two is **whether the transparency has an exit**. A
+       * reveal-on-hover is escaped by a state — that is what it is for, and the rule
+       * granting the opacity back carries `:hover`, `:focus` or one of their family in
+       * its own selector. A departure has no such rule: the element is going away, and
+       * nothing the rep can do to it brings it back. So the question is asked of the
+       * element, with the state stripped off the selector, which is the same question
+       * « does this element have a hover that lights it up » — and it needs no opinion
+       * about Tailwind, about class names, or about which end of a declaration block
+       * something was written in.
+       */
+      const revealed = (el) => {
+        for (const selector of revealSelectors) {
+          try {
+            if (el.matches(selector.replace(new RegExp(STATE.source, 'g'), ''))) return true
+          } catch {
+            // A selector this browser cannot parse says nothing either way.
+          }
+        }
+        return false
+      }
       const leavingHere = (el, pseudo, style) => {
         // A pseudo-element is judged by the rule that generated it, so the
         // selector test is run against the element it hangs off.
         for (const selector of leavingSelectors) {
           try {
-            if (el.matches(selector)) return true
+            if (el.matches(selector)) return !revealed(el)
           } catch {
             // A selector this browser cannot parse says nothing either way.
           }
@@ -3692,7 +3772,13 @@ async function motion(page) {
       }
       // The census travels with the findings: a run that read no stylesheet and
       // therefore recognised no departure has to be able to say so.
-      return { items: out, unreadableSheets, selectors: leavingSelectors.length, keyframes: leavingKeyframes.size }
+      return {
+        items: out,
+        unreadableSheets,
+        selectors: leavingSelectors.length,
+        reveals: revealSelectors.length,
+        keyframes: leavingKeyframes.size,
+      }
     })
 
   const live = await scan()
@@ -3721,7 +3807,7 @@ async function motion(page) {
      */
     departures: live.items.filter((m) => m.leaving).length,
     unreadable: live.unreadableSheets,
-    declared: { selectors: live.selectors, keyframes: live.keyframes },
+    declared: { selectors: live.selectors, reveals: live.reveals, keyframes: live.keyframes },
     /*
      * **How many elements were actually looked at**, printed even when the
      * check passes.

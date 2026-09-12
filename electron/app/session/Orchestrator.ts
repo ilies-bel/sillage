@@ -162,6 +162,40 @@ export class Orchestrator {
   #clock: () => number
   #broadcast: Broadcaster
   #sessions = new Map<MeetingId, MeetingSession>()
+  /**
+   * The meetings this process has **acted on** — created, or dispatched a command
+   * into — as distinct from the ones it merely looked up.
+   *
+   * `liveStates()` used to be `#sessions`, and `#sessions` is a *cache*: `session()`
+   * is lazily rehydrated from the log, so **asking** a question about a meeting made
+   * it live for the rest of the process. `liveStates()`'s own docblock stated the
+   * property that breaks — « a meeting finished last week sits in the log and blocks
+   * nothing » — and it was false of every read path in the product. Measured
+   * (`scratch/r28-readonly-poison.mjs`): a second launch boots at `[]` and
+   * `{ safe: true }`, one `stateOf` of a call that ended yesterday takes it to
+   * `["ended"]` and « un compte-rendu est en cours de rédaction », for ever. So
+   * *opening Historique on a past call refused every installer for the rest of the
+   * session*, on the primary platform, with a French sentence that is false — and on
+   * the demo build DEC-28 ships first that is every call ever recorded, because
+   * `ended` persists indefinitely with no model (DEC-39).
+   *
+   * Round 27 then made it certain rather than merely likely: `Agenda.#calendarOffersAt`
+   * asks `stateOf` on the thirty-second tick, so one tick of an ordinary morning — no
+   * conferencing audio, nothing armed — was enough (`scratch/r28-rehydrate-updategate.mjs`).
+   * That is the *third* instance in this repo of « the app could never install an
+   * update again, on the primary platform », and the first caused by the fix for the
+   * previous one.
+   *
+   * The cache has to stay a cache: a `MeetingSession` is the writer for its own log
+   * and two instances of one meeting would be two objects appending to it. What was
+   * wrong is reading the cache as an answer to a different question. Dispatch is the
+   * only thing that moves a state and `create` the only thing that mints one, so
+   * those two are exactly « work in flight in this process » — which covers the boot
+   * re-drain (it dispatches), a crash-recovered `recording` (the boot sweep ends it,
+   * which dispatches) and `before-quit`'s search for the live call, and excludes a
+   * screen that read a row.
+   */
+  #touched = new Set<MeetingId>()
   #health: HealthSnapshot
   /**
    * What each module last *claimed*, before `#truthful` stripped a `retryable`
@@ -259,6 +293,7 @@ export class Orchestrator {
       ...(this.#routable ? { routable: this.#routable } : {}),
     })
     this.#sessions.set(session.id, session)
+    this.#touched.add(session.id)
     return session
   }
 
@@ -284,6 +319,10 @@ export class Orchestrator {
     if (!session) {
       return { ok: false, state: 'idle', reason: `réunion inconnue: ${meetingId}` }
     }
+    // Acting on it, whatever the transition table answers — see `#touched`. A refused
+    // command is still this process taking an interest, and `start` is refused below
+    // on the strength of exactly this set.
+    this.#touched.add(meetingId)
 
     /*
      * **One recording at a time, and this is the only place that can say so.**
@@ -439,14 +478,14 @@ export class Orchestrator {
   /**
    * Every session the app is holding in memory, for `core/domain/updateGate.ts`.
    *
-   * In-memory only, and that is the correct scope rather than a shortcut: a
-   * session is here because it was created or rehydrated this run, so anything
-   * with work genuinely in flight — recording, extracting, awaiting the rep's
-   * confirmation, draining the outbox — is necessarily in this map. A meeting
-   * finished last week sits in the log and blocks nothing.
+   * In-memory only, and **created or dispatched into rather than merely looked up**
+   * — see `#touched`. The distinction is the whole property: this used to read the
+   * rehydration cache, so a screen *reading* a past meeting made it live and « a
+   * meeting finished last week sits in the log and blocks nothing », two lines above
+   * where it was written, was false of every read path in the product.
    */
   liveStates(): readonly MeetingState[] {
-    return [...this.#sessions.values()].map((session) => session.state)
+    return this.liveIds().map((id) => this.#sessions.get(id)?.state ?? 'idle')
   }
 
   /**
@@ -455,11 +494,11 @@ export class Orchestrator {
    * `liveStates` answers « is anything happening » — enough to refuse an
    * installer — and `before-quit` needs the other half: *which* meeting is
    * recording, so it can be ended properly rather than abandoned when the window
-   * closes. In memory only, and that is the correct scope: a session is here
-   * because it was created or rehydrated this run.
+   * closes. In memory only, and **acted on** rather than looked up, for the reason
+   * `#touched` states at length.
    */
   liveIds(): readonly MeetingId[] {
-    return [...this.#sessions.keys()]
+    return [...this.#touched].filter((id) => this.#sessions.has(id))
   }
 
   /** Debounced from the editor at ~500ms (DEC-12). */
