@@ -545,6 +545,35 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * is how a button comes to lie about itself.
    */
   const unread = useCallback((column: Column): -1 | 0 | 1 => {
+    /*
+     * **And nothing in this column can be turned towards while the transcript is in it.**
+     *
+     * Round 30's rule above — « from where the column *is*, not from where the recorded
+     * band says it was » — is a statement about a scroller and a band that describe the
+     * same document. In the *Transcription* tab they describe two: `docRef` is then the
+     * transcript's scroller, and `seen.current.document` is a band in the compte-rendu's
+     * coordinates that `measure` deliberately stops updating. So this function answered
+     * about the transcript using the compte-rendu's covered edge, `turn` aimed at that
+     * edge inside a document sixteen thousand pixels long, fell back to a page when it was
+     * already there, and came straight back.
+     *
+     * Measured on the shipped renderer, entering the tab by `source ▸` → « Voir dans la
+     * transcription › » on a gate nothing had been read on yet: **757 ↔ 1427 of 16 972**
+     * for twenty-six presses at 1280×800 and **547 ↔ 1030 of 17 172** at 960×600, with
+     * *Valider* never appearing and the sentence under the slot reading « il reste du
+     * compte-rendu, à gauche » throughout. Not a near miss — the compte-rendu was
+     * unarmable **by construction** for as long as that tab was open, reached by the one
+     * gesture this product has over a general-purpose notetaker (DEC-21), on the screen
+     * that is DEC-4's single confirmation gate.
+     *
+     * `0` is the honest answer and it is not a refusal: the transcript is measured by
+     * nothing (it does not ship), so there is no band of *it* the guard is waiting on, and
+     * no scroll of it could contribute coverage. What the rep is owed instead is the way
+     * back to the document that is blocking, which is what the foot of the column offers —
+     * a control that leaves this tab, not one that moves inside it. « A control that moves
+     * and achieves nothing is the dead one with extra steps », one tab over.
+     */
+    if (column === 'document' && mode === 'transcription') return 0
     const el = column === 'document' ? docRef.current : railRef.current
     if (!el || el.clientHeight === 0) return 1
     const furthest = el.scrollHeight - el.clientHeight
@@ -562,7 +591,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     if (below && canDown) return 1
     if (canDown) return 1
     return canUp ? -1 : 0
-  }, [])
+  }, [mode])
 
   /** What `unread` last answered per column, so the label re-renders when it changes. */
   const [ways, setWays] = useState<Record<Column, -1 | 0 | 1>>({ document: 1, rail: 1 })
@@ -1543,28 +1572,61 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               which of them the guard is about.
             */}
             {below === 'document' && !busy ? (
-              <PageTurn
+              mode === 'transcription' ? (
                 /*
-                  **Named after what is in the column, not after the column.**
+                  **The escape, as the control — because there is no page of *this*
+                  document left to turn here.**
 
-                  The label was the compte-rendu's on both tabs, so a rep
-                  turning the page of the *transcription* was offered « Lire la
-                  suite du compte-rendu » over a page of transcript. The guard
-                  measures the two as different views for exactly this reason —
-                  they are different documents — and the one control that moves
-                  between them was the only thing that had not been told.
+                  What the guard is waiting on is the compte-rendu, and in this tab the
+                  compte-rendu is not in the column: the box holds the transcript, which
+                  ships nothing and is measured by nothing. So the only control that can
+                  reach the unread pixels is the one that *leaves this tab*, and the
+                  previous version offered a page turn instead — which moved the
+                  transcript, forever, under a sentence naming the compte-rendu (see
+                  `unread` for the two measurements).
+
+                  It was labelled « Lire la suite de la transcription », which was the
+                  round before this one's fix: the label had been the compte-rendu's on
+                  both tabs, so it was made to name what was in the column. Naming it
+                  correctly is what made it possible to see that it should not be there —
+                  the honest label described a control that could not do the job the slot
+                  is for.
+
+                  The escape already existed — one click on « Lecture », two inches up —
+                  and nothing on screen named it, which is the whole cost this closes:
+                  minutes and trust, not a lost compte-rendu. It is a live control and not
+                  a sentence, because « while it is withheld the primary slot holds the
+                  control that *shows* the rest » (DEC-4, DEC-21), and this is that
+                  control: one press and the blocking document is on screen, at the
+                  position the rep left it, with its own page turn under it.
+
+                  It confirms nothing, it contributes no coverage, and it is not in
+                  *Valider*'s rectangle — the two pair with `review-garde-citation`, which
+                  asks that following a citation stay free, and `review-garde-tapis`, which
+                  asks that the way back exist.
+
+                  `setFocus(null)` for the reason the *Segmented* handler does it: leaving
+                  the transcript forgets which citation it was opened on, so coming back
+                  cold opens at the top of the call rather than on a field the rep has
+                  since stopped thinking about.
                 */
-                what={
-                  mode === 'transcription'
-                    ? unreadIsAbove('document')
-                      ? 'Remonter dans la transcription'
-                      : 'Lire la suite de la transcription'
-                    : unreadIsAbove('document')
+                <PageTurn
+                  what="Revenir au compte-rendu"
+                  onTurn={() => {
+                    setFocus(null)
+                    setMode('lecture')
+                  }}
+                />
+              ) : (
+                <PageTurn
+                  what={
+                    unreadIsAbove('document')
                       ? 'Remonter dans le compte-rendu'
                       : 'Lire la suite du compte-rendu'
-                }
-                onTurn={() => turn('document')}
-              />
+                  }
+                  onTurn={() => turn('document')}
+                />
+              )
             ) : null}
           </div>
         </main>
@@ -1811,7 +1873,15 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             >
               {below !== null && !busy
                 ? below === 'document'
-                  ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, à gauche.'
+                  ? // « à gauche » is where the compte-rendu is in two of the three tabs.
+                    // In *Transcription* it is not in the column at all, and the sentence
+                    // pointing at a box holding another document is the half of this
+                    // defect the rep could read: it named the compte-rendu while the only
+                    // control offered moved the transcript. It names the way back now,
+                    // which is also what the control at the foot of that column does.
+                    mode === 'transcription'
+                    ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, sous « Lecture ».'
+                    : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, à gauche.'
                   : unreadIsAbove('rail')
                     ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus haut.'
                     : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
