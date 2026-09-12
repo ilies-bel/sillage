@@ -614,8 +614,18 @@ const SCREENS = {
           'le gate s’arme après un simple clic sur « Transcription » : la colonne a été comptée lue pendant son chargement',
         )
       }
-      // And it names what is still unread, in the column's own words.
-      await page.getByRole('button', { name: /la suite de la transcription/ }).first().waitFor()
+      /*
+       * And it names the way to what is still unread.
+       *
+       * This waited on « Lire la suite de la transcription » — a page turn of the
+       * transcript, which is the one thing that control could not usefully be: the
+       * compte-rendu is what the guard is waiting on and it is not in that column, so the
+       * turn moved the transcript forever and armed nothing (`review-garde-tapis`, and
+       * `unread`'s docblock for the two measurements). The refusal this stage exists to
+       * prove is unchanged; what it asserts about the *remedy* is now the control that can
+       * actually reach it.
+       */
+      await page.getByRole('button', { name: 'Revenir au compte-rendu' }).first().waitFor()
     },
   },
 
@@ -839,6 +849,124 @@ const SCREENS = {
       console.log(
         `     garde: *Valider* atteint en ${afterThumb} pression(s) après le pouce, ` +
           `${afterSource} après la citation`,
+      )
+    },
+  },
+  /**
+   * **The same question, from the one tab where the answer was no — and « it moved » was
+   * what hid it.**
+   *
+   * `review-garde-mort` presses until the gate arms and refuses a press that moves nothing.
+   * In the *Transcription* tab every press moved something, forever: the control read
+   * `docRef` — the transcript's scroller while that tab is open — against a band `measure`
+   * deliberately stops updating, which is the compte-rendu's. So it aimed at the
+   * compte-rendu's covered edge inside the transcript, fell back to a page when it was
+   * already there, and came straight back. Measured on the shipped renderer before the fix:
+   * **752 ↔ 1427 of 16 972** for twenty-five presses at 1280×800 and **547 ↔ 1030 of
+   * 17 172** for fourteen at 960×600, with *Valider* never appearing and the sentence under
+   * the slot saying « il reste du compte-rendu, à gauche » the whole time. The compte-rendu
+   * was unarmable **by construction** while that tab was open, not by accident.
+   *
+   * Reached by the gesture DEC-21 exists to produce — `source ▸` then « Voir dans la
+   * transcription › » — on a gate the rep has read nothing of yet, which is the ordinary
+   * order: the gate opens jumped to the one `⚠ faible` row, so checking that row's evidence
+   * is the first thing a rep does.
+   *
+   * Two assertions, and the second is what `review-garde-mort` could not ask. The gate has
+   * to **arm**, which is the reachability half. And no press may land the columns on a
+   * position they have already been on: « something moved » is satisfied by a treadmill,
+   * and a repeat is the treadmill's signature. `review-garde-transcription` is the other
+   * half of this pair and stays as it was — opening the tab still arms nothing.
+   */
+  'review-garde-tapis': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+
+      // The DEC-21 route into the tab, on a gate nothing has been read on yet.
+      const sources = page.locator('button').filter({ hasText: 'source ▸' })
+      if ((await sources.count()) < 3) throw new Error('aucune citation à suivre dans le rail')
+      // The third, like `review-garde-citation`: the two deterministic rows carry no span
+      // (DEC-7) and their panel offers no jump, so a lower index opens a dead end.
+      await sources.nth(2).click()
+      await page.getByRole('button', { name: /Voir dans la transcription/ }).first().click()
+      await page.getByText(/Citation du champ/).first().waitFor()
+      await page.waitForTimeout(800)
+
+      const ship = () => page.getByRole('button', { name: /^Valider/ })
+      // Every shape the guard's own remedy takes, including the one that leaves the tab:
+      // a driver that only knew the page turn's wording would report « plus rien » on a
+      // screen that is offering the right control.
+      const turn = () =>
+        page
+          .locator('button')
+          .filter({ hasText: /Lire la suite|Remonter|Voir la suite|Revenir au compte-rendu/ })
+          .first()
+
+      const at = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll('#root *')]
+            .filter((el) => el.scrollHeight - el.clientHeight > 8 && el.clientHeight > 120)
+            .map(
+              (el) =>
+                `${Math.round(el.scrollTop)}/${Math.round(el.scrollHeight - el.clientHeight)}`,
+            )
+            .join(' '),
+        )
+
+      /**
+       * Armed — asked so that « the gate offers nothing » cannot be the same instant as
+       * « the gate is armed », seen twice.
+       *
+       * `measure` runs from a `ResizeObserver` and publishes `below` as React state, so the
+       * press that finishes a column leaves one commit between the scroll and the button.
+       * Measured: at 1280×800 the sixth press armed the gate and the two queries either
+       * side of that commit answered « no *Valider* » and « no page turn » — a false
+       * « inatteignable » on a screen whose *Valider* was already painted. So the absence
+       * of a control is a question to ask again with a bound, never a conclusion.
+       */
+      const armed = async () => {
+        if ((await ship().count()) > 0) return true
+        if ((await turn().count()) > 0) return false
+        await ship().first().waitFor({ timeout: 2000 }).catch(() => undefined)
+        return (await ship().count()) > 0
+      }
+
+      const CEILING = 26
+      const been = new Set([await at()])
+      const trail = []
+      for (let press = 0; press <= CEILING; press += 1) {
+        if (await armed()) {
+          console.log(
+            `     tapis: *Valider* atteint en ${press} pression(s) depuis l’onglet ` +
+              `Transcription (${trail.join(' → ')})`,
+          )
+          return
+        }
+        if ((await turn().count()) === 0) {
+          throw new Error(
+            `depuis l’onglet Transcription : ni *Valider* ni tour de page après ` +
+              `${press} pression(s) — le gate n’offre plus rien (DEC-4)`,
+          )
+        }
+        const label = (await turn().innerText()).replace(/\s+/g, ' ').trim()
+        await turn().click({ timeout: 4000 })
+        await page.waitForTimeout(360)
+        const after = await at()
+        trail.push(after)
+        if (been.has(after)) {
+          throw new Error(
+            `depuis l’onglet Transcription : « ${label} » ramène les colonnes sur une ` +
+              `position déjà vue (${after}) — tapis roulant, et le compte-rendu reste ` +
+              'inarmable tant que cet onglet est ouvert (DEC-4)',
+          )
+        }
+        been.add(after)
+      }
+      throw new Error(
+        `depuis l’onglet Transcription : *Valider* toujours absent après ${CEILING} ` +
+          `pressions (${trail.slice(-6).join(' → ')}) — le gate est inatteignable (DEC-4)`,
       )
     },
   },
