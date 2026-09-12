@@ -12,6 +12,7 @@ import {
   desktopCapturer,
   ipcMain,
   Notification,
+  powerMonitor,
   screen,
   shell,
   systemPreferences,
@@ -101,6 +102,7 @@ import { providerSection } from '../core/domain/providerRows.ts'
 import { Enhancement } from './session/Enhancement.ts'
 import { Orchestrator, type Broadcaster } from './session/Orchestrator.ts'
 import { Agenda } from './session/Agenda.ts'
+import { watchPower } from './session/PowerWatch.ts'
 import { registerIpc, updateStatus } from './ipc/register.ts'
 import { AutoUpdate } from '../modules/update/index.ts'
 import { updateReadiness } from '../core/domain/updateGate.ts'
@@ -2490,6 +2492,9 @@ const boot = async (): Promise<void> => {
     message: 'application démarrée',
     detail: { purgedDiagnostics: purged, dev: isDev },
   })
+
+  // **And the machine going to sleep does not either** — `app/session/PowerWatch.ts`.
+  watchPower({ power: powerMonitor, orchestrator, store, diagnostics, notification: Notification, onOpen: (id) => focusMainWindow(id, broadcast) })
 
   /**
    * **A window closing does not get to abandon a recording.**
