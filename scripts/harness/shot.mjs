@@ -724,6 +724,124 @@ const SCREENS = {
    * `Review.tsx` states that exact behaviour, fifty lines above the rule, as the
    * thing the latch exists to prevent.
    */
+  /**
+   * **The page turn is the only way back, so it has to get there.**
+   *
+   * `review-garde` and its four siblings all prove the guard *refuses*, which is the
+   * property that protects the client's CRM. None of them asks the other half: that the
+   * control the refusal offers actually **arms** the gate. So a page turn that moved
+   * nothing was green on eight measured checks and 108 stagings, and DEC-4's one
+   * confirmation gate — the only thing in this product that writes into a client's system
+   * of record — was unreachable after either of the two most ordinary gestures on the
+   * screen.
+   *
+   * Measured on the shipped renderer before this stage existed: drag the compte-rendu's
+   * scrollbar thumb to the end, or press the `source ▸` on a row the gate's own opening
+   * jump put above the fold, and *Valider* never appears — **forty presses**, at 1280×800
+   * and at 960×600. The direction was read off the recorded band rather than off
+   * `el.scrollTop`, and the step was a fixed page rather than the band's edge, so the
+   * control aimed into a clamp or oscillated across a gap it could never close.
+   *
+   * Both gestures are driven here, and what is asserted is *progress*: every press must
+   * move a scroller, and the gate must arm within sixteen. `review-garde` asserts that the
+   * button exists; existence is what a dead control has.
+   *
+   * The printed count is worth reading rather than only the pass: measured at 6 and 5
+   * presses at 1280×800, 10 and 7 at 960×600. Reverting the *step* — a fixed page instead
+   * of the covered band's edge — is « inatteignable » at both sizes; reverting the
+   * *direction* costs 8 and 12 instead of 6 and 10, which is a regression this stage shows
+   * in its own output rather than hides behind a threshold.
+   */
+  'review-garde-mort': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+
+      const ship = () => page.getByRole('button', { name: /^Valider/ })
+      // Asked apart from the turn deliberately: they are the same rectangle by design
+      // (« the one control that ships is never the rectangle the rep just pressed »), so a
+      // driver that pressed whatever matched would press *Valider* and report success.
+      const turn = () =>
+        page.locator('button').filter({ hasText: /Lire la suite|Remonter|Voir la suite/ }).first()
+
+      /** Where both guarded columns are, so a press that moves nothing can be named. */
+      const at = () =>
+        page.evaluate(() =>
+          // Every scroller tall enough to be a column, found by geometry rather than by a
+          // selector: the rail carries neither `data-guarded` nor `fade-below`, and a
+          // selector that missed it would read « nothing moved » on a press that moved it.
+          [...document.querySelectorAll('#root *')]
+            .filter((el) => el.scrollHeight - el.clientHeight > 8 && el.clientHeight > 120)
+            .map((el) => `${Math.round(el.scrollTop)}/${Math.round(el.scrollHeight - el.clientHeight)}`)
+            .join(' '),
+        )
+
+      /**
+       * Press the turn until the gate arms, and say how many it took.
+       *
+       * **Two assertions, and the second is the one that matters.** Reachability alone is
+       * a loose guard — a control that takes twelve presses where it should take eight is
+       * reachable and still wrong — so every press is required to *move something*. « Does
+       * this control do anything » is the question none of the eight measured checks asks,
+       * and the answer was no for two of the most ordinary gestures on this screen.
+       */
+      const reach = async (how, ceiling) => {
+        for (let press = 0; press <= ceiling; press += 1) {
+          if ((await ship().count()) > 0) return press
+          if ((await turn().count()) === 0) {
+            throw new Error(`${how}: ni *Valider* ni tour de page — le gate n’offre plus rien`)
+          }
+          const before = await at()
+          const label = (await turn().innerText()).replace(/\s+/g, ' ').trim()
+          await turn().click({ timeout: 4000 })
+          await page.waitForTimeout(360)
+          const after = await at()
+          if (before === after && (await ship().count()) === 0) {
+            throw new Error(
+              `${how}: « ${label} » n’a rien déplacé (${before}) et *Valider* n’est pas ` +
+                'apparu — contrôle mort, et le gate est inatteignable (DEC-4)',
+            )
+          }
+        }
+        throw new Error(
+          `${how}: *Valider* toujours absent après ${ceiling} pressions — le tour de page ` +
+            'ne déplace rien et le gate est inatteignable (DEC-4)',
+        )
+      }
+
+      // The thumb dragged to the end: a jump, so it contributes no coverage — and the
+      // control has to take the rep back to the band it skipped.
+      await page.evaluate(() => {
+        const doc = document.querySelector('main.fade-below')
+        if (!doc) return
+        doc.scrollTop = doc.scrollHeight
+        doc.dispatchEvent(new Event('scroll'))
+      })
+      await page.waitForTimeout(500)
+      const afterThumb = await reach('pouce de l’ascenseur au bas du compte-rendu', 16)
+
+      /*
+       * And the same from the rail, reached the way a rep reaches it: `source ▸` on a row
+       * the opening jump left above the fold, which scrolls the rail without the app
+       * marking it. Driven on a second load, because the first has already covered both
+       * columns by the time it arms.
+       */
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+      const sources = page.locator('button').filter({ hasText: 'source ▸' })
+      if ((await sources.count()) < 2) throw new Error('aucune citation à suivre dans le rail')
+      await sources.nth(1).click()
+      await page.waitForTimeout(600)
+      const afterSource = await reach('citation suivie au-dessus du pli', 16)
+
+      console.log(
+        `     garde: *Valider* atteint en ${afterThumb} pression(s) après le pouce, ` +
+          `${afterSource} après la citation`,
+      )
+    },
+  },
   'review-garde-frappe': {
     scenario: 'review',
     async drive(page) {

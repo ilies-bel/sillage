@@ -41,21 +41,30 @@ check could not see it), `--fade`, and `--scrollers`, below. All eight run on ev
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
-**Known fixture debt: the whole stub is pinned to one instant chosen to suit one
-meeting**, and that is the root cause of a family of small impossibilities rather than a
-set of separate bugs. `pinnedNow()` is 14:35 so the 14:30 call can be live — which gives
-every *other* scenario wanting that same meeting finished a five-minute budget for a call,
-an analysis, a review gate and a CRM push. Downstream of it: `m-neovia-cadrage` carries
-`startedAt` **15 minutes before its own `createdAt`** and 17 before an invite the product
-can only arm five minutes early, in twelve of thirteen scenarios; its transcript is 19
-segments and 1 595 characters over 23.6 minutes — about 68 characters a minute against the
-1 390 this repo measured on a real call — and its last turn and both marks are dated in the
-**future**, which `TranscriptReader` prints as wall clock. Fixing any one of them in place
-moves timestamps under every stage that asserts « 14:30 », so the honest fix is to give the
-stub a per-scenario instant rather than one global `pinnedNow()`. Until then a reviewer
-judging density, durations or the compte-rendu's plausibility on these stages is judging a
-day that could not have happened — which is the fifth time this fixture has flattered the
-app and the one shape that is still open.
+**The fixture's clock is checked now, and this paragraph used to say it was not.** For
+three rounds it described a family of small impossibilities — `startedAt` fifteen minutes
+before its own `createdAt`, a transcript at 68 characters a minute, turns and marks dated in
+the future — and told a reviewer not to trust density, durations or plausibility on these
+stages. Every one of those was fixed by rounds 28 and 29, and the paragraph went on
+disarming the next reviewer against judgements that had become sound: measured today,
+`m-neovia-cadrage` has `startedAt` two minutes **after** `createdAt`, on its slot, with 313
+turns and 26 292 characters over a 47-minute recording — 559 a minute against the 1 386 this
+repo measured on a real call — and nothing anywhere dated past the pinned instant.
+`modules/extract/__tests__/harnessFixture.test.ts` asserts all of it, on every meeting in
+every scenario, on both halves of the Entra axis, and reverting any of the fixes costs
+hundreds of named findings. **A README is prose, and `check:french` reads prose for
+apostrophes, not for claims** — so the honest habit is to measure before trusting a sentence
+here, this one included.
+
+What is still worth knowing: `pinnedNow()` is 14:35, and `m-neovia-cadrage`'s slot **moves
+with its state** — 14:30 when the call is live, so the pill is five minutes in, and 13:45
+with a 47-minute recording when it has ended, so the gate is a real call rather than a
+three-minute one. Every other meeting takes its transcript from `fillCall`, which tiles the
+shared turns across that call's own window at `STEP_MS`, keeping the call's own cited turns
+first so `spanOf` still locates and `MARKS` still pins. Consequently the records are large
+on purpose — `m-lefort-cv` is 413 turns — and that is the point: a fixture shorter than the
+output flatters every layout it appears in, which this file's own history records six
+times.
 
 **`--fade` measures the one thing a resolved colour cannot carry.** A fading mask
 is how every log and every reading column in this product says « there is more
@@ -261,6 +270,7 @@ what `serve.mjs` drops the meta for.
 | `review-garde-transcription` | **the ninth attack, and it needed its own gate.** One click on *Transcription* and nothing else: the reader draws a placeholder that fills the column, so the view was covered before the transcript existed, and four presses of the rail's page turn put *Valider* on screen with the compte-rendu at `scrollTop` 0. `review-garde` cannot host it — by its eighth attack its rep has legitimately read both columns, and coverage is a set, so going back is free and correct |
 | `review-garde-citation` | **the tenth attack, and it is a *return* the guard must leave free.** Read both columns, arm *Valider*, then follow a citation into the transcript — the gesture DEC-21 exists to produce. The ninth attack's fix made the transcript a *view* of the measured column, so following one cost the arming: fifty page turns on a fifty-minute call, under a caption naming the compte-rendu while the only control named the transcript. Paired with `review-garde-transcription`, which must keep refusing |
 | `review-garde-sources` | **the eleventh attack, and the third instance of one shape.** Arm *Valider*, then open five `[source ▸]` panels — a rep checking the evidence on five of eleven rows, which is what DEC-21 exists to produce. They open *inline*, inside the rail the guard measures, so the content grew past `GROWTH_SLACK`, the coverage was deleted, and closing them again left a screen pixel-identical to the armed one still refused: two page turns to recover at 1280×800, five at 960×600. It passes at 1440×900 either way — run it at the smoke sizes |
+| `review-garde-mort` | **the twelfth, and the first that asks whether the guard's own remedy works.** The five stages above all prove the guard *refuses*, which is the half that protects the client's CRM; none asks whether the control the refusal offers **arms** the gate. It did not: drag the compte-rendu's scrollbar thumb to the end, or press the `source ▸` on a row the gate's own opening jump put above the fold, and *Valider* never appears in forty presses, at 1280×800 and at 960×600 — DEC-4's one confirmation gate, unreachable, with the only control in the primary slot doing nothing. `review-garde` waits for that button to *exist*, which is exactly what a dead control does. This one presses until the gate arms and requires **every press to move a scroller**; the press count is printed (6 and 5 at 1280×800, 10 and 7 at 960×600) so a slower regression shows in the output instead of hiding behind the ceiling |
 | `review-valide` | the one irreversible press, driven: read both columns, correct a field, press *Valider*, and assert the payload actually left with the correction in it |
 | `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |

@@ -37,7 +37,7 @@ import type {
 import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { scrollElementBy } from '../lib/scroll.ts'
+import { scrollElementBy, scrollElementTo } from '../lib/scroll.ts'
 import { formatOffset } from '../app/format.ts'
 import {
   Button,
@@ -504,6 +504,69 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     [payload, sent],
   )
 
+  /**
+   * **Which way the page turn must go — from where the column *is*, not from where the
+   * recorded band says it was.**
+   *
+   * Both this and `turn` read `seen.current[column].from > 8` and nothing else, and that
+   * is a statement about the *band*, not about the scroller. `extend` deliberately keeps
+   * the old band when a new viewport is not contiguous with it — a jump is not reading —
+   * and `jumping.current` only covers scrolls **the app** performs. A scroll the browser
+   * performs (focus, `scrollIntoView` on a pressed control) or the rep performs with the
+   * scrollbar *thumb* takes that branch too, so the band is left describing a region the
+   * column is no longer anywhere near, and the direction derived from it aims into a
+   * clamp.
+   *
+   * Measured on the shipped gate at 1280×800 and again at 960×600:
+   *
+   *   · drag the compte-rendu's thumb to the bottom — band stays `{0, 747}`, the control
+   *     reads « Lire la suite du compte-rendu », and `scrollTop` is 1802 of 1802: three
+   *     presses, eighty presses, nothing moves and *Valider* never appears.
+   *   · press `source ▸` on a row above the fold — the rail jumps 555 → 0, the band stays
+   *     `{555, 1023}`, the control reads « Remonter dans ce qui part » at `scrollTop 0`,
+   *     under a caption saying « il reste des champs, plus haut ». Dead.
+   *
+   * Both gestures are the most ordinary ones on the screen, and the second is DEC-21's
+   * flagship affordance on the rows the gate's own opening jump puts above the fold. The
+   * cost is that the compte-rendu never reaches VerySwing and no Outlook draft is
+   * created, for that meeting, in that window — DEC-4's one confirmation gate, unreachable,
+   * with the only control in the primary slot doing nothing and the sentence beside it
+   * false in the one direction the rep could act on. `Tab` into the rail does it too, on a
+   * product VISION §6 calls keyboard-first.
+   *
+   * So the question asked is « where is the nearest band this column has not shown,
+   * relative to the viewport it is in now », and the answer can be **neither**: a
+   * direction the scroller cannot move in is never returned, which is what makes the
+   * control impossible to kill. The guard itself is untouched — a jump still contributes
+   * no coverage, because a rep who drags a thumb past four hundred pixels has not read
+   * them — and the control now takes them back to those pixels instead of into a clamp.
+   *
+   * One function for the gesture *and* the label, because two readings of « which way »
+   * is how a button comes to lie about itself.
+   */
+  const unread = useCallback((column: Column): -1 | 0 | 1 => {
+    const el = column === 'document' ? docRef.current : railRef.current
+    if (!el || el.clientHeight === 0) return 1
+    const furthest = el.scrollHeight - el.clientHeight
+    // Nothing to scroll: the column shows all of itself and there is no turn to take.
+    if (furthest <= 8) return 0
+    const canUp = el.scrollTop > 8
+    const canDown = el.scrollTop < furthest - 8
+    const range = seen.current[column]
+    if (range === null) return canDown ? 1 : -1
+    const above = range.from > 8
+    const below = range.to < el.scrollHeight - 8
+    // The unread side the scroller can actually reach, then whatever it can reach at all
+    // — because a control that names a direction it cannot move in is the dead one.
+    if (above && canUp) return -1
+    if (below && canDown) return 1
+    if (canDown) return 1
+    return canUp ? -1 : 0
+  }, [])
+
+  /** What `unread` last answered per column, so the label re-renders when it changes. */
+  const [ways, setWays] = useState<Record<Column, -1 | 0 | 1>>({ document: 1, rail: 1 })
+
   const measure = useCallback(() => {
     /*
      * 8px of slack: a fractional `scrollHeight` on a HiDPI display leaves a
@@ -735,11 +798,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     setBelow(
       !readToEnd.current.document ? 'document' : !readToEnd.current.rail ? 'rail' : null,
     )
+    // The label's direction, from the same reading as the gesture — see `ways`.
+    const next = { document: unread('document'), rail: unread('rail') }
+    setWays((before) =>
+      before.document === next.document && before.rail === next.rail ? before : next,
+    )
     // `viewOf` is what the coverage set is keyed by, so `measure` is rebuilt
     // when either half of it moves — and `mode` alongside it, because the
     // transcript is read here directly rather than through the key: a stale
     // `mode` would leave the guard answering about the tab a rep just left.
-  }, [viewOf, mode, sent])
+  }, [viewOf, mode, sent, unread])
 
   /*
    * Measure before paint, and again whenever the rail changes size.
@@ -1012,27 +1080,66 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * click, which would make a teleport count as reading.
    */
   /**
-   * Which way the unread band lies, for the control's own words.
+   * The direction the label shows, kept current by `measure` rather than recomputed at
+   * render time.
    *
-   * « Lire la suite » is a lie when what has not been seen is *above* — which is
-   * the ordinary case at this gate, because it opens by jumping the rail to the
-   * first `⚠ faible` row. A rep told to read « la suite » and sent upwards
-   * learns that the button lies about itself, on the screen whose entire claim
-   * is that nothing is withheld.
+   * `unread` reads refs, so it does not re-render anything; `below` only changes when a
+   * column crosses from unread to read. So the label could be a press behind the
+   * scroller: measured at 960×600, « Remonter dans ce qui part » on a rail that had just
+   * reached `scrollTop 0`, whose next press correctly went *down*. A button that names
+   * the direction it is not about to take is the thing `unreadIsAbove`'s own docblock
+   * exists to prevent, one instant later.
    */
-  const unreadIsAbove = useCallback((column: Column): boolean => {
-    const range = seen.current[column]
-    return range !== null && range.from > 8
-  }, [])
+  const unreadIsAbove = useCallback(
+    (column: Column): boolean => ways[column] === -1,
+    [ways],
+  )
 
-  const turn = useCallback((column: Column) => {
-    const el = column === 'document' ? docRef.current : railRef.current
-    if (!el) return
-    const range = seen.current[column]
-    const step = Math.max(el.clientHeight - 64, 120)
-    const up = range !== null && range.from > 8
-    scrollElementBy(el, { top: up ? -step : step })
-  }, [])
+  /**
+   * **A page turn lands where the unread band begins, not a fixed step away.**
+   *
+   * A constant step is right for a rep reading straight down and wrong the moment they
+   * are *beyond* what they have read: from the bottom of a 2 549-pixel document whose
+   * covered band ends at 747, one page up lands at 1 119 — three hundred and seventy-two
+   * pixels clear of the band, so `extend`'s contiguity rule discards it, and the next
+   * turn goes back down. Measured after the direction was fixed and before this was:
+   * twenty presses oscillating between 1 126 and 1 787, coverage never growing,
+   * *Valider* never arming. A control that moves and achieves nothing is the dead one
+   * with extra steps.
+   *
+   * So the target is the edge of the covered band: going down, the first pixel it does
+   * not hold (`range.to`) goes to the top of the viewport; going up, the last one
+   * (`range.from`) goes to the bottom. Either way the new viewport *abuts* the band, the
+   * union grows by a full page, and the number of presses is the number of pages — which
+   * is what the caption promises. Clamped by the scroller, so the last turn of a document
+   * lands on its end.
+   */
+  const turn = useCallback(
+    (column: Column) => {
+      const el = column === 'document' ? docRef.current : railRef.current
+      if (!el) return
+      const way = unread(column)
+      if (way === 0) return
+      const range = seen.current[column]
+      const step = Math.max(el.clientHeight - 64, 120)
+      if (range === null) {
+        scrollElementBy(el, { top: way * step })
+        return
+      }
+      const to =
+        way === 1
+          ? Math.min(el.scrollHeight - el.clientHeight, range.to)
+          : Math.max(0, range.from - el.clientHeight)
+      // A target the column is already at would be a press that does nothing; fall back
+      // to a page, which is what a rep pressing again expects either way.
+      if (Math.abs(to - el.scrollTop) < 8) {
+        scrollElementBy(el, { top: way * step })
+        return
+      }
+      scrollElementTo(el, { top: to })
+    },
+    [unread],
+  )
 
   if (loaded.state.status === 'loading') return <Centered>Chargement…</Centered>
 

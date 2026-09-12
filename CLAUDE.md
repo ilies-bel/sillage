@@ -914,6 +914,27 @@ machine) or in `core/domain/` — never in an IPC handler.
   `ReadingColumn`, the `--fade` ramp and the citation scroll had never once been
   photographed against a transcript the product can produce, and this file's own « fifty
   page turns on a fifty-minute call » was unreachable from any stage.
+  **And applying `--prose`'s remedy is a layout change that no measured check can see.**
+  `.measure` on a `flex-1` paragraph stops the row being filled: the gate reader's
+  *Copier la transcription* went from flush with its `border-b` to floating **sixty pixels**
+  inside it at 1280×800 and forty-one at 960×600, because the paragraph beside it no longer
+  grows. `ml-auto` puts the control back at the end of the rule it belongs to and the prose
+  stays capped — it was 88 characters a line. A mis-aligned button is invisible to `--prose`,
+  `--geometry`, `--targets` and `--scrollers` alike, so seven surfaces gaining a class needed
+  measuring as well as reasoning.
+  **And `review:transcript` ignored the meeting it was asked about**, under a comment saying
+  « the same rows Historique shows, because in the product they are the same rows — one
+  projection, read by two screens ». Measured: `m-lefort-cv` got Néovia's 313 turns there and
+  its own 413 from `history:record`, and even for Néovia the two handed the same turns
+  **different ids**, so a mark pinned to a tiled turn resolved at the gate and not in
+  *Historique*. One record, through the one function that builds it.
+  **And `scripts/harness/README.md` spent three rounds describing debt that was fixed.**
+  Its « known fixture debt » paragraph — the first thing a reviewer reads to calibrate — still
+  said `startedAt` was fifteen minutes before `createdAt`, the transcript 68 characters a
+  minute, and turns and marks dated in the future. All three had been fixed, so the paragraph
+  was disarming the next reviewer against judgements that had become sound, while saying
+  nothing about the disagreement that *was* live. `check:french` reads prose for apostrophes,
+  not for claims: measure before trusting a sentence in that file.
   Two lies it found on its first run. `LEFORT_SEGMENTS` stamped five turns one **minute** apart
   that `startMs` places twelve **seconds** apart — the reader draws `receivedAt` as wall clock
   and the gate draws `span.startMs` as an offset, so the same five turns were a four-minute
@@ -971,6 +992,16 @@ machine) or in `core/domain/` — never in an IPC handler.
   off their live recording** (DEC-46). A call under way takes the conversation and the
   calendar waits; the next tick after the rep ends it arms the invite, because `#spent`
   then filters the finished call out.
+  **And when a call is under way, the refusal has to name it.** Round 29's early return —
+  « a call under way takes the conversation » — is reached by `armNow` too, and the sentence
+  it produced was « Cette réunion ne peut plus être démarrée », through `window.alert`. It
+  can be started, thirty seconds after *Terminer*. DEC-9 says sales calls overrun, so a
+  14:00 running to 15:05 and the rep pressing *Enregistrer* on the 15:00 row is the ordinary
+  case — and the fallback they reach for, *Démarrer une réunion*, is refused too (correctly),
+  so the reading left to them is « the 15:00 row is broken » and the likely outcome is the
+  call recorded with `eventId: null`: no attendees, no objet, no `speakerLabel`, no account,
+  no VerySwing link. The exact harm `armNow` exists to prevent. A refusal is a fact the rep
+  can act on (DEC-26), so it names the live call and says the row stays offered.
   **And `armNow` returned whatever was armed, not what the rep pressed.** It read `#armed`
   back on the argument that « the id the renderer should open is whatever the agenda now
   says is armed », which is true of the exits it listed and false of the two it gained:
@@ -1348,6 +1379,45 @@ machine) or in `core/domain/` — never in an IPC handler.
   before touching it; jsdom measures every box as zero, so the renderer's tests can only hold
   the permissive default.
 
+- **A page turn has to turn the page, and the guard's only remedy was a dead control**
+  (`Review.tsx`, `unread`, `turn`, the `review-garde-mort` stage). The direction was read
+  off the *recorded band* — `seen.current[column].from > 8` — and the step was a fixed page.
+  `extend` deliberately keeps the old band when a new viewport is not contiguous with it (a
+  jump is not reading), and `jumping.current` only covers scrolls **the app** performs. So a
+  scroll the *browser* performs — focus, `scrollIntoView` on a pressed control — or the rep
+  performs with the scrollbar **thumb** left the band describing a region the column had
+  left, and the control aimed into a clamp. Measured on the shipped gate at 1280×800 and
+  again at 960×600: drag the compte-rendu's thumb to the end, or press the `source ▸` on a
+  row the gate's own opening jump put above the fold, and *Valider* **never appears in forty
+  presses**. `Tab` into the rail does it too, on a product VISION §6 calls keyboard-first.
+  The compte-rendu never reaches VerySwing and no Outlook draft is created — DEC-4's one
+  confirmation gate, unreachable, with the only control in the primary slot doing nothing
+  and the sentence beside it (« il reste des champs, plus haut ») false in the one direction
+  the rep could act on.
+  Two halves. **The direction is asked of the scroller**, not of the band: where is the
+  nearest band this column has not shown, relative to the viewport it is in *now* — and a
+  direction the scroller cannot move in is never returned, which is what makes the control
+  impossible to kill. **And the turn lands on the covered band's edge, not a page away**:
+  from the bottom of a 2 549-pixel document whose band ends at 747, one page up lands 372
+  pixels clear of it, so contiguity discards the landing and the next press goes back down —
+  twenty presses oscillating between 1 126 and 1 787 with coverage never growing, which is a
+  dead control with extra steps. Landing on the edge makes the union grow by a full page, so
+  the number of presses is the number of pages, which is what the caption promises.
+  The guard itself is untouched: a rep who drags a thumb past four hundred pixels still has
+  not read them. What changed is that the control now takes them back to those pixels.
+  And **the label is published from `measure`** rather than recomputed at render: `seen` is
+  a ref and `below` only changes when a column crosses from unread to read, so « Remonter
+  dans ce qui part » was still on screen on a rail that had reached `scrollTop 0` and whose
+  next press correctly went down — the lying button its own docblock exists to prevent, one
+  instant later.
+  **Nothing could have caught it, and the reason is the shape of all five `review-garde*`
+  stages**: each proves the guard *refuses*, which is the property that protects the
+  client's CRM, and none asks whether the control the refusal offers **arms** the gate.
+  `review-garde` waits for `getByRole('button', {name: /Remonter|la suite/})` — existence,
+  which is exactly what a dead control has. `review-garde-mort` presses until *Valider*
+  appears and requires **every press to move a scroller**; « does this control do anything »
+  is the question none of the eight measured checks asks. jsdom cannot help here — every box
+  is zero and the guard fails open by design.
 - **The one control that ships is never the rectangle the rep just pressed** (DEC-4). Colour
   was not enough: React reused the same `<button>` at the same tree position, so the page turn
   and *Valider* were the same DOM node in the same 505×37 rectangle, 63 ms apart — a
@@ -1409,6 +1479,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   took it from 6 methods to 28 and surfaced `LlmPort.complete`, declared, implemented,
   unit-tested seventeen times and called by nothing.
 
+  **And a grep over this repo is a grep over prose.** Round 29 widened the followers to
+  accept a method taken as a value and claimed « Prose does not follow a method name with
+  `(`, `.bind(`, `)`, `,`, `;`, `]` or `}` » — an enumeration or a parenthetical does exactly
+  that. Measured: a `CrmPort.closeSession` implemented and called nowhere fails the check,
+  and **one sentence** in `Outbox.ts` reading « Nothing here calls crm.closeSession » makes
+  it pass. Verbatim the shape that held `CalendarPort.sync` up for a dozen rounds on this
+  check's own docblock about `CalendarPort.sync`. Comments and string literals are stripped
+  before anything is matched, because narrowing the *followers* could never close it: the
+  hole is that the text is prose, so every tightening is one comma from the next false
+  green. Two measurements about *how* to strip: a regex alternation carrying `[\s\S]*?`
+  took the check from 1.5 s to **16.5 s**, and blanking the stripped characters to spaces
+  took the same 16 s for the opposite reason — thousand-character runs of whitespace inside
+  the docblocks this repo is made of, against a pattern that is `receiver \s* !? \s* \?? .
+  \s* method`. Dropped rather than spaced, scanned in one pass: **0.55 s**, faster than
+  before it was correct.
   **And it failed on an ordinary respelling of live code, which is the worse direction.**
   The caller test demanded `(` adjacent to the method name, so replacing
   `(await deps.updates?.install()) ?? false` with a `.bind` and a call through the bound

@@ -211,7 +211,80 @@ for (const dir of CALLER_ROOTS) walk(path.join(ROOT, dir))
  * `declare global` in one is invisible to the other. See `ambient`.
  */
 const treeOf = (file) => CALLER_ROOTS.find((root) => file.startsWith(`${root}/`)) ?? file
-const text = new Map(sources.map((file) => [file, readFileSync(path.join(ROOT, file), 'utf8')]))
+/**
+ * **Comments are not code, and this check is about code.**
+ *
+ * The caller test is a grep, and a grep over a file that documents itself as heavily as
+ * this repo does is a grep over prose. That has been a false green twice: `CalendarPort.sync`
+ * passed for a dozen rounds on this very file's docblock *about* `CalendarPort.sync`, and
+ * when round 29 widened the followers to accept a method taken as a value it reopened the
+ * door — its own comment claims « Prose does not follow a method name with `(`, `.bind(`,
+ * `)`, `,`, `;`, `]` or `}` », and an enumeration or a parenthetical does exactly that.
+ * Measured: a live-looking `CrmPort.closeSession`, implemented and called nowhere, fails
+ * the check — and one sentence in `Outbox.ts` reading « Nothing here calls
+ * crm.closeSession, and this sentence is the only place the name appears » makes it pass.
+ *
+ * So comments and string literals are taken out before anything is matched. Narrowing the
+ * *followers* could never close this, because the shape of the hole is that the text is
+ * prose, not that the punctuation is unusual — every tightening would be one comma away
+ * from the next false green. Replaced with spaces of the same length rather than deleted,
+ * so nothing downstream that counts or slices is thrown off.
+ */
+const withoutProse = (source) => {
+  /*
+   * A single pass, not a regex: an alternation carrying `[\s\S]*?` took this check from
+   * 1.5 s to 16.5 s on the same tree, measured.
+   *
+   * And the stripped characters are **dropped**, not spaced over. Blanking them to spaces
+   * left thousand-character runs of whitespace inside the docblocks this repo is made of,
+   * and the caller pattern is `receiver \s* !? \s* \?? . \s* method` — so every failed
+   * match backtracked across the whole run. Same 16 s, for the opposite reason. Newlines
+   * survive so a line count still means something; columns were never reported.
+   */
+  const out = Array.from(source)
+  const blank = (from, to) => {
+    for (let at = from; at < to; at += 1) if (out[at] !== '\n') out[at] = ''
+  }
+  let at = 0
+  while (at < source.length) {
+    const two = source.slice(at, at + 2)
+    if (two === '//') {
+      const end = source.indexOf('\n', at)
+      blank(at, end === -1 ? source.length : end)
+      at = end === -1 ? source.length : end
+      continue
+    }
+    if (two === '/*') {
+      const end = source.indexOf('*/', at + 2)
+      const stop = end === -1 ? source.length : end + 2
+      blank(at, stop)
+      at = stop
+      continue
+    }
+    const ch = source[at]
+    if (ch === "'" || ch === '"' || ch === '`') {
+      let cursor = at + 1
+      while (cursor < source.length) {
+        if (source[cursor] === '\\') {
+          cursor += 2
+          continue
+        }
+        if (source[cursor] === ch) break
+        // An unterminated single- or double-quoted string cannot cross a line.
+        if (ch !== '`' && source[cursor] === '\n') break
+        cursor += 1
+      }
+      blank(at, Math.min(cursor + 1, source.length))
+      at = Math.min(cursor + 1, source.length)
+      continue
+    }
+    at += 1
+  }
+  return out.join('')
+}
+const text = new Map(
+  sources.map((file) => [file, withoutProse(readFileSync(path.join(ROOT, file), 'utf8'))]),
+)
 
 const isTest = (file) => /__tests__|\.test\.|\.spec\./.test(file)
 const inHome = (file, home) => (home.endsWith('/') ? file.startsWith(home) : file === home)

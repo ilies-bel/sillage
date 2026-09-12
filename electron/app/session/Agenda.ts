@@ -288,6 +288,34 @@ export class Agenda {
      * pointed at.
      */
     if (!armed || armed.eventId !== eventId) {
+      /*
+       * **And the two refusals are not the same fact, so they do not get the same
+       * sentence.**
+       *
+       * Round 29 added an early return to `#arm` for « another meeting is recording », and
+       * `armNow` reached it through this line: the rep whose 14:00 runs to 15:05 — which
+       * DEC-9 says is what sales calls do — presses *Enregistrer* on the 15:00 row and is
+       * told « Cette réunion ne peut plus être démarrée », through `window.alert`. It can
+       * be started, thirty seconds after they press *Terminer*. And the fallback they
+       * reach for, *Démarrer une réunion*, is refused too (correctly, « une autre réunion
+       * est déjà en cours d'enregistrement »), so the reading available to them is « the
+       * 15:00 row is broken » and the likely outcome is the call recorded with
+       * `eventId: null` — losing the attendees, the objet, `speakerLabel`, the account
+       * resolution and the VerySwing link, which is the exact harm this method exists to
+       * prevent.
+       *
+       * So the live call is named, and the sentence says what to do. DEC-26: a refusal is
+       * a fact the rep can act on, never a dead end.
+       */
+      const busy = this.#options.orchestrator
+        .liveIds()
+        .find((id) => this.#options.orchestrator.stateOf(id) === 'recording')
+      if (busy !== undefined) {
+        throw new Error(
+          'Une réunion est déjà en cours d’enregistrement. Terminez-la, puis reprenez ' +
+            'celle-ci — elle reste proposée.',
+        )
+      }
       throw new Error('Cette réunion ne peut plus être démarrée.')
     }
     // Through the same guard as the tick: arming changes the snapshot, so this

@@ -2704,10 +2704,21 @@ export function installAppBridge(config) {
       exactly the surfaces that a short record flatters. The call's own nineteen turns
       stay first with their ids, so every located span and both marks still resolve.
     */
-    'review:transcript': () => ({
-      segments: fillCall(SEGMENTS, NEOVIA_STARTED, NEOVIA_LIVE ? now : NEOVIA_ENDED, 'seg-neovia-suite'),
-      marks: MARKS,
-    }),
+    /*
+      **The meeting it is asked about, which it ignored.**
+
+      The comment above says « the same rows Historique shows, because in the product they
+      are the same rows — one projection, read by two screens », and this answered Néovia's
+      turns for *every* meeting: measured, `m-lefort-cv` got 313 turns here and 413 from
+      `history:record`, and even for Néovia the two handed the same turns **different ids**
+      (`seg-neovia-suite-*` against `seg-m-neovia-cadrage-*`), so a mark pinned to a tiled
+      turn resolved at the gate and not in *Historique*. One record, read through the one
+      function that builds it, which is what the sentence claimed all along.
+    */
+    'review:transcript': (payload) => {
+      const record = recordFor(payload.meetingId)
+      return { segments: record.segments, marks: record.marks }
+    },
 
     /*
       **A confirmation that changes nothing is a fixture showing the product

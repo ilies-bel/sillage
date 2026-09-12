@@ -1673,3 +1673,36 @@ test('armNow names the event the rep pressed, or refuses', async () => {
   assert.equal(h.agenda.armNow('BBB').meetingId, meetingIdFor('BBB'))
   h.store.close()
 })
+
+test('and it says which call is in the way, because that one has a remedy', async () => {
+  /*
+   * Round 29's early return in `#arm` — « a call under way takes the conversation » — is
+   * reached by `armNow` too, and the sentence it produced was « Cette réunion ne peut plus
+   * être démarrée », through `window.alert`. It can: thirty seconds after *Terminer*. DEC-9
+   * says sales calls overrun, so a 14:00 running to 15:05 and the rep pressing
+   * *Enregistrer* on the 15:00 row is the ordinary case — and the fallback, *Démarrer une
+   * réunion*, is refused too, so the reading left is « the 15:00 row is broken » and the
+   * likely outcome is the call recorded with `eventId: null`: no attendees, no objet, no
+   * `speakerLabel`, no account, no VerySwing link. The exact harm `armNow` exists to
+   * prevent (DEC-26: a refusal is a fact the rep can act on).
+   */
+  const HOUR = 3_600_000
+  const first = event('AAA', { scheduledStart: T0, scheduledEnd: T0 + HOUR })
+  const second = event('BBB', {
+    subject: 'Néovia — cadrage',
+    scheduledStart: T0 + HOUR,
+    scheduledEnd: T0 + 2 * HOUR,
+  })
+  const h = harness([first, second], 'Teams', null)
+  await h.agenda.tick({ now: T0 - ARM_LEAD_MS })
+  h.orchestrator.dispatch(meetingIdFor('AAA'), 'start', 'le commercial a démarré')
+
+  assert.throws(() => h.agenda.armNow('BBB'), /déjà en cours d’enregistrement/)
+  assert.throws(() => h.agenda.armNow('BBB'), /elle reste proposée/)
+
+  // And the remedy is real: end the call, and the row starts.
+  h.orchestrator.dispatch(meetingIdFor('AAA'), 'end', 'le commercial a terminé')
+  await h.agenda.tick({ now: T0 + HOUR + 60_000 })
+  assert.equal(h.agenda.armNow('BBB').meetingId, meetingIdFor('BBB'))
+  h.store.close()
+})

@@ -373,7 +373,20 @@ export function TranscriptReader({
         a *Copier* since it was drawn; the gate's did not, which made the same
         artefact behave differently one screen apart.
       */}
-      <CopyButton text={transcriptText(segments, interlocuteurs)} what="la transcription" />
+      {/*
+        `ml-auto`, because `.measure` on the paragraph beside it stopped the row being
+        filled. That paragraph is `flex-1`, so it used to push this button to the row's
+        right edge; capping it at `58ch` left the button floating **sixty pixels** inside a
+        `border-b` that still runs the full width (41 at 960×600, measured). The prose stays
+        capped — it was 88 characters a line — and the control goes back to the end of the
+        rule it belongs to. None of the eight measured checks can see a mis-aligned button,
+        which is why applying `--prose`'s remedy to seven surfaces needed measuring too.
+      */}
+      <CopyButton
+        text={transcriptText(segments, interlocuteurs)}
+        what="la transcription"
+        className="ml-auto"
+      />
       </div>
 
       {/*
