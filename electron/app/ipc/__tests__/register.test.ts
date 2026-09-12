@@ -1807,6 +1807,7 @@ test('the widget’s window gestures answer false when there is no window', asyn
   const asked: unknown[] = []
   const focused: Array<string | null> = []
   const after: number[] = []
+  const measuring: number[] = []
   let through: boolean | null = null
   deps.widget = {
     resize: (box) => {
@@ -1825,6 +1826,10 @@ test('the widget’s window gestures answer false when there is no window', asyn
       after.push(ms)
       return true
     },
+    measuring: (withinMs) => {
+      measuring.push(withinMs)
+      return true
+    },
   }
   // The pill's offset travels with the size — it is what lets the main process
   // leave the pill where it was instead of anchoring a window edge.
@@ -1833,6 +1838,11 @@ test('the widget’s window gestures answer false when there is no window', asyn
     above: true,
   })
   assert.deepEqual(asked, [{ width: 340, height: 300, pillTop: 16, pillHeight: 44 }])
+
+  // And the renderer's own measurement deadline, which is what puts the main
+  // process's first-frame wait on the same clock as it — see `widget:measuring`.
+  assert.deepEqual(await ipc.invoke('widget:measuring', { withinMs: 200 }), { ok: true })
+  assert.deepEqual(measuring, [200])
 
   // « Ouvrir Sillage » reaches the window, with the meeting it is open on.
   assert.deepEqual(await ipc.invoke('window:focus', { meetingId: 'm1' }), { ok: true })

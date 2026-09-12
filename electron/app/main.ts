@@ -2477,6 +2477,7 @@ const boot = async (): Promise<void> => {
       passThrough: (through) => overlay.passThrough(through),
       focusMain: (meetingId) => overlay.focusMain(meetingId),
       left: (afterMs) => overlay.left(afterMs),
+      measuring: (withinMs) => overlay.measuring(withinMs),
     },
     broadcastMark: (meetingId, mark) => broadcast('moment:marked', { meetingId, mark }),
     broadcastForget: (meetingId, markId) => broadcast('moment:forgotten', { meetingId, markId }),

@@ -17,6 +17,7 @@ import { EMPTY_WINDOW } from '../../core/contracts/calendar.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
+import { AFTER_THE_CALL } from '../../core/contracts/meeting.ts'
 import {
   ARM_LEAD_MS,
   calendarClaim,
@@ -158,6 +159,15 @@ export class Agenda {
    * field being overwritten was the whole bug, and a field of its own is the only
    * shape that cannot be wrong that way.
    */
+  /**
+   * Meetings already reported as refusing to arm, so the diagnostic is an edge.
+   *
+   * A `Set` for the life of the agenda rather than a single id: several events can be
+   * recommended and refused over a day, and collapsing them onto one field would make
+   * the second refusal reopen the first. See the note at the `agenda.arm.refused`
+   * record site for the ninety-four identical rows this replaces.
+   */
+  #refused = new Set<string>()
   #adHocArmed: string | null = null
   /**
    * **This conversation has been decided** — offered, or live while the product
@@ -273,6 +283,32 @@ export class Agenda {
    * offer names a row the screen no longer has — and so does an all-day entry, which
    * `nextArmable` refuses to treat as a call in the first place.
    */
+  /**
+   * When the calendar's own offer for a conversation happening **now** becomes
+   * available, or null when the calendar does not account for one.
+   *
+   * `calendarClaim` answers this about the *events*; only this class can finish the
+   * question, because « the calendar accounts for this call » is false once the
+   * calendar is **done** with that event. A 14:00–15:00 meeting the rep recorded and
+   * ended at 14:20 is still inside the claim's window until 15:20 — `#arm` would
+   * refuse it, correctly, since it is past `armed` — and deferring to an offer that
+   * can never come cost a rep who took a different client's call at 14:35 **forty-five
+   * minutes of silence**, plus a `warn` diagnostic per tick whose sentence is about
+   * the wrong meeting. On the demo build (DEC-28, no model configured) a meeting stays
+   * `ended` for ever, so it was every slot on the calendar, every day.
+   *
+   * `AFTER_THE_CALL` is read from `core/contracts/` rather than restated, because
+   * *Historique* asks the same question one layer up and two copies of that list are
+   * two answers to « is this conversation over ».
+   */
+  #calendarOffersAt(now: number): number | null {
+    const claim = calendarClaim(this.#window.events, now)
+    if (claim === null) return null
+    const state = this.#options.orchestrator.stateOf(meetingIdFor(claim.id))
+    if (state !== null && AFTER_THE_CALL.has(state)) return null
+    return claim.context.scheduledStart - ARM_LEAD_MS
+  }
+
   #over(eventId: string, now: number): boolean {
     const event = this.#window.events.find((candidate) => candidate.id === eventId)
     if (!event) return true
@@ -382,8 +418,35 @@ export class Agenda {
      * offer wins outright, and two offers for one conversation is the defect
      * `#arm`'s docblock records at length. `decideAdHoc` is told that as a fact
      * rather than inferring it, so the rule stays readable in one place.
+     *
+     * **« Did an offer happen », not « did a pure function say one should ».** This
+     * was gated on `choice.decision.action === 'arm'`, and `#arm` then *refuses* —
+     * for a meeting already recorded, ended, confirmed or pushed. When it refuses
+     * nothing is armed, and this branch had already been skipped on the strength of
+     * the recommendation. Measured: a rep who finished their 14:00–15:00 call at
+     * 14:20 and took a different client's call at 14:35 waited until **15:20** for an
+     * offer — forty-five minutes of silence on a live call — with eight `warn`
+     * diagnostics in between whose message is a refusal sentence about an unrelated
+     * meeting (« Compte-rendu en attente d'analyse. »), in the bundle whose button
+     * says it can be sent to support. And on the demo build (DEC-28, no model) that
+     * meeting stays `ended` for ever, so it fires for every slot on the calendar.
+     *
+     * Read after the calendar branch has run, from the field that records what
+     * actually happened.
      */
-    if (!(choice.decision.action === 'arm' && choice.event)) {
+    const standing = this.#armed
+    /*
+     * And « still standing » is the machine's word, not this field's. `#armed` is
+     * `Agenda`'s own note of what it last offered; the session is what knows whether
+     * that offer is live. A rep who armed a row and then abandoned it leaves a note
+     * here pointing at an `idle` meeting, and treating that as a standing offer would
+     * silence the detector on the strength of a decision that is over.
+     */
+    const offeredState =
+      standing === null ? null : this.#options.orchestrator.stateOf(standing.meetingId)
+    const calendarOffered =
+      standing?.eventId != null && (offeredState === 'armed' || offeredState === 'recording')
+    if (!calendarOffered) {
       /*
        * **Is this product already doing something about a meeting?**
        *
@@ -436,10 +499,7 @@ export class Agenda {
          * window a rep joining early falls into, and exactly the window this has to
          * see. Asking the fold a second, different question is the point.
          */
-        calendarOffersAt: (() => {
-          const claim = calendarClaim(this.#window.events, now)
-          return claim === null ? null : claim.context.scheduledStart - ARM_LEAD_MS
-        })(),
+        calendarOffersAt: this.#calendarOffersAt(now),
       })
       /*
        * The horizon is taken from **every** branch, including the one that
@@ -716,6 +776,26 @@ export class Agenda {
        * nothing about the one currently armed.
        */
       if (this.#armed?.meetingId === meetingId) this.#armed = null
+      /*
+       * **Once per meeting, not once per tick.**
+       *
+       * `#arm` is reached from every tick for as long as `nextArmable` recommends an
+       * event, and it refuses for as long as that meeting is past `armed` — which on
+       * the demo build (DEC-28, no model configured) is **for ever**, because DEC-39
+       * says a meeting with no model waits for one. Measured on the shipped class over
+       * eighty-five minutes: **ninety-four `warn` rows**, all identical, all saying
+       * « Compte-rendu en attente d'analyse. » about a meeting the rep finished — in
+       * the bundle whose own button reads « Sans contenu de conversation. Peut être
+       * envoyé au support. » A support reader looking for what went wrong finds
+       * ninety-four copies of a sentence about something that went right.
+       *
+       * The edge is the event worth recording: the *first* time this meeting was
+       * recommended and refused. `#refused` is cleared when the meeting is armed
+       * successfully, so a genuine second refusal after a successful arming is still
+       * heard.
+       */
+      if (this.#refused.has(meetingId)) return
+      this.#refused.add(meetingId)
       this.#diagnostics.record({
         severity: 'warn',
         code: 'agenda.arm.refused',
@@ -739,6 +819,7 @@ export class Agenda {
      * on the day. See `#adHocArmed`.
      */
     this.#withdrawAdHoc()
+    this.#refused.delete(meetingId)
     this.#armed = { meetingId, eventId: event.id, subject: event.context.subject }
     // After the state is set and before the diagnostic, so a listener that
     // throws cannot leave the agenda armed-but-unrecorded — and it is wrapped,

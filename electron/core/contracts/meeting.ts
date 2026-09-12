@@ -71,6 +71,30 @@ export const TimestampSchema = z.number().int()
  * moved; that is the lesson `PROCESS_TTL_MS` and `ARM_POLL_MS` had to learn the
  * expensive way.
  */
+/**
+ * The states a meeting reaches only **after** the call.
+ *
+ * `recording` is deliberately absent, and so is `armed`: a call running past its
+ * scheduled end is the most important row on the screen, and filing it under
+ * *Passées* would hide it.
+ *
+ * It lives in `contracts` for the reason `meetingAnchor` and `speakerLabel` do —
+ * `src/*` may import nothing else — and because it had **two** readers asking the
+ * same question in two layers. *Historique* uses it to decide what is behind the
+ * rep; `Agenda` uses it to decide whether the calendar is finished with an event,
+ * which is what stops a claimed slot silencing the unscheduled detector for twenty
+ * minutes after a meeting the rep already recorded and ended. Two copies of that
+ * list would be two answers to « is this conversation over », one per layer.
+ */
+export const AFTER_THE_CALL: ReadonlySet<MeetingState> = new Set<MeetingState>([
+  'ended',
+  'extracting',
+  'awaiting_confirmation',
+  'pushing',
+  'done',
+  'aborted',
+])
+
 export const OVERRUN_GRACE_MS = 20 * 60_000
 
 export const MeetingContextSchema = z.object({

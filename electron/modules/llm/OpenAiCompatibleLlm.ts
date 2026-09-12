@@ -40,14 +40,8 @@ export type FetchLike = (
   text(): Promise<string>
 }>
 
-/**
- * Short enough that a dead provider cannot hold up the signal rail for longer
- * than the interval between two of its own calls (~1/minute, DEC-14).
- */
-export const DEFAULT_COMPLETE_TIMEOUT_MS = 12_000
 /** The end-of-meeting extraction. One call, and it is allowed to think. */
 export const DEFAULT_STRUCTURED_TIMEOUT_MS = 120_000
-const DEFAULT_COMPLETE_TOKENS = 256
 const DEFAULT_STRUCTURED_TOKENS = 4_096
 /** Enough of the bad reply to recognise it in a diagnostic, not enough to be a transcript. */
 const RAW_EXCERPT = 2_000
@@ -103,18 +97,6 @@ export class OpenAiCompatibleLlm implements LlmPort {
         cause: error,
       })
     }
-  }
-
-  async complete(request: LlmRequest): Promise<string> {
-    const text = await this.#chat(request, {
-      timeoutMs: request.timeoutMs ?? DEFAULT_COMPLETE_TIMEOUT_MS,
-      maxOutputTokens: request.maxOutputTokens ?? DEFAULT_COMPLETE_TOKENS,
-    })
-    const trimmed = text.trim()
-    if (!trimmed) {
-      throw new LlmError({ kind: 'unknown', message: 'réponse vide du modèle', retryable: true })
-    }
-    return trimmed
   }
 
   /**
@@ -308,7 +290,22 @@ export class OpenAiCompatibleLlm implements LlmPort {
 
     if (!response.ok) throw await this.#httpError(response)
     const text = await response.text()
-    return responses ? responseTextOf(text) : contentOf(text)
+    const reply = (responses ? responseTextOf(text) : contentOf(text)).trim()
+    /*
+     * **An empty 200 is a provider that answered nothing, and that is retryable.**
+     *
+     * This guard lived in `complete`, which is gone — and it belongs here, where it
+     * now covers the one caller that is left. `structured` used to reach `jsonText`
+     * with `''` and raise `LlmSchemaError` (« le modèle n'a pas renvoyé de JSON »),
+     * which is `retryable: false` and a statement about the *shape* of a reply there
+     * was none of: the extraction was abandoned on a blip the outbox would have
+     * cleared. Same shape as the `200`-that-is-not-a-transcription rule in
+     * `RestSttSession` — an envelope with nothing in it is a failure, not a silence.
+     */
+    if (!reply) {
+      throw new LlmError({ kind: 'unknown', message: 'réponse vide du modèle', retryable: true })
+    }
+    return reply
   }
 
   async #httpError(response: Awaited<ReturnType<FetchLike>>): Promise<LlmError> {

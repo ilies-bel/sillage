@@ -17,7 +17,12 @@
  */
 import type { CalendarEvent } from '../../../electron/core/contracts/calendar.ts'
 import type { AgendaSnapshotPayload } from '../../../electron/core/contracts/ipc.ts'
-import { Meeting, MeetingState, OVERRUN_GRACE_MS } from '../../../electron/core/contracts/meeting.ts'
+import {
+  AFTER_THE_CALL,
+  Meeting,
+  MeetingState,
+  OVERRUN_GRACE_MS,
+} from '../../../electron/core/contracts/meeting.ts'
 import { dayKeyOf, type DayKey } from '../../app/calendar.ts'
 
 export interface AgendaEntry {
@@ -64,20 +69,6 @@ export interface AgendaEntry {
   /** Held already — it goes under *Passées*. */
   past: boolean
 }
-
-/**
- * The states a meeting reaches only after the call. `recording` is deliberately
- * absent, and so is `armed`: a call running past its scheduled end is the most
- * important row on the screen, and filing it under *Passées* would hide it.
- */
-const AFTER_THE_CALL: ReadonlySet<MeetingState> = new Set<MeetingState>([
-  'ended',
-  'extracting',
-  'awaiting_confirmation',
-  'pushing',
-  'done',
-  'aborted',
-])
 
 /** French, and never the machine's own vocabulary. */
 export const STATE_LABEL: Record<MeetingState, string> = {

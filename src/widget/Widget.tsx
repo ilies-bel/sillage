@@ -614,6 +614,33 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
     const timer = setTimeout(() => setWaited(true), MEASURE_DEADLINE_MS)
     return () => clearTimeout(timer)
   }, [])
+
+  /**
+   * **Tell the main process when this clock started, because its deadline was armed
+   * from a different one.**
+   *
+   * `Overlay` arms `FIRST_FRAME_MS` (300) inside its `ready-to-show` handler; every
+   * wait in this file is absolute from *this* mount. So the hundred milliseconds
+   * between the two constants was a hundred minus the gap between those two events —
+   * measured at 81 ms and 47 ms on the machine this is written on, leaving 19 and 53,
+   * on the critical path of `startRecording` where two audio devices are opening and a
+   * transcriber is booting, for a rep on a Windows laptop (HR-2). Lose that race and
+   * the main process reveals `INITIAL_SIZE`: a card forty-nine pixels narrower than
+   * the pill, saying « Aucun enregistrement », over a live call.
+   *
+   * Sent in a layout effect with no dependencies, before the measurement effect can
+   * possibly report — one message per window, at the earliest instant this side exists.
+   * It carries `MEASURE_DEADLINE_MS` rather than agreeing it, for the reason `pillTop`
+   * is measured and `widget:left` carries `afterMs`: a number two files have to keep
+   * equal is a number that will stop being equal.
+   *
+   * Failing here costs nothing by design (DEC-26): the main process keeps the deadline
+   * it has today, `APPEARANCE_MS` is above both, and a widget that does not appear is
+   * worse than one that appears wrong.
+   */
+  useLayoutEffect(() => {
+    void invoke('widget:measuring', { withinMs: MEASURE_DEADLINE_MS }).catch(() => undefined)
+  }, [])
   const drawable = settled || waited
 
   useLayoutEffect(() => {

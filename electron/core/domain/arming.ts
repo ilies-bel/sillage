@@ -84,6 +84,17 @@ export const calendarClaim = (
   let claim: CalendarEvent | null = null
   for (const event of events) {
     if (event.isCancelled || event.isAllDay) continue
+    /*
+     * **Only an entry the calendar could actually arm may silence the detector.**
+     *
+     * This filtered on `isCancelled` and `isAllDay` and nothing else, while
+     * `decideArming` refused on three more — and those three are precisely the
+     * shapes an ordinary calendar is full of: the block a rep wrote for
+     * themselves, the private slot, the day-long entry that is not flagged
+     * all-day. Claiming them handed a veto to two thirds of the day. See
+     * `isCallLike`.
+     */
+    if (!isCallLike(event.context).ok) continue
     const { scheduledStart, scheduledEnd } = event.context
     if (now < scheduledStart - CALENDAR_CLAIM_MS) continue
     if (now >= scheduledEnd + OVERRUN_GRACE_MS) continue
@@ -170,23 +181,71 @@ export interface ArmingInput {
   micHeldBy?: string | null
 }
 
-export const decideArming = (input: ArmingInput): ArmingDecision => {
-  const { event, now, meetingAudio, micHeldBy = null } = input
-
+/**
+ * **Is this entry a call this product would ever record?** — asked of the entry
+ * alone, never of the clock.
+ *
+ * Extracted because it was written twice and applied unevenly, which cost the
+ * detector two thirds of a working day. `decideArming` refused an entry on five
+ * grounds; `calendarClaim` — added one round earlier to stop the ad-hoc detector
+ * speaking over a scheduled call — filtered on **two** of them. Every entry in
+ * that gap was claimed by one function and refused by the other, so the detector
+ * was told « cet appel est au calendrier » about an event the calendar would never
+ * offer, for the claim's whole width: thirty minutes before the slot to twenty
+ * minutes after it.
+ *
+ * Measured on the shipped `Agenda` over an ordinary French sales day — two real
+ * invites and four blocks the rep wrote for themselves — the detector could speak
+ * for **70 of 660 minutes**, and the longest silence, two and a half hours, was
+ * claimed by a block named « Prospection téléphonique »: the block during which a
+ * rep makes unscheduled calls. « Déjeuner » took four hours, because its thirty
+ * minutes of pre-claim ran into the next self-written block's.
+ *
+ * A single predicate is the fix rather than copying the missing clauses across,
+ * and the distinction is the whole lesson: this is the **third** time in this repo
+ * that a rule written in one place and applied in another has diverged. Two
+ * callers, one function, no way to add a refusal to one and not the other.
+ *
+ * The *time-dependent* refusals stay in `decideArming` where they belong — a slot
+ * that has not opened yet and one that ended too long ago are answers about
+ * `now`, and `calendarClaim` has its own, wider window for exactly that reason.
+ */
+export const isCallLike = (event: ArmableEvent): { ok: true } | { ok: false; reason: string } => {
+  /*
+   * **Private suppresses *arming*, and deliberately not *detection*.**
+   *
+   * A rep who marks a slot private in Outlook is saying the calendar entry is not
+   * for tooling, and the product honours that: it will not create a meeting from
+   * it, name it, or read its attendees. It is not saying « record nothing for the
+   * next hour » — so the ad-hoc detector still offers, and what it offers names no
+   * client and nothing from the entry: « Appel non planifié — Teams ».
+   *
+   * Stated here because the alternative was happening by accident and was worse.
+   * With `calendarClaim` filtering on two grounds instead of five, a private slot at
+   * 16:30 silenced the detector from 16:00 — so it was suppressing a **different
+   * client's** call, in the half hour before an entry it refuses to touch, with
+   * nothing on any screen saying why.
+   */
   if (PRIVATE.has(event.sensitivity)) {
-    return { action: 'skip', reason: 'événement marqué privé dans Outlook' }
+    return { ok: false, reason: 'événement marqué privé dans Outlook' }
   }
-
   // A block with nobody in it and nowhere to join is a reminder the rep wrote
   // for themselves. Transcribing it is noise, and worse, it would consume the
   // one meeting the rep expected to be armed for.
   if (event.attendees.length === 0 && !event.onlineMeetingJoinUrl) {
-    return { action: 'skip', reason: 'aucun participant ni lien de réunion' }
+    return { ok: false, reason: 'aucun participant ni lien de réunion' }
   }
-
   if (event.scheduledEnd - event.scheduledStart > MAX_ARMABLE_DURATION_MS) {
-    return { action: 'skip', reason: 'plage trop longue pour être une réunion' }
+    return { ok: false, reason: 'plage trop longue pour être une réunion' }
   }
+  return { ok: true }
+}
+
+export const decideArming = (input: ArmingInput): ArmingDecision => {
+  const { event, now, meetingAudio, micHeldBy = null } = input
+
+  const callLike = isCallLike(event)
+  if (!callLike.ok) return { action: 'skip', reason: callLike.reason }
 
   /*
    * **A call that runs over has not finished, and this used to say it had.**

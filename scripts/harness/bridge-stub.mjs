@@ -1275,7 +1275,19 @@ export function installAppBridge(config) {
    * citation in *this* transcript. Two of the fixture's spans belong to this
    * meeting and not to Néovia's, and a helper defaulting to the wrong one would
    * have thrown — which is how this was found.
+   *
+   * **`receivedAt` is derived from `startMs`, because two surfaces print the two and
+   * they were a factor of five apart.** These five stamps were `at(-14, 15, 3)` …
+   * `at(-14, 15, 7)` — one minute apart — over turns `startMs` places twelve seconds
+   * apart: *Historique*'s reader draws `receivedAt` as wall clock and the gate draws
+   * `span.startMs` as an offset, so the same five turns were a four-minute
+   * conversation on one screen and a fifty-six-second one on the other. Four hundred
+   * and sixty-one characters over four minutes is also **115 a minute**, against
+   * roughly 1 386 on a real call, which is the fixture-sparser-than-the-product shape
+   * this file's header records — and the reason the five-turn record looked like a
+   * comfortable little panel. Derived, it is 493.
    */
+  const LEFORT_STARTED = meetingById('m-lefort-decouverte').startedAt
   const LEFORT_SEGMENTS = [
       {
         id: 'rec-lefort-1',
@@ -1285,7 +1297,7 @@ export function installAppBridge(config) {
         endMs: 102_400,
         isFinal: true,
         provider: 'local-whisper',
-        receivedAt: at(-14, 15, 3),
+        receivedAt: LEFORT_STARTED + 96_000,
       },
       {
         id: 'rec-lefort-2',
@@ -1295,7 +1307,7 @@ export function installAppBridge(config) {
         endMs: 112_800,
         isFinal: true,
         provider: 'local-whisper',
-        receivedAt: at(-14, 15, 4),
+        receivedAt: LEFORT_STARTED + 108_000,
       },
       {
         id: 'rec-lefort-3',
@@ -1305,7 +1317,7 @@ export function installAppBridge(config) {
         endMs: 124_600,
         isFinal: true,
         provider: 'local-whisper',
-        receivedAt: at(-14, 15, 5),
+        receivedAt: LEFORT_STARTED + 118_000,
       },
       {
         id: 'rec-lefort-4',
@@ -1315,7 +1327,7 @@ export function installAppBridge(config) {
         endMs: 138_900,
         isFinal: true,
         provider: 'local-whisper',
-        receivedAt: at(-14, 15, 6),
+        receivedAt: LEFORT_STARTED + 131_000,
       },
       {
         id: 'rec-lefort-5',
@@ -1325,7 +1337,7 @@ export function installAppBridge(config) {
         endMs: 152_100,
         isFinal: true,
         provider: 'local-whisper',
-        receivedAt: at(-14, 15, 7),
+        receivedAt: LEFORT_STARTED + 145_000,
       },
   ]
 
@@ -1342,7 +1354,13 @@ export function installAppBridge(config) {
         and the first screenshot of it was the one that white-screened.
       */
       marks: [
-        { id: 'lefort-mark-1', at: at(-14, 15, 6) + 4_000, note: '', segmentId: 'rec-lefort-4' },
+        // Derived from the turn it is pinned to, for the reason `MARKS` is.
+      {
+        id: 'lefort-mark-1',
+        at: LEFORT_SEGMENTS[3].receivedAt + 2_000,
+        note: '',
+        segmentId: LEFORT_SEGMENTS[3].id,
+      },
         {
           id: 'lefort-mark-2',
           at: at(-14, 15, 7),
@@ -1415,11 +1433,25 @@ export function installAppBridge(config) {
     if (known) {
       return { marks: [], interlocuteurs: INTERLOCUTEURS[meetingId] || [], ...known }
     }
-    const m = meetingById(meetingId)
+    const m = meetingById(meetingId) || meeting({ id: meetingId })
+    /*
+      **A record shown for one call is dated inside that call.**
+
+      The turns are deliberately shared — what a generic record is for is *volume*,
+      so the pane is photographed holding a real call rather than the six lines it
+      held for thirteen rounds. What is not shareable is *when* they happened: this
+      handed Néovia's `receivedAt` stamps to every meeting it has no entry for, so
+      *Historique* on the 9:01 Sodexial call drew nineteen turns stamped 14:30 —
+      four and a half hours after the recording being read had stopped — and
+      `TranscriptReader` prints `receivedAt` as wall clock. The marks came from the
+      same instants and moved with them.
+    */
+    const from = m.startedAt || m.createdAt
+    const shift = from - NEOVIA_STARTED
     return {
-      meeting: m || meeting({ id: meetingId }),
+      meeting: m,
       interlocuteurs: INTERLOCUTEURS[meetingId] || [],
-      marks: MARKS,
+      marks: MARKS.map((mark) => ({ ...mark, at: mark.at + shift })),
       /*
         **The whole call, and it was six turns for as long as this stub
         existed.**
@@ -1432,7 +1464,7 @@ export function installAppBridge(config) {
         This file's own header records that a fixture shorter than the output
         flatters every layout it appears in; this was the fourth time.
       */
-      segments: SEGMENTS,
+      segments: SEGMENTS.map((seg) => ({ ...seg, receivedAt: seg.receivedAt + shift })),
       notes: 'Rien de particulier à signaler sur cet appel.',
       compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',
       fields: [{ key: 'account', label: 'Client', confidence: 'ok', span: null }],
@@ -2801,6 +2833,14 @@ export function installAppBridge(config) {
       the shape of a fixture that is simpler than the product.
     */
     'widget:left': () => ({ ok: true }),
+    /*
+      The renderer telling the main process when its own measurement clock started.
+      There is no main process here, so the answer is `ok: false` — « nobody re-armed
+      anything » — which is the honest reply and the one the renderer is written to
+      shrug off (DEC-26). A stub answering `true` would photograph a handshake this
+      page cannot complete.
+    */
+    'widget:measuring': () => ({ ok: false }),
     'window:focus': () => ({ ok: true }),
   }
 

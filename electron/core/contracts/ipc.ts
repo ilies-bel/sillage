@@ -605,6 +605,50 @@ export const invokeChannels = {
   },
 
   /**
+   * **« I am mounted, and I will have a size for you within N ms. »**
+   *
+   * The widget's first frame is a handshake across a process boundary and the two
+   * halves were armed **from different clocks**. `Overlay` arms `FIRST_FRAME_MS`
+   * (300) inside its `ready-to-show` handler; `Widget.tsx` arms
+   * `MEASURE_DEADLINE_MS` (200) from its own React mount. The hundred milliseconds
+   * between them is not margin — it is a hundred milliseconds *minus* the gap
+   * between `ready-to-show` in the main process and the mount in the renderer, and
+   * that gap is on the critical path of `startRecording`: two audio devices opening
+   * and a transcriber booting, on a Windows laptop (HR-2), while the harness's own
+   * answer to `widget:state` is 150 ms of it. Measured on this Mac at **81 ms and
+   * 47 ms** across two launches, leaving a real margin of 19 and 53. Lose it and
+   * the main process wins a race it has the *worse* answer to: what
+   * `FIRST_FRAME_MS` reveals when it fires is `INITIAL_SIZE`, 232×52, forty-nine
+   * pixels narrower than the pill and carrying « Aucun enregistrement » over a live
+   * call. `harnessFixture.test.ts` holds the four constants in order and could
+   * never see this, because an ordering between constants is not an ordering
+   * between *expiries* when the origins differ.
+   *
+   * So the renderer states its own deadline from its own mount, one IPC hop before
+   * this arrives, and `Overlay` re-arms from *that* instant. One origin, and the
+   * ordering is then true by construction rather than by a subtraction nobody had
+   * done.
+   *
+   * It is **not** load-bearing, the same way `widget:left` is not: a renderer that
+   * never sends it keeps the `ready-to-show` deadline it has today, and
+   * `APPEARANCE_MS` is above both. A widget that does not appear is worse than one
+   * that appears wrong (DEC-26) — the rep has no taskbar entry and nothing to
+   * alt-tab to.
+   */
+  'widget:measuring': {
+    request: z.object({
+      /**
+       * How long from *now* the renderer may take to report a size. Its own
+       * `MEASURE_DEADLINE_MS`, sent rather than agreed, because a number two files
+       * have to keep equal is a number that will stop being equal — the same reason
+       * `pillTop` is measured and `widget:left` carries `afterMs`.
+       */
+      withinMs: z.number().finite().nonnegative().max(5_000),
+    }),
+    response: z.object({ ok: z.boolean() }),
+  },
+
+  /**
    * **Bring the main window back**, and put it on this meeting.
    *
    * The widget's way out of itself: the rep is in Teams, they want the notepad,

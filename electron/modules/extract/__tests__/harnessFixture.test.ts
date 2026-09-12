@@ -594,6 +594,11 @@ test('the widget’s first-frame deadlines are ordered across the three files th
     /export const APPEARANCE_MS\s*=\s*(\d[\d_]*)/,
     'APPEARANCE_MS',
   )
+  const slack = number(
+    read('../../../../electron/app/windows/Overlay.ts'),
+    /export const FIRST_FRAME_SLACK_MS\s*=\s*(\d[\d_]*)/,
+    'FIRST_FRAME_SLACK_MS',
+  )
 
   assert.ok(
     latency < measure,
@@ -610,5 +615,281 @@ test('the widget’s first-frame deadlines are ordered across the three files th
     firstFrame < appearance,
     `le plafond d’apparition (${appearance} ms) doit rester au-delà de ${firstFrame} ms, ` +
       'sinon il court-circuite la mesure qu’il n’existe que pour secourir',
+  )
+  /*
+   * **And the ordering this test could not see, which is why `widget:measuring` exists.**
+   *
+   * `measure < firstFrame` above is an order between *constants*, and it was read as an
+   * order between expiries: it is not, because the two were armed from different clocks
+   * — `ready-to-show` in the main process, the React mount in the renderer. The real
+   * margin was a hundred milliseconds minus the gap between those events, measured at
+   * 81 ms and 47 ms.
+   *
+   * Once the renderer states its own deadline from its own mount, the wait the main
+   * process runs is `MEASURE_DEADLINE_MS + FIRST_FRAME_SLACK_MS` from *that* instant —
+   * so that sum is the number the ceiling has to stay above, and `firstFrame` becomes
+   * the fallback for a renderer that never reports. Both are asserted, because both
+   * still happen.
+   */
+  assert.ok(
+    measure + slack < appearance,
+    `le rendu parle au plus tard à ${measure} ms et le principal lui laisse ${slack} ms de ` +
+      `trajet, soit ${measure + slack} ms depuis son montage — au-delà du plafond ` +
+      `d’apparition (${appearance} ms), c’est le plafond qui décide et ce qu’il montre est ` +
+      'la taille devinée',
+  )
+  /*
+   * The slack covers one preload hop and nothing else. Larger than the difference
+   * between the two constants and the fallback becomes the *shorter* wait, which puts
+   * the two back in the order this whole handshake exists to fix.
+   */
+  assert.ok(
+    slack <= firstFrame - measure,
+    `le trajet compté (${slack} ms) dépasse l’écart entre les deux constantes ` +
+      `(${firstFrame - measure} ms) — le repli redeviendrait la plus courte des deux attentes`,
+  )
+})
+
+/**
+ * **The fixture's own clock, and the check its docblock claimed twice to have.**
+ *
+ * `bridge-stub.mjs` says, of the timeline it fixed last round: « `harnessFixture.test.ts`
+ * asserts all three, on every meeting, in every scenario — which is what was missing:
+ * reverting the one timing hunk the previous round wrote left all six of its tests
+ * passing. » It did not assert any of them. Nothing in this file mentioned `startedAt`,
+ * and reverting that hunk leaves the suite green today — which is the shape this repo
+ * keeps finding and which this file's own prose has now been caught by four times: a
+ * comment is not a check.
+ *
+ * What the three properties are worth is visible in what the fixture used to say.
+ * `startedAt` was `now - 22 * MIN` against a 14:30 slot and a `now` pinned at 14:35 —
+ * 14:13, fifteen minutes before the row was created and seventeen before the invite the
+ * product can arm five minutes early — and the transcript, spaced from there, put two of
+ * its nineteen turns and one of its two marks **after `now`**. `TranscriptReader` prints
+ * `receivedAt` as wall clock, so the reader drew a client speaking a minute and a half
+ * into the future under a pill saying the call had been recording for twenty-two minutes,
+ * and every design judgement about the gate and the reader was made against that picture.
+ *
+ * Asked of **every meeting in every scenario**, on both halves of the Entra axis, because
+ * the day the stub stages differs on all three and a fixture is only honest where a
+ * reviewer looks. Both readings are derived, never restated: the scenarios come out of
+ * the stub's own branches, and `now` comes from `pinnedNow.mjs` — the instant `shot.mjs`
+ * pins `page.clock` to and the one `at()` places every row relative to. Passing
+ * `Date.now()` here would make the test's verdict depend on the time of day it runs at,
+ * which has already happened once in this suite.
+ *
+ * It guards itself three ways, because every one of these properties passes by finding
+ * nothing: the enumeration must find scenarios, some meeting must actually carry a
+ * `startedAt` (a day of nulls satisfies every ordering), and the transcript must have
+ * turns in it.
+ */
+test('nothing the fixture stages is dated after the instant the fixture is pinned to', async () => {
+  const source = readFileSync(STUB, 'utf8')
+  const { pinnedNow } = (await import(
+    new URL('../../../../scripts/harness/pinnedNow.mjs', import.meta.url).href
+  )) as { pinnedNow: () => number }
+  const now = pinnedNow()
+
+  const scenarios = [
+    ...new Set([...source.matchAll(/scenario [!=]== '([^']+)'/g)].map((m) => m[1] as string)),
+    '__inconnu__',
+  ].sort()
+  assert.ok(
+    scenarios.length >= 8,
+    `l’énumération des scénarios n’en a trouvé que ${scenarios.length} — le stub a changé de ` +
+      'forme et ce test ne regarde plus rien',
+  )
+
+  type Row = {
+    id: string
+    state: string
+    scheduledStart: number | null
+    createdAt: number
+    startedAt: number | null
+    endedAt: number | null
+    confirmedAt: number | null
+    updatedAt: number
+  }
+  type Mark = { id: string; at: number }
+
+  const installAppBridge = await loadStub()
+  const globals = globalThis as { window?: unknown }
+  const before = globals.window
+
+  /**
+   * Every meeting the day holds, with **its own** record beside it.
+   *
+   * `history:record` is the channel to ask, not `review:transcript`: that one ignores
+   * its `meetingId` and always answers the gate's call, so a test reading it would be
+   * comparing one meeting's turns against another meeting's window and would have to
+   * guess which. A record names the meeting it is for, which removes the guess.
+   */
+  const stage = async (
+    scenario: string,
+    entra: boolean,
+  ): Promise<{ meeting: Row; segments: Segment[]; marks: Mark[] }[]> => {
+    globals.window = { addEventListener: () => {} }
+    try {
+      installAppBridge({ scenario, now, entra })
+      const bridge = (globals.window as { app: { invoke: (c: string, p: unknown) => unknown } }).app
+      const meetings = (await bridge.invoke('meeting:list', {})) as Row[]
+      // Asked together: every responder in the stub answers after `LATENCY`'s tick,
+      // deliberately, and one at a time that is a hundred and thirty sequential
+      // waits — thirty-eight seconds of this suite for no extra coverage.
+      const records = (await Promise.all(
+        meetings.map((row) => bridge.invoke('history:record', { meetingId: row.id })),
+      )) as { meeting?: Row; segments?: Segment[]; marks?: Mark[] }[]
+      return meetings.map((row, index) => ({
+        meeting: records[index]?.meeting ?? row,
+        segments: records[index]?.segments ?? [],
+        marks: records[index]?.marks ?? [],
+      }))
+    } finally {
+      globals.window = before
+    }
+  }
+
+  const offences: string[] = []
+  let everStarted = 0
+  let turns = 0
+  let densities = 0
+  /*
+   * **The density, which is the half a clock cannot see — measured on every record,
+   * not on whichever one the loop looked at last.**
+   *
+   * Nineteen turns of 1 595 characters over 23.5 minutes is 68 characters a minute: a
+   * transcript with 78-second holes in it, which is what every screenshot of the reader
+   * and the gate was taken against. CLAUDE.md's measurement of a real call is 124 765
+   * characters over ninety minutes — 1 386. The band is deliberately wide: what is
+   * refused is an order of magnitude, not a rhythm, and silence is real, so a fixture
+   * between a fifth and twice a real call's density is honest.
+   */
+  const MIN_CHARS_PER_MINUTE = 250
+  const MAX_CHARS_PER_MINUTE = 2_800
+
+  const clock = (at: number): string =>
+    new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(new Date(at))
+
+  for (const scenario of scenarios) {
+    for (const entra of [true, false]) {
+      const where = `${scenario} (entra: ${entra})`
+      const day = await stage(scenario, entra)
+
+      for (const { meeting: m, segments, marks } of day) {
+        if (m.startedAt !== null) everStarted += 1
+        /*
+         * Every instant a row carries, against the pinned present. A row dated in the
+         * future is drawn as one — `meetingAnchor` sorts by it and `DayPane` places it
+         * — so the picture is of a product that has recorded a call that has not
+         * happened.
+         */
+        for (const [what, at] of [
+          ['createdAt', m.createdAt],
+          ['startedAt', m.startedAt],
+          ['endedAt', m.endedAt],
+          ['confirmedAt', m.confirmedAt],
+          ['updatedAt', m.updatedAt],
+        ] as const) {
+          if (at !== null && at > now) {
+            offences.push(`${where} · ${m.id}: ${what} = ${clock(at)}, après l’instant épinglé`)
+          }
+        }
+        // `scheduledStart` is the one that legitimately may be: the day has calls ahead.
+        if (m.startedAt !== null && m.startedAt < m.createdAt) {
+          offences.push(
+            `${where} · ${m.id}: startedAt ${clock(m.startedAt)} précède createdAt ` +
+              `${clock(m.createdAt)} — la ligne aurait été enregistrée avant d’exister`,
+          )
+        }
+        if (m.endedAt !== null && m.startedAt !== null && m.endedAt < m.startedAt) {
+          offences.push(`${where} · ${m.id}: endedAt précède startedAt`)
+        }
+        if (m.confirmedAt !== null && m.endedAt !== null && m.confirmedAt < m.endedAt) {
+          offences.push(`${where} · ${m.id}: confirmedAt précède endedAt`)
+        }
+        if (m.updatedAt < m.createdAt) {
+          offences.push(`${where} · ${m.id}: updatedAt précède createdAt`)
+        }
+        /*
+         * And the one the old fixture broke by seventeen minutes. `ARM_LEAD_MS` is five
+         * minutes, so a recording may legitimately start that far ahead of the slot —
+         * the rep joining early is the case round 26 was about — and no further: arming
+         * *on* a held microphone claims this call is that event.
+         */
+        const ARM_LEAD_MS = 5 * 60_000
+        if (
+          m.startedAt !== null &&
+          m.scheduledStart !== null &&
+          m.startedAt < m.scheduledStart - ARM_LEAD_MS
+        ) {
+          offences.push(
+            `${where} · ${m.id}: startedAt ${clock(m.startedAt)} devance le créneau ` +
+              `${clock(m.scheduledStart)} de plus de cinq minutes — le produit n’arme pas si tôt`,
+          )
+        }
+
+        /*
+         * The record belongs to a call that ran, so every turn lands inside it. The
+         * window is the recorded one where the fixture states an end and the pinned
+         * present where the call is still live.
+         */
+        if (segments.length > 0) {
+          turns += segments.length
+          const from = m.startedAt ?? m.createdAt
+          const to = m.endedAt ?? now
+          for (const seg of segments) {
+            if (seg.receivedAt < from || seg.receivedAt > to) {
+              offences.push(
+                `${where} · ${m.id}/${seg.id}: reçu à ${clock(seg.receivedAt)}, hors de ` +
+                  `[${clock(from)}, ${clock(to)}] — la fenêtre de l’enregistrement`,
+              )
+            }
+          }
+          for (const mark of marks) {
+            if (mark.at < from || mark.at > to) {
+              offences.push(
+                `${where} · ${m.id}/${mark.id}: posée à ${clock(mark.at)}, hors de la ` +
+                  'fenêtre de l’enregistrement',
+              )
+            }
+          }
+          const spanMs =
+            Math.max(...segments.map((s) => s.receivedAt)) -
+            Math.min(...segments.map((s) => s.receivedAt))
+          const chars = segments.reduce((total, s) => total + s.text.length, 0)
+          if (spanMs > 0) {
+            densities += 1
+            const perMinute = chars / (spanMs / 60_000)
+            if (perMinute < MIN_CHARS_PER_MINUTE || perMinute > MAX_CHARS_PER_MINUTE) {
+              offences.push(
+                `${where} · ${m.id}: ${Math.round(perMinute)} caractères par minute de ` +
+                  'transcript — un vrai appel en fait environ 1 386 (CLAUDE.md), et un fixture ' +
+                  'plus clairsemé que le produit flatte toutes les mises en page où il apparaît',
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert.ok(
+    everStarted > 0,
+    'aucune réunion du fixture ne porte de startedAt — toutes ces règles d’ordre sont ' +
+      'satisfaites par une journée de nulls',
+  )
+  assert.ok(turns > 0, 'aucun tour de parole lu — la fenêtre du transcript n’a rien mesuré')
+  assert.ok(densities > 0, 'aucune densité mesurée — la bande ne contraint rien')
+
+  assert.deepEqual(
+    offences,
+    [],
+    'le fixture date quelque chose après l’instant auquel il est épinglé, ou dans un ordre ' +
+      'que le produit ne peut pas produire',
   )
 })

@@ -42,11 +42,39 @@ const serve = (
 const reply = (content: string): unknown => ({ choices: [{ message: { content } }] })
 
 const SCHEMA = z.strictObject({ tjm: z.number(), devise: z.string() })
+/** A one-field shape for the tests that only need to read a value back out. */
+const VILLE = z.strictObject({ ville: z.string() })
 
-test('complete returns the trimmed reply', async () => {
-  const { fetch, calls } = serve(reply('  TJM 520 €  '))
+/**
+ * **`structured` is the whole port, so the transport tests drive it.**
+ *
+ * They drove `complete` — a second verb no caller in the product ever reached,
+ * declared on `LlmPort`, implemented here, and kept alive by *these seventeen calls
+ * and nothing else*. That was the argument for leaving it in `check-ports`'
+ * `UNWIRED` for a round: moving these tests onto `structured` « folds schema parsing
+ * into tests whose whole job is to check that a 429 becomes a `quota` error ». It
+ * does not, because the schema can be permissive: `ANY` accepts whatever arrives,
+ * so what is measured on these paths stays the HTTP status, the stream and the
+ * deadline. The validation has its own tests above, with a schema that bites.
+ */
+const ANY = z.unknown()
+const ask = (
+  llm: OpenAiCompatibleLlm,
+  over: {
+    input?: string
+    timeoutMs?: number
+    signal?: AbortSignal
+    maxOutputTokens?: number
+  } = {},
+) => llm.structured({ instructions: 'i', input: 'u', schema: ANY, ...over })
+
+test('the request goes to the configured url, with the configured model', async () => {
+  const { fetch, calls } = serve(reply('{"tjm":520,"devise":"EUR"}'))
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  assert.equal(await llm.complete({ instructions: 'i', input: 'u' }), 'TJM 520 €')
+  assert.deepEqual(await llm.structured({ instructions: 'i', input: 'u', schema: SCHEMA }), {
+    tjm: 520,
+    devise: 'EUR',
+  })
   assert.equal(calls[0]?.url, ENDPOINT.chatUrl)
   assert.equal((calls[0]?.body as { model?: string }).model, 'mistral-small')
 })
@@ -55,9 +83,9 @@ test('a local server with no key is never sent an empty bearer', async () => {
   let headers: Record<string, string> = {}
   const fetch: FetchLike = async (_url, request) => {
     headers = request.headers
-    return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(reply('ok')) }
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(reply('{}')) }
   }
-  await new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch }).complete({ instructions: 'i', input: 'u' })
+  await ask(new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch }))
   assert.equal(headers.Authorization, undefined)
 })
 
@@ -153,7 +181,7 @@ test('a server that promised schema enforcement is still revalidated', async () 
 test('401 is an auth failure and is not retryable', async () => {
   const { fetch } = serve({ error: { message: 'Invalid API key' } }, { ok: false, status: 401 })
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  const error = await llm.complete({ instructions: 'i', input: 'u' }).then(() => null, (e: unknown) => e)
+  const error = await ask(llm).then(() => null, (e: unknown) => e)
   assert.ok(error instanceof LlmError)
   assert.equal(error instanceof LlmError ? error.kind : '', 'auth')
   assert.equal(error instanceof LlmError ? error.retryable : true, false)
@@ -166,7 +194,7 @@ test('429 and 5xx are retryable', async () => {
   ] as const) {
     const { fetch } = serve({}, { ok: false, status })
     const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-    const error = await llm.complete({ instructions: 'i', input: 'u' }).then(() => null, (e: unknown) => e)
+    const error = await ask(llm).then(() => null, (e: unknown) => e)
     assert.ok(error instanceof LlmError, String(status))
     assert.equal(error instanceof LlmError ? error.kind : '', kind)
     assert.equal(error instanceof LlmError ? error.retryable : false, true)
@@ -176,7 +204,7 @@ test('429 and 5xx are retryable', async () => {
 test('a 404 on the model name is not retryable — the request caused it', async () => {
   const { fetch } = serve({ error: { message: 'model not found' } }, { ok: false, status: 404 })
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  const error = await llm.complete({ instructions: 'i', input: 'u' }).then(() => null, (e: unknown) => e)
+  const error = await ask(llm).then(() => null, (e: unknown) => e)
   assert.equal(error instanceof LlmError ? error.retryable : true, false)
   assert.match(error instanceof Error ? error.message : '', /model not found/)
 })
@@ -186,7 +214,7 @@ test('a dead server is a network failure, and is retryable', async () => {
     throw new Error('ECONNREFUSED')
   }
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  const error = await llm.complete({ instructions: 'i', input: 'u' }).then(() => null, (e: unknown) => e)
+  const error = await ask(llm).then(() => null, (e: unknown) => e)
   assert.equal(error instanceof LlmError ? error.kind : '', 'network')
   assert.equal(error instanceof LlmError ? error.retryable : false, true)
 })
@@ -197,9 +225,7 @@ test('a provider that never answers times out rather than holding the rail', asy
       request.signal?.addEventListener('abort', () => reject(new Error('aborted')))
     })
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  const error = await llm
-    .complete({ instructions: 'i', input: 'u', timeoutMs: 10 })
-    .then(() => null, (e: unknown) => e)
+  const error = await ask(llm, { timeoutMs: 10 }).then(() => null, (e: unknown) => e)
   assert.ok(error instanceof LlmError)
   assert.equal(error instanceof LlmError ? error.kind : '', 'timeout')
   assert.equal(error instanceof LlmError ? error.retryable : false, true)
@@ -212,9 +238,10 @@ test('the rep cancelling is not reported as a provider failure', async () => {
       request.signal?.addEventListener('abort', () => reject(new Error('aborted by caller')))
     })
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  const pending = llm
-    .complete({ instructions: 'i', input: 'u', signal: controller.signal, timeoutMs: 5_000 })
-    .then(() => null, (e: unknown) => e)
+  const pending = ask(llm, { signal: controller.signal, timeoutMs: 5_000 }).then(
+    () => null,
+    (e: unknown) => e,
+  )
   controller.abort()
   const error = await pending
   // Rethrown as-is: no `LlmError`, so `llmHealth` never sees it and the rail
@@ -223,10 +250,26 @@ test('the rep cancelling is not reported as a provider failure', async () => {
   assert.equal(error instanceof LlmError, false)
 })
 
-test('an empty reply is an error, not an empty string handed to the rail', async () => {
-  const { fetch } = serve(reply(''))
+test('a 200 with nothing in it is a retryable failure, not a schema failure', async () => {
+  /*
+   * **The guard moved from `complete` into `#chat`, and it is stronger there.**
+   *
+   * `complete` is gone; `structured` used to reach `jsonText('')`, get `null` and
+   * raise `LlmSchemaError` — « le modèle n'a pas renvoyé de JSON », `retryable:
+   * false` — which is a statement about the shape of a reply there was none of, and
+   * abandoned an extraction on a blip the outbox would have cleared.
+   *
+   * `LlmSchemaError extends LlmError`, so `e instanceof LlmError` is satisfied by
+   * *both* behaviours and is the assertion this test used to make. It is asserted
+   * against here, along with the two properties that actually differ.
+   */
+  const { fetch } = serve(reply('   '))
   const llm = new OpenAiCompatibleLlm({ endpoint: ENDPOINT, fetch })
-  await assert.rejects(llm.complete({ instructions: 'i', input: 'u' }), (e: unknown) => e instanceof LlmError)
+  const error = await ask(llm).then(() => null, (e: unknown) => e)
+  assert.ok(error instanceof LlmError)
+  assert.equal(error instanceof LlmSchemaError, false, 'an empty body is not a bad shape')
+  assert.equal(error.kind, 'unknown')
+  assert.equal(error.retryable, true)
 })
 
 test('contentOf tolerates the array-of-parts shape some servers return', () => {
@@ -270,9 +313,12 @@ const sse = (...events: unknown[]): string =>
 const delta = (text: string) => ({ type: 'response.output_text.delta', delta: text })
 
 test('the Responses body carries store:false and stream:true, and no token ceiling', async () => {
-  const { fetch, calls } = serve(sse(delta('Paris')))
+  const { fetch, calls } = serve(sse(delta('{"ville":"Paris"}')))
   const llm = new OpenAiCompatibleLlm({ endpoint: CHATGPT, fetch })
-  assert.equal(await llm.complete({ instructions: 'i', input: 'q', maxOutputTokens: 512 }), 'Paris')
+  assert.deepEqual(
+    await llm.structured({ instructions: 'i', input: 'q', schema: VILLE, maxOutputTokens: 512 }),
+    { ville: 'Paris' },
+  )
 
   const body = calls[0]?.body as Record<string, unknown>
   // « Store must be set to false » — and omitting it is a 400, not a default.
@@ -292,15 +338,15 @@ test('the grant is resolved per request, so a rotation is picked up without a re
   const seen: string[] = []
   const fetch: FetchLike = async (_url, request) => {
     seen.push(request.headers.Authorization ?? '')
-    return { ok: true, status: 200, headers: { get: () => null }, text: async () => sse(delta('ok')) }
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => sse(delta('{}')) }
   }
   const llm = new OpenAiCompatibleLlm({
     endpoint: { ...CHATGPT, apiKey: () => token },
     fetch,
   })
-  await llm.complete({ instructions: 'i', input: 'q' })
+  await ask(llm)
   token = 'second'
-  await llm.complete({ instructions: 'i', input: 'q' })
+  await ask(llm)
 
   assert.deepEqual(seen, ['Bearer first', 'Bearer second'])
 })
@@ -320,7 +366,7 @@ test('an expired grant is an auth failure with its own sentence, not an anonymou
     },
     fetch,
   })
-  const error = await llm.complete({ instructions: 'i', input: 'q' }).catch((e: unknown) => e)
+  const error = await ask(llm).catch((e: unknown) => e)
   assert.ok(error instanceof LlmError)
   assert.equal(error.kind, 'auth')
   assert.equal(error.retryable, false)
@@ -363,7 +409,7 @@ test('a stream that fails mid-flight is an error, not an empty completion', asyn
   // pas répondu » about a provider that answered with a refusal.
   const { fetch } = serve(sse(delta('partie'), { type: 'response.failed', response: { error: { message: 'quota' } } }))
   const llm = new OpenAiCompatibleLlm({ endpoint: CHATGPT, fetch })
-  const error = await llm.complete({ instructions: 'i', input: 'q' }).catch((e: unknown) => e)
+  const error = await ask(llm).catch((e: unknown) => e)
   assert.ok(error instanceof LlmError)
   assert.match(error.message, /quota/)
 })
@@ -372,20 +418,24 @@ test('the terminal event is read when a gateway sends no deltas at all', async (
   const { fetch } = serve(
     sse({
       type: 'response.completed',
-      response: { output: [{ content: [{ type: 'output_text', text: 'Paris' }] }] },
+      response: { output: [{ content: [{ type: 'output_text', text: '{"ville":"Paris"}' }] }] },
     }),
   )
   const llm = new OpenAiCompatibleLlm({ endpoint: CHATGPT, fetch })
-  assert.equal(await llm.complete({ instructions: 'i', input: 'q' }), 'Paris')
+  assert.deepEqual(await llm.structured({ instructions: 'i', input: 'q', schema: VILLE }), {
+    ville: 'Paris',
+  })
 })
 
 test('a Responses endpoint answering with one object is read too', async () => {
   // `stream: false` is refused by the ChatGPT endpoint but is the normal mode
   // of the Responses API itself. A parser that only handled what we currently
   // ask for would break the moment this dialect met `api.openai.com`.
-  const { fetch } = serve({ output: [{ content: [{ type: 'output_text', text: 'Paris' }] }] })
+  const { fetch } = serve({ output: [{ content: [{ type: 'output_text', text: '{"ville":"Paris"}' }] }] })
   const llm = new OpenAiCompatibleLlm({ endpoint: CHATGPT, fetch })
-  assert.equal(await llm.complete({ instructions: 'i', input: 'q' }), 'Paris')
+  assert.deepEqual(await llm.structured({ instructions: 'i', input: 'q', schema: VILLE }), {
+    ville: 'Paris',
+  })
 })
 
 test('the endpoint’s own words survive a 400 — `detail`, not just `error.message`', async () => {
@@ -398,7 +448,7 @@ test('the endpoint’s own words survive a 400 — `detail`, not just `error.mes
     { ok: false, status: 400 },
   )
   const llm = new OpenAiCompatibleLlm({ endpoint: CHATGPT, fetch })
-  const error = await llm.complete({ instructions: 'i', input: 'q' }).catch((e: unknown) => e)
+  const error = await ask(llm).catch((e: unknown) => e)
   assert.ok(error instanceof LlmError)
   assert.match(error.message, /not supported when using Codex/)
   assert.equal(error.retryable, false)

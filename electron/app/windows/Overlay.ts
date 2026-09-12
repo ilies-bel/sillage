@@ -118,6 +118,20 @@ export const EXIT_FALLBACK_MS = 500
 export const FIRST_FRAME_MS = 300
 
 /**
+ * What the hop costs, once the two waits share an origin — see `Overlay.measuring`.
+ *
+ * `FIRST_FRAME_MS` is 300 against the renderer's 200 and the hundred between them was
+ * doing two jobs: covering one IPC round trip, and covering the unmeasured gap between
+ * `ready-to-show` in this process and the React mount in the other (81 ms and 47 ms,
+ * measured). Once the renderer states its deadline from its own mount only the first
+ * job is left, and forty milliseconds is an order of magnitude more than a preload hop
+ * on the machine this was measured on. It stays a number here rather than becoming
+ * zero because it is a real cost and pretending otherwise is how a margin becomes a
+ * race.
+ */
+export const FIRST_FRAME_SLACK_MS = 40
+
+/**
  * The ceiling on the widget appearing **at all**, armed at creation.
  *
  * `FIRST_FRAME_MS` above calls itself « a deadline and never a requirement »,
@@ -247,6 +261,12 @@ export class Overlay {
   #shown = false
   #reveal: ReturnType<typeof setTimeout> | null = null
   /**
+   * When `#reveal` is due, so `measuring()` can refuse to bring it forward — a
+   * `setTimeout` handle does not answer that and a deadline that can move *in* is a
+   * deadline that reveals `INITIAL_SIZE` sooner than the one it replaced.
+   */
+  #revealAt: number | null = null
+  /**
    * The ceiling on appearing at all — see `APPEARANCE_MS`. Armed at creation,
    * which is the half `#reveal` cannot be: it is armed by the first paint, so it
    * has nothing to say about a renderer that never paints.
@@ -321,6 +341,7 @@ export class Overlay {
     this.#measured = false
     this.#shown = false
     this.#forced = false
+    this.#revealAt = null
     const origin = placeWindow(this.#saved(), this.#size, this.#host.areas())
     const window = this.#host.create({ ...this.#size, ...origin })
     this.#window = window
@@ -410,17 +431,66 @@ export class Overlay {
        * budget on the renderer booting and reveal the guess on a slow machine —
        * which is the machine this matters on. See `FIRST_FRAME_MS`.
        */
-      this.#reveal ??= setTimeout(() => {
-        /*
-         * Cleared **before** the call, not by it: `#show` treats a live timer as « the
-         * wait is still running » and would refuse the very deadline that fired it. An
-         * expired timer holds a reference that is no longer a promise about anything.
-         */
-        this.#reveal = null
-        this.#show(window)
-      }, FIRST_FRAME_MS)
+      if (this.#reveal === null) {
+        this.#revealAt = Date.now() + FIRST_FRAME_MS
+        this.#reveal = setTimeout(() => {
+          /*
+           * Cleared **before** the call, not by it: `#show` treats a live timer as « the
+           * wait is still running » and would refuse the very deadline that fired it. An
+           * expired timer holds a reference that is no longer a promise about anything.
+           */
+          this.#reveal = null
+          this.#show(window)
+        }, FIRST_FRAME_MS)
+      }
       this.#show(window)
     })
+  }
+
+  /**
+   * **The renderer says when its own clock started, and this deadline moves onto it.**
+   *
+   * `#reveal` is armed by `ready-to-show` and the renderer's `MEASURE_DEADLINE_MS` by
+   * its React mount, so the hundred milliseconds between the two constants was a
+   * hundred *minus the gap between those two events* — measured on this Mac at 81 ms
+   * and 47 ms across two launches, so 19 and 53 of real margin, on the critical path
+   * of `startRecording` where two audio devices are opening and a transcriber is
+   * booting. Lose it and the side with the worse answer decides: what this timer
+   * reveals is `INITIAL_SIZE`, 232×52, forty-nine pixels narrower than the pill and
+   * carrying « Aucun enregistrement » over a live call. `harnessFixture.test.ts` holds
+   * the four constants in order and cannot see it, because an order between constants
+   * is not an order between expiries when the origins differ.
+   *
+   * `withinMs` is the renderer's own number, sent one IPC hop ago, so re-arming from
+   * *now* makes the two waits share an origin — the renderer's mount — and the
+   * ordering true by construction. `FIRST_FRAME_SLACK_MS` is what the hop and the
+   * reply cost, and it is deliberately smaller than the 100 ms it replaces: that
+   * figure was carrying an unmeasured gap as well as the hop.
+   *
+   * Three things it must not become. It never *shortens* the wait — `Math.max` against
+   * what is already pending — because a renderer reporting a deadline it has nearly
+   * spent must not bring the reveal forward onto the guess. It is ignored once the
+   * window has been shown or the ceiling has fired, because at that point the question
+   * is settled and re-arming would be a promise about a window already on screen. And
+   * it is **not** load-bearing: a renderer that never sends it keeps the
+   * `ready-to-show` deadline, and `APPEARANCE_MS` is above both (DEC-26).
+   */
+  measuring(withinMs: number): boolean {
+    const window = this.#window
+    if (!window || window.isDestroyed()) return false
+    if (this.#shown || this.#forced) return false
+    const at = Date.now() + withinMs + FIRST_FRAME_SLACK_MS
+    // Never earlier than what is already pending: an origin that moved the deadline
+    // *in* would reveal the guess sooner than the current one would have.
+    if (this.#revealAt !== null && at <= this.#revealAt) return false
+    if (this.#reveal !== null) clearTimeout(this.#reveal)
+    this.#revealAt = at
+    this.#reveal = setTimeout(() => {
+      // Cleared before the call, for the reason the `ready-to-show` arming states.
+      this.#reveal = null
+      this.#show(window)
+    }, at - Date.now())
+    return true
   }
 
   /**
@@ -536,7 +606,18 @@ export class Overlay {
     // `#forced` is `APPEARANCE_MS` having passed, which is the only thing that
     // makes the paint optional — see the constant.
     if (!this.#painted && !this.#forced) return
-    if (!this.#measured && this.#reveal !== null) return
+    /*
+     * **`#forced` outranks the measurement wait too, and it did not.**
+     *
+     * `APPEARANCE_MS`'s docblock calls itself « the ceiling on the widget appearing at
+     * all », and this line let the *other* wait outlive it: `#reveal` is armed by
+     * `ready-to-show`, so a paint landing just before the ceiling pushed the reveal to
+     * `ready + FIRST_FRAME_MS`. Measured on the shipped class — paint at +988 ms
+     * against a 1 000 ms ceiling, window shown at **+1 289 ms**. A constant whose
+     * docblock states a promise the code does not keep, in the file where that shape
+     * has already been found twice.
+     */
+    if (!this.#measured && this.#reveal !== null && !this.#forced) return
     this.#shown = true
     this.#disarm()
     window.showInactive()
@@ -548,6 +629,7 @@ export class Overlay {
       clearTimeout(this.#reveal)
       this.#reveal = null
     }
+    this.#revealAt = null
     if (this.#ceiling !== null) {
       clearTimeout(this.#ceiling)
       this.#ceiling = null

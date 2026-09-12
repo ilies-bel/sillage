@@ -45,6 +45,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { installAppBridge } from './bridge-stub.mjs'
 import { fileURLToPath } from 'node:url'
+import { pinnedNow } from './pinnedNow.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(path.join(REPO, 'package.json'))
@@ -83,30 +84,6 @@ const OPEN_ROW = /^(Ouvrir|Enregistrer)$/
 const DETECTOR =
   process.env.IMPECCABLE_DETECTOR ??
   path.join(os.homedir(), '.claude/skills/impeccable/scripts/detector/detect-antipatterns-browser.js')
-
-/**
- * The clock, pinned.
- *
- * Today's date at 14:35 Paris. Fixed so the calendar always opens on a plausible
- * mid-afternoon — the armed meeting has just started, two calls are behind and
- * two ahead — and so two runs of the same screen produce the same pixels.
- * `page.clock.setFixedTime` freezes `Date.now()` but leaves timers running,
- * which the 200 ms search debounce needs.
- */
-const pinnedNow = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const read = Object.fromEntries(parts.map((p) => [p.type, p.value]))
-  // 14:35 Paris = 12:35Z in summer, 13:35Z in winter. Resolve it by measuring.
-  const guess = Date.UTC(Number(read.year), Number(read.month) - 1, Number(read.day), 14, 35)
-  const shown = new Date(guess).toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false })
-  const offsetHours = new Date(shown).getHours() - 14
-  return guess - offsetHours * 3_600_000
-}
 
 /**
  * Open the gate, expand the nth field's source and follow it into the record.
@@ -2079,7 +2056,7 @@ async function main() {
    *     /dev/null --no-png --motion
    *
    * must exit **10** on every stage, and it now also exits **11** — with the
-   * probe named — if any one of its five attacks provoked nothing. It exited 0 on
+   * probe named — if any one of its eight attacks provoked nothing. It exited 0 on
    * all five widget stages for a round, which is the finding below.
    */
   if (process.env.SILLAGE_MOTION_ATTACK) {
@@ -2094,18 +2071,28 @@ async function main() {
      * page and the run exited 0. The stage where the exit animation this rule was
      * written for actually lives was the one stage the attack could not reach.
      *
-     * Five probes, each aimed at a hole the rule has had:
+     * Eight probes that must fire and one that must not, each aimed at a hole the
+     * rule has had — and **every one of them asserted by the name of the element it
+     * created**, because a count cannot say which shape stopped being seen:
      *
      *   1. a literal 777 ms duration                    → `offToken`
      *   2. a `steps(9)` curve in `animation-timing-function`, which a check
      *      reading `transition-timing-function` cannot see → `offCurve`
      *   3. a transition on a `::after`, out of reach of `querySelectorAll`
-     *   4. three departures on an arrival curve: a **child** of the leaving
+     *   4. four departures on an arrival curve: a **child** of the leaving
      *      element (the class name says nothing), a **`@keyframes`** exit (neither
-     *      half of the old rule could see inside one), and an **`<svg>`** (whose
-     *      `className.toString()` is the literal `"[object SVGAnimatedString]"`)
-     *   5. an infinite animation, which must still be moving under
-     *      `prefers-reduced-motion`
+     *      half of the old rule could see inside one), a **`to`-only `@keyframes`**
+     *      (the census read declaration order and saw no exit at all), and an
+     *      **`<svg>`** (whose `className.toString()` is the literal
+     *      `"[object SVGAnimatedString]"`)
+     *   5. a looping animation **on its own element and on a literal duration**,
+     *      which `prefers-reduced-motion` cannot collapse. It had neither: it rode
+     *      on probe 1's element, and `persisting.length > 0` was satisfied by that
+     *      element's 777 ms *transition* — so deleting `infinite` from the attack
+     *      left the self-test reporting « les cinq attaques signalées » with no
+     *      infinite animation anywhere on the page. Measured. A token duration
+     *      cannot serve here either: `var(--motion)` is `0ms` there, which is the
+     *      correct behaviour and the opposite of what this probe must provoke.
      *   6. and one that must stay **silent**: an element wearing Tailwind's own
      *      `ease-out` utility (`tailwind.config.js:165`) while genuinely
      *      arriving. The first version of the direction rule read the class name
@@ -2115,7 +2102,7 @@ async function main() {
      *      can only fail loudly cannot prove it does not fire, so this probe is
      *      asserted the other way round.
      *
-     * The curve on the three departures is `cubic-bezier(0.22, 1, 0.36, 0.99)` —
+     * The curve on the four departures is `cubic-bezier(0.22, 1, 0.36, 0.99)` —
      * the near-identical respelling of `--ease-out` that defeated the token
      * comparison, measured at 0.768 / 0.278 / 0.018 opacity on the shipped
      * element, which is the same blink. So the attack proves the *shape* rule and
@@ -2128,16 +2115,28 @@ async function main() {
     await page.addStyleTag({ content: `
       @keyframes sillage-attack-spin { from { opacity: 1 } to { opacity: .5 } }
       @keyframes sillage-attack-leave { from { opacity: 1 } to { opacity: 0 } }
+      /* Probe 7: the whole fade in one \`to\`, which is what the census used to
+         read as no fade at all. No \`opacity: 0\` in any style rule and no inline
+         style, so the keyframes census is the only signal that can find it. */
+      @keyframes sillage-attack-to-only { to { opacity: 0 } }
       #sillage-attack-litteral {
         animation: sillage-attack-spin var(--motion) steps(9) infinite !important;
         transition: opacity 777ms linear !important }
       #sillage-attack-litteral::after { content:"[X]"; display:inline-block;
         transition: opacity 777ms linear !important }
+      /* Probe 5 on its own element and on a **literal** duration, which is the
+         whole point of it: \`var(--motion)\` is \`0ms\` under reduced motion, so an
+         infinite animation wearing the token contributes nothing to \`persisting\`
+         and the probe was reading probe 1's 777 ms transition instead. */
+      #sillage-attack-infini {
+        animation: sillage-attack-spin 1200ms linear infinite !important }
       .sillage-attack-leaving > * {
         opacity: 0;
         transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
       #sillage-attack-keyframe {
         animation: sillage-attack-leave var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) forwards !important }
+      #sillage-attack-to {
+        animation: sillage-attack-to-only var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) forwards !important }
       #sillage-attack-svg {
         opacity: 0;
         transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
@@ -2158,10 +2157,17 @@ async function main() {
         return el
       }
       add('sillage-attack-litteral')
+      add('sillage-attack-infini')
       // The child carries the fade; the parent carries only the marker, which is
-      // exactly the shape that made the class-name rule blind.
-      add(null, 'sillage-attack-leaving').append(document.createElement('span'))
+      // exactly the shape that made the class-name rule blind. Its own class says
+      // `enfant` and never `leaving`, so naming it in the assertion below costs the
+      // probe nothing — what it proves is that the *selector* found it.
+      const parent = add(null, 'sillage-attack-leaving')
+      const child = document.createElement('span')
+      child.className = 'sillage-attack-enfant'
+      parent.append(child)
       add('sillage-attack-keyframe')
+      add('sillage-attack-to')
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
       svg.id = 'sillage-attack-svg'
       svg.setAttribute('width', '8')
@@ -2370,8 +2376,55 @@ async function main() {
           undeclared.some((m) => m.what.includes('::after')),
           'une transition sur un ::after, hors de portée de querySelectorAll',
         ],
-        [backwards.length >= 3, 'trois départs sur une courbe d’arrivée : un enfant, un @keyframes, un SVG'],
-        [persisting.length > 0, 'une animation infinie encore en mouvement sous prefers-reduced-motion'],
+        /*
+         * **Each departure named, because a count could not say which shape stopped
+         * being seen.** It was `backwards.length >= 3`, and the three shapes are the
+         * three holes the direction rule has had: any one of them going quiet while
+         * another over-reported held the threshold. The `to`-only keyframes is the
+         * fourth and is the one the census used to miss entirely.
+         */
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-enfant')),
+          'un départ déclaré sur l’enfant de l’élément qui part (le nom de classe ne dit rien)',
+        ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-keyframe')),
+          'un départ écrit dans un @keyframes from/to',
+        ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-to')),
+          'un départ écrit dans un @keyframes n’ayant qu’un « to » — le recensement lisait ' +
+            'l’ordre de déclaration et n’y voyait aucune sortie',
+        ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-svg')),
+          'un départ sur un <svg>, dont className.toString() est « [object SVGAnimatedString] »',
+        ],
+        /*
+         * **On its own element, named, and described by what `persisting` can
+         * actually measure.**
+         *
+         * It was `persisting.length > 0` with the animation riding on probe 1's
+         * element — and that element also carries a literal `777ms` *transition*,
+         * which survives reduced motion for reasons that have nothing to do with this
+         * probe. So deleting `infinite` from the attack outright left the self-test
+         * reporting « les cinq attaques signalées » with no infinite animation
+         * anywhere on the page. Measured.
+         *
+         * And the probe's own claim was loose: `persisting` is built from
+         * `animation-duration` and `transition-duration`, so it measures a duration
+         * the media query failed to collapse, never an element observed in motion —
+         * removing `infinite` from *this* element still leaves `1200ms` declared and
+         * still, correctly, a finding. `infinite` stays because it is the shape the
+         * rule is about; what the probe asserts is the literal duration, which is the
+         * thing `prefers-reduced-motion` cannot reach. A token duration cannot serve:
+         * `var(--motion)` is `0ms` there, which is the whole point of the token.
+         */
+        [
+          persisting.some((m) => m.what.includes('sillage-attack-infini')),
+          'une animation en boucle sur une durée littérale (1200 ms), que ' +
+            'prefers-reduced-motion ne peut pas réduire',
+        ],
         /*
          * The silent one, asserted as an absence. `#sillage-attack-arrivee` wears
          * `transition ease-out duration-150` and is arriving: nothing about it is
@@ -2394,7 +2447,9 @@ async function main() {
         for (const what of missed) console.log(`     jamais signalé : ${what}`)
         process.exitCode = 11
       } else {
-        console.log('  auto-test du mouvement: les cinq attaques signalées, la sixième restée muette')
+        console.log(
+          '  auto-test du mouvement: les huit attaques signalées, la neuvième restée muette',
+        )
       }
     }
   }
@@ -3425,16 +3480,51 @@ async function motion(page) {
               leavingSelectors.push(rule.selectorText)
             }
           } else if (rule.type === CSSRule.KEYFRAMES_RULE) {
-            // First and last offset, by declared order — `from`/`0%` and
-            // `to`/`100%` are the two ends whatever they are spelled as.
-            const frames = [...rule.cssRules]
-            const opacityAt = (frame) => {
+            /*
+             * **Sorted by offset, and an endpoint the keyframes does not declare is
+             * the element's own opacity.**
+             *
+             * This read `cssRules[0]` and `cssRules[length - 1]` — *declaration*
+             * order — and asked `last < (first ?? 1)`. Four spellings of one fade-out
+             * were therefore invisible, and rewriting the product's own exit as any of
+             * them took the widget out of the direction rule with every check still
+             * green, because a keyframes the census does not recognise makes
+             * `leavingHere` answer false and `wrongWay` is then never asked:
+             *
+             *   · `{ to { opacity: 0 } }` — one frame is both ends, so `0 < 0` is false
+             *   · `{ to { opacity: 0 } from { opacity: 1 } }` — legal CSS, read backwards
+             *   · `{ 100% { opacity: 0 } 0% { opacity: 1 } }` — the same, in percentages
+             *   · `{ 0%, 100% { … } }` — one `keyText` carrying two offsets, so neither
+             *     `frames[0]` nor `frames[last]` is the end it looks like
+             *
+             * `keyText` is parsed rather than positioned (`from` → 0, `to` → 100, the
+             * list split), the frames that declare an opacity are sorted by offset, and
+             * an end nothing declares is the element's own — 1, which is what makes a
+             * `to`-only fade-out read as the departure it is. A `0%, 100% { opacity: 1 }`
+             * pulse still reads as no departure, because both its ends are declared.
+             */
+            const declared = []
+            for (const frame of rule.cssRules) {
               const value = frame?.style?.getPropertyValue('opacity')?.trim()
-              return value === '' || value == null ? null : Number.parseFloat(value)
+              if (value === '' || value == null) continue
+              const opacity = Number.parseFloat(value)
+              if (Number.isNaN(opacity)) continue
+              for (const key of (frame.keyText ?? '').split(',')) {
+                const text = key.trim()
+                const offset = text === 'from' ? 0 : text === 'to' ? 100 : Number.parseFloat(text)
+                if (Number.isNaN(offset)) continue
+                declared.push({ offset, opacity })
+              }
             }
-            const first = opacityAt(frames[0])
-            const last = opacityAt(frames[frames.length - 1])
-            if (last !== null && last < (first ?? 1)) leavingKeyframes.add(rule.name)
+            if (declared.length > 0) {
+              declared.sort((a, b) => a.offset - b.offset)
+              const OWN_OPACITY = 1
+              const head = declared[0]
+              const tail = declared[declared.length - 1]
+              const start = head.offset === 0 ? head.opacity : OWN_OPACITY
+              const end = tail.offset === 100 ? tail.opacity : OWN_OPACITY
+              if (end < start) leavingKeyframes.add(rule.name)
+            }
           }
           if (rule.cssRules && rule.type !== CSSRule.KEYFRAMES_RULE) walk(rule.cssRules)
         }
@@ -3562,9 +3652,13 @@ async function motion(page) {
          * a rule in the cascade that sets `opacity: 0` (so `.widget-leaving`, and
          * `.widget-leaving > *`, and anything else, matched by the selector rather
          * than by a name); a `@keyframes` whose progression ends more transparent
-         * than it starts, matched on `animation-name`; and a computed `opacity` of
-         * exactly `0` under a live duration, which needs no declaration anywhere
-         * and catches an inline style. None of the three can read an SVG wrongly,
+         * than it starts, matched on `animation-name`; and an **inline**
+         * `opacity: 0` beside an inline `transition` or `animation`, which no
+         * stylesheet declares. The third is deliberately inline and not *computed*:
+         * a computed zero under a live duration is exactly the reveal-on-hover
+         * button two paragraphs above, resting at zero and arriving, and reading it
+         * would hand back the seven false findings this rule was built to lose.
+         * None of the three can read an SVG wrongly,
          * because none of them reads a class name, and none of them fires on
          * Tailwind's `ease-out` utility, because that utility sets a timing
          * function and nothing else.

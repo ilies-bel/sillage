@@ -1,18 +1,29 @@
 /**
  * `LlmPort` — what the app asks a language model for, in the app's own words.
  *
- * Two verbs, because there are exactly two jobs and they have opposite budgets:
+ * **One verb, and it is `structured`.** Every reply this product accepts from a
+ * model is held to a Zod schema the caller supplies: that is what makes
+ * `LlmInterpretation`'s missing fields load-bearing (DEC-7), what lets the
+ * extraction fail at the boundary rather than downstream, and what `AskDraftSchema`
+ * rests on when it refuses an answer with no citation (DEC-21).
  *
- *   `complete`    short, cheap, ~1 call per minute *during* a live call
- *                 (`modules/signals/`). Latency is the requirement; a slow
- *                 answer is a wrong answer, because the rail is a side surface
- *                 the rep glances at (DEC-14).
- *   `structured`  one large call at the end (`modules/extract/`), held to a
- *                 schema the caller supplies. Correctness is the requirement.
+ * **There were two, and the second was `complete` — a prose channel with no
+ * schema, declared, implemented, unit-tested seventeen times and called by
+ * nothing.** `npm run check:ports` found it the round it stopped asking about one
+ * port out of nine, and it was then left in `UNWIRED` for a round as « declared
+ * debt » on the argument that `OpenAiCompatibleLlm`'s HTTP-error tests drove
+ * `#chat` through it. That argument was wrong in the way this repo keeps being
+ * wrong: the seventeen calls were *all* in that one test file, so the tests were
+ * the only thing holding up the verb, and the docblock here said « two verbs,
+ * because there are exactly two jobs » — false documentation of the contract every
+ * adapter implements, with standing permission for an un-schema'd reply attached to
+ * it. The rail was the job it named, and `SignalExtractor` carries a section headed
+ * « Why `structured` and not `complete` »; the latency argument survives as
+ * `timeoutMs` below, which is where it belonged.
  *
- * There is no third verb and no streaming verb. Nothing an LLM produces is ever
- * written into the rep's document while the call runs (DEC-5), so there is no
- * surface that would consume tokens as they arrive.
+ * There is no streaming verb either. Nothing an LLM produces is ever written into
+ * the rep's document while the call runs (DEC-5), so there is no surface that would
+ * consume tokens as they arrive.
  *
  * **No provider vocabulary lives here.** No `model`, no `messages`, no roles, no
  * `temperature`, no key. Those belong to whichever adapter is wired in — which
@@ -33,9 +44,11 @@ export interface LlmRequest {
   /** Upper bound on the reply. Omitted, the adapter picks a sane ceiling. */
   maxOutputTokens?: number
   /**
-   * Hard deadline. `complete` is called during a live call, so it must fail
-   * fast rather than block the rail behind a provider that has stopped
-   * answering.
+   * Hard deadline. The signal rail asks during a live call, so it must fail fast
+   * rather than block behind a provider that has stopped answering: a slow answer
+   * is a wrong answer on a surface the rep only glances at (DEC-14). The
+   * end-of-meeting extraction is the opposite budget and is allowed to think,
+   * which is why the number is the caller's and not the port's.
    */
   timeoutMs?: number
   /** Cancellation, e.g. the meeting ended while a signal call was in flight. */
@@ -59,9 +72,7 @@ export interface LlmStructuredRequest<T> extends LlmRequest {
 }
 
 export interface LlmPort {
-  /** Short and fast. Returns the reply text, trimmed. */
-  complete(request: LlmRequest): Promise<string>
-  /** Large and validated. Returns the parsed value, or throws `LlmSchemaError`. */
+  /** Validated against the caller's schema. Returns the parsed value, or throws `LlmSchemaError`. */
   structured<T>(request: LlmStructuredRequest<T>): Promise<T>
 }
 

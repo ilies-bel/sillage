@@ -31,6 +31,7 @@ import {
   APPEARANCE_MS,
   EXIT_FALLBACK_MS,
   FIRST_FRAME_MS,
+  FIRST_FRAME_SLACK_MS,
   INITIAL_SIZE,
   Overlay,
   type OverlayHost,
@@ -660,4 +661,150 @@ test('une nouvelle pastille emporte celle qui s’en allait, au lieu de s’y su
   // `destroy()` on a window that already has none.
   t.mock.timers.tick(EXIT_FALLBACK_MS * 2)
   assert.equal(staging.overlay.left(150), false, 'une fenêtre sortante est restée en attente')
+})
+
+test('the appearance ceiling is a ceiling, including over the measurement wait', (t) => {
+  /*
+   * `APPEARANCE_MS`'s docblock calls itself « the ceiling on the widget appearing at
+   * all », and the measurement wait used to outlive it: `#reveal` is armed by
+   * `ready-to-show`, so a paint landing just inside the ceiling pushed the reveal to
+   * `ready + FIRST_FRAME_MS`. Measured on the shipped class — paint at +988 ms against a
+   * 1 000 ms ceiling, shown at **+1 289 ms**.
+   *
+   * The worst case is a paint one tick before the ceiling and a renderer that never
+   * measures, which is exactly what this drives.
+   */
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const staging = staged([LAPTOP])
+
+  t.mock.timers.tick(APPEARANCE_MS - 1)
+  staging.window.paint()
+  assert.ok(!staging.window.state.seen.includes('show'), 'shown before the ceiling')
+
+  t.mock.timers.tick(1)
+  assert.ok(
+    staging.window.state.seen.includes('show'),
+    'the ceiling passed and the window is still hidden — the measurement wait outlived it',
+  )
+})
+
+// ── and the two deadlines were armed from two different clocks ────────────────
+//
+// `FIRST_FRAME_MS` is 300 and the renderer's `MEASURE_DEADLINE_MS` is 200, which reads
+// like a hundred milliseconds of margin and is not: this side arms at `ready-to-show`
+// and the renderer arms at its React mount, so the real figure is a hundred *minus the
+// gap between those two events* — 81 ms and 47 ms, measured on two launches of the
+// packaged app, leaving 19 and 53. And it is spent on the critical path of
+// `startRecording`, with two audio devices opening and a transcriber booting, for a rep
+// on a Windows laptop (HR-2). Lose the race and the side with the *worse* answer wins:
+// what this deadline reveals is `INITIAL_SIZE`, forty-nine pixels narrower than the
+// pill, carrying « Aucun enregistrement » over a live call.
+//
+// `harnessFixture.test.ts` holds those constants in order and cannot see any of this,
+// because an order between constants is not an order between expiries once the origins
+// differ. `widget:measuring` makes them share one.
+
+test('the renderer’s own clock is what the first-frame deadline runs on', (t) => {
+  // `Date` too: the origin this channel moves is an instant in wall time, so a test
+  // that froze only the timers would be measuring nothing.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  // The gap this whole channel is about: the renderer mounts 100 ms after
+  // `ready-to-show`, which is longer than the two constants' difference.
+  t.mock.timers.tick(100)
+  assert.equal(staging.overlay.measuring(200), true)
+
+  // The old arming would have fired here — `ready-to-show + 300` — and revealed the
+  // guess while the renderer still had 100 ms of its own deadline left to run.
+  t.mock.timers.tick(FIRST_FRAME_MS - 100)
+  assert.deepEqual(staging.window.state.seen, [], 'revealed the guess on the old clock')
+
+  // The renderer speaks inside its own deadline and is what decides the first frame.
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+  assert.deepEqual(staging.window.state.seen, ['bounds 281×78@616,781', 'show'])
+  assert.equal(staging.window.state.width, 281)
+})
+
+test('and a renderer that reports and then goes quiet still gets its pill', (t) => {
+  /*
+   * DEC-26 again, and the reason the new deadline is a deadline: moving the origin must
+   * not turn a bounded wait into an unbounded one.
+   */
+  // `Date` too: the origin this channel moves is an instant in wall time, so a test
+  // that froze only the timers would be measuring nothing.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  t.mock.timers.tick(100)
+  staging.overlay.measuring(200)
+
+  t.mock.timers.tick(100 + 200 + FIRST_FRAME_SLACK_MS - 1 - 100)
+  assert.deepEqual(staging.window.state.seen, [], 'gave up before its own deadline')
+  t.mock.timers.tick(1)
+  assert.deepEqual(staging.window.state.seen, ['show'])
+  assert.equal(staging.window.state.width, INITIAL_SIZE.width)
+})
+
+test('a report that would shorten the wait is refused, and says so', (t) => {
+  /*
+   * The dangerous direction, and the reason `measuring` is a `Math.max` and not an
+   * assignment. A renderer that mounts almost immediately and asks for a *shorter*
+   * deadline than the one already running would move the reveal **in** and put
+   * `INITIAL_SIZE` on screen sooner than the `ready-to-show` arming would have — a fix
+   * for a race that loses the race faster. It refuses, and answers `false` rather than
+   * silently doing nothing, which is the DEC-26 shape: the renderer is told a fact
+   * about its request.
+   */
+  // `Date` too: the origin this channel moves is an instant in wall time, so a test
+  // that froze only the timers would be measuring nothing.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  t.mock.timers.tick(10)
+  assert.equal(staging.overlay.measuring(100), false, 'accepted a shorter wait')
+
+  t.mock.timers.tick(FIRST_FRAME_MS - 10 - 1)
+  assert.deepEqual(staging.window.state.seen, [], 'revealed the guess early')
+  t.mock.timers.tick(1)
+  assert.deepEqual(staging.window.state.seen, ['show'], 'lost the deadline it already had')
+})
+
+test('a window already on screen is not re-armed by a late report', (t) => {
+  // `Date` too: the origin this channel moves is an instant in wall time, so a test
+  // that froze only the timers would be measuring nothing.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  staging.overlay.resize({ width: 281, height: 78, pillTop: 20, pillHeight: 38 })
+  assert.ok(staging.window.state.seen.includes('show'))
+
+  // Nothing left to promise: the question is settled and `#reveal` is disarmed.
+  assert.equal(staging.overlay.measuring(200), false)
+  t.mock.timers.tick(APPEARANCE_MS * 2)
+  assert.equal(staging.window.state.seen.filter((what) => what === 'show').length, 1)
+})
+
+test('the appearance ceiling still outranks the renderer’s clock', (t) => {
+  /*
+   * `APPEARANCE_MS` is « the ceiling on the widget appearing at all » and a renderer
+   * that reports an honest deadline must not be able to push past it. A report at
+   * 900 ms asking for another 200 would land at 1 140; the ceiling fires at 1 000 and
+   * `#forced` makes the paint and the measurement both optional.
+   */
+  // `Date` too: the origin this channel moves is an instant in wall time, so a test
+  // that froze only the timers would be measuring nothing.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const staging = staged([LAPTOP])
+
+  staging.window.paint()
+  t.mock.timers.tick(APPEARANCE_MS - 100)
+  staging.overlay.measuring(200)
+
+  t.mock.timers.tick(100)
+  assert.deepEqual(staging.window.state.seen, ['show'], 'the ceiling did not fire')
 })

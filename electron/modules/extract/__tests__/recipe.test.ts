@@ -119,9 +119,11 @@ interface Seen {
 }
 
 /**
- * A model that answers however the test tells it to. `complete` throws because
- * the recipe must never reach for the cheap verb — the reply is held to a
- * schema or it is not trusted.
+ * A model that answers however the test tells it to.
+ *
+ * It used to carry a `complete` that rejected, « because the recipe must never
+ * reach for the cheap verb ». There is no cheap verb: `LlmPort` has one method and
+ * every reply is held to the caller's schema or is not trusted.
  */
 const stub = (
   answer: (request: LlmStructuredRequest<unknown>) => unknown,
@@ -131,7 +133,6 @@ const stub = (
     seen,
     diagnostics: { record: (input) => void seen.diagnostics.push(input) },
     llm: {
-      complete: () => Promise.reject(new Error('the recipe must not use complete()')),
       structured: <T>(request: LlmStructuredRequest<T>) => {
         seen.requests.push(request as LlmStructuredRequest<unknown>)
         const value = answer(request as LlmStructuredRequest<unknown>)

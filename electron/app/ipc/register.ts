@@ -276,6 +276,8 @@ export interface IpcDeps {
     passThrough(through: boolean): boolean
     focusMain(meetingId: string | null): boolean
     left(afterMs: number): boolean
+    /** The renderer's own measurement deadline, from its own mount. */
+    measuring(withinMs: number): boolean
   } | null
   /**
    * A mark the rep just made, to every window.
@@ -1200,6 +1202,14 @@ export const handlers: Handlers = {
   }),
 
   'widget:left': ({ afterMs }, { widget }) => ({ ok: widget?.left(afterMs) ?? false }),
+  /*
+   * The renderer's own measurement clock, so both first-frame deadlines share an
+   * origin — see `widget:measuring` in `core/contracts/ipc.ts` and
+   * `Overlay.measuring`.
+   */
+  'widget:measuring': ({ withinMs }, { widget }) => ({
+    ok: widget?.measuring(withinMs) ?? false,
+  }),
 
   'window:focus': ({ meetingId }, { widget }) => ({
     ok: widget?.focusMain(meetingId ?? null) ?? false,

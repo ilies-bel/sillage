@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { DiagInput, DiagRecorder } from '../../../core/contracts/diagnostics.ts'
-import type { LlmPort, LlmRequest, LlmStructuredRequest } from '../../../core/contracts/llm.ts'
+import type { LlmPort, LlmStructuredRequest } from '../../../core/contracts/llm.ts'
 import type { Signal } from '../../../core/contracts/signals.ts'
 import type { Channel, TranscriptSegment } from '../../../core/contracts/transcript.ts'
 import { SignalExtractor } from '../SignalExtractor.ts'
@@ -46,10 +46,6 @@ class StubLlm implements LlmPort {
 
   constructor(queue: (SignalReply | Error)[]) {
     this.#queue = [...queue]
-  }
-
-  async complete(_request: LlmRequest): Promise<string> {
-    throw new Error('the rail never calls complete')
   }
 
   async structured<T>(request: LlmStructuredRequest<T>): Promise<T> {

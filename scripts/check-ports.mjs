@@ -34,12 +34,17 @@
  * exactly the shape it exists for: **`LlmPort.complete`** — declared, implemented
  * in `OpenAiCompatibleLlm`, unit-tested seventeen times, and called from no file
  * in the repo outside its own tests. Not in `UNWIRED`, and never looked at.
+ * It spent one round *in* `UNWIRED` as « declared debt », on the argument that the
+ * seventeen tests drove the adapter's HTTP paths through it — and that argument was
+ * the finding of the round after: the seventeen were the only thing holding the verb
+ * up, and a permissive schema moves them onto `structured` without folding
+ * validation into a test about a 429. `LlmPort` has one method now.
  *
  * So the list is **discovered**, not written: every `export interface` in
  * `electron/core/contracts/` that declares at least one method is a port, and one
  * with no `HOMES` entry **fails** with the sentence asking for one. A port added
  * next month is checked the day it is added, which is the only way the hole does
- * not come back. Nine ports, twenty-eight methods, where there was one and six.
+ * not come back. Nine ports, twenty-seven methods, where there was one and six.
  *
  * ### The caller test had to change twice over, and both directions were measured
  *
@@ -171,48 +176,6 @@ const UNWIRED = [
       'écrit une fiche que personne n’a relue. Même argument : une intention au ' +
       'gate, pas un effet de bord de l’extraction.',
   },
-  {
-    /**
-     * Found by round 26, by asking this check's own question of the eight ports
-     * it was not asking it of. Genuinely unreached — 0 callers under the naive
-     * regex, under a receiver-aware one, and under a bare grep for `complete`
-     * anywhere in `electron/` or `src/` — and unreached *for a stated reason*,
-     * which is what makes it an `UNWIRED` entry rather than a bug.
-     *
-     * `core/contracts/llm.ts` points `complete` at `modules/signals/` by name
-     * (« ~1 call per minute *during* a live call »). `SignalExtractor`'s docblock
-     * then has a section headed « ## Why `structured` and not `complete` » that
-     * rejects it: « a reply this small is not slower for being schema-held, and
-     * the alternative is parsing prose — a guess rendered as a fact, on a surface
-     * with no room for a caveat ». `modules/extract/__tests__/recipe.test.ts:134`
-     * goes further and stubs it to *reject*: « the recipe must not use
-     * complete() ».
-     *
-     * So this is not debt waiting on wiring, and the honest resolution is the
-     * opposite of wiring: **delete `complete` from `LlmPort` and from
-     * `OpenAiCompatibleLlm`**, which is product code and outside the scope that
-     * found it. It is declared here meanwhile because the cost of leaving it is
-     * not nothing: `llm.ts`'s own docblock — « Two verbs, because there are
-     * exactly two jobs » — is now false documentation of the contract every
-     * adapter is written against, and an un-schema'd prose channel on the port is
-     * standing permission to send a model's unvalidated text somewhere, against
-     * « Zod schemas for every LLM output ».
-     */
-    method: 'LlmPort.complete',
-    why:
-      'Le canal prose du port, que son seul consommateur prévu a refusé par écrit : ' +
-      '`core/contracts/llm.ts` désigne `modules/signals/` pour `complete`, et ' +
-      '`SignalExtractor` appelle `structured` à la place — « analyser de la prose, ' +
-      'c’est une supposition présentée comme un fait, sur une surface qui n’a pas ' +
-      'la place d’une réserve ». `recipe.test.ts` va plus loin et le fait échouer ' +
-      'exprès : « the recipe must not use complete() ». Le câbler serait donc une ' +
-      'décision contre la règle « un schéma Zod pour toute sortie de modèle » ; la ' +
-      'résolution honnête est de le **supprimer** de `LlmPort` et de ' +
-      '`OpenAiCompatibleLlm`, ce qui est du code produit. Déclaré ici en attendant, ' +
-      'parce que le laisser n’est pas gratuit : le docblock de `llm.ts` (« deux ' +
-      'verbes, parce qu’il y a exactement deux métiers ») décrit désormais un ' +
-      'contrat faux à tout adaptateur qui l’implémente.',
-  },
 ]
 
 const sources = []
@@ -224,7 +187,23 @@ const walk = (dir) => {
     else if (/\.(ts|tsx|mjs)$/.test(entry)) sources.push(path.relative(ROOT, full))
   }
 }
-for (const dir of ['electron', 'src', 'scripts']) walk(path.join(ROOT, dir))
+/*
+ * **`scripts/` is read for ports, and never for callers.** This walked it into one
+ * source set, so `check-ports.mjs` was scanned for callers of the ports it checks —
+ * and its own docblock contains, as *prose about how the old regex used to be fooled*,
+ * the literal strings `calendar.sync(`, `crm.resolveAccount(`,
+ * `this.#crm!.pushCompteRendu(`, `spy.token(`, `updates?.state()` and
+ * `this.#llm.structured<SignalReply>({`. Every one satisfies the current regex, so the
+ * check was certifying **its own sentence explaining that it used to be fooled** as
+ * wiring. Proved by deletion: with both `CalendarPort.sync` and `.window` unwired, the
+ * gate named only `.window` — `sync` passed, held up by a comment.
+ *
+ * A caller is product code. `scripts/` holds the harness, the replay tools and this
+ * check: none of them is the product reaching a port, and a port whose only caller is a
+ * dev script is exactly the « declared but never reached » shape this file exists for.
+ */
+const CALLER_ROOTS = ['electron', 'src']
+for (const dir of CALLER_ROOTS) walk(path.join(ROOT, dir))
 const text = new Map(sources.map((file) => [file, readFileSync(path.join(ROOT, file), 'utf8')]))
 
 const isTest = (file) => /__tests__|\.test\.|\.spec\./.test(file)
@@ -276,12 +255,37 @@ for (const port of discovered) {
   // Receivers: every identifier this tree annotates with the port's type. Derived
   // rather than listed, so they cannot go stale.
   const receivers = new Set()
+  /** Receivers declared in a `.d.ts` or an ambient `declare`, which count everywhere. */
+  const ambient = new Set()
+  /**
+   * Receivers **per file**, because a bare name is not a port.
+   *
+   * They were collected into one flat tree-wide set and matched in every file, with no
+   * requirement that the calling file hold the port. `port` was therefore a receiver of
+   * `CrmPort`, `LlmPort` *and* `KeyValueStore`, harvested from three test files — and in
+   * the product it is a `MessagePort` and a `--port` CLI string. So a brand-new
+   * `CrmPort.close()` implemented nowhere passed, adopted by `port.close(` in a whisper
+   * worker, and `CrmPort.indexOf` would have passed on `port.indexOf(`.
+   *
+   * A name counts where its own file says what it holds. A `.d.ts` or an ambient
+   * `declare` is the exception and counts everywhere, because that is exactly what those
+   * files are for — `window.app` is declared once and used across the renderer.
+   */
+  const perFile = new Map()
   const annotation = new RegExp(
     `(#?[A-Za-z_$][\\w$]*)\\s*\\??\\s*:\\s*(?:readonly\\s+)?${port.interface}\\b`,
     'g',
   )
-  for (const source of text.values()) {
-    for (const hit of source.matchAll(annotation)) receivers.add(hit[1])
+  for (const [file, source] of text) {
+    const here = new Set()
+    for (const hit of source.matchAll(annotation)) {
+      here.add(hit[1])
+      receivers.add(hit[1])
+      if (/\.d\.ts$/.test(file) || /declare\s+(?:global|module|const|let|var)/.test(source)) {
+        ambient.add(hit[1])
+      }
+    }
+    perFile.set(file, here)
   }
   if (receivers.size === 0) {
     problems.push(
@@ -291,23 +295,49 @@ for (const port of discovered) {
     )
     continue
   }
-  const receiverAlternation = [...receivers].map((r) => r.replace(/\$/g, '\\$')).join('|')
+  /**
+   * The alternation each file is matched with, and the compiled patterns, built once.
+   *
+   * The per-file scoping above arrived as a fresh `RegExp` *inside* the method loop —
+   * twenty-eight methods over two hundred files, and most files hold an identical small
+   * receiver set, so the same pattern was compiled some hundreds of times for no reason.
+   * The key is the sorted set, so files that hold the same receivers share one pattern,
+   * and a file whose text does not contain the method's name anywhere is never matched
+   * at all. Measured over the whole tree: 6.2 s → 1.5 s.
+   */
+  const alternationOf = new Map()
+  for (const file of sources) {
+    const here = [...(perFile.get(file) ?? []), ...ambient]
+    if (here.length === 0) continue
+    alternationOf.set(file, here.sort().map((r) => r.replace(/\$/g, '\\$')).join('|'))
+  }
+  const compiled = new Map()
 
   for (const method of port.methods) {
     checked += 1
     const key = `${port.interface}.${method}`
     const exempt = UNWIRED.find((entry) => entry.method === key)
-    // `receiver` `!`? `?`? `.` `method` `<…>`? `(` — the shapes the tree actually
-    // writes: `crm.resolveAccount(`, `this.#crm!.pushCompteRendu(`,
-    // `updates?.state()`, `this.#llm.structured<SignalReply>({`.
-    const call = new RegExp(
-      `(?:${receiverAlternation})\\s*!?\\s*\\??\\.\\s*${method}\\s*(?:<[^<>;={}]*>\\s*)?\\(`,
-    )
     const callers = sources.filter((file) => {
       if (file === port.file) return false
       if (inHome(file, home)) return false
       if (isTest(file)) return false
-      return call.test(text.get(file))
+      // The receivers this file itself declares, plus the ambient ones — see `perFile`.
+      const alternation = alternationOf.get(file)
+      if (alternation === undefined) return false
+      const source = text.get(file)
+      if (!source.includes(method)) return false
+      const cacheKey = `${alternation}|${method}`
+      let scoped = compiled.get(cacheKey)
+      if (scoped === undefined) {
+        // `receiver` `!`? `?`? `.` `method` `<…>`? `(` — the shapes the tree actually
+        // writes: `crm.resolveAccount(`, `this.#crm!.pushCompteRendu(`,
+        // `updates?.state()`, `this.#llm.structured<SignalReply>({`.
+        scoped = new RegExp(
+          `(?:${alternation})\\s*!?\\s*\\??\\.\\s*${method}\\s*(?:<[^<>;={}]*>\\s*)?\\(`,
+        )
+        compiled.set(cacheKey, scoped)
+      }
+      return scoped.test(source)
     })
 
     if (callers.length === 0 && !exempt) {

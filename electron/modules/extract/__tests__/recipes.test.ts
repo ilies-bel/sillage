@@ -50,9 +50,10 @@ const LIBRE_DOCUMENT = [
 /**
  * Records every call, and answers whatever the test told it to.
  *
- * `complete` throws rather than returning something: the recipe must never
- * reach for the streaming half of the port — that one belongs to the signal
- * rail — and a stub that quietly answered would hide it if it did.
+ * It used to carry a `complete` that threw — « the recipe does not stream » —
+ * against a second verb on `LlmPort` that nothing in the product ever called.
+ * The verb is gone, so the stub is the whole port: an un-schema'd reply is not
+ * something a caller can ask for any more, which is what the throw was for.
  */
 const spyLlm = (reply: unknown) => {
   const calls: LlmStructuredRequest<unknown>[] = []
@@ -60,9 +61,6 @@ const spyLlm = (reply: unknown) => {
     structured: async (request: LlmStructuredRequest<unknown>) => {
       calls.push(request)
       return reply
-    },
-    complete: () => {
-      throw new Error('the recipe does not stream')
     },
   } as unknown as LlmPort
   return { llm, calls }

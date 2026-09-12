@@ -5,7 +5,10 @@ import {
   ARM_POLL_MS,
   MAX_ARMABLE_DURATION_MS,
   OVERRUN_GRACE_MS,
+  CALENDAR_CLAIM_MS,
+  calendarClaim,
   decideArming,
+  isCallLike,
   nextArmable,
   type ArmableEvent,
 } from '../arming.ts'
@@ -301,4 +304,102 @@ test('a session with no calendar entry always gets the full grace', () => {
 test('Terminer short-circuits everything', () => {
   const decision = decideEndOfMeeting({ now: T0, silentSince: null, scheduledEnd: T0 + 3_600_000, manual: true })
   assert.equal(decision.action, 'end')
+})
+
+// ── the claim, which had no test at all and cost two thirds of a day ─────────
+//
+// `calendarClaim` is what stops the unscheduled detector speaking over a scheduled
+// call. It was added with `isCancelled` and `isAllDay` while `decideArming` refused on
+// three more grounds — and every entry in that gap was claimed by one function and
+// refused by the other, so the detector was told « cet appel est au calendrier » about
+// an event the calendar would never offer, for thirty minutes before the slot and
+// twenty after it. Measured on the shipped `Agenda` over an ordinary sales day: the
+// feature could speak for 70 of 660 minutes, and the longest silence was claimed by a
+// block named « Prospection téléphonique ».
+//
+// It shipped because nothing here drove it, and because every event fixture in this
+// repo is one hour long, `normal`, with one attendee and a Teams link. The four shapes
+// below are what an actual Outlook calendar is full of.
+
+/** The four entries `decideArming` refuses on the entry alone, and one it accepts. */
+const SHAPES: { what: string; over: Partial<MeetingContext>; callLike: boolean }[] = [
+  { what: 'une vraie réunion', over: {}, callLike: true },
+  {
+    what: 'un bloc que le commercial s’est écrit',
+    over: { attendees: [], onlineMeetingJoinUrl: null },
+    callLike: false,
+  },
+  { what: 'un créneau privé', over: { sensitivity: 'private' }, callLike: false },
+  { what: 'un créneau confidentiel', over: { sensitivity: 'confidential' }, callLike: false },
+  {
+    what: 'une plage trop longue pour être une réunion',
+    over: { scheduledEnd: T0 + MAX_ARMABLE_DURATION_MS + 60_000 },
+    callLike: false,
+  },
+]
+
+test('the claim and the arming rule agree on every shape, because they read one predicate', () => {
+  /*
+   * The property, stated so it cannot drift again: **whatever the calendar would not
+   * arm, the calendar may not claim.** Asked of `decideArming` at an instant inside the
+   * slot, where only the structural refusals can fire.
+   */
+  for (const { what, over, callLike } of SHAPES) {
+    const context = calendarEvent('e', over).context
+    assert.equal(isCallLike(context).ok, callLike, `isCallLike: ${what}`)
+
+    const armed = decideArming({ event: context, now: T0 + 60_000, meetingAudio: 'Teams' })
+    assert.equal(armed.action === 'skip', !callLike, `decideArming: ${what}`)
+
+    const claimed = calendarClaim([calendarEvent('e', over)], T0 + 60_000)
+    assert.equal(claimed !== null, callLike, `calendarClaim: ${what}`)
+  }
+})
+
+test('a block the rep wrote for themselves silences nothing, for its whole width', () => {
+  /*
+   * The width is the point: the claim reaches `CALENDAR_CLAIM_MS` before the slot and
+   * `OVERRUN_GRACE_MS` after it, so a single self-written entry used to veto the
+   * detector for two and a half hours. Driven at both edges and in the middle.
+   */
+  const block = calendarEvent('bloc', { attendees: [], onlineMeetingJoinUrl: null })
+  for (const at of [
+    T0 - CALENDAR_CLAIM_MS + 1_000,
+    T0 + 60_000,
+    T0 + 3_600_000 + OVERRUN_GRACE_MS - 1_000,
+  ]) {
+    assert.equal(calendarClaim([block], at), null, `claimed at ${at - T0}ms from the slot`)
+  }
+})
+
+test('a real invite is still claimed, which is what the claim exists for', () => {
+  /*
+   * The other direction, and the reason this cannot be fixed by deleting the claim: a
+   * rep joining their own call early must get the calendar's offer — attendees, objet,
+   * account resolution — and not an unscheduled one. Round 26 measured two offers and
+   * two OS notifications from five and a half minutes early outwards.
+   */
+  const real = calendarEvent('vrai')
+  assert.equal(calendarClaim([real], T0 - 8 * 60_000)?.id, 'vrai')
+  assert.equal(calendarClaim([real], T0 + 3_600_000 + OVERRUN_GRACE_MS - 1_000)?.id, 'vrai')
+
+  // And not beyond either edge.
+  assert.equal(calendarClaim([real], T0 - CALENDAR_CLAIM_MS - 1_000), null)
+  assert.equal(calendarClaim([real], T0 + 3_600_000 + OVERRUN_GRACE_MS + 1_000), null)
+})
+
+test('a cancelled or all-day entry claims nothing', () => {
+  // Kept in the window so the UI can draw them; neither is ever a call to record, and
+  // `nextArmable` skips them before `decideArming` is asked.
+  assert.equal(calendarClaim([calendarEvent('x', {}, { isCancelled: true })], T0 + 60_000), null)
+  assert.equal(calendarClaim([calendarEvent('x', {}, { isAllDay: true })], T0 + 60_000), null)
+})
+
+test('the earliest claimant wins, for the same reason nextArmable prefers it', () => {
+  const first = calendarEvent('tôt', { scheduledStart: T0, scheduledEnd: T0 + 3_600_000 })
+  const second = calendarEvent('tard', {
+    scheduledStart: T0 + 30 * 60_000,
+    scheduledEnd: T0 + 90 * 60_000,
+  })
+  assert.equal(calendarClaim([second, first], T0 + 60_000)?.id, 'tôt')
 })

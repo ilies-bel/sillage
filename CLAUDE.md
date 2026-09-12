@@ -183,6 +183,22 @@ machine) or in `core/domain/` — never in an IPC handler.
   « Aucun enregistrement » over a live call. `APPEARANCE_MS` is armed at *creation* and closes
   a hole with teeth: Electron does not promise `ready-to-show` for a transparent window, so a
   renderer that was alive and measuring could have been shown never.
+  **And an order between constants is not an order between expiries, because the two were
+  armed from two different clocks** (`widget:measuring`, `Overlay.measuring`,
+  `FIRST_FRAME_SLACK_MS`). That test read all four numbers, asserted them in order, and could
+  never see what they were counted from: `FIRST_FRAME_MS` is armed inside
+  `ready-to-show` in the main process and `MEASURE_DEADLINE_MS` from the React mount in the
+  renderer, so the hundred milliseconds between them is a hundred *minus the gap between those
+  two events* — measured on this Mac at **81 ms and 47 ms** across two launches, leaving 19 and
+  53. And it is spent on the critical path of `startRecording`, with two audio devices opening
+  and a transcriber booting, for a rep on a Windows laptop (HR-2). Lose that race and the side
+  with the *worse* answer decides. So the renderer states its own deadline from its own mount,
+  one IPC hop before it arrives, and the main process re-arms from that instant: one origin,
+  and the ordering is true by construction rather than by a subtraction nobody had done. Three
+  things it must not become, each a test: it never *shortens* a wait already running (a
+  bring-forward is the same defect, faster), it is ignored once the window is shown or the
+  ceiling has fired, and it is not load-bearing — a renderer that never reports keeps the
+  `ready-to-show` deadline and `APPEARANCE_MS` is above both (DEC-26).
   **And `ok: false` is not an answer.** `Overlay.resize` returns `{ ok: false, above: false }`
   when there is no window, and the renderer did `.then((placement) => setAbove(placement.above))`
   — believing a refusal. `above: false` there is a *default*, not a measurement: that is the
@@ -817,6 +833,32 @@ machine) or in `core/domain/` — never in an IPC handler.
   attendee names out of the stub rather than restating them, and guards itself against finding
   nobody.
 
+  **And the clock, which the stub's own docblock claimed twice to be checked here and was
+  not.** It says, of the timeline it corrected — `startedAt` was `now − 22 min` against a
+  14:30 slot and a `now` pinned at 14:35, so 14:13: fifteen minutes before the row was created
+  and seventeen before an invite the product can arm five minutes early — « `harnessFixture.test.ts`
+  asserts all three, on every meeting, in every scenario ». Nothing in the file mentioned
+  `startedAt`, and reverting the hunk left the suite green. A comment is not a check, for the
+  fourth time in this one file's prose. Asked now of **every meeting in every scenario on both
+  halves of the Entra axis**, because the day the stub stages differs on all three: nothing
+  dated after the pinned instant, `createdAt ≤ startedAt ≤ endedAt ≤ confirmedAt`, `startedAt`
+  no more than `ARM_LEAD_MS` ahead of its slot, every `receivedAt` and every mark inside its
+  own recording's window — and the **density**, which a clock cannot see: 68 characters a
+  minute against roughly 1 386 on a real call is a transcript with 78-second holes in it, and a
+  fixture sparser than the product flatters every layout it appears in. Both readings are
+  derived: the scenarios come out of the stub's own branches, and `now` from
+  `scripts/harness/pinnedNow.mjs` — extracted because `shot.mjs` and `serve.mjs` each held a
+  character-for-character copy, and a test asking « is anything dated after the instant the
+  fixture is pinned to » must not be a third. Reverting the hunk now costs 943 findings.
+  Two lies it found on its first run. `LEFORT_SEGMENTS` stamped five turns one **minute** apart
+  that `startMs` places twelve **seconds** apart — the reader draws `receivedAt` as wall clock
+  and the gate draws `span.startMs` as an offset, so the same five turns were a four-minute
+  conversation on one screen and a fifty-six-second one on the other, at 115 characters a
+  minute. And the fallback record handed *Néovia's* `receivedAt` stamps to every meeting it has
+  no entry for, so *Historique* on the 9:01 Sodexial call drew nineteen turns stamped 14:30,
+  four and a half hours after the recording being read had stopped. The turns are deliberately
+  shared — a generic record is there for *volume* — but when they happened is not shareable.
+
 - **A call nobody scheduled is still a call** (`core/domain/adHoc.ts`,
   `native-module/src/mic_apps.rs`). Arming was « calendar signal × process signal », so an
   event with attendees was *required* — and a client who rings at 11:05 about yesterday's
@@ -971,6 +1013,31 @@ machine) or in `core/domain/` — never in an IPC handler.
   in the product — the self-test **exited 0**. It injects into `#root` itself now and reports
   five attacks caught with a sixth left deliberately silent as the control, so a pass says what
   it measured.
+  **And then the fifth of those five probes was measuring the first one's artefact.** It was
+  `persisting.length > 0` with the infinite animation riding on probe 1's element — and that
+  element also carries a literal `777ms` *transition*, which survives reduced motion for
+  reasons that have nothing to do with probe 5. So deleting `infinite` from the attack outright
+  left the self-test reporting « les cinq attaques signalées » with no infinite animation
+  anywhere on the page. Measured. Every probe is asserted **by the name of the element it
+  creates** now, never by a count: `backwards.length >= 3` could not say *which* of the three
+  departure shapes had stopped being seen, so one going quiet while another over-reported held
+  the threshold. Eight that must fire, one that must stay silent.
+  **The keyframes census read declaration order, so four spellings of one fade-out were
+  invisible** — and a keyframes the census does not recognise makes `leavingHere` answer false,
+  which switches the direction rule off for that element rather than turning it red. It took
+  `cssRules[0]` and `cssRules[last]` and asked `last < (first ?? 1)`, so `{ to { opacity: 0 } }`
+  read `0 < 0`; `{ to {…} from {…} }` and its percentage spelling read backwards; and a
+  `0%, 100%` `keyText` put two offsets where the code expected one. Rewriting the product's own
+  exit as a `to`-only `@keyframes` on `var(--ease-out)` — the exact blink the rule exists to
+  end — reported « 0 qui s'en vont … dans le bon sens, 0 @keyframes de sortie » and passed at
+  both sizes. `keyText` is parsed now (`from` → 0, `to` → 100, the list split), the frames that
+  declare an opacity are sorted by offset, and an endpoint nothing declares is the element's
+  own — which is what makes a `to`-only fade-out read as the departure it is, while a
+  `0%, 100% { opacity: 1 }` pulse still reads as none. A `to`-only probe joined the attack.
+  **And the third of `leavingHere`'s three signals is inline, not computed, and the docblock
+  said computed.** A computed zero under a live duration is the reveal-on-hover mark button —
+  resting at zero and *arriving* — which is the seven false findings that rule was rebuilt to
+  lose. The code was right; the prose describing it was one word too broad.
   Three more holes in the direction rule, all one round old and none found by its author.
   Renaming `--ease-out` turned the whole rule **off** rather than red, because `enterCurve`
   became `''` and `allowedEase.has('')` is false. An `SVGElement`'s `className` is an
@@ -1139,19 +1206,28 @@ machine) or in `core/domain/` — never in an IPC handler.
   with the receivers derived from the tree's own `: PortName` annotations, and an empty
   receiver set is itself a finding.
 
-  Three are listed today. `attachTranscript` and `createContact` both *write into the
-  client's systems* and belong in the gate's intent list as a decision, not as a side
-  effect of extraction. `LlmPort.complete` is different and is **declared debt rather
-  than pending work**: the honest resolution is to delete it, because `SignalExtractor`'s
-  own docblock carries a section headed « Why `structured` and not `complete` », and
-  `recipe.test.ts` stubs it to *reject*, so wiring it would be a decision against « Zod
-  schemas for every LLM output ». It is still there because `OpenAiCompatibleLlm`'s seven
-  HTTP-error tests drive `#chat` *through* it, and moving them onto `structured` folds
-  schema parsing into tests whose whole job is to check that a 429 becomes a `quota`
-  error. Leaving it is not free and the cost is named here so it is argued rather than
-  missed: `llm.ts`'s « Two verbs, because there are exactly two jobs » is false
-  documentation of the contract every adapter implements, and an un-schema'd prose
-  channel on that contract is standing permission.
+  Two are listed today, and there were three. `attachTranscript` and `createContact`
+  both *write into the client's systems* and belong in the gate's intent list as a
+  decision, not as a side effect of extraction.
+
+  **`LlmPort.complete` was the third, listed as « declared debt rather than pending
+  work », and the entry was itself the defect.** The argument for keeping it was that
+  `OpenAiCompatibleLlm`'s HTTP-error tests drive `#chat` *through* it, and that moving
+  them onto `structured` « folds schema parsing into tests whose whole job is to check
+  that a 429 becomes a `quota` error ». Both halves were wrong. The seventeen calls were
+  **all in that one test file**, so the tests were the only thing holding the verb up —
+  a declaration kept alive by its own coverage, which is `check:ports`' own finding one
+  layer up. And the schema can be permissive: `ANY` is `z.unknown()`, so the transport
+  tests still measure the status, the stream and the deadline, and the schema tests next
+  to them keep a shape that bites. `LlmPort` has one verb now, the cost the entry named
+  is gone — `llm.ts` no longer documents « two verbs, because there are exactly two
+  jobs » to every adapter, and there is no un-schema'd prose channel to send a model's
+  unvalidated text down. The empty-reply guard moved from `complete` into `#chat`, where
+  it is **stronger** than it was: `structured` used to turn a 200 with nothing in it into
+  a `LlmSchemaError` — `retryable: false`, a statement about the shape of a reply there
+  was none of — and abandoned an extraction on a blip the outbox would have cleared.
+  `LlmSchemaError extends LlmError`, so the test that was there could not tell the two
+  apart and the new one asserts against it.
 - **And the fourth boundary is a class method in `app/session/`, where it costs most.**
   The nineteenth round said the check below asks the right question at three places and
   `check:ports` at a fourth, and that **none of them asks it of a method on a class in

@@ -23,13 +23,16 @@
  * and a retry queue behind a provider that has stopped answering is how the
  * rail ends up a minute behind the call.
  *
- * ## Why `structured` and not `complete`
+ * ## Why the reply is schema-held even though this is the latency-critical caller
  *
- * `core/contracts/llm.ts` points the rail at `complete` for latency. It is
- * called with `structured` anyway, held to `SignalReplySchema`: a reply this
- * small is not slower for being schema-held, and the alternative is parsing
- * prose — a guess rendered as a fact, on a surface with no room for a caveat.
- * Latency is defended by `SIGNAL_TIMEOUT_MS` instead, which is the honest lever.
+ * `LlmPort` used to carry a second verb, `complete`, and `core/contracts/llm.ts`
+ * pointed it at this file by name — « ~1 call per minute *during* a live call ».
+ * This is the call it meant and it has always used `structured`, held to
+ * `SignalReplySchema`: a reply this small is not slower for being schema-held, and
+ * the alternative is parsing prose — a guess rendered as a fact, on a surface with
+ * no room for a caveat. Latency is defended by `SIGNAL_TIMEOUT_MS` instead, which is
+ * the honest lever. `complete` was called by nothing anywhere, and is deleted; the
+ * section is kept because the argument is the reason the port has one verb.
  */
 import { randomUUID } from 'node:crypto'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'

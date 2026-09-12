@@ -31,7 +31,6 @@ export {
   responseTextOf,
   jsonText,
   toJsonSchema,
-  DEFAULT_COMPLETE_TIMEOUT_MS,
   DEFAULT_STRUCTURED_TIMEOUT_MS,
 } from './OpenAiCompatibleLlm.ts'
 export type { FetchLike, OpenAiCompatibleOptions } from './OpenAiCompatibleLlm.ts'

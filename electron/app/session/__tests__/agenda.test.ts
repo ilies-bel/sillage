@@ -76,9 +76,18 @@ const harness = (
   let audio = meetingAudio
   let held = micHeldBy
 
+  /*
+   * The diagnostics this agenda records, so a *rate* can be asserted and not only a
+   * behaviour. It had none, and that is how ninety-four identical `warn` rows about a
+   * finished meeting reached the support bundle unnoticed.
+   */
+  const diagnostics: { code: string; message: string }[] = []
   const agenda = new Agenda({
     calendar,
     orchestrator,
+    diagnostics: {
+      record: (event) => void diagnostics.push({ code: event.code, message: event.message }),
+    },
     meetingSignal: () => ({ running: audio, inCall: held }),
     clock: () => T0,
     onHealth: (h) => void health.push(h),
@@ -94,6 +103,7 @@ const harness = (
     health,
     snapshots,
     armed,
+    diagnostics,
     setAudio: (value: string | null) => void (audio = value),
     setHeld: (value: string | null) => void (held = value),
   }
@@ -1329,5 +1339,91 @@ test('one recording at a time, and the refusal says which', async () => {
   // And it is a refusal, not a park: the second is recordable once the first is done.
   h.orchestrator.dispatch('man-a', 'end', 'le commercial a terminé')
   assert.equal(h.orchestrator.dispatch('man-b', 'start', 'le commercial a démarré').ok, true)
+  h.store.close()
+})
+
+// ── round 27: the claim vetoed what the calendar would never arm ──────────────
+
+test('an ordinary calendar does not make the detector deaf', async () => {
+  /*
+   * **The fifth axis, and it was two functions in one file disagreeing.**
+   *
+   * `calendarClaim` filtered on two of `decideArming`'s five refusals, so every entry
+   * in the gap was claimed by one and refused by the other — and an ordinary Outlook
+   * calendar is mostly those entries. Measured on the shipped `Agenda` over an
+   * 08:00–19:00 day with two real invites and four blocks the rep wrote for themselves:
+   * the detector could speak for **70 of 660 minutes**, and the longest silence — two
+   * and a half hours — was claimed by a block named « Prospection téléphonique », which
+   * is the block during which a rep makes unscheduled calls.
+   *
+   * Each shape is driven on its own so a failure names which one came back.
+   */
+  const shapes: [string, Partial<MeetingContext>][] = [
+    ['un bloc sans participant ni lien', { attendees: [], onlineMeetingJoinUrl: null }],
+    ['un créneau privé', { sensitivity: 'private' }],
+    ['un créneau confidentiel', { sensitivity: 'confidential' }],
+    ['une plage de neuf heures', { scheduledStart: T0, scheduledEnd: T0 + 9 * 3_600_000 }],
+  ]
+
+  for (const [what, over] of shapes) {
+    const h = harness([event('AAA', over)], null, 'Teams')
+    // Inside the old claim's reach and inside the entry's own slot: the two places it
+    // used to veto.
+    await h.agenda.tick({ now: T0 + 5 * 60_000 })
+    await h.agenda.tick({ now: T0 + 5 * 60_000 + AD_HOC_DWELL_MS })
+
+    assert.equal(
+      h.agenda.snapshot().armed?.eventId,
+      null,
+      `${what}: no unscheduled offer — the calendar vetoed a call it would never arm`,
+    )
+    assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Teams', what)
+    h.store.close()
+  }
+})
+
+test('a meeting the rep has already finished stops claiming the conversation', async () => {
+  /*
+   * The claim reaches `OVERRUN_GRACE_MS` past the slot, and `#arm` refuses a meeting
+   * past `armed` — so deferring to an offer that can never come cost a rep who ended
+   * their 14:00–15:00 call at 14:20 and took a different client's call at 14:35
+   * **forty-five minutes** of silence. On the demo build (DEC-28, no model) a meeting
+   * stays `ended` for ever, so this was every slot, every day.
+   *
+   * And the refusal is recorded on the **edge**: it used to fire once per tick, which
+   * measured ninety-four identical `warn` rows saying « Compte-rendu en attente
+   * d'analyse. » about a meeting the rep had finished, in the bundle whose button says
+   * it can be sent to support.
+   */
+  // « Teams » as the weak signal, so the calendar actually arms — without it
+  // `decideArming` answers `wait` and this test would prove nothing.
+  const h = harness([event('AAA')], 'Teams', null)
+  await h.agenda.tick({ now: T0 - 60_000 })
+  const scheduled = h.agenda.snapshot().armed?.meetingId
+  assert.ok(scheduled)
+  h.orchestrator.dispatch(scheduled, 'start', 'le commercial a démarré')
+  h.orchestrator.dispatch(scheduled, 'end', 'le commercial a terminé')
+
+  /*
+   * 14:35 — a different client rings, well inside the old claim's tail.
+   *
+   * **Thirty ticks and not three.** A first draft of this drove three, and the
+   * per-tick version of the diagnostic produced one row in three ticks, so it passed
+   * on the defect: a fixture that cannot exercise the property it asserts, which is the
+   * first defect shape `CLAUDE.md` lists. The rate is what is being measured, so the
+   * test has to tick like the loop does.
+   */
+  h.setHeld('Teams')
+  for (let i = 0; i < 30; i++) {
+    await h.agenda.tick({ now: T0 + 35 * 60_000 + i * AD_HOC_POLL_MS })
+  }
+
+  assert.equal(h.agenda.snapshot().armed?.subject, 'Appel non planifié — Teams')
+  const refusals = h.diagnostics.filter((d) => d.code === 'agenda.arm.refused')
+  assert.equal(
+    refusals.length,
+    1,
+    `the refusal is an edge, not a per-tick row: got ${refusals.length} over 30 ticks`,
+  )
   h.store.close()
 })
