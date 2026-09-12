@@ -21,12 +21,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   POWER_EVENTS,
+  POWER_MONITOR_EVENTS,
+  WINDOW_POWER_EVENTS,
   decidePowerEvent,
   sleepInterruptedNotice,
   type PowerEvent,
 } from '../powerEvents.ts'
 
-test('sleeping and shutting down end a recording; nothing else does', () => {
+test('sleeping, shutting down and ending the Windows session end a recording; nothing else does', () => {
   const ends: PowerEvent[] = []
   const keeps: PowerEvent[] = []
   for (const event of POWER_EVENTS) {
@@ -36,13 +38,62 @@ test('sleeping and shutting down end a recording; nothing else does', () => {
 
   assert.deepEqual(
     ends,
-    ['suspend', 'shutdown'],
+    ['suspend', 'shutdown', 'session-end'],
     'the machine may never come back — the transition has to be in the log first',
   )
   assert.deepEqual(
     keeps,
     ['resume', 'lock-screen', 'unlock-screen', 'on-battery', 'on-ac'],
     'a locked screen still records, and display sleep is not system sleep',
+  )
+})
+
+test('the two tuples are what gets subscribed, and `session-end` is not `powerMonitor`’s', () => {
+  /*
+   * `PowerWatch` walks each tuple against a different emitter, so a misplaced
+   * entry is a subscription with no emitter — it compiles, never fires, and reads
+   * as a fix. Windows' `session-end` is declared on `BaseWindow`/`BrowserWindow`
+   * (`@platform win32`); Electron 43's `App` has no such event and
+   * `powerMonitor`'s `shutdown` is `@platform linux,darwin`, which is why the
+   * Windows branch had to exist at all.
+   */
+  assert.ok(
+    !(POWER_MONITOR_EVENTS as readonly string[]).includes('session-end'),
+    '`session-end` is a window event — `powerMonitor` will never emit it',
+  )
+  assert.deepEqual(WINDOW_POWER_EVENTS as readonly string[], ['session-end'])
+  // Every decided event is subscribed by exactly one of the two.
+  assert.equal(POWER_EVENTS.length, POWER_MONITOR_EVENTS.length + WINDOW_POWER_EVENTS.length)
+  for (const event of POWER_EVENTS) {
+    const carriers = [POWER_MONITOR_EVENTS, WINDOW_POWER_EVENTS].filter((tuple) =>
+      (tuple as readonly string[]).includes(event),
+    )
+    assert.equal(carriers.length, 1, `\`${event}\` is decided but subscribed ${carriers.length}×`)
+  }
+})
+
+test('only an end the rep comes back from owes them the resume sentence', () => {
+  /*
+   * `sleepInterruptedNotice` says « la mise en veille a arrêté l’enregistrement »,
+   * which is a **false** statement about a shutdown or a Windows session end —
+   * and it is raised on `resume`, which neither of those is followed by in the
+   * ordinary case. The field matters when it is *not* the ordinary case: a
+   * `session-end` whose shutdown another application then vetoes would leave a
+   * meeting waiting in `PowerWatch`'s field for some later sleep to publish it as
+   * a stale fact about a call already dealt with.
+   */
+  const notices = POWER_EVENTS.map((event) => {
+    const decision = decidePowerEvent(event)
+    return [event, decision.action === 'end' ? decision.notice : 'n/a'] as const
+  })
+  assert.deepEqual(
+    notices.filter(([, notice]) => notice === 'on-resume').map(([event]) => event),
+    ['suspend'],
+    'the sleep sentence is owed by the sleep, and by nothing else',
+  )
+  assert.deepEqual(
+    notices.filter(([, notice]) => notice === 'none').map(([event]) => event),
+    ['shutdown', 'session-end'],
   )
 })
 
@@ -71,6 +122,10 @@ test('every event carries a French sentence, and it is the one the log shows', (
   }
   assert.equal(decidePowerEvent('suspend').reason, 'mise en veille de l’ordinateur')
   assert.equal(decidePowerEvent('shutdown').reason, 'arrêt de l’ordinateur')
+  // Its own sentence, because « arrêt de l’ordinateur » and « fermeture de la
+  // session » are different facts on the row and in the diagnostics log: a rep
+  // who logged off did not turn the machine off.
+  assert.equal(decidePowerEvent('session-end').reason, 'fermeture de la session Windows')
 })
 
 test('the resume notice names the objet, and offers a new recording rather than a resumption', () => {
