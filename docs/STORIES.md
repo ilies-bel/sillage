@@ -216,6 +216,8 @@ findings were sound.
 | US-8 | The recipe is visible on the document, and changeable | `ui-review` | todo |
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
+| US-11 | Telling the client they are being recorded | `ui-session` | **next** — business consequence |
+| US-12 | What the shared screen says | — | argued debt |
 
 ---
 
@@ -469,6 +471,85 @@ wordmark as type.
 
 Deferred on the rep's own instruction (« keep reviewing, logo later »), recorded here
 so it is a decision rather than something nobody noticed.
+
+---
+
+## Appendix — their on-call widget, channel by channel
+
+Granola calls it the **nub**. Read off `main.js` inside their asar, so this is their
+surface and not a description of it. Thirty-one channels; ours are the `widget:*` and
+`moment:*` families in `core/contracts/ipc.ts`.
+
+| Granola | Sillage | |
+|---|---|---|
+| `nub:request_initial_state` | `widget:state` | parity |
+| `nub-banner:resize` | `widget:resize` | parity |
+| `nub:set_interactive` | `widget:passThrough` | parity |
+| `nub:visible` · `nub:banner_exit_complete` | `widget:leave` · `widget:left` | parity — **the same two-phase exit handshake** |
+| `nub:open_document` | `session:open` | parity |
+| `nub:hover` | handled in the renderer | theirs reports hover to the main process; ours decides it where it happens |
+| `nub:transcription_action` | `meeting:mark`, `moment:marked`, `moment:forgotten` | ours is narrower on purpose (DEC-21, DEC-27) |
+| — | **`widget:measuring`**, `widget:placed` | **ours, and they have nothing like it** |
+| `nub:add_screenshot_attachment` · `nub:screenshot_attachment_ready` | — | gap |
+| `nub:meeting_control_banner_*` (5) | — | gap |
+| `nub:virtual_camera_*` (11) | — | out of scope |
+
+Two conclusions, and the first is the answer to « reach the same quality ».
+
+**Structurally the widget is at parity, and in one place we are ahead.** Their sequence is
+`setSize(w, h)` then `showInactive()` — which is exactly the shape whose failure
+`widget:measuring` exists to prevent here: a window shown before anything measured it,
+arriving clipped and settling in three steps over the face of the person on the call. They
+have no first-frame measurement handshake. Whatever else is true, that one is ours.
+
+**The gaps are features hung off the widget, not the widget.** Eleven of their thirty-one
+channels are a virtual camera. Five are an in-meeting control banner. Two are a screenshot
+attachment.
+
+## US-11 — « est-ce que j'ai le droit d'enregistrer ce client ? »
+
+**Lane** `ui-session` · **Priority: this is the one with a business consequence.**
+
+Granola ships a whole **consent subsystem**: `meet-consent-host` (a native messaging host
+installed into the browser, Windows and macOS), a named pipe or unix socket per user, a
+browser extension, and `granola:coordinated-consent-send` — which posts a consent message
+into the meeting chat and coordinates so that two attendees running Granola do not send it
+twice. Their workspace settings carry
+`in_meeting_copy_consent_message_banner_enabled` and its message, and their rule set
+matches on `calendar_event_title`, `organized_by`, `in_person` and `consent_page_missing`.
+
+We have **nothing**. We record a client's words in France with no surface anywhere that
+tells them it is happening. For a product sold to an ESN whose clients are enterprises,
+that is likelier to be a procurement blocker than any feature on this list.
+
+**What is honestly available to us.** Their mechanism needs a browser extension and a bot
+in the call; DEC-49 says this product never joins the call, and that is not up for
+revision. The version that costs none of it: the pill offers **one press that puts the
+sentence on the clipboard**, and the rep pastes it into the Teams chat — or reads it out,
+which is what a rep does anyway. No server, no extension, no bot, and the rep stays the
+one who speaks.
+
+**Acceptance** — the sentence is French, declared in one place, and configurable in
+Réglages the way every other setting is (DEC-34: no environment variable); the control is
+on the pill, clears 24×24, and **does nothing else** — it never sends, never writes to the
+meeting, never touches the Outlook event body (DEC-10); pressing it is recorded as an
+event, because « did I tell them » is a question the rep will be asked later and the log is
+where the answer lives; and it is never a gate — a rep who does not press it still records,
+because refusing to record is not this product's call to make.
+
+**Out of scope** — a native messaging host, a browser extension, any coordination between
+two machines, and anything that claims consent was *obtained*. The product can record that
+the rep was offered the sentence. It cannot know what the client said.
+
+## US-12 — what the shared screen says *(argued debt)*
+
+`initScreenShareContextOcr` — they OCR the screen being shared and feed it to the model as
+context. It is the reason their notes can name a figure that was only ever on a slide.
+
+Recorded, not scoped. DEC-12 retains no raw audio, and reading a client's shared screen is
+a substantially larger step than listening to a call the rep is already in: a pricing sheet,
+a roadmap, another client's name. If it is ever wanted it is a VISION decision first, with
+the same care DEC-37 got.
 
 ---
 
