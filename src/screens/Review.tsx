@@ -369,16 +369,26 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   /**
    * **A scroll the app performed, in flight.**
    *
-   * The range above is a union of the viewports the column has shown, and a
-   * *smooth* programmatic scroll shows every intermediate one — so the gate's
-   * own jump to the first `⚠ faible` row filled the union from 0 to the target
-   * on its way past, and the guard came up satisfied for a band no human eye was
+   * The range above is a union of the viewports the column has shown, and the
+   * gate's own jump to the first `⚠ faible` row used to *animate* there — every
+   * intermediate viewport unioned in on the way past, so the union filled from 0
+   * to the target and the guard came up satisfied for a band no human eye was
    * over. That is the same failure as the old boolean, one layer subtler: the
    * measurement was of the scroller, and what it has to be of is the *rep*.
    *
    * While this is set, a measurement replaces the range instead of extending it,
    * so what survives an app-initiated jump is exactly where it landed — which is
    * the honest record of what is on screen when the rep first looks.
+   *
+   * **The jump is instant now (`src/lib/scroll.ts`) and this flag is not
+   * redundant.** Instant kills the *sweep*, which is what `extend`'s contiguity
+   * rule could never have caught — consecutive animation frames always abut, so
+   * an animated jump is always credited end to end however far it travels. What
+   * is left is the landing itself: the `⚠ faible` row is 555px down a rail whose
+   * viewport is taller than that, so the landing band is *contiguous* with the
+   * band the gate opened on and `extend` would union the two, crediting the rep
+   * with a band they were moved across in one frame. This flag is what says
+   * « the app moved this, not the rep » regardless of distance.
    *
    * Cleared on a timer rather than on `scrollend`: that event is Chromium 114+
    * and Electron ships it, but the fallback in a plain browser would be silence,
@@ -614,7 +624,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       const to = el.scrollTop + el.clientHeight
       const before = seen.current[column]
       // A jump the app made is not reading. What it leaves behind is the band it
-      // landed on, and nothing it animated past.
+      // landed on, and nothing of the span it crossed to get there.
       if (jumping.current || !before) {
         seen.current[column] = { from, to }
         return
@@ -957,10 +967,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     if (!target) return
     openedOn.current = firstFaible
     /*
-     * Marked, so the measurement records where this lands rather than
-     * everything it animates past — see `jumping`. 700ms covers Chromium's
-     * smooth scroll with room; a rep's own scroll during it is at worst counted
-     * as a landing, which under-credits them and never over-credits.
+     * Marked, so the measurement records where this lands rather than the band
+     * it was moved across — see `jumping`.
+     *
+     * **700ms is no longer « Chromium's smooth scroll with room », and it stays
+     * anyway.** The jump is instant (`src/lib/scroll.ts`), so what the window
+     * has to cover is the scroll event and the `measure` it triggers, which is a
+     * frame or two. Shortening it to that is a number chosen rather than
+     * measured, and the two ways of being wrong are not comparable: too long
+     * counts a rep's own scroll inside the window as a landing, which
+     * **under**-credits them and at worst costs one page turn; too short lets
+     * `extend` union the jump's landing with the band the gate opened on — the
+     * `⚠ faible` row is 555px down a rail whose viewport is taller than that, so
+     * the two *are* contiguous — and arms *Valider* over a band nobody looked at,
+     * which is a write into the client's CRM with no idempotency key.
      */
     jumping.current = true
     scrollToTop(target)
