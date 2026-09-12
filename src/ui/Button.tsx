@@ -54,6 +54,30 @@ import { cn } from '../lib/utils.ts'
  * glyph stays where it was and the hit area grows around it.
  *
  * `justify-center` so `block` buttons still centre their label.
+ *
+ * **A press moves the control one pixel, and three variants deliberately do not.**
+ *
+ * Measured across six stages, the whole of this product's motion vocabulary was
+ * **one** animated property: 307 colour transitions and four `riseIn`s. Nothing
+ * anywhere answered a *press* — a rep's finger went down on a button and the
+ * screen said nothing until whatever the press did had finished, which on a
+ * cloud transcription key or a VerySwing push is not instant. The published
+ * standard writes this as `scale(0.97)` on `:active`; VISION.md §6 gives this
+ * product « opacity and 2–4px translate only », so it is a one-pixel translate
+ * instead, on the existing `transition` (now the fast rung, 90ms).
+ *
+ * `enabled:` and not bare `active:`, because a disabled control that sinks under
+ * the finger is the DEC-26 dead button pretending to work.
+ *
+ * `primary`, `caution` and `danger` are **excluded**, and that is US-3's own
+ * out-of-scope line rather than an oversight: those three are what the review
+ * gate's decision ships on, and this file already carries the reason one screen
+ * over — the page turn and *Valider* were the same DOM node in the same
+ * rectangle 63ms apart, and the shared `transition` painted the ship's fill
+ * under the turn's label for one frame. `POST /v1/crm/tasks` has no idempotency
+ * key. The one control that writes into a client's CRM does not move under the
+ * finger, and adding motion to it is a decision for DEC-4, not for a motion
+ * round.
  */
 const button = cva(
   'inline-flex min-h-[24px] shrink-0 items-center justify-center transition disabled:cursor-not-allowed',
@@ -62,7 +86,7 @@ const button = cva(
     variant: {
       /** The default control: a bordered chip of a button on a card. */
       bordered:
-        'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle rounded-sm border px-3 py-1.5 text-ui font-medium',
+        'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle enabled:active:translate-y-px rounded-sm border px-3 py-1.5 text-ui font-medium',
       /** One per view at most. Brand blue marks action and navigation. */
       primary:
         'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
@@ -91,7 +115,7 @@ const button = cva(
        * `--brand-700` is 6.28:1 on white and the step the ramp nominates for
        * links.
        */
-      nav: 'text-brand-700 hover:text-brand-900 disabled:text-muted text-ui',
+      nav: 'text-brand-700 hover:text-brand-900 disabled:text-muted enabled:active:translate-y-px text-ui',
       /**
        * An irreversible stop, confirmed.
        *
@@ -108,9 +132,9 @@ const button = cva(
        */
       danger: 'bg-danger text-inner rounded-sm px-3 py-1.5 text-ui font-medium',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
-      text: 'text-muted hover:text-body disabled:opacity-60 text-ui',
+      text: 'text-muted hover:text-body disabled:opacity-60 enabled:active:translate-y-px text-ui',
       /** The same, when it needs to read as a link rather than a control. */
-      link: 'text-muted hover:text-body disabled:opacity-60 text-ui underline',
+      link: 'text-muted hover:text-body disabled:opacity-60 enabled:active:translate-y-px text-ui underline',
       },
       block: { true: 'w-full', false: '' },
     },

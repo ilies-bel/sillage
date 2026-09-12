@@ -156,9 +156,33 @@ module.exports = {
         sans: 'var(--font-body)',
         mono: 'var(--font-mono)',
       },
+      /*
+       * **`transition` means the pointer's own feedback, which is the fast rung.**
+       *
+       * `DEFAULT` was `--motion` and `fast` was `--motion-fast`, and a grep for
+       * `duration-fast` under `src/` returned **nothing** — so the fast rung was
+       * declared in `tokens.css`, mapped here, and drawn by no element in the
+       * product. Measured on the shipped renderer across six stages: 311 live
+       * declarations, of which 307 are a bare `transition` on a hover tint, all
+       * of them at 150ms. One duration, on a token file that documents two.
+       *
+       * What `transition` is written on, everywhere it appears, is a control
+       * answering the pointer: a row tint, a chip, a button, a nav item, a
+       * segmented option, a calendar cell, a dotted underline. That is the
+       * frequency table's « hundreds of times a day → reduce » row, and 90ms is
+       * where it lands — measured per animation frame, the change is 44% landed
+       * at the second frame at 150ms and 79% at 90ms. `tokens.css` carries the
+       * table.
+       *
+       * `--motion` is not orphaned by this and is not reachable as a utility on
+       * purpose: it belongs to a *surface* arriving or leaving, and all three of
+       * those are declared as rules rather than assembled out of utilities —
+       * `animate-rise-in`, `animate-fade-in` and `.widget-leaving`. A
+       * `duration-slow` class would be a fourth way to spell the same thing and
+       * would be the first to drift.
+       */
       transitionDuration: {
-        DEFAULT: 'var(--motion)',
-        fast: 'var(--motion-fast)',
+        DEFAULT: 'var(--motion-fast)',
       },
       transitionTimingFunction: {
         DEFAULT: 'var(--ease-out)',

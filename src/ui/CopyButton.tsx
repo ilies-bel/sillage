@@ -70,7 +70,35 @@ export function CopyButton({ text, what, className }: CopyButtonProps) {
       */
       aria-label={state === 'idle' ? `Copier ${what}` : undefined}
     >
-      {state === 'done' ? 'Copié' : state === 'failed' ? 'Copie impossible' : 'Copier'}
+      {/*
+        **The answer fades in, and this is `animate-fade-in`'s first caller.**
+
+        `fadeIn` has been declared in `tailwind.config.js` beside `riseIn` since
+        the config was written, and a grep for `animate-fade-in` under `src/`
+        returned nothing: two keyframes declared, one reachable. Measured across
+        six stages, the product's entire motion vocabulary was 307 colour
+        transitions and four `riseIn`s.
+
+        This is the surface that wanted it. The whole argument for a label swap
+        over a toast (above) is that the answer appears *under the rep's cursor* —
+        and it appeared between two frames, so the only evidence the press did
+        anything was a word that had already changed by the time the eye got
+        back to it. `key={state}` remounts the span, which is what restarts the
+        animation on each of the three transitions (`Copier` → `Copié` →
+        `Copier`); without it React reuses the node, the class never re-enters,
+        and the fade plays once per mount and never again.
+
+        `--motion` and not the fast rung: this is a small surface *arriving*,
+        not a control answering the pointer. It collapses to 0ms under
+        `prefers-reduced-motion` with everything else, which leaves exactly the
+        instant swap this replaces — the honest degradation.
+
+        The width does not move (see above): both words are set on the same box
+        and the span is inline, so the fade changes ink and nothing else.
+      */}
+      <span key={state} className="animate-fade-in">
+        {state === 'done' ? 'Copié' : state === 'failed' ? 'Copie impossible' : 'Copier'}
+      </span>
     </Button>
   )
 }
