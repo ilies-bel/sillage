@@ -471,6 +471,33 @@ export class Orchestrator {
     await this.#enhance(meetingId)
   }
 
+  /**
+   * **The rep has the review gate open on this meeting.**
+   *
+   * `awaiting_confirmation` blocks an installer because, in `updateGate.ts`'s own words,
+   * « the rep is at the one human gate (DEC-4) with edits on screen that have not been
+   * confirmed. Restarting discards their corrections — the single thing the review gate
+   * exists to preserve. » Nothing dispatches when a gate *opens*: `review:get` reads the
+   * projection and asks `stateOf`. So once `liveStates()` stopped answering from the
+   * rehydration cache, a meeting that reached the gate **last launch** — which on the
+   * demo build DEC-28 ships first is every meeting until somebody validates it — no
+   * longer blocked anything. Measured (`scratch/r29-gate-update.mjs`): launch 1 refuses
+   * with « un compte-rendu attend votre validation »; launch 2 opens the same gate and
+   * answers `{ safe: true }`. A rep who records at 17:00, quits, comes back Friday
+   * morning, corrects the compte-rendu and three of the eleven fields — `PENDING_EDITS`
+   * is deliberately in memory — is then offered « Installer et redémarrer », and
+   * `updateTick` downloads the installer while they stand there.
+   *
+   * Round 28 traded a permanent false refusal for a silent permission, and only the
+   * first half had a test. The honest trigger is not the stored state, which is stale
+   * for ever with no model: it is **this** — the gate was opened, in this process, by
+   * this rep. It stays marked, because the drafts it protects do: `PENDING_EDITS` holds
+   * them for the life of the window and only a confirmation clears them.
+   */
+  atGate(meetingId: MeetingId): void {
+    if (this.session(meetingId) !== null) this.#touched.add(meetingId)
+  }
+
   stateOf(meetingId: MeetingId): MeetingState {
     return this.session(meetingId)?.state ?? 'idle'
   }

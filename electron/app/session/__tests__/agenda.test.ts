@@ -1547,3 +1547,129 @@ test('a finished slot does not hand the next one to the unscheduled detector', a
   assert.equal(live.length, 1, `two offers for one conversation: ${JSON.stringify(live)}`)
   h.store.close()
 })
+
+// ── round 29: the calendar → calendar direction, which had no test ────────────
+
+test('a second invite does not strand the first in armed for ever', async () => {
+  /*
+   * **Round 25's finding in its third direction, and the one nobody had driven.**
+   *
+   * `#arm` overwrites `#armed`, which is why `#withdrawAdHoc` exists and why
+   * `#adHocArmed` is its own field. The calendar half was never written: two invites
+   * that abut — 14:00–15:00 and 15:00–16:00, the ordinary shape of a rep's day — and at
+   * 15:00 `nextArmable` answers `arm` for the second, so `tick`'s expiry branch is an
+   * `else if` that never runs and the first is never named again. Measured on the
+   * shipped class (`scratch/r29-armed-stranded.mjs`): `["armed","armed"]` at 15:00, and
+   * `["armed","idle"]` at 17:00 — the second withdrew itself, the first could not.
+   *
+   * Three costs, all past a relaunch because the row is in the store: every installer
+   * refused with « une réunion est sur le point de démarrer » about a call that never
+   * happened; the ad-hoc detector off for the working day, because `meetingLive` counts
+   * that row and `#adHocSpent` latches — one offer for a genuine 17:00 call on two
+   * non-adjacent invites, **zero** on two that abut; and a row in *À venir* wearing
+   * « Prêt » on a day four days gone, past `entries.ts`'s `isPast`.
+   *
+   * `agenda.test.ts` had the ad-hoc → ad-hoc and the calendar → ad-hoc directions, both
+   * named after this exact harm. A hundred and one tests passed with this live.
+   */
+  const HOUR = 3_600_000
+  const first = event('AAA', { scheduledStart: T0, scheduledEnd: T0 + HOUR })
+  const second = event('BBB', {
+    subject: 'Néovia — cadrage',
+    scheduledStart: T0 + HOUR,
+    scheduledEnd: T0 + 2 * HOUR,
+  })
+  const h = harness([first, second], 'Teams', null)
+  const a = meetingIdFor('AAA')
+  const b = meetingIdFor('BBB')
+
+  await h.agenda.tick({ now: T0 - ARM_LEAD_MS })
+  assert.equal(h.orchestrator.stateOf(a), 'armed', 'the first invite was never offered')
+
+  // 15:00 — the rep took the first call on their mobile and never pressed anything.
+  await h.agenda.tick({ now: T0 + HOUR })
+  assert.equal(h.orchestrator.stateOf(b), 'armed', 'the second invite was not offered')
+  assert.equal(
+    h.orchestrator.stateOf(a),
+    'idle',
+    'the first invite is still armed — nothing in the product can name it again',
+  )
+  assert.deepEqual(
+    h.orchestrator.liveStates().filter((state) => state === 'armed'),
+    ['armed'],
+    'two standing offers for two conversations, one of them unreachable',
+  )
+  h.store.close()
+})
+
+test('the calendar does not arm the next invite over a live recording', async () => {
+  /*
+   * `MeetingSession`'s table is per meeting and `dispatch`'s « one recording at a time »
+   * guards `start` only, so `arm` was legal beside a recording. A 14:00 call running to
+   * 15:05 — what a call that matters does — armed the 15:00 invite beside it: measured,
+   * `liveStates = ["recording","armed"]`, which is verbatim the string CLAUDE.md names
+   * as the defect round 24 closed, with a **second OS notification whose click
+   * navigates the rep off their live recording** (DEC-46).
+   */
+  const HOUR = 3_600_000
+  const first = event('AAA', { scheduledStart: T0, scheduledEnd: T0 + HOUR })
+  const second = event('BBB', {
+    subject: 'Néovia — cadrage',
+    scheduledStart: T0 + HOUR,
+    scheduledEnd: T0 + 2 * HOUR,
+  })
+  const h = harness([first, second], 'Teams', null)
+  const a = meetingIdFor('AAA')
+
+  await h.agenda.tick({ now: T0 - ARM_LEAD_MS })
+  h.orchestrator.dispatch(a, 'start', 'le commercial a démarré')
+
+  await h.agenda.tick({ now: T0 + HOUR })
+  assert.deepEqual(h.orchestrator.liveStates(), ['recording'], 'armed beside a live call')
+  assert.equal(h.agenda.snapshot().armed?.eventId, 'AAA', 'the live call lost its row')
+  assert.deepEqual(
+    h.armed.map((a) => a.subject),
+    ['Point Aura'],
+    'a second notification while the rep is recording navigates them off their own call',
+  )
+
+  // And the invite is armed on the next tick after the rep ends the call.
+  h.orchestrator.dispatch(a, 'end', 'le commercial a terminé')
+  await h.agenda.tick({ now: T0 + HOUR + 60_000 })
+  assert.equal(h.agenda.snapshot().armed?.eventId, 'BBB')
+  h.store.close()
+})
+
+test('armNow names the event the rep pressed, or refuses', async () => {
+  /*
+   * It read `#armed` back and returned whatever it named, on the argument that « the id
+   * the renderer should open is whatever the agenda now says is armed ». `#arm` has
+   * paths that leave `#armed` naming a *different* meeting, and `Agenda.tsx` calls
+   * `onOpen(meetingId)` with the answer: measured
+   * (`scratch/r29-armnow-wrong-meeting.mjs`), `armNow('EV-A')` returned EV-B's id, so
+   * pressing *Enregistrer* on Sodexial's row opened **Néovia's** session screen, where
+   * the next press records the Sodexial call into Néovia's meeting — its `eventId`, its
+   * attendees, its `speakerLabel`, its account, its VerySwing task, its Outlook draft.
+   */
+  const HOUR = 3_600_000
+  const first = event('AAA', { scheduledStart: T0, scheduledEnd: T0 + HOUR })
+  const second = event('BBB', {
+    subject: 'Néovia — cadrage',
+    scheduledStart: T0 + HOUR,
+    scheduledEnd: T0 + 2 * HOUR,
+  })
+  const h = harness([first, second], 'Teams', null)
+  const a = meetingIdFor('AAA')
+
+  await h.agenda.tick({ now: T0 - ARM_LEAD_MS })
+  // The first call happens and reaches the gate; the calendar then offers the second.
+  for (const command of ['start', 'end'] as const) h.orchestrator.dispatch(a, command, 'x')
+  await h.agenda.tick({ now: T0 + HOUR })
+  assert.equal(h.agenda.snapshot().armed?.eventId, 'BBB')
+
+  // A stale row for the first call — drawn before the calendar armed and recorded it.
+  assert.throws(() => h.agenda.armNow('AAA'), /ne peut plus être démarrée/)
+  // And the control: the event that *is* armed opens its own meeting.
+  assert.equal(h.agenda.armNow('BBB').meetingId, meetingIdFor('BBB'))
+  h.store.close()
+})

@@ -2148,6 +2148,21 @@ async function main() {
       #sillage-attack-scinde {
         transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
       .sillage-attack-parti { opacity: 0 }
+      /* Probe 9: the endpoint **inline** and the motion in a class — the split-rule
+         spelling one level over, which the inline branch demanded in one place. */
+      #sillage-attack-inline {
+        transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      /* Probe 10: a departure on an element that also has an ordinary hover *dim*. Any
+         non-zero opacity under a state used to excuse a departure outright. */
+      #sillage-attack-dim { opacity: 0;
+        transition: opacity var(--motion) cubic-bezier(0.22, 1, 0.36, 0.99) !important }
+      #sillage-attack-dim:hover { opacity: .85 }
+      /* Probe 11, the second that must stay **silent**: a reveal gated on a class rather
+         than on a pseudo-class, which is how anything driven by JavaScript is written.
+         Reported as a departure for a round, on correct code. */
+      #sillage-attack-revele { opacity: 0;
+        transition: opacity var(--motion) var(--ease-out) !important }
+      #sillage-attack-revele.sillage-attack-visible { opacity: 1 }
       /* Probe 6, the one that must stay silent: arriving, on the arrival curve,
          wearing the word that used to be read as « leaving ». */
       #sillage-attack-arrivee {
@@ -2177,6 +2192,10 @@ async function main() {
       add('sillage-attack-keyframe')
       add('sillage-attack-to')
       add('sillage-attack-scinde', 'sillage-attack-parti')
+      add('sillage-attack-dim')
+      add('sillage-attack-revele')
+      // The endpoint written where no stylesheet declares it.
+      add('sillage-attack-inline').style.opacity = '0'
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
       svg.id = 'sillage-attack-svg'
       svg.setAttribute('width', '8')
@@ -2415,6 +2434,16 @@ async function main() {
           'un départ dont le point d’arrivée et le mouvement sont dans deux règles ' +
             'séparées — la façon la plus banale d’écrire une sortie par classe d’état',
         ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-inline')),
+          'un départ dont le point d’arrivée est en style inline et le mouvement dans ' +
+            'une classe — la même scission, un niveau plus bas',
+        ],
+        [
+          backwards.some((m) => m.what.includes('sillage-attack-dim')),
+          'un départ sur un élément qui a par ailleurs un simple assombrissement au ' +
+            'survol — n’importe quelle opacité non nulle sous un état l’exemptait',
+        ],
         /*
          * **On its own element, named, and described by what `persisting` can
          * actually measure.**
@@ -2451,6 +2480,17 @@ async function main() {
           'RIEN — la classe Tailwind « ease-out » sur un élément qui arrive a été signalée ' +
             'comme un départ (faux positif)',
         ],
+        /*
+         * The second silent one. `#sillage-attack-revele` rests at `opacity: 0` and is
+         * revealed by a *class*, which is how a JavaScript-driven reveal is written — and
+         * it was reported as a departure on an arrival curve for a round. A false positive
+         * here is worse than the hole, because a check people work around is gone.
+         */
+        [
+          !backwards.some((m) => m.what.includes('sillage-attack-revele')),
+          'RIEN — une révélation conditionnée par une classe (et non par un pseudo-état) ' +
+            'a été signalée comme un départ (faux positif)',
+        ],
       ]
         .filter(([held]) => !held)
         .map(([, what]) => what)
@@ -2463,7 +2503,7 @@ async function main() {
         process.exitCode = 11
       } else {
         console.log(
-          '  auto-test du mouvement: les neuf attaques signalées, la dixième restée muette',
+          '  auto-test du mouvement: les onze attaques signalées, les deux dernières restées muettes',
         )
       }
     }
@@ -2817,7 +2857,7 @@ async function a11y(page) {
 /**
  * **How many characters a line of this prose really holds.**
  *
- * `.measure` is `66ch`, and the doctrine around it says a measure is « a count
+ * `.measure` is `58ch`, and the doctrine around it says a measure is « a count
  * of characters, not a width ». `ch` is the advance of the digit zero, which in
  * Inter is about 9.4px, while the average advance of French lowercase is about
  * 7.7 — so `66ch` renders **eighty-one characters**, not sixty-six. The rule
@@ -2851,17 +2891,35 @@ async function prose(page) {
      * inspects the elements wearing it is checking the label rather than the
      * text.
      *
-     * Ninety characters of *own* text is the test for « this is prose ». A
-     * heading, a button, a cell and a timestamp are all shorter than that by a
-     * wide margin, so the threshold separates them without a list of tag names
-     * that would need maintaining — and an element is measured only for the text
-     * it owns, never for its children's, so a wrapper is not reported for the
-     * paragraphs inside it.
+     * **The element's own text, *summed* — and requiring one text node to carry it
+     * all made the check blind to every quotation in the product.**
+     *
+     * It was « some child text node longer than ninety characters », and almost no
+     * prose in this app is one text node. `« {match.excerpt} »` is three, so the
+     * *Historique* search result — whose excerpt is deliberately « forty characters
+     * either side of the hit », so it can never reach ninety in one node — was never
+     * measured: **185 characters a line** at 1280×800, two and a half times the
+     * ceiling and wider than the 130 at the gate this rule was written to end.
+     * `À :{' '}{to.join(', ')}` is two, because JSX `{' '}` is its own node, so the
+     * line naming who the Outlook draft goes to — read immediately before the one
+     * irreversible press — measured **90 inside a `.measure` wrapper**, which is
+     * verbatim the wrapper-versus-element failure this rule already records at eighty.
+     * A `<mark>` around the hit splits it again. Four live surfaces, green on 108
+     * stagings.
+     *
+     * Sixty rather than ninety, and the number is argued rather than chosen: the
+     * ceiling is seventy-five characters a line, so an element holding fewer than
+     * about sixty characters of its own cannot demonstrate a line that is too long —
+     * below that the check would be reporting a *capacity* nothing fills. A heading, a
+     * button, a cell and a timestamp are all well under it, so it still separates prose
+     * from chrome with no list of tag names. Children's text is still excluded, so a
+     * wrapper is not reported for the paragraphs inside it.
      */
-    const surfaces = [...document.querySelectorAll('body *')].filter((el) =>
-      [...el.childNodes].some(
-        (node) => node.nodeType === 3 && (node.textContent ?? '').trim().length > 90,
-      ),
+    const surfaces = [...document.querySelectorAll('body *')].filter(
+      (el) =>
+        [...el.childNodes]
+          .filter((node) => node.nodeType === 3)
+          .reduce((total, node) => total + (node.textContent ?? '').trim().length, 0) > 60,
     )
     for (const el of surfaces) {
       const style = getComputedStyle(el)
@@ -3516,9 +3574,18 @@ async function motion(page) {
             if (opacity !== '') {
               const value = Number.parseFloat(opacity)
               if (value === 0) leavingSelectors.push(rule.selectorText)
-              else if (value > 0 && STATE.test(rule.selectorText)) {
-                revealSelectors.push(rule.selectorText)
-              }
+              /*
+               * **An escape from invisible is a restore to visible, and a hover that
+               * merely dims is not one.**
+               *
+               * This took any non-zero opacity under a state, so an ordinary
+               * `.pill:hover { opacity: .85 }` permanently exempted that element's
+               * departure — measured: a probe with both went completely silent. A reveal
+               * restores the element (`group-hover:opacity-100` is `opacity: 1`); a dim
+               * is a hover affordance on something already visible and says nothing
+               * about whether the element is going away.
+               */
+              else if (value >= 0.99) revealSelectors.push(rule.selectorText)
             }
           } else if (rule.type === CSSRule.KEYFRAMES_RULE) {
             /*
@@ -3606,12 +3673,39 @@ async function motion(page) {
        * about Tailwind, about class names, or about which end of a declaration block
        * something was written in.
        */
+      /**
+       * **And a state is not only a pseudo-class.**
+       *
+       * Round 28 stripped `:hover` and its family, which is right for
+       * `group-hover:opacity-100` and blind to every reveal gated on a *class* or an
+       * *attribute* — `.is-shown`, `[data-open]`, `[aria-expanded="true"]`, which is how
+       * anything driven by JavaScript rather than by the pointer is written. Measured: a
+       * probe resting at `opacity: 0` with `.is-shown { opacity: 1 }` beside it was
+       * reported as a departure on an arrival curve, on correct code — and this repo's
+       * own verdict on that direction is that a false positive here is worse than the
+       * hole, because a check people work around is gone.
+       *
+       * So the pseudo-classes are stripped globally, as before, and then the trailing
+       * simple selectors of the last compound are peeled one at a time: an element that
+       * matches what is left is an element the reveal is *for*, waiting on a state it is
+       * not in. Four peels, which is more than any selector in this product needs, and a
+       * peel that would leave a bare combinator stops — `.group .x` must not degrade to
+       * « anything inside `.group` ».
+       */
+      const PEELABLE = /(?:\.(?:\\.|[\w-])+|\[[^\]]*\])$/
       const revealed = (el) => {
         for (const selector of revealSelectors) {
-          try {
-            if (el.matches(selector.replace(new RegExp(STATE.source, 'g'), ''))) return true
-          } catch {
-            // A selector this browser cannot parse says nothing either way.
+          let probe = selector.replace(new RegExp(STATE.source, 'g'), '').trim()
+          for (let peel = 0; peel < 4; peel += 1) {
+            try {
+              if (probe !== '' && el.matches(probe)) return true
+            } catch {
+              // A selector this browser cannot parse says nothing either way.
+              break
+            }
+            const shorter = probe.replace(PEELABLE, '')
+            if (shorter === probe || shorter === '' || /[\s>+~]$/.test(shorter)) break
+            probe = shorter
           }
         }
         return false
@@ -3630,15 +3724,25 @@ async function motion(page) {
           if (leavingKeyframes.has(name)) return true
         }
         /*
-         * And the same pair written inline, which no stylesheet declares: a
-         * `style={{ opacity: 0, transition: '…' }}` is one block by construction.
+         * **An inline `opacity: 0` is a departure whatever moves it**, and requiring the
+         * motion inline too was the same mistake one spelling over.
+         *
+         * This asked for the pair in one place — `style={{ opacity: 0, transition: '…' }}`
+         * — which is the « same declaration block » rule that the split-rule spelling
+         * defeated in the stylesheet, reproduced for the inline case. Measured: an
+         * element with `el.style.opacity = '0'` and its transition in a class went
+         * completely silent, so `style={{ opacity: leaving ? 0 : 1 }}` takes the widget's
+         * exit out of the direction rule exactly as `.widget-shell` + `.widget-leaving`
+         * did. The element only reaches this point with a live duration on it —
+         * `reading()` returns null otherwise — so the motion is already established, and
+         * the escape test is what separates a departure from a reveal.
          */
         const inline = el.style
         return (
           inline != null &&
           inline.opacity !== '' &&
           Number.parseFloat(inline.opacity) === 0 &&
-          (inline.transition !== '' || inline.transitionDuration !== '' || inline.animation !== '')
+          !revealed(el)
         )
       }
       /*

@@ -152,3 +152,69 @@ test('one recording at a time survives the narrower set', () => {
   assert.deepEqual(orchestrator.liveStates(), ['recording', 'idle'])
   store.close()
 })
+
+test('a gate opened on a rehydrated meeting refuses an installer again', () => {
+  /*
+   * **The half the narrower set lost, and the one `updateGate.ts` spells out.**
+   *
+   * `awaiting_confirmation` blocks because, in its own words, « the rep is at the one
+   * human gate (DEC-4) with edits on screen that have not been confirmed. Restarting
+   * discards their corrections — the single thing the review gate exists to preserve. »
+   * Nothing dispatches when a gate *opens*: `review:get` reads the projection and asks
+   * `stateOf`. So a meeting that reached the gate on a previous launch — which on the
+   * demo build DEC-28 ships first is every meeting until somebody validates it — stopped
+   * refusing anything. Measured: launch 1 answers « un compte-rendu attend votre
+   * validation »; launch 2 opens the same gate and answers `{ safe: true }`, so a rep who
+   * records at 17:00, comes back Friday, corrects the compte-rendu and three of the
+   * eleven fields, is offered « Installer et redémarrer » — and `PENDING_EDITS` is
+   * deliberately in memory.
+   *
+   * The trigger is `atGate`, not the stored state: `ended`, `extracting` and
+   * `awaiting_confirmation` all persist for ever with no model (DEC-39), so blocking on
+   * the projection is the permanent false refusal round 28 closed.
+   */
+  const store = openMemoryStore()
+  const first = new Orchestrator(store)
+  first.create({ id: 'm-jeudi', title: 'Sodexial — comité', context: null })
+  for (const command of ['start', 'end', 'extract', 'extractionSucceeded'] as const) {
+    first.dispatch('m-jeudi', command, 'x')
+  }
+  assert.equal(first.stateOf('m-jeudi'), 'awaiting_confirmation')
+  assert.equal(updateReadiness(first.liveStates(), false).safe, false)
+
+  // Friday morning, same database, new process.
+  const friday = new Orchestrator(store)
+  assert.equal(updateReadiness(friday.liveStates(), false).safe, true, 'blocked before the gate')
+
+  // `review:get` opens the gate on it.
+  friday.atGate('m-jeudi')
+  assert.deepEqual(updateReadiness(friday.liveStates(), false), {
+    safe: false,
+    reason: 'un compte-rendu attend votre validation',
+  })
+  store.close()
+})
+
+test('and a gate that never opened leaves the installer alone', () => {
+  /*
+   * The other direction, which is the round-28 defect: a meeting sitting in a blocking
+   * state from last week must not refuse anything, and `atGate` must be the only way in.
+   */
+  const store = openMemoryStore()
+  const first = new Orchestrator(store)
+  first.create({ id: 'm-vieux', title: 'Groupe Lefort — CV', context: null })
+  for (const command of ['start', 'end', 'extract', 'extractionSucceeded'] as const) {
+    first.dispatch('m-vieux', command, 'x')
+  }
+
+  const later = new Orchestrator(store)
+  // Every read path a screen takes on a past call.
+  later.stateOf('m-vieux')
+  later.session('m-vieux')
+  assert.equal(updateReadiness(later.liveStates(), false).safe, true)
+
+  // And `atGate` on a meeting the log does not hold is not an error and marks nothing.
+  later.atGate('m-inconnu')
+  assert.deepEqual(later.liveIds(), [])
+  store.close()
+})

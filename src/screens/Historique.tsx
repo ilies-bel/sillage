@@ -784,7 +784,7 @@ function Extraction({ fields }: { fields: readonly ReviewField[] }) {
               <span className="text-warn font-semibold">⚠ faible</span>
             ) : null}
           </dt>
-          <dd className="text-body text-ui italic">
+          <dd className="text-body measure text-ui italic">
             {field.span
               ? `« ${field.span.quote} »${
                   field.span.startMs === null

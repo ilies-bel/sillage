@@ -326,7 +326,13 @@ export function TranscriptReader({
         than leaving the rep to scroll looking for something that is not there.
       */}
       <div className="border-subtle mb-3 flex items-baseline gap-inline border-b pb-2">
-      <p className="text-muted min-w-0 flex-1 text-meta">
+      {/*
+        `.measure` on the paragraph, for the reason the one below it carries: `ch` resolves
+        against the element's own size, so a `--type-meta` line in a column sized for
+        `--type-copy` runs long. This one names the citation the rep is following, or says
+        it is not in the record — 88 characters a line, measured.
+      */}
+      <p className="text-muted measure min-w-0 flex-1 text-meta">
         {/*
           « du champ « X » » rather than « de X ». The field labels are data —
           *Objections*, *Objet*, *Étape* — and French elides `de` before a vowel,
@@ -387,7 +393,7 @@ export function TranscriptReader({
         the words; they could not tell it apart from nothing.
       */}
       {interlocuteurs.length > 1 ? (
-        <p className="text-muted mb-3 text-meta">
+        <p className="text-muted measure mb-3 text-meta">
           Côté client&nbsp;: {interlocuteurs.map((person) => person.name).join(', ')}. Les tours
           sont attribués au canal, jamais à une personne.
         </p>
@@ -423,7 +429,7 @@ export function TranscriptReader({
       */}
       {trimmed !== '' && matches.size === 0 ? (
         <div className="border-subtle bg-inner mb-3 rounded-sm border p-2">
-          <p className="text-muted text-meta">
+          <p className="text-muted measure text-meta">
             {candidates.length === 0
               ? 'Aucun passage ne contient cette phrase, ni aucun de ses termes.'
               : 'Aucun passage ne contient cette phrase. Les plus proches, à vérifier :'}

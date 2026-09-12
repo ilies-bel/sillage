@@ -1916,7 +1916,13 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           column.
         */
         <div data-unmeasured className="mt-1">
-          <p className="text-muted text-meta italic">
+          {/*
+            `.measure` on the paragraph: it holds the quote itself, which is the longest
+            prose on the row — 88 characters a line at `--type-meta`, measured on
+            `review-transcription-introuvable`. The wrapper above is sized for
+            `--type-copy` and `ch` resolves against the element's own size.
+          */}
+          <p className="text-muted measure text-meta italic">
             {field.span
               ? `« ${field.span.quote} »${
                   field.span.startMs === null ? ' — introuvable dans la transcription' : ` — ${formatOffset(field.span.startMs)}`
@@ -2001,7 +2007,14 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         */}
         <CopyButton text={`${subject}\n\n${body}`} what="le brouillon de relance" />
       </div>
-      <p className="text-muted mb-1 text-meta">
+      {/*
+        `.measure` on the paragraph and not only on the wrapper around it: `ch` resolves
+        against the element's *own* size, so a wrapper wearing the class at `--type-copy`
+        leaves this `--type-meta` line unconstrained. It measured **90 characters** —
+        which is the wrapper-versus-element failure this rule already records at eighty,
+        on the same screen, one press before the VerySwing task and the Outlook draft.
+      */}
+      <p className="text-muted measure mb-1 text-meta">
         À :{' '}
         {to.length === 0
           ? 'aucun destinataire — aucun brouillon ne sera créé, le texte reste copiable'

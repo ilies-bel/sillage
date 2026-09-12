@@ -47,7 +47,15 @@ export function Matches({ matches, className }: { matches: readonly HistoryMatch
             whose whole job is « which surface matched, and where ».
           */}
           <span className="w-28 shrink-0">{WHERE_LABEL[match.where]}</span>
-          <span className="text-body min-w-0 flex-1 italic">« {match.excerpt} »</span>
+          {/*
+            `.measure` because the excerpt is prose and this row is as wide as the
+            window: at 1280×800 *Historique* drew **213 characters a line** here, two and
+            a half times the ceiling and wider than the 130 at the gate the rule was
+            written to end. `--prose` could not see it because `« {x} »` is three text
+            nodes and the check demanded ninety in one — and the excerpt is « forty
+            characters either side of the hit » by construction, so it can never be one.
+          */}
+          <span className="text-body measure min-w-0 flex-1 italic">« {match.excerpt} »</span>
         </li>
       ))}
     </ul>

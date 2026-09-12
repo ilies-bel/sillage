@@ -823,6 +823,20 @@ export const handlers: Handlers = {
       return { open: false as const, state, reason: 'Aucun compte-rendu disponible.' }
     }
 
+    /*
+     * **The gate is open on this meeting, which is what makes it block an installer.**
+     *
+     * `awaiting_confirmation` is in `UPDATE_BLOCKING_STATES` for the rep's *edits*, and
+     * nothing dispatches when a gate opens — so a meeting that reached the gate on a
+     * previous launch stopped refusing « Installer et redémarrer » the moment
+     * `liveStates()` stopped answering from the rehydration cache. Said here rather than
+     * on the state, because the stored state is stale for ever when no model is
+     * configured (DEC-39) and would refuse every installer for ever, which is the
+     * defect round 28 closed. Said after the availability check, so only a gate that
+     * actually opened counts.
+     */
+    orchestrator.atGate(meetingId)
+
     const { extraction, verification } = stored
     /*
      * The **model's** document, deliberately, and not `compteRenduOf`. This is

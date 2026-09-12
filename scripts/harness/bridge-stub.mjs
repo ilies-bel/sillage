@@ -286,8 +286,34 @@ export function installAppBridge(config) {
    * every meeting, in every scenario — which is what was missing: reverting the one
    * timing hunk the previous round wrote left all six of its tests passing.
    */
-  const NEOVIA_SLOT = at(0, 14, 30)
-  const NEOVIA_CREATED = at(0, 14, 28)
+  /** Live states — the ones with no end yet. */
+  const NEOVIA_LIVE = !(
+    scenario === 'review' ||
+    scenario === 'compte-rendu' ||
+    scenario === 'enhancement-attente' ||
+    scenario === 'enhancement-echec'
+  )
+  /**
+   * **A call that has ended is a real call, and this one was three minutes.**
+   *
+   * `m-neovia-cadrage` is the flagship: every `session*`, `review*`, `widget*` and
+   * `session-demander` stage is it. Its slot was 14:30 against a `now` pinned at 14:35,
+   * so on the scenarios where it has *ended* — the gate, the compte-rendu, both
+   * enhancement cases — it was a **three-minute** sales call that produced eleven typed
+   * fields, a full ESN compte-rendu, two marks and an Outlook draft. Round 28's density
+   * check divides by the recording and 1 595 characters over 3 minutes is 532 a minute,
+   * comfortably inside its band: the one axis a density cannot ask about is whether the
+   * recording is long enough to be a call.
+   *
+   * So the slot moves with the state. Live, it is 14:30 and the pill is five minutes in,
+   * which is what the calendar stage is for. Ended, it is 13:45 and the call ran
+   * forty-seven minutes, finishing three minutes before the pinned instant — which is
+   * what the gate's reader, `review-garde-transcription`, `ReadingColumn`, the `--fade`
+   * ramp and the citation scroll have never once been photographed against. CLAUDE.md's
+   * own « fifty page turns on a fifty-minute call » was unreachable from any stage.
+   */
+  const NEOVIA_SLOT = NEOVIA_LIVE ? at(0, 14, 30) : at(0, 13, 45)
+  const NEOVIA_CREATED = NEOVIA_SLOT - 2 * MIN
   const NEOVIA_STARTED = NEOVIA_SLOT
   /**
    * How long the call ran. Three minutes, which is what nineteen turns nine
@@ -300,15 +326,9 @@ export function installAppBridge(config) {
    * `endedAt ?? now`, so tightening the rhythm past the end of the call fails
    * rather than silently dating a turn after the recording stopped.
    */
-  const NEOVIA_DURATION_MS = 3 * MIN
+  const NEOVIA_DURATION_MS = NEOVIA_LIVE ? 3 * MIN : 47 * MIN
   const NEOVIA_ENDED = NEOVIA_STARTED + NEOVIA_DURATION_MS
   /** Live states — the ones with no end yet. */
-  const NEOVIA_LIVE = !(
-    scenario === 'review' ||
-    scenario === 'compte-rendu' ||
-    scenario === 'enhancement-attente' ||
-    scenario === 'enhancement-echec'
-  )
   const STEP_MS = 9_000
 
   const MEETINGS = [
@@ -2677,7 +2697,17 @@ export function installAppBridge(config) {
       this file — see the table there, and the reason it stopped being one
       channel's private arrangement.
     */
-    'review:transcript': () => ({ segments: SEGMENTS, marks: MARKS }),
+    /*
+      Tiled across the recording, for the reason `fillCall` states: nineteen turns in a
+      forty-seven-minute call is 34 characters a minute against a real call's 1 386, and
+      the gate's reader, `ReadingColumn`, the `--fade` ramp and the citation scroll are
+      exactly the surfaces that a short record flatters. The call's own nineteen turns
+      stay first with their ids, so every located span and both marks still resolve.
+    */
+    'review:transcript': () => ({
+      segments: fillCall(SEGMENTS, NEOVIA_STARTED, NEOVIA_LIVE ? now : NEOVIA_ENDED, 'seg-neovia-suite'),
+      marks: MARKS,
+    }),
 
     /*
       **A confirmation that changes nothing is a fixture showing the product

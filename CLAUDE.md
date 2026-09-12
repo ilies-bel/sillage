@@ -273,6 +273,21 @@ machine) or in `core/domain/` — never in an IPC handler.
   line in the notepad, 130 at the gate. Nothing is clipped and nothing overlaps, which is
   exactly why three screenshot reviews missed it: an unreadably long line is invisible in a
   picture. A new pane that holds prose uses the class; it never picks its own number.
+  **And `--prose` could not see a line of prose split by one inline element, which is
+  almost all of it.** The filter was « some child text node longer than ninety
+  characters », and `« {excerpt} »` is three nodes, `À :{' '}{to.join(', ')}` is two
+  because JSX `{' '}` is its own node, and a `<mark>` around a search hit splits it again.
+  Four live surfaces were therefore never measured, green on 108 stagings: *Historique*'s
+  search result at **213 characters a line** — two and a half times the ceiling and wider
+  than the 130 at the gate this rule was written to end, and its excerpt is « forty
+  characters either side of the hit » so it can *never* be ninety in one node; the line
+  naming who the Outlook draft goes to, read immediately before the one irreversible press,
+  at **90 inside a `.measure` wrapper**, which is the wrapper-versus-element failure this
+  paragraph already records at eighty, on the same screen; the gate reader's citation
+  header; and a field row's quote. The element's own text is **summed** now, and the floor
+  is sixty rather than ninety because the ceiling is seventy-five: an element holding less
+  than that cannot demonstrate a line that is too long, and below it the check would be
+  reporting a capacity nothing fills. Seven surfaces wear the class as a result.
   It was `38rem`, which is a *different* measure at every font size that lands in it —
   eighty-seven characters at `--type-copy` and a hundred and eleven at `--type-meta` — so
   the class written to end this problem was reintroducing it one size down, on the caption
@@ -885,6 +900,20 @@ machine) or in `core/domain/` — never in an IPC handler.
   `scripts/harness/pinnedNow.mjs` — extracted because `shot.mjs` and `serve.mjs` each held a
   character-for-character copy, and a test asking « is anything dated after the instant the
   fixture is pinned to » must not be a third. Reverting the hunk now costs 943 findings.
+  **And the one axis a density cannot ask about is whether the recording is long enough
+  to be a call.** `m-neovia-cadrage` is the flagship — every `session*`, `review*`,
+  `widget*` and `session-demander` stage is it — and its slot was 14:30 against a `now`
+  pinned at 14:35, so on every scenario where it has *ended* (the gate, the compte-rendu,
+  both enhancement cases) it was a **three-minute** sales call that produced eleven typed
+  fields, a full ESN compte-rendu, two marks and an Outlook draft. 1 595 characters over
+  three minutes is 532 a minute, comfortably inside the band. The slot moves with the state
+  now: live it is 14:30 and the pill is five minutes in, which is what the calendar stage
+  is for; ended it is 13:45 and the call ran **forty-seven minutes**, finishing three
+  minutes before the pinned instant, with `review:transcript` tiled to match — 313 turns,
+  26 292 characters, 559 a minute. The gate's reader, `review-garde-transcription`,
+  `ReadingColumn`, the `--fade` ramp and the citation scroll had never once been
+  photographed against a transcript the product can produce, and this file's own « fifty
+  page turns on a fifty-minute call » was unreachable from any stage.
   Two lies it found on its first run. `LEFORT_SEGMENTS` stamped five turns one **minute** apart
   that `startMs` places twelve **seconds** apart — the reader draws `receivedAt` as wall clock
   and the gate draws `span.startMs` as an offset, so the same five turns were a four-minute
@@ -918,6 +947,40 @@ machine) or in `core/domain/` — never in an IPC handler.
   could: a browser tab, a Slack huddle and Aircall are `micOnly`, matched by microphone and
   never by name, because they are open all day.
 
+- **The calendar overwrote its own standing offer, and nothing could name it again**
+  (`Agenda.#withdrawCalendar`). Round 25's finding in its **third** direction and the one
+  nobody had driven. `#arm` overwrites `#armed`, which is why `#withdrawAdHoc` exists and
+  why `#adHocArmed` is its own field; the calendar half was never written. Two invites
+  that abut — 14:00–15:00 and 15:00–16:00, the ordinary shape of a rep's day — and at
+  15:00 `nextArmable` answers `arm` for the second, so `tick`'s expiry branch is an
+  `else if` that never runs. Measured on the shipped class: `["armed","armed"]` at 15:00
+  and `["armed","idle"]` at 17:00 — the second withdrew itself, the first could not.
+  Three costs, all past a relaunch because the row is in the store: **every installer
+  refused** with « une réunion est sur le point de démarrer » about a call that never
+  happened; the **ad-hoc detector off for the working day**, because `meetingLive` counts
+  that row and `#adHocSpent` latches — one offer for a genuine 17:00 client call on two
+  non-adjacent invites and **zero** on two that abut; and a row in *À venir* wearing
+  « Prêt », past `entries.ts`'s `isPast`, on a day four days gone. `agenda.test.ts` had
+  the ad-hoc → ad-hoc and calendar → ad-hoc directions, both named after this exact harm;
+  the calendar → calendar one had no test and a hundred and one tests passed with it live.
+  **And `arm` was legal beside a live recording**, because `MeetingSession`'s table is per
+  meeting and `dispatch`'s « one recording at a time » guards `start` only. A 14:00 call
+  running to 15:05 — what a call that matters does — armed the 15:00 invite beside it:
+  `liveStates = ["recording","armed"]`, *verbatim* the string this file names as the
+  defect round 24 closed, with a **second OS notification whose click navigates the rep
+  off their live recording** (DEC-46). A call under way takes the conversation and the
+  calendar waits; the next tick after the rep ends it arms the invite, because `#spent`
+  then filters the finished call out.
+  **And `armNow` returned whatever was armed, not what the rep pressed.** It read `#armed`
+  back on the argument that « the id the renderer should open is whatever the agenda now
+  says is armed », which is true of the exits it listed and false of the two it gained:
+  a refusal for this event, and a call under way. Measured: `armNow('EV-A')` returned
+  EV-B's meeting id, so pressing *Enregistrer* on Sodexial's row opened **Néovia's**
+  session screen, where the next press records the Sodexial call into Néovia's meeting —
+  its `eventId`, its attendees, its `speakerLabel`, its account, and therefore its
+  VerySwing task and its Outlook draft. The round-27 docblock beside `#refused` says
+  « `armNow` throws each time, so the rep is told »; it did not throw, it silently named
+  the wrong meeting. Shape #7, in prose added the round before.
 - **Every claimant, and every candidate — one spent slot took the whole calendar's word
   with it** (`calendarClaims`, `Agenda.#spent`). **Sixth consecutive round on the
   arbitration rule**, and the fifth time the previous fix was right about the axis the
@@ -984,6 +1047,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   client's CRM, where `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete
   verb. It deliberately does **not** widen `ARM_LEAD_MS`, because arming *on* a held microphone
   claims this call is that event, and the further from the slot the weaker that claim is.
+- **And the gate is open because the rep opened it, not because the log says so**
+  (`Orchestrator.atGate`, called from `review:get`). The narrower set below traded a
+  permanent false refusal for a **silent permission**, and only the first half had a test.
+  `awaiting_confirmation` blocks an installer because, in `updateGate.ts`'s own words,
+  « the rep is at the one human gate (DEC-4) with edits on screen that have not been
+  confirmed. Restarting discards their corrections — the single thing the review gate
+  exists to preserve. » Nothing *dispatches* when a gate opens: `review:get` reads the
+  projection and asks `stateOf`. Measured: launch 1 refuses with « un compte-rendu attend
+  votre validation »; launch 2 opens the same gate and answers `{ safe: true }`. So a rep
+  who records at 17:00, quits, comes back Friday, corrects the compte-rendu and three of
+  the eleven fields — `PENDING_EDITS` is deliberately in memory — is offered « Installer
+  et redémarrer », and `updateTick` downloads the installer while they stand there. On the
+  demo build DEC-28 ships first every meeting sits in `awaiting_confirmation` until
+  validated, so every gate opened the morning after was unprotected. The trigger is the
+  gate *opening*, said once, after the availability check — never the stored state, which
+  persists for ever with no model (DEC-39) and would refuse every installer for ever,
+  which is the defect below.
 - **What the process is *doing* is not what it has looked at** (`Orchestrator.#touched`).
   `liveStates()` and `liveIds()` were `#sessions`, and `#sessions` is the **rehydration
   cache**: `session()` loads a meeting from the log on demand and keeps it, so *asking a
@@ -1140,6 +1220,20 @@ machine) or in `core/domain/` — never in an IPC handler.
   said computed.** A computed zero under a live duration is the reveal-on-hover mark button —
   resting at zero and *arriving* — which is the seven false findings that rule was rebuilt to
   lose. The code was right; the prose describing it was one word too broad.
+  **And the escape test was wrong in three ways at once, two silent and one crying wolf.**
+  The `opacity: 0` half was fixed in the stylesheet and left demanding the pair *inline*,
+  so `style={{ opacity: leaving ? 0 : 1 }}` with the transition in a class took the exit
+  out of the rule exactly as the split-rule spelling had — the same mistake one level down.
+  Any non-zero opacity under a state counted as an escape, so an ordinary
+  `.pill:hover { opacity: .85 }` **permanently exempted that element's departure**: an
+  escape from invisible is a restore to *visible*, and a hover that merely dims says
+  nothing, so the threshold is `1`. And only *pseudo-class* states counted, so every reveal
+  gated on a class or an attribute — `.is-shown`, `[data-open]`, `[aria-expanded]`, which
+  is how anything driven by JavaScript rather than by the pointer is written — was reported
+  as a blink on correct code; the pseudo-classes are stripped globally and then the
+  trailing simple selectors of the last compound are peeled one at a time, so an element
+  the reveal is *for* is recognised while `.group .x` never degrades to « anything inside
+  `.group` ». Eleven probes now, two of which must stay silent.
   **And « the endpoint and the motion are declared in the same block » was the wrong
   discriminator, defeated by the most ordinary way to write an exit.** That rule was
   measured and it was right about the seven mark buttons on `widget-ouvert` —
@@ -1314,6 +1408,19 @@ machine) or in `core/domain/` — never in an IPC handler.
   port with no declared home fails, so the list cannot rot back into one entry — which
   took it from 6 methods to 28 and surfaced `LlmPort.complete`, declared, implemented,
   unit-tested seventeen times and called by nothing.
+
+  **And it failed on an ordinary respelling of live code, which is the worse direction.**
+  The caller test demanded `(` adjacent to the method name, so replacing
+  `(await deps.updates?.install()) ?? false` with a `.bind` and a call through the bound
+  reference type-checks clean and took the check to exit 1: « UpdatePort.install n'est
+  appelé nulle part ». The remedy its own sentence names is an `UNWIRED` entry — standing
+  permission on working code, the exact rot that list is documented to prevent. A method
+  taken as a value *is* the port being reached, so `.bind(`, `.call(`, `.apply(` and being
+  passed as an argument count. The followers are **enumerated** rather than dropped,
+  because a bare word boundary would re-admit the false green: a docblock in a caller file
+  writing `` `updates.install` `` inside backticks would satisfy it, which is the shape that
+  let `CalendarPort.sync` pass on prose about `CalendarPort.sync`. Both directions are
+  driven — a dead method still fails, and prose naming a method does not satisfy it.
 
   **And the one escape hatch the per-file scoping had to keep reopened it for the one name
   that collides with an Electron global.** `ambient` — receivers a `.d.ts` or a

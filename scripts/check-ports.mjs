@@ -359,11 +359,30 @@ for (const port of discovered) {
       const cacheKey = `${alternation}|${method}`
       let scoped = compiled.get(cacheKey)
       if (scoped === undefined) {
-        // `receiver` `!`? `?`? `.` `method` `<…>`? `(` — the shapes the tree actually
-        // writes: `crm.resolveAccount(`, `this.#crm!.pushCompteRendu(`,
-        // `updates?.state()`, `this.#llm.structured<SignalReply>({`.
+        /*
+         * `receiver` `!`? `?`? `.` `method` `<…>`? and then **either a call or a
+         * reference** — `crm.resolveAccount(`, `this.#crm!.pushCompteRendu(`,
+         * `updates?.state()`, `this.#llm.structured<SignalReply>({`, and also
+         * `updates.install.bind(x)` or `updates.install)` passed as a callback.
+         *
+         * The paren used to be required adjacent, and that made the check fail on an
+         * ordinary respelling of **live** code: replacing
+         * `(await deps.updates?.install()) ?? false` with a `.bind` and a call through the
+         * bound reference type-checks clean (`tsc` exit 0) and took `check:ports` to exit
+         * 1 — « UpdatePort.install n'est appelé nulle part ». The remedy its own sentence
+         * names is an `UNWIRED` entry, which is standing permission on working code and
+         * exactly the rot that list is documented to prevent. A method taken as a value
+         * *is* the port being reached.
+         *
+         * The followers are enumerated rather than dropped, because « anything » would
+         * re-admit the false green round 27 closed: a docblock in a caller file writing
+         * `updates.install` inside backticks would satisfy a bare word boundary, which is
+         * the shape that let `CalendarPort.sync` pass on prose about `CalendarPort.sync`.
+         * Prose does not follow a method name with `(`, `.bind(`, `)`, `,`, `;`, `]` or `}`.
+         */
         scoped = new RegExp(
-          `(?:${alternation})\\s*!?\\s*\\??\\.\\s*${method}\\s*(?:<[^<>;={}]*>\\s*)?\\(`,
+          `(?:${alternation})\\s*!?\\s*\\??\\.\\s*${method}\\s*(?:<[^<>;={}]*>\\s*)?` +
+            '(?:\\(|\\.(?:bind|call|apply)\\s*\\(|[),;\\]}])',
         )
         compiled.set(cacheKey, scoped)
       }

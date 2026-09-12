@@ -267,7 +267,29 @@ export class Agenda {
      * refused.
      */
     const armed = this.#armed
-    if (!armed) throw new Error('Cette réunion ne peut plus être démarrée.')
+    /*
+     * **And it has to be the event the rep pressed.**
+     *
+     * This read `#armed` back and returned whatever it named, on the argument that
+     * « the id the renderer should open is whatever the agenda now says is armed ».
+     * That is true of the two exits it listed and false of a third: `#arm` has paths
+     * that leave `#armed` naming a *different* meeting — a refusal for this event, or a
+     * call under way that takes the conversation — and `src/screens/Agenda.tsx` then
+     * calls `onOpen(meetingId)` with it. Measured
+     * (`scratch/r29-armnow-wrong-meeting.mjs`): `armNow('EV-A')` returned EV-B's
+     * meeting id, so pressing *Enregistrer* on Sodexial's row opened **Néovia's**
+     * session screen, where the next press records the Sodexial call into Néovia's
+     * meeting — its `eventId`, its attendees, its `speakerLabel`, its account, and
+     * therefore its VerySwing task and its Outlook draft.
+     *
+     * The round-27 docblock beside `#refused` says « `armNow` throws each time, so the
+     * rep is told ». It did not throw when a different event was armed; it silently
+     * named it. So the check is on the *event*, which is the only thing the rep
+     * pointed at.
+     */
+    if (!armed || armed.eventId !== eventId) {
+      throw new Error('Cette réunion ne peut plus être démarrée.')
+    }
     // Through the same guard as the tick: arming changes the snapshot, so this
     // always publishes — and a second source for « has it changed » is how the
     // two answers drift.
@@ -664,6 +686,27 @@ export class Agenda {
    * live call's own row off the screen. A calendar offer is withdrawn by the
    * branch in `tick` that owns the calendar decision.
    */
+  /**
+   * Take back the calendar offer `#armed` currently names, before it is overwritten.
+   *
+   * The mirror of `#withdrawAdHoc` and it is read the same way: the target comes from
+   * the field that is *about* to be replaced, so it is read **here**, one line before,
+   * and never from somewhere that will have moved on. Only a meeting still in `armed` is
+   * disarmed — `recording` is a call under way and is not this function's business, and
+   * anything past those has already moved on by itself.
+   */
+  #withdrawCalendar(except: string): void {
+    const standing = this.#armed
+    if (standing === null || standing.eventId === null) return
+    if (standing.meetingId === except) return
+    if (this.#options.orchestrator.stateOf(standing.meetingId) !== 'armed') return
+    this.#options.orchestrator.dispatch(
+      standing.meetingId,
+      'disarm',
+      'la réunion est passée sans enregistrement',
+    )
+  }
+
   #withdrawAdHoc(): void {
     const meetingId = this.#adHocArmed
     if (meetingId === null) return
@@ -814,6 +857,28 @@ export class Agenda {
       return
     }
 
+    /*
+     * **A call under way takes the conversation, and the calendar waits.**
+     *
+     * `MeetingSession`'s table is per meeting, so `arm` is legal for every session
+     * independently, and `dispatch`'s « one recording at a time » guards `start` only.
+     * So two invites that abut with the first still recording — a 14:00 call running to
+     * 15:05, which is what a call that matters does — armed the 15:00 invite beside it:
+     * measured (`scratch/r29-arm-over-recording.mjs`),
+     * `liveStates = ["recording","armed"]`, which is *verbatim* the string CLAUDE.md
+     * names as the defect round 24 closed, with two rows on the day and a **second OS
+     * notification whose click navigates the rep off their live recording** (DEC-46).
+     *
+     * A decision and not a refusal, so no diagnostic: the offer is simply not made
+     * while the rep is in a call, and the standing offer — the recording one — stays,
+     * because that is the row to show. The next tick after they end it arms the invite,
+     * because `#spent` then filters the finished call out of the candidates.
+     */
+    const recording = this.#options.orchestrator
+      .liveIds()
+      .find((id) => id !== meetingId && this.#options.orchestrator.stateOf(id) === 'recording')
+    if (recording !== undefined) return
+
     // Rehydrated from the log if a previous launch already armed this event —
     // which is exactly the restart case `meetingIdFor` exists for.
     const existing = this.#options.orchestrator.session(meetingId)
@@ -902,6 +967,37 @@ export class Agenda {
      * on the day. See `#adHocArmed`.
      */
     this.#withdrawAdHoc()
+    /*
+     * **And the calendar offer it is replacing, which had no equivalent at all.**
+     *
+     * `#withdrawAdHoc` above exists because `#armed` is *overwritten* here and a
+     * target read out of the field being overwritten is unreachable — round 25's
+     * finding, and `#adHocArmed` is its own field for exactly that reason. The
+     * calendar half was never written. Two invites that abut — 14:00–15:00 and
+     * 15:00–16:00, the ordinary shape of a rep's day — and at 15:00 `nextArmable`
+     * answers `arm` for the second, so the expiry branch in `tick` is an `else if`
+     * that never runs and the first is never named again. Measured on the shipped
+     * `Agenda` (`scratch/r29-armed-stranded.mjs`), with the rep taking the 14:00 on
+     * their mobile:
+     *
+     *   15:00  liveStates ["armed","armed"]
+     *   16:30  liveStates ["armed","idle"]   ← the second withdrew itself; the first cannot
+     *   17:00  liveStates ["armed","idle"]   updateReadiness { safe: false }
+     *
+     * Three costs, all for the rest of the process and all past a relaunch, because
+     * the row is in the store: **every installer refused** with « une réunion est sur
+     * le point de démarrer » about a call that never happened; the ad-hoc detector
+     * **off for the working day**, because `meetingLive` counts that row and
+     * `#adHocSpent` latches — measured, one offer for a genuine 17:00 client call on
+     * two non-adjacent invites and **zero** on two that abut; and a row in *À venir*
+     * wearing « Prêt », past `entries.ts`'s `isPast`, on a day four days gone.
+     *
+     * `agenda.test.ts` had « leaving Teams for Zoom does not strand the Teams meeting »
+     * (ad-hoc → ad-hoc) and « arming a calendar row over a standing offer does not
+     * strand the offer » (calendar → ad-hoc). The calendar → calendar direction — the
+     * ordinary one — had no test, and a hundred and one tests passed with this live.
+     */
+    this.#withdrawCalendar(meetingId)
     this.#refused.delete(meetingId)
     this.#armed = { meetingId, eventId: event.id, subject: event.context.subject }
     // After the state is set and before the diagnostic, so a listener that
