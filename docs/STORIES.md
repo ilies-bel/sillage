@@ -207,11 +207,11 @@ findings were sound.
 | R31-3 | `withoutProse` mis-parses regex literals | `checks` | **done** — `418f7bb` |
 | R31-4 | ~~CLAUDE.md prose is stale~~ | shared | **rejected — measured false** |
 | US-1 | The machine went to sleep during the call | `session` | **done** — `b2cc981` |
-| US-2 | Windows ended the session while a call was live | `session` | **next** — US-1 shaped the rule file for it |
+| US-2 | Windows ended the session while a call was live | `session` | **done** — `2c7fe2b` |
 | US-3 | A motion vocabulary, not one curve | `motion` | **done** — `c6ea550` |
 | US-4 | The suggested next thing, on the note | `ui-session` | todo |
 | US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
-| US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | todo |
+| US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | **half done** — `73edb2c` |
 | US-7 | A first run that has already seen a meeting | `ui-onboarding` | deferred — the rep asked for this later |
 | US-8 | The recipe is visible on the document, and changeable | `ui-review` | todo |
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
@@ -221,6 +221,7 @@ findings were sound.
 | US-13 | The widget arrives by popping into existence | `ui-session` | **now** |
 | US-14 | The gate's page turn takes 434 ms | `ui-review` | **now** |
 | US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
+| US-16 | The harness compte-rendu is missing two constructs | `harness` | todo |
 
 ---
 
@@ -286,22 +287,34 @@ a call is a separate decision with its own battery cost, and it is not this stor
 
 ---
 
-## US-2 — « j'ai éteint le PC, la réunion est restée ouverte »
+## US-2 — le PC éteint, la réunion restée ouverte — **done**, `2c7fe2b`
 
-**Lane** `session` · **Depends on US-1** (same rule file, so it is the same agent or
-the next one in that lane — never a concurrent one).
+**Lane** `session`.
 
-`app.on('session-end')` is Windows' « the session is ending » and it is the platform
-this ships to (HR-2). `before-quit` defers a quit and ends the live meeting; a
-session end does not promise to arrive through it. Same remedy as `suspend`, one
-event earlier.
+**This entry was wrong when it was written, and checking it was the story.** It said
+`app.on('session-end')`. In Electron 43 `session-end` is declared on `BaseWindow` /
+`BrowserWindow`; the `App` interface declares no such event. `app` is a plain
+`EventEmitter`, so the version this file asked for would have **compiled, never fired, and
+read as a fix** — shape #4, on the primary platform, about a call left recording for ever.
+It is subscribed on the windows.
 
-**Acceptance** — a live meeting is `ended` after `session-end`, asserted on the shipped
-handler; `npm run check:platform` still passes (this is an Electron event, not a
-`process.platform` branch, so it needs no allowance — if you find yourself adding one,
-you have written the mac-first version).
+**And the same reading found a hole in US-1**, which had already merged: `powerMonitor`'s
+`shutdown` is `@platform linux,darwin`. So US-1's hardest-argued branch — « `shutdown` must
+end, because `before-quit` is not promised to run first » — **cannot fire on Windows at
+all**. The branch is right where it fires and the argument was never wrong; what was wrong
+was the coverage the prose implied on the platform that matters. Two tuples now, against two
+emitters, over one decision table, and the census test asserts the **negative**:
+`session-end` is not asked of `powerMonitor`.
 
----
+A shutdown or a session end raises no resume notice: the sleep notice says the *sleep*
+stopped the recording, which is false about either, and a meeting remembered against one
+would wait in the field for a later sleep to publish it.
+
+**Not verified on Windows, and that is stated rather than implied.** That `WM_ENDSESSION`
+reaches a `BrowserWindow` listener at all, that it reaches *every* top-level window, that it
+arrives before the process is killed, and that a synchronous SQLite write completes inside
+it, are all read off Electron's declarations and never observed. Every measurement is
+against a fake window under `node --test`.
 
 ## US-3 — « ça bouge, mais tout bouge pareil »
 
@@ -395,22 +408,42 @@ citation is refused, exactly as `verifyAnswer` refuses one today.
 
 ---
 
-## US-6 — « il faut que j'envoie ça à mon manager »
+## US-6 — envoyer le compte-rendu — **half done**, `73edb2c`
 
-**Lane** `crm-mail` · **Reference** `ref/granola-note.png`, *Share* top right.
+**Lane** `crm-mail` for what shipped; the remainder is `ui-review` and `ui-history`.
 
-Their share is a hosted link. Ours cannot be, and should not pretend: there is no
-backend, no tenant, and the content is a client's words. The version that fits this
-product is **export the rep already controls** — the compte-rendu as the string they
-read, into an Outlook *draft* they address themselves (HR-8: `Mail.ReadWrite`, never
-`Mail.Send`), or onto the clipboard as the same string VerySwing receives.
+The acceptance line — « the exported string is character-for-character the one the rep
+read » — **was measured at neither boundary the compte-rendu crosses**. `modules/mail` never
+asserted the POST body at all: replacing one line of `messageBody` so it strips every `#`,
+`##` and `###` out of every draft the product creates left **1 798 tests green**. And
+`modules/crm` did assert it, against a 40-character fixture with one heading and no trailing
+newline — so trimming `TEXT.toColumn`, which changes the real document on every push
+(`renderCompteRendu` ends every document with exactly one newline), passed 40 of 40.
 
-**Acceptance** — the exported string is character-for-character the one at the gate
-(`serialize(parse(x)) === x` already holds; assert the export against it); nothing is
-sent; the recipient line is inside `.measure` and read before the press, because it is
-the last thing seen before something leaves the machine.
+Both fixtures are the composer's document now, faithful in *constructs* — the six sections
+read off `COMPTE_RENDU_SECTIONS` so they cannot drift from the recipe, plus the heading
+levels, the list marker, emphasis, a quotation, U+2019, the low-confidence marker with its
+legend, and the trailing newline — with a guard test in each file that refuses a fixture
+missing a construct. Seventh instance of shape #5 in this repo.
 
----
+**No product code changed, and none should have.** `OutlookMail.createDraft({ subject, body,
+to: [] })` *is* the export; the payload schema already permits an empty recipient list. A
+`MailPort` verb wrapping it would have been a declaration with no caller.
+
+**The coordinator's design call, taken: ship the clipboard, defer the Graph draft.**
+
+- The clipboard half **already ships and is already verbatim** — `Review.tsx:1391` copies
+  the pending compte-rendu, `Historique.tsx:506` copies the stored one. What it lacks
+  against a *Share* button is a subject and one gesture. Making both copy the subject and
+  the document together, the way the follow-up draft's own copy control already does, needs
+  no channel, no network and no Microsoft account — which is the configuration DEC-28 ships
+  first. That is the remainder, and it is two lines in two files.
+- The Graph draft buys **one saved gesture** at the cost of an Entra registration the first
+  deliverable does not have, so it waits until there is a reason beyond symmetry.
+- **`mailto:` is measurably wrong; do not build it.** The harness compte-rendu is 3 026
+  characters; percent-encoded into a `mailto:` it is **4 994** — 2.4× Windows' 2 083-character
+  shell URL cap, so it truncates silently on the primary platform and breaks the acceptance
+  line by construction.
 
 ## US-7 — a first run that has already seen a meeting *(deferred)*
 
@@ -546,6 +579,20 @@ paying a cost for a property that is not being bought.
   rep's eyes on the pane where they meet the compte-rendu. The fix is always the four-stop
   form with a registered `--fade-reading` animating, which rewrites a rule `shot.mjs --fade`
   defends heavily — so it is its own story and not a hunk in someone else's.
+
+### US-16 — the harness compte-rendu, caught for the seventh time
+
+**Lane** `harness` · `scripts/harness/bridge-stub.mjs`, its compte-rendu around line 896.
+
+It carries the low-confidence marker but **no legend line**, and it does **not end with a
+newline**. `renderCompteRendu` appends both unconditionally
+(`modules/extract/compteRendu.ts:400-405`). So every screenshot judgement about the gate, the
+session pane and *Historique* has been made against a document the composer cannot produce,
+in two ways — and `harnessFixture.test.ts`, the file whose whole job is to refuse exactly
+this, does not ask about either.
+
+Found by US-6 while making the *crm* and *mail* fixtures faithful, which is the point: a
+fixture caught lying in one place is worth re-asking everywhere.
 
 ---
 
