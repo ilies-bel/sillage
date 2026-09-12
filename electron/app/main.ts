@@ -2493,8 +2493,10 @@ const boot = async (): Promise<void> => {
     detail: { purgedDiagnostics: purged, dev: isDev },
   })
 
-  // **And the machine going to sleep does not either** — `app/session/PowerWatch.ts`.
-  watchPower({ power: powerMonitor, orchestrator, store, diagnostics, notification: Notification, onOpen: (id) => focusMainWindow(id, broadcast) })
+  // **And neither does the machine going to sleep, or off** —
+  // `app/session/PowerWatch.ts`. `windows` is where Windows' `session-end` is
+  // heard: it is a window event, not an `app` one (HR-2, and that file says why).
+  watchPower({ power: powerMonitor, windows: { all: () => BrowserWindow.getAllWindows(), onOpened: (listener) => { app.on('browser-window-created', (_event, window) => listener(window)) } }, orchestrator, store, diagnostics, notification: Notification, onOpen: (id) => focusMainWindow(id, broadcast) })
 
   /**
    * **A window closing does not get to abandon a recording.**
