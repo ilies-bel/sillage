@@ -26,9 +26,16 @@ import { cn } from '../lib/utils.ts'
 const chip = cva('inline-flex shrink-0 items-center', {
   variants: {
     variant: {
-      /** Pressable suggestion — Review's "autres sociétés du même groupe". */
+      /**
+       * Pressable suggestion — Review's "autres sociétés du même groupe".
+       *
+       * `active:translate-y-px` is the press, one pixel, on the `transition`
+       * this already carries (the fast rung, 90ms). `Button`'s docblock holds
+       * the measurement and the reason the gate's three decision variants are
+       * excluded from it; a `choice` chip confirms nothing and is safe.
+       */
       choice:
-        'border-card bg-inner text-body hover:bg-subtle min-h-[24px] rounded-sm border px-2 py-0.5 text-meta transition',
+        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-2 py-0.5 text-meta transition',
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
       brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-2 py-0.5 text-meta',
       /** The uppercase micro-label. Not a control, just a word in a row. */

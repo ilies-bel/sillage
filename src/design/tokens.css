@@ -170,6 +170,44 @@
    * Motion: ≤150ms, ease-out, opacity and 2–4px translate only. Nothing
    * bounces. The signal rail in particular never animates at all (DEC-14) —
    * a chip that moves during a call is a chip that steals a glance.
+   *
+   * **The ladder is two rungs and each one names the event it is for, because a
+   * rung nobody spends is the fourth shape on `CLAUDE.md`'s list.** Measured on
+   * the shipped renderer across six stages — 311 live declarations — the product
+   * spent **one** duration and **one** curve on **one** property: 307 colour
+   * transitions at 150ms/`--ease-out` and four `riseIn` animations at the same.
+   * `--motion-fast` was declared here, mapped in `tailwind.config.js` as
+   * `duration-fast`, and **written by nothing**: `duration-fast` had zero
+   * occurrences under `src/`, so the file that says « two durations » shipped one.
+   * Same for `animate-fade-in`, declared beside `animate-rise-in` and used by no
+   * element in the product.
+   *
+   *   --motion-fast   the pointer's own feedback — a hover tint, a focus ring,
+   *                   the press. Met hundreds of times a day, which is the
+   *                   frequency table's « reduce » row.
+   *   --motion        a surface arriving or leaving. Met once or twice.
+   *
+   * **90ms is measured, not chosen.** Sampled one reading per animation frame on
+   * a probe carrying the product's own colours and `--ease-out`, asking how much
+   * of the change has landed:
+   *
+   *            2nd frame   3rd frame   settled
+   *   150ms       44%         60%       ~110ms   ← what every control shipped with
+   *    90ms       79%         92%        ~43ms
+   *    70ms       85%         95%        ~42ms
+   *
+   * 150 → 90 is the step that matters: at the second frame after the pointer
+   * lands the tint goes from not-quite-half-done to nearly there. 70 buys six
+   * points over 90 and costs a token nobody can defend, so the value stays where
+   * it was declared — what changes is that something now draws with it.
+   *
+   * **There is no third rung, and that is the finding rather than a shortfall.**
+   * The published standard's four bands are press 100–160, tooltip 125–200,
+   * dropdown 150–250, modal and drawer 200–500. HR-10 gives this product one
+   * window and no modal chrome, so the last band has nothing to spend itself on,
+   * and VISION.md §6's ceiling closes the third. A twelve-rung ladder copied off
+   * a competitor with modals, drawers, a sidebar and a video pane would be ten
+   * dead declarations here.
    */
   --motion-fast: 90ms;
   --motion: 150ms;
@@ -213,6 +251,35 @@
   --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
 
   /*
+   * **There is no overshoot curve here, and the reason is arithmetic rather
+   * than taste.**
+   *
+   * The competitor ships three — `cubic-bezier(.22, 1.2, .36, 1)`,
+   * `(.25, 1.1, .5, 1)` and `(.34, 1.56, .64, 1)` — and overshoot is what makes
+   * something arriving read as alive rather than merely fast. Measured: their
+   * peak progress is 1.0125, 1.0024 and 1.0978. VISION.md §6 gives this product
+   * « opacity and 2–4px translate only », so on the largest translate we are
+   * allowed those peaks are worth
+   *
+   *   (.22, 1.2, .36, 1)    0.04px on 3px · 0.05px on 4px
+   *   (.25, 1.1, .5, 1)     0.01px        · 0.01px
+   *   (.34, 1.56, .64, 1)   0.29px        · 0.39px
+   *
+   * — sub-pixel, on every one of them. An overshoot this product can *see* has
+   * to ride a `scale` (the same curve is 33px on the widget panel's 340px card),
+   * and `scale` is the other half of the sentence §6 rules out. So this is not a
+   * token that was forgotten: it is a token that would draw nothing, which is the
+   * shape `--motion-fast` was in until this round. Declaring it and pinning its
+   * shape would have satisfied US-3's acceptance line and shipped a dead
+   * declaration, which is exactly what the acceptance line exists to prevent.
+   *
+   * If overshoot is wanted, the decision is VISION.md §6's — « Nothing bounces »
+   * and « 2–4px translate only » both have to move, and the surface worth
+   * spending it on is the widget's *arrival* over a call (once or twice a day,
+   * the frequency table's « delight » row), which is `src/widget/Widget.tsx`.
+   */
+
+  /*
    * Paper grain, for quiet surfaces only — the splash, an empty transcript pane,
    * an empty signal rail, an empty-state panel. Applied with `.grain` in
    * `index.css`; see that rule for where it must not go.
@@ -230,6 +297,15 @@
  * Respect the OS setting rather than asserting our motion is tasteful enough to
  * be exempt. The durations collapse; nothing else changes, because nothing else
  * depends on the animation having run.
+ *
+ * **Every `--motion*` declared above has to appear here, and that is asserted
+ * rather than remembered** (`tokens.test.ts`, « the OS setting reaches every
+ * rung »). This block is a hand-written list of a set declared somewhere else,
+ * which is the `check:ports` `PORTS`-was-one-entry shape: a rung added above and
+ * forgotten here keeps running for the rep who asked their machine for less
+ * motion, and `shot.mjs --motion` only notices it on a stage that happens to use
+ * it. The test reads both lists off this file and compares them, so the omission
+ * fails at the source instead of waiting for a stage.
  */
 @media (prefers-reduced-motion: reduce) {
   :root {

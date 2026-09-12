@@ -30,6 +30,38 @@ const declarations = (css: string): Map<string, string> => {
   return found;
 };
 
+/*
+ * ── the two blocks this file declares, read apart ───────────────────────────
+ *
+ * **`declarations()` folds the whole file into one map, last writer wins — and
+ * `tokens.css` declares its motion tokens twice.** The second declaration is
+ * inside `@media (prefers-reduced-motion: reduce)`, where both durations are
+ * `0ms`. So `tokens.get('--motion')` has answered **`0ms`** since that media
+ * query was added, and the test below named « motion stays at or under 150ms »
+ * has been asserting `0 <= 150` on a number nothing in the product uses.
+ *
+ * Measured, on this file: setting `--motion: 900ms` in `:root` — the duration
+ * every arrival animation runs on, and the one the widget's exit handshake reads
+ * off computed style and reports to the main process as how long to keep a
+ * frameless always-on-top window over the rep's call — left **110 of 110**
+ * assertions green. So did adding a `--motion-attack: 900ms` rung, which
+ * `shot.mjs --motion` would then accept as a token duration anywhere in the
+ * product, because that check builds its allowed set from every `--motion*` in
+ * `:root` precisely so a new rung is honoured the moment it is declared.
+ *
+ * Shape #3 on `CLAUDE.md`'s list — a check that measures nothing while reporting
+ * green — in the file whose whole job is to keep VISION.md §6 and `tokens.css`
+ * the same file in two places.
+ */
+const ROOT_BLOCK = /:root\s*\{([\s\S]*?)\n\}/;
+const REDUCED_BLOCK = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?\n  \})/;
+
+const block = (css: string, where: RegExp, what: string): Map<string, string> => {
+  const found = where.exec(css);
+  expect(found, `${what} must still be a block this parser can find`).toBeTruthy();
+  return declarations(found![1]);
+};
+
 /** The single ```css block in VISION.md §6. */
 const visionPalette = (): Map<string, string> => {
   const vision = read("../../VISION.md");
@@ -76,11 +108,48 @@ describe("the rules VISION.md §6 states in prose", () => {
     }
   });
 
-  test("motion stays at or under 150ms", () => {
-    for (const name of ["--motion", "--motion-fast"]) {
-      const ms = Number.parseInt(tokens.get(name) ?? "", 10);
-      expect(ms, name).toBeLessThanOrEqual(150);
-    }
+  /*
+   * **Discovered, never listed.** This named `["--motion", "--motion-fast"]` by
+   * hand, which is the `check:ports` `PORTS`-was-one-entry shape: a rung added to
+   * `tokens.css` and not added here is a rung nothing holds to VISION.md §6's
+   * ceiling, while `shot.mjs --motion` accepts it as a token the moment it is
+   * declared. And it read the folded map, so both values it did check were the
+   * `0ms` from the reduced-motion block — see the note beside `ROOT_BLOCK`.
+   */
+  const rootTokens = block(read("./tokens.css"), ROOT_BLOCK, ":root");
+  const reducedTokens = block(
+    read("./tokens.css"),
+    REDUCED_BLOCK,
+    "@media (prefers-reduced-motion: reduce)",
+  );
+  const rungs = [...rootTokens.keys()].filter((name) => name.startsWith("--motion"));
+
+  test("the ladder still has rungs to check", () => {
+    // Guards the two parsers above: a reformat of `tokens.css` that stopped
+    // either block matching would otherwise turn every assertion below into a
+    // loop over nothing, which is the failure this whole block was written for.
+    expect(rungs.length).toBeGreaterThanOrEqual(2);
+    expect(rootTokens.get("--motion")).toMatch(/^\d+ms$/);
+  });
+
+  test.each(rungs)("%s stays at or under 150ms (VISION.md §6)", (name) => {
+    const ms = Number.parseInt(rootTokens.get(name) ?? "", 10);
+    expect(ms, name).toBeGreaterThan(0);
+    expect(ms, name).toBeLessThanOrEqual(150);
+  });
+
+  test("the OS setting reaches every rung", () => {
+    /*
+     * `tokens.css` collapses the durations under `prefers-reduced-motion` « rather
+     * than asserting our motion is tasteful enough to be exempt », and that block
+     * is a hand-written list of a set declared thirty lines above it. A rung added
+     * to the ladder and forgotten there goes on running for the rep who asked
+     * their machine for less motion — and `shot.mjs --motion` can only notice it
+     * on a stage that happens to draw with it, so a rung used by one screen is
+     * caught and a rung used by none is not caught until it is.
+     */
+    const missing = rungs.filter((name) => Number.parseInt(reducedTokens.get(name) ?? "", 10) !== 0);
+    expect(missing, "rungs that keep running under prefers-reduced-motion").toEqual([]);
   });
 
   /*
@@ -146,8 +215,8 @@ describe("the rules VISION.md §6 states in prose", () => {
   };
 
   test("--ease-in is --ease-out rotated 180° about the midpoint", () => {
-    const out = bezier(tokens.get("--ease-out") ?? "");
-    const back = bezier(tokens.get("--ease-in") ?? "");
+    const out = bezier(rootTokens.get("--ease-out") ?? "");
+    const back = bezier(rootTokens.get("--ease-in") ?? "");
     expect(out, "--ease-out must be a cubic-bezier").not.toBeNull();
     expect(back, "--ease-in must be a cubic-bezier").not.toBeNull();
 
@@ -168,10 +237,65 @@ describe("the rules VISION.md §6 states in prose", () => {
      * fails rather than squeaking through on the third decimal — the attack that
      * defeated the old check measured 0.824.
      */
-    const early = meanProgress(bezier(tokens.get("--ease-out") ?? "")!);
-    const late = meanProgress(bezier(tokens.get("--ease-in") ?? "")!);
+    const early = meanProgress(bezier(rootTokens.get("--ease-out") ?? "")!);
+    const late = meanProgress(bezier(rootTokens.get("--ease-in") ?? "")!);
     expect(early, "--ease-out must be front-loaded").toBeGreaterThan(0.55);
     expect(late, "--ease-in must be back-loaded — a departure that blinks is the defect this token exists to end").toBeLessThan(0.45);
+  });
+
+  /*
+   * ── the curve family, discovered and pinned by shape ──────────────────────
+   *
+   * `shot.mjs --motion` builds its allowed-curve set from every `--ease*` in
+   * `:root`, deliberately, so a new curve is honoured the moment it is declared.
+   * Which means this file is the only place that can ask what a newly declared
+   * curve *does* — and the check's own docblock records what happens when it
+   * cannot: renaming `--ease-out` turned the direction rule **off** rather than
+   * red, because `enterCurve` became `''` and `allowedEase.has('')` is false.
+   * A curve that does not parse here is the same failure at the source.
+   */
+  const easings = [...rootTokens.keys()].filter((name) => name.startsWith("--ease"));
+
+  test("the curve family still has curves to check", () => {
+    expect(easings.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test.each(easings)("%s is a curve this product can reason about", (name) => {
+    expect(bezier(rootTokens.get(name) ?? ""), `${name} must be a cubic-bezier`).not.toBeNull();
+  });
+
+  /**
+   * The highest progress a curve reaches anywhere in its span. Above 1 it has
+   * gone past its endpoint and come back, which is an overshoot.
+   */
+  const peakProgress = ([, y1, , y2]: number[]): number => {
+    const Y = (t: number) => 3 * (1 - t) ** 2 * t * y1 + 3 * (1 - t) * t * t * y2 + t ** 3;
+    let peak = 0;
+    for (let i = 0; i <= 1000; i += 1) peak = Math.max(peak, Y(i / 1000));
+    return peak;
+  };
+
+  test.each(easings)("%s does not overshoot — VISION.md §6 says nothing bounces", (name) => {
+    /*
+     * **The shape-pin US-3 asks for, written in the negative, because the
+     * arithmetic says an overshoot here would draw nothing.**
+     *
+     * The competitor ships three overshoot curves and they are the one thing
+     * this vocabulary visibly lacks. Measured, their peaks are 1.0125, 1.0024
+     * and 1.0978 — and VISION.md §6 allows this product « opacity and 2–4px
+     * translate only », so on the largest translate we may use those peaks are
+     * worth 0.05px, 0.01px and 0.39px. Sub-pixel. An overshoot that can be seen
+     * has to ride a `scale` (the same curve is 33px on the widget panel's 340px
+     * card), and `scale` is the other half of the sentence §6 rules out.
+     *
+     * So this assertion is not a preference: it is the two §6 clauses that would
+     * both have to move before an overshoot curve could be anything but a dead
+     * declaration, stated where a future round will meet them. Declaring one and
+     * pinning « progress exceeds 1 somewhere in its span » would satisfy the
+     * acceptance line and ship a token nothing draws with, which is the fourth
+     * shape on `CLAUDE.md`'s list and the thing the acceptance line exists for.
+     */
+    expect(peakProgress(bezier(rootTokens.get(name) ?? "")!), name).toBeLessThanOrEqual(1.0001);
   });
 
   test("provenance aliases point at the two tokens DEC-5 names", () => {
@@ -404,3 +528,103 @@ describe('border, ring and decoration name the same rules', () => {
     }
   })
 })
+
+/*
+ * ── every duration and curve Tailwind names is a token, and the ladder's rungs
+ *    are the ones the product spends ──────────────────────────────────────────
+ *
+ * `tailwind.config.js`'s own header says « Every entry below is a `var()`
+ * reference and never a literal — a literal here would be a value outside both
+ * loops », and nothing had ever asked that of the motion scales. It was true of
+ * the colours because `check-tokens.mjs` greps for hexes; a `150ms` typed into
+ * `transitionDuration` is not a hex and no check in the repo could see it.
+ *
+ * And the mapping itself is load-bearing in a way a screenshot cannot show.
+ * `transition` is written on 307 elements — measured, across six stages — and
+ * what it resolves to is decided by one word in that file. `DEFAULT` was
+ * `--motion` and `fast` was `--motion-fast`, and `duration-fast` had **zero**
+ * occurrences under `src/`: the fast rung was declared, mapped, and drawn by
+ * nothing, so the ladder `tokens.css` documents as two rungs shipped as one.
+ */
+describe("the motion scales are tokens, and the ladder reaches the product", () => {
+  const config = read("../../tailwind.config.js");
+  const rootTokens = block(read("./tokens.css"), ROOT_BLOCK, ":root");
+
+  /** `name: { … }` → Record, the same parser the colour scales above use. */
+  const scale = (name: string): Record<string, string> => {
+    const body = new RegExp(`${name}: \\{([^}]*)\\}`).exec(config)?.[1];
+    if (!body) throw new Error(`${name} absent de tailwind.config.js`);
+    return Object.fromEntries(
+      [...body.matchAll(/([A-Za-z-]+|'[^']+'):\s*'([^']+)'/g)].map((m) => [
+        m[1].replace(/'/g, ""),
+        m[2],
+      ]),
+    );
+  };
+
+  const durations = scale("transitionDuration");
+  const curves = scale("transitionTimingFunction");
+  const animations = scale("animation");
+
+  test("the scales still hold entries worth checking", () => {
+    // Guards the parser: a reformat of `tailwind.config.js` that stopped it
+    // matching would turn every loop below into a loop over nothing.
+    expect(Object.keys(durations).length).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(curves).length).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(animations).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("no motion value in the config is a literal", () => {
+    const scales: [string, Record<string, string>][] = [
+      ["transitionDuration", durations],
+      ["transitionTimingFunction", curves],
+      ["animation", animations],
+    ];
+    for (const [where, entries] of scales) {
+      for (const [name, value] of Object.entries(entries)) {
+        const referenced = [...value.matchAll(/var\((--[\w-]+)\)/g)].map((m) => m[1]);
+        expect(
+          referenced.length,
+          `${where}.${name} ne cite aucun jeton : « ${value} »`,
+        ).toBeGreaterThan(0);
+        for (const token of referenced) {
+          expect(rootTokens.has(token), `${where}.${name} cite ${token}, absent de :root`).toBe(
+            true,
+          );
+        }
+        /*
+         * A bare value beside the `var()` is the literal this test is for —
+         * `150ms`, `0.15s`, a hand-typed `cubic-bezier(…)`, a CSS keyword easing.
+         * What is allowed to remain is a keyframe name.
+         */
+        const stripped = value.replace(/var\(--[\w-]+\)/g, "").trim();
+        expect(stripped, `${where}.${name} porte une valeur en dur : « ${value} »`).not.toMatch(
+          /\d|cubic-bezier|\bease\b|\blinear\b|\bsteps\b/,
+        );
+      }
+    }
+  });
+
+  test("`transition` means the fast rung — the one the pointer waits on", () => {
+    /*
+     * The 307 hover tints. Pointing `DEFAULT` back at `--motion` puts every one
+     * of them back to 150ms and leaves `--motion-fast` drawing nothing, which is
+     * the state this round found the ladder in.
+     */
+    expect(durations.DEFAULT).toBe("var(--motion-fast)");
+  });
+
+  test("and every rung is reachable from somewhere", () => {
+    /*
+     * **The acceptance line US-3 is built on: a token nothing draws with is a
+     * dead declaration.** Asked of the whole ladder rather than of a list, and
+     * asked of the *stylesheets* as well as of the config, because `--motion`'s
+     * three consumers are all CSS rules (`animate-rise-in`, `animate-fade-in`,
+     * `.widget-leaving`) and not one of them is a `transitionDuration` entry.
+     */
+    const spenders = config + read("./index.css");
+    const rungs = [...rootTokens.keys()].filter((name) => name.startsWith("--motion"));
+    const unspent = rungs.filter((name) => !new RegExp(`var\\(${name}\\)`).test(spenders));
+    expect(unspent, "rungs declared and drawn by nothing").toEqual([]);
+  });
+});

@@ -100,7 +100,12 @@ export function SectionNav<Id extends string>({
                 onClick={() => onSelect(item.id)}
                 aria-current={selected ? 'page' : undefined}
                 className={cn(
-                  'flex w-full items-center gap-2 border-l-2 px-row py-2 text-left text-ui transition',
+                  /*
+                    `active:translate-y-px`: the press, one pixel, on the
+                    existing `transition`. `Button`'s docblock carries the
+                    measurement and the exclusions.
+                  */
+                  'flex w-full items-center gap-2 border-l-2 px-row py-2 text-left text-ui transition active:translate-y-px',
                   selected
                     ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
                     : 'text-muted hover:bg-subtle hover:text-body border-transparent',

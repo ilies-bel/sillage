@@ -65,7 +65,12 @@ export function Segmented<Id extends string>({
             aria-pressed={selected}
             onClick={() => onSelect(option.id)}
             className={cn(
-              'rounded-sm px-inline py-1 text-ui transition',
+              /*
+                `active:translate-y-px`: the press, one pixel, on the existing
+                `transition` — see `Button`'s docblock for the measurement and
+                for the three variants that are deliberately still.
+              */
+              'rounded-sm px-inline py-1 text-ui transition active:translate-y-px',
               selected
                 ? 'bg-brand-50 text-brand-700 font-medium'
                 : 'text-muted hover:bg-subtle hover:text-body',
