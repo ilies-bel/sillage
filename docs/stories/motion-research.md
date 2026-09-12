@@ -106,10 +106,12 @@ This is the part the standard cannot tell you, and it is a finding rather than a
 | Signal rail rows filling | continuously during a call | stagger is wrong here; a row appearing must not block |
 | Onboarding, first run | once, ever | rare → delight is legitimate |
 
-The page turn is the interesting one. `review-garde-mort` prints 6 presses at 1280×800 and
-10 at 960×600, and the reduced-motion path measured *fewer*. A rep validating four calls a
-day presses it forty times. Measure whether the smooth scroll is costing them, and if it
-is, say so — that is a finding about the gate, not a motion preference.
+The page turn is the interesting one, and US-14 measured it: the smooth scroll was charging
+by **distance travelled rather than by page**, so a rep who pressed again before it settled
+paid **14 presses for a 5-page gate** under a caption promising presses = pages. Instant, a
+press is exactly one page at any cadence — 7 and 9 at the two smoke sizes, and the guard
+credits the animated sweep with nothing either way. A finding about the gate, not a motion
+preference, which is why it was worth measuring rather than assuming.
 
 ## 5. Dribbble
 

@@ -17,8 +17,11 @@
  * chips' rail. A rep with a vestibular disorder who had turned motion off
  * system-wide got all of it, unasked for.
  *
- * The fix is `src/lib/scroll.ts`, which asks `matchMedia` per call and answers
- * `auto` when the rep has asked for less. This is the half that keeps it fixed.
+ * The fix is `src/lib/scroll.ts`, which is the one file that decides. It asked
+ * `matchMedia` per call until US-14 measured what the animation was costing —
+ * every scroll the app performs is `auto` now, for everyone, so there is no
+ * longer a resting path and a reduced-motion path that could diverge. This is
+ * the half that keeps it fixed.
  * A rule enforced by one helper is one new call site away from being bypassed,
  * silently, by somebody who reasonably wrote the two words the DOM documents —
  * which is exactly how there came to be six of them.
@@ -123,7 +126,7 @@ if (found.length > 0) {
   console.error('Chromium n’arrête pas un défilement « smooth » sous prefers-reduced-motion,')
   console.error('quelle que soit la façon de le demander — classe Tailwind ou CSSOM comprises.')
   console.error(`Passez par scrollToCenter / scrollToTop / scrollElementTo / scrollElementBy`)
-  console.error(`(${DECIDER}), qui interrogent matchMedia à chaque appel.`)
+  console.error(`(${DECIDER}), le seul fichier qui décide du comportement.`)
   process.exit(1)
 }
 

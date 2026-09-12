@@ -756,11 +756,18 @@ const SCREENS = {
    * move a scroller, and the gate must arm within sixteen. `review-garde` asserts that the
    * button exists; existence is what a dead control has.
    *
-   * The printed count is worth reading rather than only the pass: measured at 6 and 5
-   * presses at 1280×800, 10 and 7 at 960×600. Reverting the *step* — a fixed page instead
+   * The printed count is worth reading rather than only the pass: measured at 7 and 6
+   * presses at 1280×800, 9 and 8 at 960×600. Reverting the *step* — a fixed page instead
    * of the covered band's edge — is « inatteignable » at both sizes; reverting the
-   * *direction* costs 8 and 12 instead of 6 and 10, which is a regression this stage shows
-   * in its own output rather than hides behind a threshold.
+   * *direction* costs more, which is a regression this stage shows in its own output
+   * rather than hides behind a threshold.
+   *
+   * **Those numbers moved when US-14 made the scroll instant, and the movement was the
+   * stage's own.** It waits 360 ms after each press, which was *inside* the 415 ms smooth
+   * animation — so the tail of every press landed during the next query and the count it
+   * printed was understated. It was 6 and 5 / 10 and 7 against a scroller still moving.
+   * The rep's cost did not change; what changed is that the stage now reads a settled
+   * position. The waits could come down accordingly.
    */
   'review-garde-mort': {
     scenario: 'review',

@@ -219,9 +219,10 @@ findings were sound.
 | US-11 | Telling the client they are being recorded | `ui-session` | **next** — business consequence |
 | US-12 | What the shared screen says | — | argued debt |
 | US-13 | The widget arrives by popping into existence | `ui-session` | **now** |
-| US-14 | The gate's page turn takes 434 ms | `ui-review` | **now** |
+| US-14 | The gate's page turn takes 434 ms | `ui-review` | **done** — `a511d30` |
 | US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
 | US-16 | The harness compte-rendu is missing two constructs | `harness` | todo |
+| US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | **next** |
 
 ---
 
@@ -593,6 +594,30 @@ this, does not ask about either.
 
 Found by US-6 while making the *crm* and *mail* fixtures faithful, which is the point: a
 fixture caught lying in one place is worth re-asking everywhere.
+
+### US-17 — nothing can see a scroll that takes too long
+
+**Lane** `harness` · proposed by US-14, which measured the problem and deliberately did not
+build the instrument in someone else's lane.
+
+`shot.mjs --motion` reads `transitionDuration` and `animationDuration`. A scroll animation
+has neither, so the 415 ms page turn US-14 removed was invisible to every one of the nine
+measured checks for as long as it existed. `check-motion.mjs` holds every spelling to one
+file and by construction cannot ask what that file *says*. `scroll.test.ts` now pins the
+decision in-lane — but a duration only exists in a browser pressing the real control.
+
+**The instrument, as US-14 specified it**: in `review-garde-mort`'s `reach()` loop, sample
+`at()` twice about 150 ms after each press and fail when the columns moved between the two
+samples — « un tour de page encore en mouvement 150 ms après la pression », which is VISION
+§6's own ceiling. One extra `at()` per press. It would have been red on every run before
+`a511d30` and is green after, which is the acceptance line.
+
+A new `shot.mjs --scroll` flag is the wrong shape: it would have to press the control to
+observe anything, so it would duplicate the stage rather than add a check.
+
+**And while in that file**: those stages wait 360 ms after each press, which was *inside*
+the animation for as long as they have existed — so every position they ever printed was
+mid-flight. They are settled now and the waits can come down.
 
 ---
 
