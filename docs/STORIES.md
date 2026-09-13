@@ -1344,3 +1344,142 @@ to the same clock and density rules as the rest.
 
 **Out of scope** — anything cross-meeting that needs a server (US-5, US-9). This is one
 account's own history on this machine, which is why it can ship.
+
+---
+
+## Defects in flight — round 33
+
+Round 33 ran pinned to `0f4a457`, in its own worktree, and ended **NOT IMPRESSED** with five
+findings. Its baseline was identical opening and closing, and its four source mutations were
+reverted byte-for-byte. Two of the five are in code merged this session.
+
+It also cleared a long list explicitly — US-19's 400-character ceiling on the always-on-top
+window (measured at 960×600: 260×145 → 260×275, the pill held at the bottom of the frame),
+US-11's channel set (the press reaches `meeting:mark` and `widget:resize` and nothing else),
+US-15's resting mask (0 differing pixels), US-17's `pressAndSettle`, US-16, `fc9c314` in both
+directions, and US-18's six claims one at a time. Do not re-measure those.
+
+### R33-1 — a rewrite that cannot run takes *Valider* away, says nothing, and gives it back over the document it promised to replace
+
+**Lane** `ui-review` · `src/screens/Review.tsx` · **blocked** until US-23/US-25 land — another
+agent holds that file.
+
+Press *Réécrire avec « Compte-rendu libre »* on a machine whose model key has expired. The
+handler answers `changed: true` and fires the run without awaiting it; the run finds no
+recipe; the gate resets its coverage. Measured on the shipped renderer:
+
+```
+avant : valider=true   puce « Modèle : Prise de besoin commercial ▸ »
+après : valider=false  remède « Lire la suite du compte-rendu »
+        phrases sur la réécriture : []
+        tête du document : inchangée
+ré-armé après 5 tours de page (8 à 960×600) : valider=true
+        puce « Modèle : Compte-rendu libre ▸ »,  document toujours l'ESN
+```
+
+The rep read « La validation reprendra dès que le nouveau compte-rendu sera prêt », pressed
+once, paid five to eight page turns, and got the one irreversible press back over a document
+the screen had just told them was being replaced — under a chip naming the recipe that did not
+run. Nothing on the open gate says so.
+
+**Re-derive the mechanism before fixing it.** The round was pinned to `0f4a457` and its (a)
+names a silent return in `Enhancement.ts`; at the current tip that path calls `#deferred.add`,
+records `enhancement.deferred` and calls `#announce`. So the question is not « does the main
+process know » — it does — but **whether an open gate ever learns**, and the round's own
+reading is that `rewriting` is drawn only in the `!open` branch and further gated on
+`state === 'extracting'`. Measure that at the tip. The harm was driven and stands either way.
+
+**Three coverage holes underneath it**, all worth their own line: `Review.test.tsx`'s two
+`regenerating: true` tests both make a panel arrive or close the gate, so the silent case is
+never left silent; jsdom measures every box as zero, so `below` is null and *Valider* is armed
+unconditionally — the withdrawal is structurally invisible to all 646 renderer tests; and
+**no stage presses the picker or even opens it**, so US-8's panel — 230 px, three `.measure`
+paragraphs, two buttons, on the DEC-4 screen — has been visited by none of the ten checks on
+any staging. The fixture cannot produce the input either: `bridge-stub.mjs` answers
+`regenerating: false` for every recipe change, including the one the shipped handler calls
+changed. A fixture that cannot exercise its property, for the eighth time in that file.
+
+### R33-2 — the new control on the pill eats the refusal it is documented to yield to
+
+**Lane** `widget` · `src/widget/Widget.tsx:457`
+
+`announce()` opens with `setSaid(null)`. Sixty lines below, the render carries the precedence
+and implements it correctly — `said?.problem !== true && mention !== null` — under a comment
+saying « **a refusal outranks it** … the mention is one press away from being asked for again,
+so it is the half that yields ». The guard can never fire for a refusal that existed before
+the press, because the press deletes it first. Verified in the shipped source, not only in the
+round's driver.
+
+```
+après « Marquer » (refusé)      refus visible : oui   carte phrase : non
+après « Prévenir le client »    refus visible : NON   carte phrase : oui
+```
+
+A rep marks a moment at minute 40, the write is refused, the card says so — and their next
+press, on a button 26 px away, deletes that sentence. The moment they marked is the one they
+will go looking for at the gate; it is not there, and the only thing that said so was removed
+by a gesture that had nothing to do with it. Verbatim the harm `Refus` was added to end,
+reintroduced by the control added beside it.
+
+Second half, same file: two presses whose first log write is refused write **two** rows for
+one sentence and report the refusal nowhere, because press 2's card replaced press 1's.
+
+### R33-3 — the sleep notice navigates off a live recording, and offers what the product refuses
+
+**Lane** `session` · `electron/app/session/PowerWatch.ts:233`, `main.ts`
+
+`notification.on('click', () => deps.onOpen?.(meetingId))` closes over the *interrupted*
+meeting id with no re-check, and `session:open` is an unconditional `setRoute`. Driven on the
+shipped `watchPower` over a real `Orchestrator`: call A, suspend, resume, notice raised and
+left unclicked, call B started, then the click — `états en direct ["ended","recording"]`,
+`onOpen a reçu ["m-A-sodexial"]`.
+
+A rep clearing their notification centre during the 15:05 call is thrown off the live call's
+notepad onto a finished meeting, under a notice inviting them to « démarrer un nouveau »
+enregistrement which the product refuses twice over (`start` is illegal from `ended`, and the
+one-recording-at-a-time guard refuses *Démarrer une réunion*). DEC-26's dead control, on the
+second of exactly two things in this product that navigate without a press inside the window.
+
+Round 32 noted this undriven; it is driven now.
+
+### R33-4 — `check:surfaces` visits 20 of the 42 invoke channels, and `review:confirm` is not one of them
+
+**Lane** `checks` · `scripts/check-surfaces.mjs:495`
+
+`RESPONSE_SCHEMA` is `/response:\s*([A-Za-z0-9_]+)/`, so a channel written
+`response: z.object({ … })` captures the identifier `z`, resolves to nothing, and is skipped
+**in silence**. Same for a `z.discriminatedUnion`, a `z.record` or a type alias. The pass line
+reports « 132 champ(s) de réponse », which reads as coverage.
+
+```
+canaux invoke portant une réponse         : 42
+canaux dont le schéma est résolu (mesuré) : 20
+jamais visités : … review:confirm · widget:state · meeting:recipe · health:snapshot …
+```
+
+Nothing false is green behind it today — the round checked all sixteen inline channels by
+hand. What it costs is the next one: `review:confirm`, the only thing in this product that
+writes into a client's CRM, and `widget:state`, which US-19's `mentionSentence` rides on, are
+outside the only rule in the repo that asks whether a shipped field has a reader. And
+`meeting:recipe.state`, added by US-8 this round, is already a declared response field with no
+reader that the check cannot see. A dead field planted in an inline response passes, exit 0.
+
+Its self-guard refuses to measure *nothing* and nothing asks whether the number it reports is
+the number of fields that exist. Shape #3 at half strength, inside an instrument written to
+close shape #4.
+
+### R33-5 — the pill still asks twice when the meeting already carries marks
+
+**Lane** `widget` · `src/widget/Widget.tsx:287` · fold into R33-2
+
+`loadedMarks` is applied in a `useEffect`, which runs *after* `Frame`'s measurement
+`useLayoutEffect` in the same commit, so the pill measured for the first `widget:resize`
+carries a mark button with no count. Measured: `308×78` revealed, `313×78` 160 ms later — 5 px
+wide, 2.5 px of sideways drift, over the face of the person on the call. With `marks=0` there
+is exactly one ask.
+
+Small, and it is the last one: CLAUDE.md's « 3 asks → **1**, at the right size » is true only
+of a meeting with no marks, which the crash-recovered and rehydrated cases are not.
+`widget-entree` reads `window.__entree[0]` and never reads `__entree.length` — an assertion
+about the first ask cannot tell one ask from two, which is the converse of the sentence in
+`Overlay`'s own test docblock.
