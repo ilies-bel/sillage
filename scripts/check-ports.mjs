@@ -89,15 +89,62 @@
  * is a loosening, and it is still incomparably tighter than the name alone —
  * `token` matched six files either way here, and the alternative, deriving
  * receivers from non-test files only, would report a port held solely by a test
- * as uncalled, which is the same finding stated worse. And the scope is
- * `core/contracts/` as the rule says, so a port declared **inside** the module
- * that implements it is invisible to this gate by construction. There is exactly
- * one: `MailPort` in `modules/mail/OutlookMail.ts`. Its single verb is reached
- * (`Outbox.ts:383`), so there is no debt hiding behind it today, and the two ways
- * to bring it in are both larger than this file — move the interface into
- * `core/contracts/` beside `CrmPort`, which is product code, or widen discovery to
- * `electron/modules/**`, which would sweep in every internal interface with a
- * method on it and make this the noisy check nobody keeps.
+ * as uncalled, which is the same finding stated worse.
+ *
+ * ## Round 32: the two ports left outside `core/contracts/` were capture and mail
+ *
+ * The paragraph above used to end « the scope is `core/contracts/` as the rule
+ * says, so a port declared **inside** the module that implements it is invisible
+ * to this gate by construction. There is exactly one: `MailPort` … there is no
+ * debt hiding behind it today, and the two ways to bring it in are both larger
+ * than this file. » Every clause of that was wrong, starting with the first
+ * shape on this repo's list: it was an exemption argued instead of measured.
+ *
+ * There were **two**, and they were the worst two to be blind to: `MailPort`
+ * (`modules/mail/OutlookMail.ts`), which writes the Outlook draft, and
+ * `CapturePort` (`modules/capture/index.ts`) — capture, the one required
+ * subsystem (DEC-32). Measured with temporary mutations, both since reverted: a
+ * dead `sendNow()` on `MailPort` implemented on `OutlookMail`, and a dead
+ * `flushDevices()` on `CapturePort` implemented on `CaptureSession`, each left
+ * `check:ports` at « ports ok — 27 méthodes vérifiées », `npm run check` at exit
+ * 0 over twelve gates and `npm test` green — while the same shape on `CrmPort` is
+ * named in half a second. `MailPort`'s own docblock said « no second method for
+ * anything else » and `Outbox`'s says « narrow enough that it has no second verb
+ * to grow into a way of sending (HR-8) ». Prose was the only thing holding HR-8
+ * up on that interface.
+ *
+ * And there **was** debt hiding behind one of them: `CapturePort.running`,
+ * declared, implemented twice, and read by nothing outside `modules/capture/`.
+ * It is gone rather than exempted — `core/contracts/capture.ts` says what stayed
+ * and states the limit that leaves, which is that this check asks « who calls
+ * it » of a *method* and cannot see a property at all.
+ *
+ * The fix is the honest rule rather than a wider discovery: **any
+ * `export interface …Port` — or `export type …Port = {`, so a rename is not an
+ * escape — outside `core/contracts/` fails where it stands**, and the remedy is
+ * one move plus an `export type { … }` re-export, which changes no importer
+ * (`Recording.ts` and `modules/mail/index.ts` are untouched). Discovery stays one
+ * directory, so this never becomes the noisy check that reads every internal
+ * interface in `modules/**`, and the hole cannot be dug again by declaring a port
+ * beside its implementation.
+ *
+ * **And bringing them in is what exposed the receiver test measuring nothing on
+ * one of them.** Nothing in the repo writes `: MailPort`: `main.ts` writes
+ * `const mail = new OutlookMail(…)` with no annotation, and
+ * `app/session/Outbox.ts` deliberately declares `MailDrafter`, « the half of
+ * `modules/mail` this file uses », so that `app/session/` names no module. The
+ * first run after the move said « MailPort n’est le type d’aucune variable, champ
+ * ou paramètre du dépôt » about a verb `Outbox.ts:383` calls on every confirmed
+ * compte-rendu. A structural duplicate **is** the port — see `aliasesOf`, where
+ * the credit is per method and per signature — and there is exactly one on
+ * today's tree: `ALIAS MailPort MailDrafter createDraft`, under
+ * `SILLAGE_PORTS_DUMP=1`.
+ *
+ * Eleven ports and thirty-one methods, where the round before had nine and
+ * twenty-seven, and the fingerprint is strictly **additive**: every `PORT` line
+ * the check used to print is still printed, with four added. 0.56 s → 0.26 s,
+ * because a file that does not contain a type's name is no longer scanned for
+ * that type's receivers.
  *
  * **What a receiver test cannot see, stated rather than implied.** A port called
  * straight off a call expression — `getLlm().structured(…)` — has no named
@@ -159,7 +206,9 @@ if (process.env.SILLAGE_PROSE_ATTACK === '1') {
  */
 const HOMES = new Map([
   ['CalendarPort', 'electron/modules/calendar/'],
+  ['CapturePort', 'electron/modules/capture/'],
   ['CrmPort', 'electron/modules/crm/'],
+  ['MailPort', 'electron/modules/mail/'],
   ['IdentityPort', 'electron/modules/identity/'],
   ['LlmPort', 'electron/modules/llm/'],
   ['UpdatePort', 'electron/modules/update/'],
@@ -255,36 +304,141 @@ const isTest = (file) => /__tests__|\.test\.|\.spec\./.test(file)
 const inHome = (file, home) => (home.endsWith('/') ? file.startsWith(home) : file === home)
 
 /**
- * Every `export interface` in `core/contracts/` that declares at least one
- * method, with those methods.
+ * Every top-level interface (or object type alias) a file declares, with each
+ * method's **signature** as well as its name.
  *
  * A method is `name(`, `name?(` or `name<T>(` at two spaces of indent — which is
  * how they are written here, and the generic form is the one the old method regex
  * could not read. An interface with **no** methods is data (`DiagInput`,
  * `CredentialState`, `AppStatus`, `LlmRequest`, `RecipeDescriptor`, `EssaiLine`),
  * and data is checked by `tsc`, not by asking who calls it.
+ *
+ * Both spellings, because `export type X = { m(): void }` is the same
+ * declaration to `tsc` and would otherwise be a port this check cannot see —
+ * which is the whole finding this file is being edited for. No contract is
+ * written that way today; the point is that one written tomorrow is discovered.
+ *
+ * The signature is the member's own line, whitespace-collapsed, and is `null`
+ * when the declaration **wraps** — the line then holds no `)`, so there is no
+ * signature to compare and `signaturesMatch` refuses rather than guesses. That
+ * direction is the safe one: a refusal costs a structural alias its credit,
+ * which shows up as a port nothing calls, never as one that passes for free.
  */
+const DECLARATION_RE =
+  /^export\s+(?:interface|type)\s+([A-Za-z]\w*)(?:<[^>]*>)?\s*(?:=\s*)?(?:extends\s+[^{]*)?\{/gm
+const MEMBER_RE = /^ {2}(?:readonly\s+)?([a-zA-Z]\w*)\??\s*(?:<[^<>]*>)?\s*\(.*$/gm
+
+const declarationsOf = (source) => {
+  const found = []
+  for (const match of source.matchAll(DECLARATION_RE)) {
+    const start = match.index + match[0].length
+    const end = source.indexOf('\n}', start)
+    const body = source.slice(start, end === -1 ? undefined : end)
+    const methods = new Map()
+    for (const member of body.matchAll(MEMBER_RE)) {
+      const line = member[0].trim().replace(/[;,]$/, '').replace(/\s+/g, ' ')
+      methods.set(member[1], line.includes(')') ? line : null)
+    }
+    if (methods.size > 0) found.push({ name: match[1], methods })
+  }
+  return found
+}
+
+/** Every declaration in the tree, so a structural alias can be found — see `aliasesOf`. */
+const declarations = new Map([...text].map(([file, source]) => [file, declarationsOf(source)]))
+
+/**
+ * **A structural duplicate of a port *is* the port, and reading only `: PortName`
+ * measured nothing on the one that writes the Outlook draft.**
+ *
+ * TypeScript is structural: a name annotated with an interface that declares a
+ * port's method with the port's own signature holds a port at every call site,
+ * whatever that interface is called. `app/session/Outbox.ts` declares exactly
+ * that on purpose — `MailDrafter`, « the half of `modules/mail` this file uses »,
+ * so `app/session/` names no module — and it is the **only** holder of a
+ * `MailPort` in the repo: `main.ts` writes `const mail = new OutlookMail(…)` with
+ * no annotation, and nothing anywhere writes `: MailPort`. Measured the moment the
+ * port became visible to this check: « MailPort n’est le type d’aucune variable,
+ * champ ou paramètre du dépôt », about a verb `Outbox.ts:383` calls on every
+ * confirmed compte-rendu. The remedy on offer would have been an `UNWIRED` entry
+ * on live code, which is the rot that list exists to prevent.
+ *
+ * Two things keep the credit tight, and both are per **method** rather than per
+ * interface. The signature has to match **textually** — `stop(): void` is not
+ * `stop(): Promise<void>`, so an unrelated watchdog never adopts `CapturePort.stop`
+ * — and the duplicate's whole method set has to be a subset of the port's, so it is
+ * a *view* of this port and of nothing wider: a `{ get, set, ttl }` cache is not a
+ * `KeyValueStore` view. A **wrapped** declaration is credited with nothing, because
+ * there is no single line to compare (`signature === null`).
+ */
+const aliasesOf = (port) => {
+  const found = new Map()
+  for (const decls of declarations.values()) {
+    for (const decl of decls) {
+      if (decl.name === port.interface) continue
+      const names = [...decl.methods.keys()]
+      if (!names.every((name) => port.methods.has(name))) continue
+      const credited = names.filter(
+        (name) =>
+          decl.methods.get(name) !== null && decl.methods.get(name) === port.methods.get(name),
+      )
+      if (credited.length === 0) continue
+      const already = found.get(decl.name) ?? new Set()
+      for (const name of credited) already.add(name)
+      found.set(decl.name, already)
+    }
+  }
+  return found
+}
+
 const discovered = []
 for (const file of readdirSync(path.join(ROOT, CONTRACTS))) {
   if (!file.endsWith('.ts')) continue
   const rel = `${CONTRACTS}/${file}`
-  const source = text.get(rel)
-  if (source === undefined) continue
-  for (const match of source.matchAll(
-    /^export interface ([A-Za-z]\w*)(?:<[^>]*>)?\s*(?:extends [^{]*)?\{/gm,
-  )) {
-    const start = match.index + match[0].length
-    const end = source.indexOf('\n}', start)
-    const body = source.slice(start, end === -1 ? undefined : end)
-    const methods = [
-      ...body.matchAll(/^ {2}(?:readonly\s+)?([a-zA-Z]\w*)\??\s*(?:<[^<>]*>)?\s*\(/gm),
-    ].map((m) => m[1])
-    if (methods.length > 0) discovered.push({ interface: match[1], file: rel, methods })
+  for (const decl of declarations.get(rel) ?? []) {
+    discovered.push({ interface: decl.name, file: rel, methods: decl.methods })
   }
 }
 
 const problems = []
 let checked = 0
+
+/**
+ * **A port declared beside its own implementation is a port this check cannot
+ * see, so declaring one there fails.**
+ *
+ * For a dozen rounds the scope was `core/contracts/` — which is where the rule
+ * says ports live — and the two `…Port` interfaces that did not live there were
+ * `CapturePort` (`modules/capture/index.ts`) and `MailPort`
+ * (`modules/mail/OutlookMail.ts`): capture, the one required subsystem, and the
+ * port that writes the Outlook draft. This file's own docblock named `MailPort`
+ * as the exception and called both remedies « larger than this file ». Measured
+ * instead of argued: a dead `sendNow()` on `MailPort` implemented on
+ * `OutlookMail`, and a dead `flushDevices()` on `CapturePort` implemented on
+ * `CaptureSession`, each passed `check:ports` (« 27 méthodes vérifiées »),
+ * `npm run check` (twelve gates) and `npm test` — while the same shape on
+ * `CrmPort` is named by this check in half a second.
+ *
+ * So the honest rule is enforced rather than assumed: the declaration fails
+ * where it stands, the remedy is one move plus a `export type { … }` re-export
+ * so no importer changes, and discovery stays one directory — which is what
+ * keeps this check fast and free of every internal interface in `modules/**`.
+ * Both spellings are refused, because renaming `interface` to `type` must not be
+ * an escape.
+ */
+for (const [file, decls] of declarations) {
+  if (file.startsWith(`${CONTRACTS}/`)) continue
+  for (const decl of decls) {
+    if (!/Port$/.test(decl.name)) continue
+    problems.push(
+      `${decl.name} est déclaré dans ${file}, hors de ${CONTRACTS}/ — un port déclaré à côté ` +
+        'de son implémentation est invisible pour ce contrôle, donc n’importe quel verbe mort ' +
+        `y passe. Déplace la déclaration dans ${CONTRACTS}/ et re-exporte le type depuis le ` +
+        'module (`export type { … }`), ce qui ne change aucun import.',
+    )
+  }
+}
+
 /**
  * **What the check *saw*, printed on demand — because « the gate still passes » is
  * not evidence that nothing moved.**
@@ -306,19 +460,27 @@ for (const port of discovered) {
   const home = HOMES.get(port.interface)
   if (home === undefined) {
     problems.push(
-      `${port.interface} (${port.file}) déclare ${port.methods.length} méthode(s) et n’est pas ` +
+      `${port.interface} (${port.file}) déclare ${port.methods.size} méthode(s) et n’est pas ` +
         'dans HOMES de scripts/check-ports.mjs — dis où il est implémenté pour qu’on puisse ' +
         'demander qui l’appelle. Un port qu’on n’interroge pas est le défaut que ce contrôle existe pour attraper.',
     )
     continue
   }
 
-  // Receivers: every identifier this tree annotates with the port's type. Derived
-  // rather than listed, so they cannot go stale.
+  /**
+   * Receivers: every identifier this tree annotates with the port's type, or with a
+   * structural duplicate of it — see `aliasesOf`. Derived rather than listed, so they
+   * cannot go stale, and kept **per type name** so a name credits only the methods its
+   * own declaration carries.
+   */
+  const credits = new Map([[port.interface, new Set(port.methods.keys())]])
+  for (const [name, methods] of aliasesOf(port)) credits.set(name, methods)
+
   const receivers = new Set()
   /**
-   * Receivers a `.d.ts` or an ambient `declare` makes available — **mapped to the tree
-   * that can see them**, not to the whole repo.
+   * Per type name: the names each file annotates with it, and the ones an ambient
+   * declaration makes available — **mapped to the tree that can see them**, not to the
+   * whole repo.
    *
    * It was a flat set, and `src/vite-env.d.ts` declares `app: AppBridge` inside
    * `declare global`, so `app` counted as a receiver of `AppBridge` in **every** file —
@@ -334,39 +496,45 @@ for (const port of discovered) {
    * An ambient declaration is scoped by the *project* that includes it — `src/` and
    * `electron/` have separate tsconfigs, and the renderer's globals are not the main
    * process's — so the tree of the declaring file is the honest scope.
-   */
-  const ambient = new Map()
-  /**
-   * Receivers **per file**, because a bare name is not a port.
    *
-   * They were collected into one flat tree-wide set and matched in every file, with no
-   * requirement that the calling file hold the port. `port` was therefore a receiver of
-   * `CrmPort`, `LlmPort` *and* `KeyValueStore`, harvested from three test files — and in
-   * the product it is a `MessagePort` and a `--port` CLI string. So a brand-new
-   * `CrmPort.close()` implemented nowhere passed, adopted by `port.close(` in a whisper
-   * worker, and `CrmPort.indexOf` would have passed on `port.indexOf(`.
-   *
-   * A name counts where its own file says what it holds. A `.d.ts` or an ambient
-   * `declare` is the exception and counts everywhere, because that is exactly what those
-   * files are for — `window.app` is declared once and used across the renderer.
+   * **And everything else is per file, because a bare name is not a port.** They were
+   * collected into one flat tree-wide set and matched in every file, with no requirement
+   * that the calling file hold the port. `port` was therefore a receiver of `CrmPort`,
+   * `LlmPort` *and* `KeyValueStore`, harvested from three test files — and in the product
+   * it is a `MessagePort` and a `--port` CLI string. So a brand-new `CrmPort.close()`
+   * implemented nowhere passed, adopted by `port.close(` in a whisper worker, and
+   * `CrmPort.indexOf` would have passed on `port.indexOf(`. A name that arrives through a
+   * structural duplicate is held to the same rule — `outbox.test.ts` writes
+   * `port: MailDrafter`, and it counts in that file, which is a test and never a caller.
    */
-  const perFile = new Map()
-  const annotation = new RegExp(
-    `(#?[A-Za-z_$][\\w$]*)\\s*\\??\\s*:\\s*(?:readonly\\s+)?${port.interface}\\b`,
-    'g',
-  )
-  for (const [file, source] of text) {
-    const here = new Set()
-    for (const hit of source.matchAll(annotation)) {
-      here.add(hit[1])
-      receivers.add(hit[1])
-      if (/\.d\.ts$/.test(file) || /declare\s+(?:global|module|const|let|var)/.test(source)) {
-        ambient.set(hit[1], treeOf(file))
+  const holders = new Map()
+  for (const typeName of credits.keys()) {
+    const annotation = new RegExp(
+      `(#?[A-Za-z_$][\\w$]*)\\s*\\??\\s*:\\s*(?:readonly\\s+)?${typeName}\\b`,
+      'g',
+    )
+    const perFile = new Map()
+    const ambient = new Map()
+    for (const [file, source] of text) {
+      if (!source.includes(typeName)) continue
+      const here = new Set()
+      for (const hit of source.matchAll(annotation)) {
+        here.add(hit[1])
+        receivers.add(hit[1])
+        if (/\.d\.ts$/.test(file) || /declare\s+(?:global|module|const|let|var)/.test(source)) {
+          ambient.set(hit[1], treeOf(file))
+        }
       }
+      if (here.size > 0) perFile.set(file, here)
     }
-    perFile.set(file, here)
+    holders.set(typeName, { perFile, ambient })
   }
-  if (DUMP) dumped.push(`RECV ${port.interface} ${[...receivers].sort().join(' ')}`)
+  if (DUMP) {
+    dumped.push(`RECV ${port.interface} ${[...receivers].sort().join(' ')}`)
+    for (const [name, methods] of [...credits].slice(1)) {
+      dumped.push(`ALIAS ${port.interface} ${name} ${[...methods].sort().join(' ')}`)
+    }
+  }
   if (receivers.size === 0) {
     problems.push(
       `${port.interface} n’est le type d’aucune variable, champ ou paramètre du dépôt — ` +
@@ -384,33 +552,53 @@ for (const port of discovered) {
    * The key is the sorted set, so files that hold the same receivers share one pattern,
    * and a file whose text does not contain the method's name anywhere is never matched
    * at all. Measured over the whole tree: 6.2 s → 1.5 s.
+   *
+   * It is keyed by the *set of type names crediting this method* rather than built once
+   * per port, because a structural duplicate declares some of a port's methods and not
+   * others: a view carrying only `createDraft` must not lend its holders to a verb it
+   * never declared.
    */
-  const alternationOf = new Map()
-  for (const file of sources) {
-    const tree = treeOf(file)
-    const here = [
-      ...(perFile.get(file) ?? []),
-      // Only the ambient names this file's own project can see — see `ambient`.
-      ...[...ambient].filter(([, where]) => where === tree).map(([name]) => name),
-    ]
-    if (here.length === 0) continue
-    alternationOf.set(file, here.sort().map((r) => r.replace(/\$/g, '\\$')).join('|'))
+  const alternations = new Map()
+  const alternationsFor = (method) => {
+    const types = [...credits]
+      .filter(([, methods]) => methods.has(method))
+      .map(([name]) => name)
+      .sort()
+    const cacheKey = types.join('+')
+    const cached = alternations.get(cacheKey)
+    if (cached !== undefined) return cached
+    const byFile = new Map()
+    for (const file of sources) {
+      const tree = treeOf(file)
+      const here = new Set()
+      for (const typeName of types) {
+        const held = holders.get(typeName)
+        for (const name of held.perFile.get(file) ?? []) here.add(name)
+        // Only the ambient names this file's own project can see — see `holders`.
+        for (const [name, where] of held.ambient) if (where === tree) here.add(name)
+      }
+      if (here.size === 0) continue
+      byFile.set(file, [...here].sort().map((r) => r.replace(/\$/g, '\\$')).join('|'))
+    }
+    alternations.set(cacheKey, byFile)
+    return byFile
   }
   const compiled = new Map()
 
-  for (const method of port.methods) {
+  for (const method of port.methods.keys()) {
     checked += 1
     const key = `${port.interface}.${method}`
     const exempt = UNWIRED.find((entry) => entry.method === key)
+    const alternationOf = alternationsFor(method)
     const callers = sources.filter((file) => {
       if (file === port.file) return false
       if (inHome(file, home)) return false
       if (isTest(file)) return false
-      // The receivers this file itself declares, plus the ambient ones — see `perFile`.
-      const alternation = alternationOf.get(file)
-      if (alternation === undefined) return false
       const source = text.get(file)
       if (!source.includes(method)) return false
+      // The receivers this file itself declares, plus the ambient ones — see `holders`.
+      const alternation = alternationOf.get(file)
+      if (alternation === undefined) return false
       const cacheKey = `${alternation}|${method}`
       let scoped = compiled.get(cacheKey)
       if (scoped === undefined) {
@@ -459,7 +647,7 @@ for (const port of discovered) {
 }
 
 const declaredMethods = new Set(
-  discovered.flatMap((port) => port.methods.map((method) => `${port.interface}.${method}`)),
+  discovered.flatMap((port) => [...port.methods.keys()].map((m) => `${port.interface}.${m}`)),
 )
 for (const entry of UNWIRED) {
   if (!declaredMethods.has(entry.method)) {

@@ -18,6 +18,7 @@
  * fails if any of that stops being true.
  */
 import type { MailDraftPayload, PushResult } from '../../core/contracts/push.ts'
+import type { MailPort } from '../../core/contracts/mail.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { IdentityPort } from '../../core/contracts/identity.ts'
@@ -31,16 +32,13 @@ import { ForbiddenScopeError, GraphError, postDraft, type FetchLike } from './gr
 export const MAIL_SCOPES: readonly string[] = ['Mail.ReadWrite']
 
 /**
- * The port `app/` drains through. Domain verb only — one way to create a
- * draft, and no second method for anything else.
+ * The port this class implements lives in `core/contracts/mail.ts` — declared
+ * there rather than here so `check-ports.mjs` can ask who calls its one verb;
+ * the reason, and what leaving it here cost, is in that file's docblock.
  *
- * `PushResult.intentId` comes back empty: the adapter is handed a payload, not
- * an outbox row, and it is `app/session/Outbox.ts` that stamps the intent id
- * onto the settled result. Same shape as `CrmPort`, for the same reason.
+ * Re-exported so `modules/mail/index.ts` still names one place.
  */
-export interface MailPort {
-  createDraft(payload: MailDraftPayload): Promise<PushResult>
-}
+export type { MailPort }
 
 export interface OutlookMailOptions {
   identity: IdentityPort
