@@ -137,6 +137,15 @@
   --radius: 12px;
   --radius-lg: 14px;
   --border-width: 1px;
+  /*
+   * VISION §6's « Shadows barely there », and **nothing in the product draws it
+   * today**. It was mapped as Tailwind's `shadow-card` and worn by zero elements
+   * under `src/`, so that mapping is gone (`tailwind.config.js` says why); the
+   * value stays here because §6 names it and because `--shadow-overlay` below is
+   * defined as this shadow one order of elevation up, which is the sentence that
+   * lets the widget wear the product's light palette over a video call. Do not
+   * read this as « cards have a shadow »: they have a 1px `--border-card`.
+   */
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
   /*
    * The one surface that is not on the app's own paper: the in-meeting widget,

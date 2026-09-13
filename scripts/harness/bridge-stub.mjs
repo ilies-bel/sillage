@@ -940,6 +940,31 @@ export function installAppBridge(config) {
       '- Envoyer 3 CV avec les TJM associés — Julien Marchand — avant vendredi',
       '- Mettre Sophie Bertrand en copie — Élodie Vasseur',
       '- Point de calage une fois les profils lus — la semaine suivante',
+      /*
+        And the two lines `renderCompteRendu` appends after everything else, which
+        this fixture carried neither of for seven review rounds.
+
+        The legend is written **whenever the marker is anywhere in the document**,
+        and there is a `⚠ faible` eight lines up. It exists because this string is
+        also the body of the VerySwing task, read by a delivery manager who has
+        never seen the review gate, its banner or its orange rail — to them the
+        marker is a dingbat and a lowercase adjective at the end of a line. So the
+        one part of the document that explains the product's own invented token
+        (DEC-21) was the part no screenshot had ever shown.
+
+        And the trailing newline, which is unconditional: `return
+        `${document}${legend}\n``. It is one empty line in a `whitespace-pre-wrap`
+        pane, at the foot of the three surfaces that draw a compte-rendu — the
+        gate's reading column, the session pane and *Historique* — and it was
+        missing from every one of them.
+
+        `scripts/__tests__/harnessCompteRendu.test.mjs` holds both, derived by
+        running the composer rather than by restating its French: reword the
+        legend there and this fixture is asked for the new wording.
+      */
+      '',
+      '⚠ faible : la citation de cette valeur n’a pas été retrouvée dans la transcription. À confirmer auprès du client.',
+      '',
     ].join('\n'),
     besoin:
       'Renforcer l’équipe plateforme pour la migration des pipelines Talend vers Databricks, avec un cadrage technique assuré par un profil senior.',
@@ -1450,8 +1475,10 @@ export function installAppBridge(config) {
       ),
       notes:
         'Sophie Bertrand pilote côté DSI, Karim Benali côté plateforme.\nBloquant : délai de contractualisation achats (3 semaines).\nPenser à proposer un profil en pré-embauche.',
+      // Ends with the newline `renderCompteRendu` always appends. No marker in it,
+      // so no legend — « a clean compte-rendu carries no apparatus at all ».
       compteRendu:
-        '## Contexte\n\nDeux départs sur l’équipe plateforme du Groupe Lefort et une migration vers Kubernetes engagée pour le second semestre.\n\n## Besoin\n\nDeux ingénieurs DevOps confirmés (Kubernetes, Terraform, GitLab CI), démarrage septembre, en régie.\n\n## Point de vigilance\n\nLe circuit achats demande trois semaines de contractualisation ; le sourcing doit être lancé en amont.',
+        '## Contexte\n\nDeux départs sur l’équipe plateforme du Groupe Lefort et une migration vers Kubernetes engagée pour le second semestre.\n\n## Besoin\n\nDeux ingénieurs DevOps confirmés (Kubernetes, Terraform, GitLab CI), démarrage septembre, en régie.\n\n## Point de vigilance\n\nLe circuit achats demande trois semaines de contractualisation ; le sourcing doit être lancé en amont.\n',
       fields: [
         { key: 'account', label: 'Client', confidence: 'ok', span: null },
         {
@@ -1545,7 +1572,8 @@ export function installAppBridge(config) {
       */
       segments: fillCall(SEGMENTS, from, m.endedAt || now, `seg-${meetingId}`),
       notes: 'Rien de particulier à signaler sur cet appel.',
-      compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.',
+      // Same: the composer's final newline, and no marker so no legend.
+      compteRendu: '## Contexte\n\nPoint d’avancement sans décision nouvelle.\n',
       fields: [{ key: 'account', label: 'Client', confidence: 'ok', span: null }],
       overall: 'ok',
       intents: [],
