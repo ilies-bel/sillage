@@ -2522,6 +2522,33 @@ const boot = async (): Promise<void> => {
    * and a rep who pressed close would be looking at a window that will not go
    * away. The meeting lands in `ended`, which is exactly DEC-39's deferred case;
    * `drainDeferredEnhancements` picks it up on the next launch.
+   *
+   * **And for a dozen rounds « `stopRecording` is awaited so both providers
+   * flush » waited for nothing at all** (R32-1). The `dispatch` one line above it
+   * fires `void #enhance(id)`, whose body runs synchronously to `await
+   * this.stopRecording(id)` — which runs *that* body synchronously past
+   * `#recordings.delete(meetingId)`. So this handler's own call found no
+   * recording and returned immediately. Measured on the real `Store` and the real
+   * `Orchestrator`, with a transcriber that flushes a tail segment inside `stop()`
+   * the way `LocalWhisperSession.#shutdown()` and every REST provider do: **0**
+   * tail segments in the log with `onEnded` injected, which is the only
+   * configuration this file ever produces, against 1 without it — and the flush
+   * then landed 20 ms after `store.close()`, throwing « database is not open »
+   * inside the provider where nothing records it. `Orchestrator.stopRecording`
+   * memoises the flush per meeting now, so this `await` awaits the one
+   * `#enhance` started.
+   *
+   * **Two questions, because ending a recording and flushing one are not the same
+   * event.** `PowerWatch` moves the meeting out of `recording` synchronously
+   * inside the OS handler — it has to, the machine may never come back — so on
+   * Windows' `session-end` (« Se déconnecter », a shutdown: the one power branch a
+   * rep on the primary platform can reach) the `recording` filter below finds
+   * nothing and this handler did not even `preventDefault()`. Measured: « defers
+   * the quit? **false** », store closed, tail lost — strictly worse after
+   * `b2cc981` than before it. So `orchestrator.flushing()` is asked as well, and
+   * the deferred path waits for whatever anyone else started with
+   * `settleRecordings()`, which is bounded exactly as `outbox.settle()` is and for
+   * the same reason.
    */
   let quitting = false
   app.on('before-quit', (event) => {
@@ -2540,7 +2567,16 @@ const boot = async (): Promise<void> => {
      */
     const settling = !outbox.settledSynchronously()
 
-    if (!quitting && (recording.length > 0 || settling)) {
+    /*
+     * **And a tail already being flushed is the third**, which is not the same
+     * question as the first: `PowerWatch` and the widget's own *Terminer* both end
+     * a recording through `dispatch`, which starts the flush and leaves the meeting
+     * `ended`. The filter above cannot see that, so this is what makes « on the way
+     * out » true for a Windows session end (see the docblock).
+     */
+    const flushing = orchestrator.flushing()
+
+    if (!quitting && (recording.length > 0 || settling || flushing)) {
       quitting = true
       event.preventDefault()
       void (async () => {
@@ -2559,6 +2595,25 @@ const boot = async (): Promise<void> => {
               meetingId,
             })
           }
+        }
+        /*
+         * Whatever this handler did not start: the flush `PowerWatch` began
+         * inside `WM_ENDSESSION`, or the one the rep's own *Terminer* began a
+         * moment before they closed the window. `stopRecording` above already
+         * awaited its own, so this is a second wait only when there is a second
+         * flush; bounded, because the tail is worth waiting for and a window that
+         * never goes away is not.
+         */
+        if (!(await orchestrator.settleRecordings())) {
+          diagnostics.record({
+            severity: 'warn',
+            code: 'app.quit.flushUnsettled',
+            module: 'app',
+            origin: 'authored',
+            message:
+              'la transcription n’avait pas fini de vider sa file à la fermeture — la fin de l’enregistrement peut manquer',
+            detail: {},
+          })
         }
         if (!(await outbox.settle())) {
           diagnostics.record({

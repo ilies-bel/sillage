@@ -156,6 +156,13 @@ const initialHealth = (since: number): HealthSnapshot => {
   }
 }
 
+/**
+ * How long a quit waits for a tail already being flushed. See
+ * `Orchestrator.settleRecordings`, which states why it is not the transcriber's
+ * own thirty seconds and not the outbox's eight.
+ */
+const FLUSH_TIMEOUT_MS = 10_000
+
 export class Orchestrator {
   #store: Store
   #diagnostics: DiagRecorder
@@ -206,6 +213,11 @@ export class Orchestrator {
   #claimed: Partial<HealthSnapshot> = {}
   #retries = new Map<ConnectorId, () => Promise<ConnectorHealth>>()
   #recordings = new Map<MeetingId, Recording>()
+  /**
+   * The flush each meeting is still in the middle of — see `stopRecording`, which
+   * is where R32-1 lived, and `flushing()`, which is what `before-quit` asks.
+   */
+  #stopping = new Map<MeetingId, Promise<void>>()
 
   /**
    * Whether any meeting currently holds the audio devices.
@@ -626,15 +638,139 @@ export class Orchestrator {
     }
   }
 
-  /** Resolves once both providers have flushed — the tail of a call is the part with the next steps in it. */
+  /**
+   * Resolves once both providers have flushed — the tail of a call is the part
+   * with the next steps in it.
+   *
+   * **One flush per recording, and every caller awaits the same one.**
+   *
+   * This used to delete the `Recording` and then await it, which reads as
+   * defensive and was the whole of R32-1. `dispatch(id, 'end')` fires
+   * `void this.#enhance(id)`; `#enhance` is `async`, so its body runs
+   * synchronously to its first `await` — which is `await this.stopRecording(id)`,
+   * and *evaluating that call* runs this body synchronously to its own first
+   * await, `#recordings.delete(meetingId)` already executed. So one line later
+   * `before-quit`'s own `await orchestrator.stopRecording(meetingId)` returned at
+   * `if (!recording) return`: it waited for nothing, having been told by its own
+   * docblock that both providers had flushed. Measured on the real `Store` and
+   * this class, with a transcriber that emits a tail segment inside `stop()` the
+   * way `LocalWhisperSession.#shutdown()` and every REST provider do
+   * (`scratch/r32-1-drive.ts`):
+   *
+   *     onEnded injected: no    flushed? true   tail segments in the log: 1
+   *     onEnded injected: YES   flushed? false  tail segments in the log: 0
+   *
+   * and `onEnded` is injected by `main.ts` on every launch, so the second row is
+   * the product. On Windows — the primary platform (HR-2) — `window-all-closed`
+   * quits, so « get the app out of the way at the end of a call » is a quit: the
+   * last utterance, up to `GAP_FLUSH_MS` of held speech plus whatever is queued
+   * in the model, never reached the log. It is therefore missing from the
+   * transcript the compte-rendu is folded from, from what `[source ▸]` reads, and
+   * from what VerySwing receives.
+   *
+   * So the in-flight flush is memoised **per meeting** and a second caller awaits
+   * the first. Three things about the memo, each measured rather than reasoned:
+   *
+   *  · It is **set synchronously**, before the first await, because that is the
+   *    only way `before-quit` can find it: it dispatches and calls this one line
+   *    later, with no tick in between.
+   *  · It is **cleared when the flush settles**, not kept. `enhance()` — the
+   *    retry path, and a first attempt once a model finally exists — calls this on
+   *    a meeting that stopped minutes ago and expects a no-op; a memo kept for the
+   *    life of the process would hand it a *rejected* promise for ever if that
+   *    one flush had failed.
+   *  · A rejection reaches **every** awaiter. `#enhance` records
+   *    `enhancement.unhandled` and `before-quit` records `app.quit.endFailed`, and
+   *    two rows for one failed flush is the honest reading: two callers needed it.
+   */
   async stopRecording(meetingId: MeetingId): Promise<void> {
+    const inFlight = this.#stopping.get(meetingId)
+    if (inFlight) {
+      await inFlight
+      return
+    }
     this.#stopSignals(meetingId)
     this.#endWatch.get(meetingId)?.stop()
     this.#endWatch.delete(meetingId)
     const recording = this.#recordings.get(meetingId)
     if (!recording) return
     this.#recordings.delete(meetingId)
-    await recording.stop()
+    const flush = (async () => {
+      try {
+        await recording.stop()
+      } finally {
+        this.#stopping.delete(meetingId)
+      }
+    })()
+    this.#stopping.set(meetingId, flush)
+    await flush
+  }
+
+  /**
+   * **Is this process still owed a tail?**
+   *
+   * Asked by `before-quit` *before* it decides whether to defer the quit, and it
+   * is not the same question as « is a meeting recording ». `PowerWatch` ends a
+   * live recording synchronously inside the OS handler — it has to, because the
+   * machine may never come back — and that dispatch starts the flush. By the time
+   * `before-quit` runs, the meeting is `ended`, so the predicate it had found
+   * nothing, it did not even `preventDefault()`, and `store.close()` landed a few
+   * microtasks later while the local engine was still draining on a thirty-second
+   * budget. Measured before this existed: `defers the quit? false`, and the tail
+   * segment arrived at a closed database.
+   *
+   * That made Windows shutdown and « Se déconnecter » — `session-end`, the one
+   * branch a rep on the primary platform can actually reach — strictly worse
+   * after `b2cc981` than before it, which is why this is a question the
+   * orchestrator answers rather than something `PowerWatch` was asked to do: the
+   * handler cannot wait, so what it can do is leave something to wait for.
+   */
+  flushing(): boolean {
+    return this.#stopping.size > 0
+  }
+
+  /**
+   * **Waits for every flush in flight, bounded.** The one caller is `before-quit`.
+   *
+   * Bounded for the reason `Outbox.settle` is: a rep who pressed close is owed a
+   * window that goes away, and an unbounded wait on a provider that never answers
+   * is a process the rep kills — which loses the tail as well and looks broken
+   * doing it. The asymmetry runs the other way from the outbox's, though, and
+   * that is why this number is larger than a POST's: an interrupted push is
+   * reclaimed on the next launch by `Projections.interrupted()`, and **a lost tail
+   * has no recovery at all** — the audio is gone (DEC-12), so whatever expiry
+   * discards here is discarded for good.
+   *
+   * Ten seconds rather than the transcriber's own thirty: that budget is sized
+   * for a *cold* model, and a quit during a recording cannot be cold — the engine
+   * has been transcribing this call for the length of it. What ten seconds covers
+   * is a warm model with a couple of queued finals, which is what the end of a
+   * call actually is.
+   *
+   * `false` means the wait expired, and the caller says so in the log rather than
+   * quitting silently (DEC-26). The loop re-reads the map because a flush can
+   * start while this is waiting — `#enhance` on a second meeting, the widget's own
+   * *Terminer* — and `allSettled` because one provider failing must not abandon
+   * the other one's tail.
+   */
+  async settleRecordings(timeoutMs = FLUSH_TIMEOUT_MS): Promise<boolean> {
+    if (this.#stopping.size === 0) return true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs)
+      timer.unref?.()
+    })
+    const drained = (async () => {
+      while (this.#stopping.size > 0) {
+        await Promise.allSettled([...this.#stopping.values()])
+      }
+      return true
+    })()
+    try {
+      return await Promise.race([drained, expired])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /**

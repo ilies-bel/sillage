@@ -34,6 +34,26 @@
  *    exist. The flush still happens, on the way out or on the way back, through
  *    the enhancement `dispatch` starts.
  *
+ * **And « on the way out » was a claim about another file, which was not keeping
+ * it** (R32-1). For `suspend` there is a way back and the awaited flush simply
+ * resumes with the machine; for `session-end` and `shutdown` there is none, so the
+ * way out is the only one there is — and `before-quit` filtered on « is a meeting
+ * *recording* », which this handler has just made false. Measured on the shipped
+ * watch over a real `Orchestrator`, with a transcriber that flushes a tail segment
+ * inside `stop()`:
+ *
+ *     WITHOUT PowerWatch (pre-b2cc981)  state: recording   defers the quit? true
+ *     WITH PowerWatch (before the fix)  state: ended       defers the quit? false
+ *
+ * — so US-1/US-2 made Windows shutdown and « Se déconnecter » *strictly worse* than
+ * before they landed: the store closed a few microtasks later and the tail arrived
+ * at « database is not open », inside the provider's own `stop()` where nothing
+ * records it. This file still does not wait, for the reason above. What makes the
+ * sentence true is that the dispatch it fires registers the flush where the way out
+ * can find it — `Orchestrator.flushing()`, asked by `before-quit` beside its
+ * recording filter, and `settleRecordings()`, awaited before `store.close()`. A
+ * handler that cannot wait can still leave something to wait for.
+ *
  * And the rep is told, because the screen was off when it happened (DEC-26: a
  * stated degradation, never a silent one). Mirrors the arming notification
  * (DEC-46, `announceMeeting` in `main.ts`) rather than inventing a second
