@@ -431,6 +431,31 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | US-19 | The mention sentence belongs to the ESN | coordinator | **done** — `3609bb6` |
 | US-20 | No stage presses US-11's control, so its card is unmeasured | `harness` | **next** |
 | US-21 | A landmark that clips its content is unmeasured | `harness` | **next** |
+| R32-1 | The quit awaited a flush it could not see | `session` | **done** — merged |
+| R32-2 | A reading column said « Remonter dans du compte-rendu » | `ui-read` | **done** — merged |
+| R32-3 | Two ports declared outside `core/contracts/` | `checks` | **done** — merged |
+| R32-4 | `tokens.test.ts` pinned the mapping, not the numbers | `checks` | **done** — merged |
+| | **The simplicity pass — round 34** | | *the user, on the screenshots* |
+| US-22 | The screen is named by what changed | `ui-agenda` `ui-history` | in flight, two lanes |
+| US-23 | A caption only where the content cannot name itself | `ui-session` `ui-history` | session half **done** — merged; history half in flight |
+| US-24 | Well is silent | `ui-status` | **done** — merged |
+| US-25 | The product stops explaining itself during a call | `ui-session` | **done** — merged |
+| US-26 | One filled control per list | `ui-agenda` | in flight |
+| US-27 | The session header says « recording » four times | `ui-session` | todo |
+| US-28 | Réglages captions the pane with its own nav item | `ui-reglages` | todo — `--echo` must find it |
+| US-29 | What happened last time, before the call | `ui-agenda` | todo — **the parity row the table missed** |
+| US-30 | `StatusControl`'s only remaining rendering is unmeasured | `harness` | todo |
+| US-31 | The gate's prose is read twice, or not at the press | `ui-review` | blocked on R33-1 |
+| US-32 | The manual draws over a past record | `ui-history` | assigned to the running lane |
+| R33 | Round 33 adversarial review | — | **ran at `0f4a457` — NOT IMPRESSED, five findings above** |
+| R33-1 | A rewrite that cannot run takes *Valider* away silently | `ui-review` | in flight |
+| R33-2 | The mention control eats the refusal it yields to | `widget` | **done** — merged |
+| R33-3 | The sleep notice navigates off a live recording | `session` | in flight |
+| R33-4 | `check:surfaces` visited 20 of 52 invoke channels | `checks` | **done** — merged |
+| R33-5 | The pill asks twice when the meeting carries marks | `widget` | **done** — merged with R33-2 |
+| | The two found while merging, not by a round | | |
+| — | The chip's tests waited for the wrong read | `ui-session` | **done** — `3792be1` |
+| — | `meeting:get` shipped an outbox nothing read | coordinator | **done** — `a83c42c` |
 
 ---
 
