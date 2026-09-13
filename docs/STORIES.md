@@ -217,8 +217,9 @@ findings were sound.
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
 | US-11 | Telling the client they are being recorded | `ui-session` | **next** — business consequence |
+| R32 | Round 32 adversarial review | — | **next**, pinned worktree |
 | US-12 | What the shared screen says | — | argued debt |
-| US-13 | The widget arrives by popping into existence | `ui-session` | **now** |
+| US-13 | The widget arrives by popping into existence | `ui-session` | **done** — `a4f35d9` |
 | US-14 | The gate's page turn takes 434 ms | `ui-review` | **done** — `a511d30` |
 | US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
 | US-16 | The harness compte-rendu is missing two constructs | `harness` | todo |
@@ -618,6 +619,35 @@ observe anything, so it would duplicate the stage rather than add a check.
 **And while in that file**: those stages wait 360 ms after each press, which was *inside*
 the animation for as long as they have existed — so every position they ever printed was
 mid-flight. They are settled now and the waits can come down.
+
+### US-13, as shipped — and the trap it walked into on purpose
+
+`a4f35d9`. Three things are worth keeping.
+
+**One overshoot, derived rather than borrowed.** `--ease-out` is
+`cubic-bezier(0.22, 1, 0.36, 1)`; the overshoot is `(0.22, 1.5, 0.36, 1)` — the same control
+abscissae, one nudge past the endpoint and back. `--ease-in` is that curve rotated and this
+is that curve overshot, so the file still holds **one** piece of taste and two derivations
+of it, which is the argument `--ease-in`'s own comment makes. A competitor curve was not
+lifted wholesale. Peak progress 1.0800, so from `scale(0.92)` it is 1.54 px on the pill's
+240 px card and 2.18 px on the panel's 340 px one, above 1 from 39 ms to 145 ms of the 150.
+Measured against `y1` from 1.2 to 1.8: 1.2 and 1.3 are sub-pixel on the pill (0.24 px,
+0.57 px) and 1.8 overshoots 3.4 px, which over a video call is a bounce rather than a settle.
+
+**It broke a measured check, and that was the right way to find out.** `widget-ouvert`
+reported the chevron at **23.26 px** — a WCAG target-size failure on a control that is 24 px
+at rest, caught mid-arrival. The fix is not to loosen `--targets`: a control genuinely 23 px
+at rest is exactly what that check exists to catch, and forty of them shipped once. A
+general `settled(page)` gate runs before every measurement instead, bounded and silent so a
+page that legitimately never settles still gets measured. Same family as the trap DEC-50
+names — `getBoundingClientRect` includes transforms — reached from the other side.
+
+**The self-test grew a twelfth probe that must stay silent.** DEC-50's arrival is an
+element whose opacity is 0 at one end, riding a curve that leaves the allowed set — which is
+exactly the shape `--motion`'s direction rule is built to report as a blink. « les douze
+attaques signalées, les trois dernières restées muettes. »
+
+114 stagings now, 57 screens × 2.
 
 ---
 
