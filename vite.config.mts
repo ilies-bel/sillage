@@ -37,8 +37,25 @@ export default defineConfig({
   server: {
     port: 5180,
     watch: {
+      /*
+       * **Anchored at this config's own directory, never `**` — a glob here reaches
+       * *up* the absolute path, and the worktrees are where the agents live.**
+       *
+       * chokidar matches these against absolute paths, so `**​/.claude/worktrees/**`
+       * matched **every file of every isolated agent's own checkout** — the server
+       * running inside `.claude/worktrees/agent-xxx/` was ignoring its whole source
+       * tree. No HMR, and the module graph never invalidated, so a page reload
+       * served the pre-edit file: two agents in one wave independently measured
+       * their own fix as if it did not exist and reported it as broken, and a third
+       * recorded « a `git checkout` of a `src/` file does not invalidate the
+       * transform cache » as a property of Vite. It is this line.
+       *
+       * What the entry is *for* is the main checkout not watching seven sibling
+       * worktrees, and `path.resolve(__dirname, …)` says exactly that: inside a
+       * worktree it points at that worktree's own (empty) `.claude/worktrees`.
+       */
       ignored: [
-        '**/.claude/worktrees/**',
+        `${path.resolve(__dirname, '.claude/worktrees')}/**`,
         '**/.code-review-graph/**',
         '**/dist-electron/**',
         '**/release/**',
