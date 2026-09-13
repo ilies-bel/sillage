@@ -14,6 +14,7 @@
  * `docs/reference/capture-invariants.md` because it was a bug first.
  */
 import { EventEmitter } from 'node:events'
+import type { CapturePort } from '../../core/contracts/capture.ts'
 import type { Channel } from '../../core/contracts/transcript.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
@@ -111,26 +112,15 @@ const isKeepalive = (chunk: Buffer): boolean => {
 }
 
 /**
- * What `app/` is allowed to depend on: a thing that produces frames.
+ * What `app/` is allowed to depend on is declared in
+ * `core/contracts/capture.ts`, not here — a port declared inside the module
+ * that implements it is invisible to `check-ports.mjs`, and that file's
+ * docblock carries the measurement.
  *
- * The devices are one implementation and `FileCapture` is another. Declaring the
- * port is what makes the second one a capture source rather than a cast — the
- * concrete class carries `#private` fields, so a structurally identical replay
- * would not be assignable to it and every call site would need `as never`. That
- * cast was already in the tests; a fixture is a poor reason to spread it.
+ * Re-exported so `app/session/Recording.ts` still imports its capture types
+ * from one place.
  */
-export interface CapturePort extends EventEmitter {
-  readonly running: boolean
-  start(): Promise<void>
-  stop(): Promise<void>
-  /**
-   * Peak amplitude per channel since the last call, for the in-call level
-   * meter. Optional because it is a cosmetic read: `FileCapture` replays a wav
-   * and has no meter to feed, and a replay fixture should not have to grow a
-   * method to stay assignable to this port.
-   */
-  takeLevels?(): Record<Channel, number>
-}
+export type { CapturePort }
 
 /**
  * Owns one meeting's audio. Constructed per meeting and never reused: the Rust

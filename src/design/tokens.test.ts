@@ -138,6 +138,114 @@ describe("the rules VISION.md §6 states in prose", () => {
     expect(ms, name).toBeLessThanOrEqual(150);
   });
 
+  /*
+   * ── each rung held to the band its own evidence gives it ────────────────────
+   *
+   * **A ceiling shared by every rung is not a ladder.** The assertions above hold
+   * each `--motion*` to VISION.md §6's ≤150ms and, separately,
+   * `durations.DEFAULT === 'var(--motion-fast)'` in `tailwind.config.js` pins the
+   * *mapping*. Neither asks what the numbers are, so the numbers were free:
+   * measured on this tree, setting `--motion-fast: 150ms` — which reverts the
+   * whole measured result of `c6ea550`, 307 consumers of `transition` back onto
+   * the duration US-3 replaced — left **126 of 126** assertions green and
+   * `npm run check` at exit 0 over twelve gates. `shot.mjs --motion` cannot see it
+   * either: it builds its allowed set from every `--motion*` in `:root`, so a
+   * collapsed rung is still a token and still allowed everywhere.
+   *
+   * A ladder whose rungs can all collapse onto one value is one token edit from
+   * being the single curve US-3 replaced, so the rungs are held **apart** — the
+   * bands below are disjoint and the values must be distinct — and each is held to
+   * the band its evidence gives it.
+   *
+   * **The numbers are cited, never chosen.** `docs/stories/motion-research.md` is
+   * the evidence: §2 is the published standard's four bands (press feedback
+   * 100–160 ms · tooltips and small popovers 125–200 · dropdowns and selects
+   * 150–250 · modals and drawers 200–500, all under 300), §1 is Granola 7.543.3's
+   * own stylesheet, whose base `--default-transition-duration` is `.15s` — the
+   * same as `--motion` — and `c6ea550` carries the frame-by-frame measurement
+   * behind `--motion-fast`.
+   *
+   * A rung with no entry here fails, and an entry whose rung has gone fails too:
+   * the `check:ports` `HOMES` shape, so this cannot rot back into a ceiling.
+   */
+  const BANDS = new Map<string, { min: number; max: number; why: string }>([
+    [
+      "--motion-fast",
+      {
+        /*
+         * The pointer's own feedback, met hundreds of times a day. Above the 70ms
+         * `c6ea550` measured and refused — « 70 buys six points over 90 and costs
+         * a token nobody can defend » — and at or under the published standard's
+         * press-feedback floor of 100, which is the one place the repo's own
+         * measurement beats the standard and is allowed to: sampled per animation
+         * frame on a probe carrying the product's colours and `--ease-out`, the
+         * second frame after the pointer lands is 44 % landed at 150ms, 79 % at
+         * 90ms, 85 % at 70ms. 150 is outside this band by construction, because
+         * 150 is the number US-3 measured the press away from.
+         */
+        min: 71,
+        max: 100,
+        why: "retour au pointeur : au-dessus des 70 ms mesurées puis refusées, au plus la borne basse de 100 ms de la norme (100–160 ms)",
+      },
+    ],
+    [
+      "--motion",
+      {
+        /*
+         * A surface arriving or leaving, met once or twice a day: the widget over
+         * the call, its panel, the gate's confirmation. Floored at the published
+         * standard's smallest band for something that appears (tooltips and small
+         * popovers, 125–200 ms) and capped by VISION.md §6's ≤150ms, which is also
+         * exactly what Granola's own base duration is. And it is not only a
+         * duration: the widget's exit handshake reads it off computed style and
+         * reports it to the main process as how long to keep a frameless
+         * always-on-top window over the rep's call, so a rung collapsed towards
+         * the fast one shortens that window's own life.
+         */
+        min: 125,
+        max: 150,
+        why: "surface qui arrive ou qui part : borne basse de la norme pour un popover (125–200 ms), plafond de VISION.md §6 (150 ms), et la durée de base de Granola",
+      },
+    ],
+  ]);
+
+  test("every rung declares the band its evidence gives it", () => {
+    const undeclared = rungs.filter((name) => !BANDS.has(name));
+    expect(
+      undeclared,
+      "rungs with no band in tokens.test.ts — say which event the rung is for and cite " +
+        "docs/stories/motion-research.md for its band, or the ladder gains a number nothing holds",
+    ).toEqual([]);
+
+    const gone = [...BANDS.keys()].filter((name) => !rungs.includes(name));
+    expect(gone, "bands whose rung tokens.css no longer declares").toEqual([]);
+  });
+
+  test.each([...BANDS])("%s sits in the band its evidence gives it", (name, band) => {
+    const ms = Number.parseInt(rootTokens.get(name) ?? "", 10);
+    expect(ms, `${name} — ${band.why}`).toBeGreaterThanOrEqual(band.min);
+    expect(ms, `${name} — ${band.why}`).toBeLessThanOrEqual(band.max);
+  });
+
+  test("the rungs are held apart, and no two bands could ever let them meet", () => {
+    // Distinct values first, which is the collapse itself: two rungs at one number
+    // is one rung with two names, and `transition` would mean what it meant before
+    // US-3 measured it.
+    const values = rungs.map((name) => rootTokens.get(name));
+    expect(new Set(values).size, `rungs that share a value: ${values.join(" · ")}`).toBe(
+      rungs.length,
+    );
+
+    // And the bands themselves may not overlap, so no future pair of numbers can
+    // pass both tests while sitting on the same value.
+    const bands = [...BANDS].sort(([, a], [, b]) => a.min - b.min);
+    for (const [index, [name, band]] of bands.entries()) {
+      const next = bands[index + 1];
+      if (!next) continue;
+      expect(band.max, `${name} overlaps ${next[0]}`).toBeLessThan(next[1].min);
+    }
+  });
+
   test("the OS setting reaches every rung", () => {
     /*
      * `tokens.css` collapses the durations under `prefers-reduced-motion` « rather
