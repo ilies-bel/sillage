@@ -226,6 +226,109 @@ async function followSource(page, index) {
   await page.waitForTimeout(700)
 }
 
+/**
+ * **Both frames of a page turn's label, the right way round.**
+ *
+ * `ReadingColumn` draws one control in two states and they are two different
+ * grammatical frames — « Lire la suite **du** compte-rendu » going down,
+ * « Remonter dans **le** compte-rendu » coming back — so a label that is correct
+ * in one is wrong in the other. Asked of every turn on the page, by *shape*
+ * rather than by string: the verb is the caller's (the gate's rail says « Voir la
+ * suite de ce qui part » where a document says « Lire la suite … »), and a check
+ * that pinned one verb would silently stop visiting the other surface.
+ */
+const GENITIVE = /^(du|des|de la|de l’|de |d’)/
+
+function turnGrammar(label) {
+  const up = /^Remonter dans (.+)$/.exec(label)
+  if (up && GENITIVE.test(up[1])) {
+    return `« ${label} » : « Remonter dans » prend le nom, pas le génitif`
+  }
+  const down = /\bla suite (.+)$/.exec(label)
+  if (down && !GENITIVE.test(down[1])) {
+    return `« ${label} » : « la suite » prend le génitif, pas le nom`
+  }
+  return null
+}
+
+/**
+ * Press one reading column's page turn until the column is at its end, then
+ * measure the control that is left there.
+ *
+ * Takes the column itself, because the two callers name it differently: the
+ * session screen draws three of these and the one worth reading is found by a
+ * line of its own content, while the onboarding has exactly one inside `main`.
+ */
+async function readToTheEnd(page, column, { mustPress = true } = {}) {
+  await column.waitFor()
+  const turn = column.locator('.turn-ground button')
+  const state = () =>
+    column.evaluate((el) => ({
+      above: el.dataset.above,
+      below: el.dataset.below,
+      top: Math.round(el.scrollTop),
+    }))
+
+  let presses = 0
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const before = await state()
+    if (before.above === 'true' && before.below === 'false') break
+    if ((await turn.count()) === 0) {
+      throw new Error(
+        `la colonne ne tient pas dans sa boîte et n’offre aucun tour de page ` +
+          `(above=${before.above} below=${before.below})`,
+      )
+    }
+    await turn.click()
+    presses++
+    // The scroll is animated; `scrollElementBy` lands within a frame or two.
+    await page.waitForTimeout(300)
+    const after = await state()
+    // A control that is present and does nothing is the shape this repo keeps
+    // producing — the guard's own remedy at the gate was one for two rounds.
+    if (after.top === before.top) {
+      throw new Error(`presse ${presses} : le contrôle « ${await turn.innerText()} » n’a rien bougé`)
+    }
+  }
+
+  const end = await state()
+  // A stage whose column fits cannot exercise the state it is named after, which
+  // is the first shape on this repo's list. `mustPress` is false for a caller
+  // that has already pressed this column and proved there was something hidden.
+  if (mustPress && presses === 0) {
+    throw new Error('la colonne était déjà lue : cette mise en scène ne mesure plus rien')
+  }
+  if (end.above !== 'true' || end.below !== 'false') {
+    throw new Error(`la colonne n’a pas atteint sa fin après ${presses} presse(s) : ${JSON.stringify(end)}`)
+  }
+  // The control has to be *on screen* there, not merely in the tree: it is
+  // sticky to the foot of its own scroller, which is the property that makes it
+  // reachable at every scroll position.
+  const box = await turn.boundingBox()
+  const view = page.viewportSize()
+  if (!box || box.y < 0 || box.y + box.height > view.height) {
+    throw new Error(`le contrôle de remontée est hors de l’écran : ${JSON.stringify(box)}`)
+  }
+
+  await assertTurnGrammar(page)
+  return { presses }
+}
+
+/**
+ * Every page turn on the page, held to `turnGrammar`.
+ *
+ * Its own guard first: a sweep that visited nothing is the third shape on this
+ * repo's list, and on a stage that has just read a column to its end there is
+ * one of these by construction.
+ */
+async function assertTurnGrammar(page) {
+  const labels = (await page.locator('.turn-ground button').allInnerTexts()).map((l) => l.trim())
+  if (labels.length === 0) throw new Error('aucun tour de page sur l’écran : rien de mesuré')
+  const wrong = labels.map(turnGrammar).filter((problem) => problem !== null)
+  if (wrong.length > 0) throw new Error(wrong.join(' ; '))
+  return labels
+}
+
 /** The screens, and how a rep would reach each one. */
 const SCREENS = {
   /*
@@ -573,6 +676,38 @@ const SCREENS = {
   },
 
   /**
+   * **The other end of a reading column** (`ui/ReadingColumn.tsx`).
+   *
+   * Every stage that carries a reading column photographs it at `scrollTop` 0,
+   * so for as long as that component has existed its *second* state has been
+   * driven by nothing — and the label it draws there read « Remonter dans **du**
+   * compte-rendu » on six surfaces. Nothing else could have seen it: the
+   * component has no test that can bite, because jsdom measures every box as
+   * zero, so `above` and `below` are both false and the control does not render;
+   * `--a11y` asks whether a control *has* a name, never whether the name is
+   * French; and `check:french` reads prose for the straight apostrophe.
+   *
+   * So this stage reads the column to its end — four presses at 1280×800, eight
+   * at 960×600 — and holds the control it finds there to three things: every
+   * press moved the scroller, the column really is at `data-above="true"`, and
+   * both labels are the right way round grammatically. The last is asked of
+   * **every** page turn the page draws rather than of one string, and it knows
+   * nothing about the verb: the gate says « Voir la suite de ce qui part » where
+   * this column says « Lire la suite du compte-rendu », and a check that assumed
+   * one verb would be a check that quietly stopped visiting the other surface.
+   */
+  'session-remonter': {
+    scenario: 'compte-rendu',
+    async drive(page) {
+      await SCREENS['session-compte-rendu'].drive(page)
+      await readToTheEnd(
+        page,
+        page.locator('.fade-below').filter({ hasText: 'Le budget de la plateforme data' }).first(),
+      )
+    },
+  },
+
+  /**
    * *Demander*, with an answer on screen (DEC-21).
    *
    * Staged through the gesture, because there is no URL for it and no default
@@ -672,20 +807,38 @@ const SCREENS = {
         })
 
       for (let press = 0; press < 8 && !(await whole()); press++) {
-        const turn = page.getByRole('button', { name: /Lire la suite/ })
+        /*
+          The control inside the column, never a label: this stage used to name
+          « Lire la suite » and the verb is the caller's — the gate's rail says
+          « Voir la suite de ce qui part » — so a surface that changed verbs would
+          have left this loop `break`ing on the first iteration and failing two
+          lines below with a sentence about the beat instead of about the button.
+        */
+        const turn = column.locator('.turn-ground button')
         if ((await turn.count()) === 0) break
         const before = await column.evaluate((el) => el.scrollTop)
         await turn.first().click()
         await page.waitForTimeout(500)
         const after = await column.evaluate((el) => el.scrollTop)
         if (after <= before) {
-          throw new Error(`« Lire la suite » n’a rien déplacé (scrollTop ${before} → ${after})`)
+          throw new Error(`le tour de page n’a rien déplacé (scrollTop ${before} → ${after})`)
         }
       }
 
       if (!(await whole())) {
         throw new Error('le dernier temps de l’étape 3 reste coupé après les tours de page')
       }
+      /*
+        And then the *other* end of the same column, which this stage stopped one
+        press short of — measured: with R32-2's interpolation put back, this stage
+        stayed green at both sizes, because « the last beat is whole » is reached
+        while there is still something below, so the control it was left on still
+        said « Lire la suite ». Step 3 feeds « cette étape », the one determiner
+        that is neither an article nor contracted, so this is the column that
+        reads worst in the ascending frame: « Remonter dans de cette étape », on
+        the one screen a rep sees exactly once.
+      */
+      await readToTheEnd(page, column, { mustPress: false })
     },
   },
 

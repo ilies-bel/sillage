@@ -32,3 +32,9 @@ export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmente
 export { EmptyState, Centered, type EmptyStateProps } from './EmptyState.tsx'
 export { PageTurn } from './PageTurn.tsx'
 export { ReadingColumn, type ReadingColumnProps } from './ReadingColumn.tsx'
+export {
+  readingTurnLabels,
+  type ReadingDeterminer,
+  type ReadingSubject,
+  type ReadingTurnLabels,
+} from './readingSubject.ts'

@@ -164,7 +164,7 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
         class would have masked nothing and exempted the element from the check,
         which is the worst of both.
       */}
-      <ReadingColumn what="de la fiche" className="slate px-4 pb-4">
+      <ReadingColumn subject={{ determiner: 'la', noun: 'fiche' }} className="slate px-4 pb-4">
         <ul className="space-y-1.5">
           {slots.map((kind) => (
             <Slot key={kind} label={KIND_LABEL[kind]} found={byKind.get(kind) ?? []} />
