@@ -55,6 +55,13 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import {
+  channelEntries,
+  declarationsIn,
+  resolveFields,
+  responseIn,
+  stripComments,
+} from './lib/responseFields.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -73,6 +80,19 @@ const UNREACHED = []
  * these are the same kind of thing: a declared surface whose consumer is a
  * decision nobody has taken. An entry whose field has since gone also fails.
  */
+/**
+ * Invoke channels whose response expression `lib/responseFields.mjs` cannot read,
+ * each with the reason — the same shape, and for the same reason: an unreadable
+ * response is a channel nothing measures, and the defect this list was added with
+ * was precisely thirty-two of them being *skipped* instead of declared.
+ *
+ * Empty today: all fifty-two resolve. An entry here is a statement that a channel's
+ * fields are checked by nobody, which is a cost, not a formality — teaching the
+ * resolver one more Zod combinator is usually three lines. An entry whose channel
+ * has gone, or which has since become resolvable, fails.
+ */
+const UNRESOLVED = []
+
 const UNREAD = [
   {
     subject: 'MeetingSchema.confirmedAt',
@@ -91,6 +111,55 @@ const UNREAD = [
       'plaçait un appel validé en retard au-dessus d’un appel tenu deux jours ' +
       'après lui. Aucun écran ne doit le lire ; il reste dans le contrat parce ' +
       'que la projection le porte.',
+  },
+  /*
+   * The four below are the findings the widened resolution surfaced on its first
+   * run — the first four channels this rule had ever been able to look at. Each is
+   * the same shape as the two above it, and each says what wiring or deleting it
+   * would cost, because that is the difference between a declaration and an excuse.
+   */
+  {
+    subject: 'meeting:get.outbox',
+    why:
+      'Les lignes d’envoi de la réunion, dans la réponse qui sert l’écran de ' +
+      'session : ce canal rend l’agrégat entier (réunion, segments, signaux, ' +
+      'document, compte-rendu, recette) et cette moitié-là n’a jamais eu de ' +
+      'surface. Ce que devient un envoi se lit dans Historique, sur ' +
+      '`history:record.intents`, que le rendu lit bien ; le redessiner sur ' +
+      'l’écran de session serait un deuxième endroit où l’état d’un envoi est ' +
+      'dit, et personne n’a pris cette décision. **C’est un candidat à la ' +
+      'suppression plutôt qu’au câblage** : il part de ' +
+      '`electron/app/ipc/register.ts` (`outbox: store.projections.outboxFor(…)`) ' +
+      'et du contrat, deux lignes, dans deux fichiers qui ne sont pas ceux de ce ' +
+      'contrôle.',
+  },
+  {
+    subject: 'DiagEventSchema.module',
+    why:
+      '`diagnostics:recent` rend la ligne de journal entière (DEC-27) : ces ' +
+      'trois champs partent parce qu’un évènement les porte. Le module émetteur ' +
+      'est déjà le premier segment du `code` que le panneau dessine — ' +
+      '`capture.device.lost` — donc l’afficher à côté répèterait la colonne ' +
+      'voisine. Il compte dans le bundle exporté, que lit un humain du support, ' +
+      'pas un écran.',
+  },
+  {
+    subject: 'DiagEventSchema.origin',
+    why:
+      '« d’où vient le texte du message », déclaré au site d’appel et imposé par ' +
+      '`npm run check:diag`. Son lecteur est `core/domain/redactDiagnostics.ts`, ' +
+      'côté main, qui remplace un message `foreign` par `[message:N]` dans le ' +
+      'bundle rédigé ; aucun écran n’a à le dessiner, et le dessiner serait dire ' +
+      'au commercial quelque chose sur notre rédaction plutôt que sur sa panne.',
+  },
+  {
+    subject: 'DiagEventSchema.detail',
+    why:
+      'Le détail structuré, passé par l’allowlist de `redactDiagnostics.ts` avant ' +
+      'de pouvoir quitter la machine. Il est fait pour un lecteur du support dans ' +
+      'un bundle, pas pour une ligne de « Erreurs récentes » — et son propre ' +
+      'contrat dit qu’une valeur que l’app n’a pas forgée n’y a sa place que ' +
+      'comme compte ou comme longueur, ce qui ne se dessine pas.',
   },
   {
     subject: 'HistoryRecordSchema.overall',
@@ -175,20 +244,20 @@ if (split < 0 || invokeChannels.length === 0 || broadcastChannels.length === 0) 
  * it does not need to be: a string literal containing `//` survives because the
  * quote comes first, and the worst case of getting it wrong is a false *failure*
  * that somebody reads.
+ *
+ * The guard inside it used to be `[^:'"\`\\]`, meant to spare `https://` and a
+ * `//` inside a string — and it spared a great deal more: a `//` written
+ * immediately after a quote, a backtick or a colon was left in the code, so
+ * `const label = 'rien'// 'meeting:purgeAll' -- à recâbler` passed this check.
+ * Only `:` and `\` can precede a *real* `//` that is not a comment (`https://`, a
+ * Windows escape); a quote before one closes a string and the rest of the line is
+ * a comment like any other.
+ *
+ * It lives in `lib/responseFields.mjs` because the response resolver needs exactly
+ * this reading and a character-for-character second copy is how `pinnedNow.mjs`
+ * came to be extracted.
  */
-const code = (source) =>
-  source
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    /*
-     * The guard used to be `[^:'"\`\\]`, meant to spare `https://` and a `//`
-     * inside a string — and it spared a great deal more: a `//` written
-     * immediately after a quote, a backtick or a colon was left in the code,
-     * so `const label = 'rien'// 'meeting:purgeAll' -- à recâbler` passed this
-     * check. Only `:` and `\` can precede a *real* `//` that is not a comment
-     * (`https://`, a Windows escape); a quote before one closes a string and the
-     * rest of the line is a comment like any other.
-     */
-    .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1')
+const code = stripComments
 
 const bodies = new Map(files.map((file) => [file, code(text.get(file))]))
 
@@ -490,68 +559,145 @@ for (const file of files.filter((f) => f.startsWith(SESSION) && !isTest(f))) {
  * name that occurs nowhere in the renderer is a name nothing can be reading. A
  * check that invents findings is worse than one that finds little, because the
  * finding gets acted on.
+ *
+ * **That weakness has a live instance, named here so it is a known cost rather
+ * than a surprise.** `meeting:recipe` answers `{ recipe, regenerating, state }`;
+ * `RecipePicker.tsx` reads `outcome.recipe`, `Review.tsx` reads
+ * `outcome.regenerating`, and nothing anywhere reads `state`. The widening below
+ * makes that channel *visible* to this rule for the first time and still does not
+ * report it, because `\bstate\b` occurs ten times in the file that calls it. The
+ * remedy is not a narrower join — scoping the search to the calling file matches
+ * `recent.state` and `state.status` just as readily — it is that a field with a
+ * name this generic cannot be measured by a grep at all.
+ *
+ * **And for as long as it existed it visited twenty of the fifty-two channels and
+ * was silent about the other thirty-two.** The response was found by
+ * `/response:\s*([A-Za-z0-9_]+)/` and resolved by looking for
+ * `export const <that name> = z.object({`, so `response: z.object({ … })` captured
+ * the identifier **`z`**, resolved to nothing, and the channel was **skipped** —
+ * the same for a `z.array`, a `z.discriminatedUnion`, a `z.record` and a schema
+ * built with `.extend`. Ten more were not even read as blocks: the lazy
+ * `([\s\S]*?)^ {2}\},` has nothing to stop at on a channel written on one line, so
+ * `auth:state`'s « block » ran through `auth:signIn`, `auth:signOut`,
+ * `agenda:snapshot` and `agenda:refresh`. Measured on the shipped check:
+ *
+ *     canaux invoke portant une réponse          : 42   (of 52 declared)
+ *     canaux dont le schéma est résolu (mesuré)  : 20
+ *     champs comptés (le « 132 » de la ligne ok) : 132
+ *
+ * `review:confirm` — the one thing in this product that writes into a client's CRM
+ * — `widget:state`, `session:command`, `meeting:get`, `health:snapshot` and
+ * eighteen others were outside the only rule in the repo that asks whether a
+ * shipped field has a reader, and the pass line printed 132 as though it were
+ * coverage. Nothing false was green behind it; what it cost was the next one.
+ *
+ * `lib/responseFields.mjs` resolves the expression **where it stands** now, and the
+ * two halves of that are equally load-bearing. An expression it cannot read answers
+ * `null` and becomes a **finding** — a red check naming the channel and printing
+ * the expression — never a skip, because the silence was the defect and a narrower
+ * vocabulary is only a nuisance. And the pass line states *resolved of total*, so a
+ * regression in resolution shows up as `41/52` instead of hiding inside a large
+ * number of fields.
  */
-const RESPONSE_SCHEMA = /response:\s*([A-Za-z0-9_]+)/
 const CONTRACTS = files.filter((file) => file.startsWith('electron/core/contracts/'))
 const SCREENS = files.filter((file) => file.startsWith('src/') && !isTest(file))
+const declarations = declarationsIn(CONTRACTS.map((file) => bodies.get(file) ?? ''))
 
-/** A `z.object({ … })` declared in `core/contracts/`, brace-matched, or null. */
-const schemaBody = (name) => {
-  for (const file of CONTRACTS) {
-    const body = bodies.get(file) ?? ''
-    const declared = body.indexOf(`export const ${name} = z.object({`)
-    if (declared < 0) continue
-    const start = body.indexOf('{', body.indexOf('z.object(', declared))
-    let depth = 0
-    for (let at = start; at < body.length; at += 1) {
-      if (body[at] === '{') depth += 1
-      else if (body[at] === '}') {
-        depth -= 1
-        if (depth === 0) return body.slice(start + 1, at)
-      }
-    }
-  }
-  return null
-}
-
-const fieldsOf = (schema) => {
-  const body = schemaBody(schema)
-  return body === null ? [] : [...body.matchAll(/^ {2}([a-zA-Z][a-zA-Z0-9_]*):/gm)].map((m) => m[1])
-}
-
-const channelBlocks = [
-  ...contract.slice(0, split).matchAll(/^ {2}'([^']+)':\s*\{([\s\S]*?)^ {2}\},/gm),
-]
-let fieldsChecked = 0
+const entries = channelEntries(code(contract.slice(0, split)))
 const unreadSeen = new Set()
+const unresolvedSeen = new Set()
+/** `schema.field` or `channel.field` → the channels that ship it. */
+const subjects = new Map()
+let resolvedChannels = 0
 
-for (const [, channel, block] of channelBlocks) {
-  const schema = RESPONSE_SCHEMA.exec(code(block))?.[1]
-  if (!schema) continue
-  for (const field of fieldsOf(schema)) {
-    fieldsChecked += 1
-    const subject = `${schema}.${field}`
-    const read = SCREENS.some((file) => new RegExp(`\\b${field}\\b`).test(bodies.get(file) ?? ''))
-    const excused = UNREAD.find((entry) => entry.subject === subject)
-    if (read) {
-      if (excused) {
-        problems.push(`« ${subject} » est déclaré non lu et pourtant lu par un écran.`)
-        unreadSeen.add(subject)
-      }
-      continue
-    }
-    unreadSeen.add(subject)
-    if (excused) continue
+for (const { channel, block } of entries) {
+  if (block === null) {
     problems.push(
-      `« ${channel} » renvoie ${subject} et aucun écran ne le lit — ` +
-        'câble-le, supprime-le du contrat, ou déclare-le dans UNREAD avec la raison.',
+      `« ${channel} » : la déclaration ne se referme pas — elle n’a pas pu être lue, ` +
+        'donc sa réponse n’a été mesurée par rien.',
     )
+    continue
+  }
+  const expression = responseIn(block)
+  if (expression === null) {
+    problems.push(
+      `« ${channel} » ne déclare aucune réponse — un canal invoke en a toujours une ` +
+        '(`InvokeResponse` l’indexe), donc ceci veut dire que la déclaration n’a pas été lue.',
+    )
+    continue
+  }
+  const trace = []
+  const fields = resolveFields(expression, declarations, trace)
+  if (fields === null) {
+    unresolvedSeen.add(channel)
+    if (UNRESOLVED.some((entry) => entry.subject === channel)) continue
+    problems.push(
+      `« ${channel} » : réponse non résolue — \`${expression.trim().replace(/\s+/g, ' ').slice(0, 80)}\`. ` +
+        'Apprends-la à `lib/responseFields.mjs`, ou déclare-la dans UNRESOLVED avec la raison : ' +
+        'un canal dont la réponse n’est pas résolue n’est mesuré par rien.',
+    )
+    continue
+  }
+  resolvedChannels += 1
+  /*
+   * The subject is named after the schema when the response is one, so the three
+   * standing `UNREAD` entries keep their keys and the eight `settings:*` channels
+   * that all answer `SettingsSnapshotSchema` are one subject rather than eight
+   * identical findings. A response written inline belongs to its channel.
+   */
+  const prefix = trace[0] ?? channel
+  for (const field of fields) {
+    const subject = `${prefix}.${field}`
+    const seen = subjects.get(subject)
+    if (seen) seen.push(channel)
+    else subjects.set(subject, [channel])
   }
 }
 
-if (channelBlocks.length === 0 || fieldsChecked === 0) {
+for (const [subject, channels] of subjects) {
+  const field = subject.slice(subject.lastIndexOf('.') + 1)
+  const read = SCREENS.some((file) => new RegExp(`\\b${field}\\b`).test(bodies.get(file) ?? ''))
+  const excused = UNREAD.find((entry) => entry.subject === subject)
+  if (read) {
+    if (excused) {
+      unreadSeen.add(subject)
+      problems.push(`« ${subject} » est déclaré non lu et pourtant lu par un écran.`)
+    }
+    continue
+  }
+  unreadSeen.add(subject)
+  if (excused) continue
   problems.push(
-    'aucun champ de réponse lu dans le contrat — ce contrôle ne mesure plus rien.',
+    `« ${channels[0]} » renvoie ${subject} et aucun écran ne le lit — ` +
+      'câble-le, supprime-le du contrat, ou déclare-le dans UNREAD avec la raison.',
+  )
+}
+
+/*
+ * **What was measured, checked against what exists.** `fieldsChecked === 0` was the
+ * whole of this guard, and « did it measure anything » is not « did it measure
+ * everything »: it was satisfied by twenty channels out of fifty-two. The two
+ * readings of the contract have to agree — `channelsIn` over the raw text and
+ * `channelEntries` over the comment-stripped slice — or a channel has gone missing
+ * between them and nothing above would have said so.
+ */
+if (entries.length !== invokeChannels.length) {
+  problems.push(
+    `${CONTRACT}: ${invokeChannels.length} canal(aux) invoke déclaré(s) mais ${entries.length} ` +
+      'bloc(s) lisible(s) — les réponses des autres ne sont mesurées par rien.',
+  )
+}
+if (entries.length === 0 || resolvedChannels === 0 || subjects.size === 0) {
+  problems.push('aucun champ de réponse lu dans le contrat — ce contrôle ne mesure plus rien.')
+}
+
+for (const entry of UNRESOLVED) {
+  if (unresolvedSeen.has(entry.subject)) continue
+  problems.push(
+    invokeChannels.includes(entry.subject)
+      ? `« ${entry.subject} » est déclaré irrésoluble et pourtant résolu — retire la dispense.`
+      : `UNRESOLVED mentionne « ${entry.subject} », qui n’est plus un canal invoke — ` +
+          'une dispense dont le sujet a disparu est une dispense qui pourrit.',
   )
 }
 
@@ -674,9 +820,18 @@ if (problems.length > 0) {
   process.exit(1)
 }
 
+/*
+ * **The pass line says what was measured, not how much of it there was.**
+ *
+ * « 132 champ(s) de réponse » read as coverage for as long as this rule existed and
+ * was the output of twenty channels out of fifty-two. `résolues` is printed as a
+ * ratio for that reason: the number that matters is the one that can fall.
+ */
 console.log(
   `surfaces ok — ${invokeChannels.length} canal(aux), ${broadcastChannels.length} diffusion(s), ` +
     `${rust.length} fichier(s) Rust, ${methods} méthode(s) de session, ` +
-    `${renderer.length} composant(s) de rendu, ${fieldsChecked} champ(s) de réponse, ` +
-    `${UNREACHED.length + UNREAD.length} dispense(s) déclarée(s)`,
+    `${renderer.length} composant(s) de rendu, ` +
+    `${resolvedChannels}/${entries.length} réponse(s) résolue(s) → ` +
+    `${subjects.size} champ(s) distinct(s), ` +
+    `${UNREACHED.length + UNREAD.length + UNRESOLVED.length} dispense(s) déclarée(s)`,
 )
