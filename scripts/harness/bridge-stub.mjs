@@ -1330,7 +1330,76 @@ export function installAppBridge(config) {
     return entra ? base : { ...base, ...NO_ENTRA_HEALTH }
   }
 
+  /*
+   * The capture permissions (`permissions:capture`).
+   *
+   * Every screen but the onboarding ones answers `ready`, because `App.tsx`
+   * puts the first-run screen in front of the calendar whenever capture is
+   * unsettled — an unset default here would stage every other shot behind a
+   * welcome screen.
+   *
+   * The five onboarding scenarios are the five states the row has, written as
+   * the main process would send them: macOS governs both scopes in two
+   * different panes, Windows governs the microphone and leaves system audio
+   * `notRequired` — which is not `granted`, and is why the Windows shots draw
+   * no screen-recording line at all.
+   */
+  const permissionRow = (scope, status, reason, canOpenSettings) => ({
+    scope,
+    status,
+    reason: reason || null,
+    canOpenSettings,
+  })
+  const PERMISSIONS = {
+    'onboarding-a-autoriser': {
+      rows: [
+        permissionRow('microphone', 'prompt', null, true),
+        permissionRow('systemAudio', 'prompt', null, true),
+      ],
+    },
+    'onboarding-refuse': {
+      rows: [
+        permissionRow('microphone', 'granted', null, true),
+        permissionRow(
+          'systemAudio',
+          'denied',
+          'L’audio de votre ordinateur est refusé dans Réglages › Confidentialité et sécurité › Enregistrement de l’écran. Sans lui, votre interlocuteur n’est pas enregistré.',
+          true,
+        ),
+      ],
+    },
+    'onboarding-pret': {
+      rows: [
+        permissionRow('microphone', 'granted', null, true),
+        permissionRow('systemAudio', 'granted', null, true),
+      ],
+    },
+    'onboarding-windows-bloque': {
+      rows: [
+        permissionRow(
+          'microphone',
+          'denied',
+          'Le micro est bloqué pour Sillage dans les paramètres de confidentialité de Windows. Sans lui, votre voix n’est pas enregistrée.',
+          true,
+        ),
+        permissionRow('systemAudio', 'notRequired', null, false),
+      ],
+    },
+    'onboarding-windows-pret': {
+      rows: [
+        permissionRow('microphone', 'granted', null, true),
+        permissionRow('systemAudio', 'notRequired', null, false),
+      ],
+    },
+  }
+  const READY_PERMISSIONS = PERMISSIONS['onboarding-pret']
+
   const responders = {
+    'permissions:capture': () => PERMISSIONS[scenario] || READY_PERMISSIONS,
+    // The pane opens outside the app; there is nothing to draw and nothing to
+    // change here. The screen re-reads on focus, which a screenshot never gets.
+    'permissions:openSettings': () => ({ opened: true, reason: null }),
+
     'boot:state': () => (scenario === 'splash' ? BOOT_BOOTING : BOOT_READY),
     'auth:state': () =>
       entra

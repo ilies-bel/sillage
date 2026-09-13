@@ -83,6 +83,10 @@ what `serve.mjs` drops the meta for.
 | screen | what it stages |
 |---|---|
 | `splash` | screen 0 (DEC-30): base locale ready, audio still pending, the first-run model download at 42 % with its progress bar |
+| `onboarding` | first run, macOS **« à autoriser »** — the three steps, the permission row with its brand dot and *Ouvrir les réglages*, and *Commencer* as the one filled control |
+| `onboarding-refuse` | the same screen on a Mac where **screen recording is refused**: danger dot, the sentence naming *Enregistrement de l'écran*, and the button that opens that pane — not the microphone one |
+| `onboarding-windows-bloque` | **Windows, micro bloqué**: the Windows sentence, `ms-settings:privacy-microphone` behind the button, and no screen-recording line at all — Windows does not govern system audio |
+| `onboarding-pret` | a machine that grants everything, which is why it shows the **calendar**: the first-run screen is drawn only while capture is unsettled, so « prêt » is the case where a rep never sees it |
 | `agenda` | *Calendrier* on a full day — month grid with marks, two calls ahead, one **Prêt** (armed, HR-7), two under *Passées*, the search bar with client chips, `Tout fonctionne` in the header |
 | `agenda-empty` | DEC-31's own case: a day with nothing on it, grid and search bar still drawn. The day is found by its accessible name, not by date, so the shot does not expire |
 | `agenda-semaine` | the same day in the **Semaine** view |
@@ -211,5 +215,5 @@ front of us rather than one nobody was shown.
 
 Add an entry to `SCREENS` in `shot.mjs` with the `scenario` its data needs and a
 `drive(page)` that clicks its way there. Add data to `bridge-stub.mjs` only if a
-channel has no answer — the stub answers all 20 invoke channels of
+channel has no answer — the stub answers all 22 invoke channels of
 `core/contracts/ipc.ts` today, and listens on all 8 broadcasts.

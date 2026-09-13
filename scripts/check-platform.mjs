@@ -66,6 +66,14 @@ const ALLOWED = new Map([
       'It is the one place a binary name is spelled, and it spells all of them.',
   ],
   [
+    'electron/modules/permissions/deepLinks.ts',
+    'the settings pane a refusal belongs to has no portable spelling: ' +
+      '`x-apple.systempreferences:…?Privacy_Microphone` / `?Privacy_ScreenCapture` on macOS, ' +
+      '`ms-settings:privacy-microphone` on Windows, and system audio is governed on macOS only. ' +
+      'The platform is a parameter, so both tables are unit-tested from either host — and this ' +
+      'is the only file in the chain that spells one, which is what keeps the branch out of `src/`.',
+  ],
+  [
     'electron/modules/transcribe/whisper/inference.ts',
     'thread-count heuristics differ per platform; the platform is a parameter, not a read.',
   ],

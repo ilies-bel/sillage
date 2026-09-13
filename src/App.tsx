@@ -16,6 +16,7 @@ import { useCallback, useState } from 'react'
 import type { BootState } from '../electron/core/contracts/boot.ts'
 import type { HistoryFilter } from '../electron/core/contracts/history.ts'
 import { bootAnswered } from '../electron/core/contracts/bootSteps.ts'
+import { captureVerdict } from '../electron/core/contracts/permissionRows.ts'
 import { AGENDA, REGLAGES, historiqueOf, type Route } from './app/route.ts'
 import { useBroadcast, useInvoke } from './app/bridge.ts'
 import { Agenda } from './screens/Agenda.tsx'
@@ -24,9 +25,19 @@ import { Review } from './screens/Review.tsx'
 import { Historique } from './screens/Historique.tsx'
 import { Reglages } from './screens/Reglages.tsx'
 import { Splash } from './screens/Splash.tsx'
+import { Onboarding } from './screens/Onboarding.tsx'
 
 export function App() {
   const [route, setRoute] = useState<Route>(AGENDA)
+  /*
+   * First run. The onboarding screen stands between the splash and the calendar
+   * only while capture is unsettled — a machine that already grants both
+   * channels has nothing to tell the rep and never sees it. *Commencer*
+   * dismisses it for this process: it is a screen about a machine, not a wizard
+   * with a stored « seen » flag, so the honest trigger is the permission itself.
+   */
+  const [welcomed, setWelcomed] = useState(false)
+  const permissions = useInvoke('permissions:capture', {})
 
   // Screen 0 (DEC-30). One read, then kept current by the broadcast — the same
   // shape as every other screen here.
@@ -77,6 +88,18 @@ export function App() {
   if (!bootReady) {
     const state: BootState | null = boot.state.status === 'ready' ? boot.state.value : null
     return <Splash state={state} />
+  }
+
+  /*
+   * A channel that has not answered, or one that rejected, is not a reason to
+   * hold a rep on a welcome screen — the app opens, exactly as it does for a
+   * boot step that failed. Only a *read* verdict that is not `ready` shows it.
+   */
+  const capture =
+    permissions.state.status === 'ready' ? captureVerdict(permissions.state.value) : 'ready'
+
+  if (!welcomed && capture !== 'ready') {
+    return <Onboarding onDone={() => setWelcomed(true)} />
   }
 
   return (

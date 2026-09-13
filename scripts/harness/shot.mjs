@@ -94,6 +94,55 @@ const SCREENS = {
     },
   },
 
+  /*
+   * First run (DEC-26). Five stages rather than one, because the row that
+   * matters has five states and four of them are unreachable on the machine
+   * this repo is written on: two are Windows, and « refusé » on a Mac needs a
+   * grant the developer has already given. Each is seeded through
+   * `permissions:capture` with exactly the rows the main process would send
+   * from that machine — the screen itself never learns which one it is.
+   */
+  onboarding: {
+    scenario: 'onboarding-a-autoriser',
+    async drive(page) {
+      await page.getByRole('heading', { name: 'Sillage', exact: true }).waitFor()
+      await page.getByText('À autoriser').waitFor()
+      await page.getByRole('button', { name: 'Ouvrir les réglages' }).waitFor()
+    },
+  },
+
+  'onboarding-refuse': {
+    scenario: 'onboarding-refuse',
+    async drive(page) {
+      await page.getByText('Refusé', { exact: true }).waitFor()
+      await page.getByText('Enregistrement de l’écran', { exact: false }).waitFor()
+      await page.getByRole('button', { name: 'Ouvrir les réglages' }).waitFor()
+    },
+  },
+
+  /*
+   * « Prêt » is reached the way a rep reaches it: nothing is unsettled, so the
+   * welcome screen is never drawn and the calendar is what opens. Shot from
+   * *Commencer* on the refusal stage would be a different screen; this stage
+   * exists to hold the fact that a settled machine sees no first-run screen at
+   * all.
+   */
+  'onboarding-pret': {
+    scenario: 'onboarding-pret',
+    async drive(page) {
+      await page.getByRole('button', { name: 'Réglages' }).first().waitFor()
+    },
+  },
+
+  'onboarding-windows-bloque': {
+    scenario: 'onboarding-windows-bloque',
+    async drive(page) {
+      await page.getByText('Refusé', { exact: true }).waitFor()
+      await page.getByText('confidentialité de Windows', { exact: false }).waitFor()
+      await page.getByRole('button', { name: 'Ouvrir les réglages' }).waitFor()
+    },
+  },
+
   agenda: {
     scenario: 'agenda',
     async drive(page) {

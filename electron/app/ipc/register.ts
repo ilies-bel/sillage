@@ -27,6 +27,8 @@ import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
 import type { BootState } from '../../core/contracts/boot.ts'
+import type { CapturePermissionsPort } from '../../core/contracts/permissions.ts'
+import { UNREAD_PERMISSIONS } from '../../modules/permissions/index.ts'
 import type { EnhancementStatus } from '../../core/contracts/extraction.ts'
 import {
   INTENT_LABEL,
@@ -182,6 +184,14 @@ export interface IpcDeps {
   /** `app.getVersion()`, so the update panel can name the running build even
    *  when there is no updater to ask. */
   appVersion?: string
+  /**
+   * What this machine will let a meeting listen to (`modules/permissions`).
+   *
+   * Optional, and absent answers `UNREAD_PERMISSIONS` — « nothing has been
+   * read », never « granted ». An unwired reader must not be able to tell the
+   * onboarding row that capture is ready.
+   */
+  permissions?: CapturePermissionsPort | null
 }
 
 /** What a build with no updater reports, in one place so the French matches. */
@@ -867,6 +877,15 @@ export const handlers: Handlers = {
   'models:state': (_request, deps) => deps.models?.section() ?? tablesOf(deps).models,
 
   'boot:state': (_request, { bootState }) => bootState?.() ?? NO_BOOT_STATE,
+
+  'permissions:capture': async (_request, { permissions }) =>
+    (await permissions?.read()) ?? UNREAD_PERMISSIONS,
+
+  'permissions:openSettings': async ({ scope }, { permissions }) =>
+    (await permissions?.openSettings(scope)) ?? {
+      opened: false,
+      reason: 'les autorisations ne sont pas lisibles dans cette build',
+    },
 
   'update:status': (_request, deps) => statusOf(deps),
 

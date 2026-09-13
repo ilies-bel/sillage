@@ -6,7 +6,7 @@
  * sink and the orchestrator, registers IPC, and shows a window. Anything that
  * decides something belongs in `app/session/` or `core/domain/`.
  */
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { Worker } from 'node:worker_threads'
@@ -73,6 +73,7 @@ import { registerIpc, updateStatus } from './ipc/register.ts'
 import { AutoUpdate } from '../modules/update/index.ts'
 import { updateReadiness } from '../core/domain/updateGate.ts'
 import type { UpdatePort } from '../core/contracts/update.ts'
+import { CapturePermissionsReader } from '../modules/permissions/index.ts'
 import { runDevRecording } from './devRecord.ts'
 import { loadDevEnv } from './devEnv.ts'
 import type { MsalIdentity } from '../modules/identity/index.ts'
@@ -1429,6 +1430,20 @@ const boot = async (): Promise<void> => {
     bootState: () => bootState,
     updates,
     appVersion: app.getVersion(),
+    /*
+     * The onboarding permission row (DEC-26 — a refusal leads to the pane, not
+     * to a control that cannot work).
+     *
+     * `process.platform` is passed *in*, not read inside the module: every
+     * literal spelling of a platform lives in `modules/permissions/deepLinks.ts`
+     * and nowhere else, which is what lets the Windows table be tested on the
+     * Mac it was written on (`scripts/check-platform.mjs`).
+     */
+    permissions: new CapturePermissionsReader({
+      platform: process.platform,
+      media: systemPreferences,
+      openExternal: (url) => shell.openExternal(url),
+    }),
   })
 
   diagnostics.record({

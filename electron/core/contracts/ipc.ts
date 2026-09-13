@@ -33,6 +33,11 @@ import { HistoryFilterSchema, HistoryRecordSchema, HistorySearchResultSchema } f
 import { SettingsSnapshotSchema } from './settings.ts'
 import { ModelProgressSchema, ModelSectionSchema } from './models.ts'
 import { BootStateSchema } from './boot.ts'
+import {
+  CapturePermissionsSchema,
+  OpenSettingsResultSchema,
+  PermissionScopeSchema,
+} from './permissions.ts'
 import { EnhancementStatusSchema } from './extraction.ts'
 import { RecipeIdSchema } from './recipes.ts'
 import { UpdateStatusSchema } from './update.ts'
@@ -510,6 +515,32 @@ export const invokeChannels = {
    * download, which is the state this screen was designed around.
    */
   'boot:state': { request: z.object({}), response: BootStateSchema },
+
+  /**
+   * What this machine will let a meeting listen to, and whether there is a pane
+   * to change it in.
+   *
+   * Read rather than broadcast, and read again whenever the window regains
+   * focus: the thing that changes it is the rep switching a toggle in System
+   * Settings, which happens with our window in the background and produces no
+   * event we can subscribe to. A cached answer here is how a screen tells a rep
+   * they are still refused thirty seconds after they allowed it.
+   */
+  'permissions:capture': { request: z.object({}), response: CapturePermissionsSchema },
+
+  /**
+   * Open the settings pane that governs one scope.
+   *
+   * The *only* verb on this surface, and deliberately not `ask`: macOS shows
+   * its TCC sheet once per binary and every later request resolves false with
+   * nothing on screen, so a refusal has to lead to the pane (DEC-26 — never a
+   * control that cannot work). Answers `{opened, reason}` rather than rejecting;
+   * a button is owed a sentence.
+   */
+  'permissions:openSettings': {
+    request: z.object({ scope: PermissionScopeSchema }),
+    response: OpenSettingsResultSchema,
+  },
 
   /**
    * What Réglages draws under « Mise à jour ».
