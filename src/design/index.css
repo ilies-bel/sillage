@@ -136,6 +136,69 @@
   }
 }
 
+/*
+ * **The four lengths the two fading scrollers ramp over, registered so they can
+ * be animated — because `mask-image` cannot be.**
+ *
+ * `.fade-below` and `.filter-scroller` each had three rules: one gradient for a
+ * cut at the start of the axis, one for a cut at the end, and a four-stop one for
+ * both, « not optional: two `mask-image` declarations do not compose ». They are
+ * selected by `data-above` / `data-below` / `data-fade`, which the components
+ * measure and rewrite as the rep scrolls — so crossing the first twelve pixels of
+ * a reading column swapped the *whole* declaration from the two-stop form to the
+ * four-stop one **between two frames**, and a 12px ramp appeared at the top edge
+ * in one paint. On the pane where a rep meets the compte-rendu that is a hard
+ * edge arriving under their eyes at the exact moment they start reading, and the
+ * `fade-below` block below already records that a hard edge there « reads as a
+ * rendering fault rather than as *keep going* » — which is the whole reason the
+ * fade exists.
+ *
+ * Interpolating the declaration is not available: `mask-image` between two
+ * gradients with different stop counts is not animatable, and even matched stop
+ * counts are interpolated discretely by Chromium. What *is* animatable is a
+ * registered custom property with a `<length>` syntax — an unregistered one is a
+ * token stream and also interpolates discretely, which is why these four have to
+ * be declared here rather than simply written in the rule.
+ *
+ * So there is **one** gradient per scroller, always four-stop, always applied,
+ * and only these lengths change: 0 at an edge with nothing behind it, the ramp at
+ * an edge with content. A zero-length ramp paints nothing away, so the resting
+ * mask is fully opaque and a column that fits is not dimmed — which is the rule
+ * `[data-below]` was there to keep.
+ *
+ * They collapse with `--motion` under `prefers-reduced-motion` (`tokens.css`), so
+ * the rep who asked for less motion gets the old instant swap and not a ramp that
+ * lingers.
+ *
+ * `shot.mjs --fade` measures every ramp this produces and its own self-test
+ * (`SILLAGE_FADE_ATTACK=1`) attacks these very rules through the shipped class
+ * rather than through a copy, so the rule and the check moved together: the
+ * attack still reports seven ramps over a line and exits 11.
+ */
+@property --fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-row-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-row-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer components {
   /*
    * **The frameless window's titlebar, which is the whole window.**
@@ -848,13 +911,44 @@
    * horizontal fade on the filter row deliberately does **not** use it — it hides
    * the ends of a row rather than a line, so a line box is not its constraint.
    */
+  /*
+   * **One gradient, four stops, always applied** — see the `@property` block
+   * above this layer for why the three rules this replaced could not be made to
+   * cross-fade. The two lengths are 0 at an edge with nothing behind it, so the
+   * resting mask paints nothing away and a column that fits is not dimmed.
+   *
+   * One curve, `--ease-out`, in both directions. §6's rule is ease-out on the way
+   * in and ease-in on the way out, and that rule is about a *surface* arriving or
+   * leaving; this is one continuous length that grows and shrinks as the rep
+   * scrolls, and nothing arrives or leaves. Giving the two directions different
+   * curves would also mean two `transition` shorthands on one element, where the
+   * second silently drops the first property.
+   */
   .fade-below {
     --fade-reading: 12px;
+    --fade-top: 0px;
+    --fade-bottom: 0px;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black var(--fade-top),
+      black calc(100% - var(--fade-bottom)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black var(--fade-top),
+      black calc(100% - var(--fade-bottom)),
+      transparent
+    );
+    transition:
+      --fade-top var(--motion) var(--ease-out),
+      --fade-bottom var(--motion) var(--ease-out);
   }
 
   .fade-below[data-below="true"] {
-    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - var(--fade-reading)), transparent);
-    mask-image: linear-gradient(to bottom, black calc(100% - var(--fade-reading)), transparent);
+    --fade-bottom: var(--fade-reading);
   }
 
   /*
@@ -870,64 +964,60 @@
    *
    * The combined rule is not optional: two `mask-image` declarations do not
    * compose, so a column with content above *and* below needs the four-stop
-   * gradient or one of the two fades silently wins.
+   * gradient or one of the two fades silently wins. It is now the *only* form,
+   * for the reason stated above the layer — the swap between the two forms was
+   * itself a hard edge arriving in one paint.
    */
   .fade-below[data-above="true"] {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--fade-reading));
-    mask-image: linear-gradient(to bottom, transparent, black var(--fade-reading));
-  }
-
-  .fade-below[data-above="true"][data-below="true"] {
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black var(--fade-reading),
-      black calc(100% - var(--fade-reading)),
-      transparent
-    );
-    mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black var(--fade-reading),
-      black calc(100% - var(--fade-reading)),
-      transparent
-    );
+    --fade-top: var(--fade-reading);
   }
 
   .filter-scroller {
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
+    /*
+     * The same construction as `.fade-below`, and here the snap was on a row of
+     * chips that scrolls sideways under the rep's own trackpad flick — the edge
+     * the mask is about is the one they are moving.
+     *
+     * The ramp is deliberately **not** `--fade-reading`: that number is measured
+     * against a *line box*, and this hides the ends of a row rather than a line,
+     * which the block above records and `shot.mjs --fade` exempts by axis.
+     */
+    --fade-row: 28px;
+    --fade-row-start: 0px;
+    --fade-row-end: 0px;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-row-start),
+      black calc(100% - var(--fade-row-end)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-row-start),
+      black calc(100% - var(--fade-row-end)),
+      transparent
+    );
+    transition:
+      --fade-row-start var(--motion) var(--ease-out),
+      --fade-row-end var(--motion) var(--ease-out);
   }
 
   .filter-scroller::-webkit-scrollbar {
     display: none;
   }
 
-  .filter-scroller[data-fade="end"] {
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-  }
-
-  .filter-scroller[data-fade="start"] {
-    -webkit-mask-image: linear-gradient(to right, transparent, black 28px);
-    mask-image: linear-gradient(to right, transparent, black 28px);
-  }
-
+  .filter-scroller[data-fade="end"],
   .filter-scroller[data-fade="both"] {
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 28px,
-      black calc(100% - 28px),
-      transparent
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 28px,
-      black calc(100% - 28px),
-      transparent
-    );
+    --fade-row-end: var(--fade-row);
+  }
+
+  .filter-scroller[data-fade="start"],
+  .filter-scroller[data-fade="both"] {
+    --fade-row-start: var(--fade-row);
   }
 }

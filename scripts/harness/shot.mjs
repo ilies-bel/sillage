@@ -2552,23 +2552,41 @@ async function main() {
    *
    * So the attack stages **one element per gradient form the product can
    * actually produce**, at a ramp deliberately longer than the line box inside
-   * it, and two controls that must stay quiet. The three `.fade-below` divs carry
-   * no inline gradient: they wear the shipped class and the shipped
+   * it, and three controls that must stay quiet. The three `.fade-below` divs
+   * carry no inline gradient: they wear the shipped class and the shipped
    * `--fade-reading` custom property, so what is being attacked is
    * `src/design/index.css` itself and not a copy of it in this file.
    *
    *   SILLAGE_FADE_ATTACK=1 node scripts/harness/shot.mjs review-valider /dev/null \
    *     --no-png --fade
    *
-   * must print **seven** ramps over a line — the top ramp, the bottom ramp,
-   * *both* ramps of the four-stop rule, the widget's explicit-`0` form, the
-   * vertical layer riding behind a horizontal one, and a `to top` ramp reported
-   * at the « bas » edge because that is the end of the box its offset counts from
-   * — plus **one** unreadable mask, and exit 11. The census must show three
-   * layers exempted for running along the other axis and one ramp in percent.
+   * must print **seven** ramps over a line — `data-above`'s ramp, `data-below`'s,
+   * *both* ramps of the state that has content at each end, the widget's
+   * explicit-`0` form, the vertical layer riding behind a horizontal one, and a
+   * `to top` ramp reported at the « bas » edge because that is the end of the box
+   * its offset counts from — plus **one** unreadable mask, **one** ramp animated
+   * by an unregistered property, and exit 11. The census must show two layers
+   * exempted for running along the other axis and one ramp in percent.
    * A harness-only development override, which is what `process.env` is for
    * here: DEC-34 is about the *app* requiring none, and nothing in `electron/` or
    * `src/` reads this.
+   *
+   * **The three `.fade-below` probes no longer stage three different gradients**,
+   * and that is the point of US-15: the class now writes **one** four-stop
+   * gradient whose two lengths move, because the swap between a two-stop and a
+   * four-stop declaration happened between two frames and put a 12px hard edge on
+   * screen in one paint. What the three probes still assert is three different
+   * *outcomes* through the shipped class — one ramp at the top, one at the bottom,
+   * two — so a rule that stopped honouring `data-above` or `data-below` is still
+   * caught. The dropped-implicit-`0` shape that defeated the first version of this
+   * reader has left the product but not the attack: the `to top` probe and the
+   * layered one both write it, and the 4px control does too.
+   *
+   * And the ramp being animatable is now itself attacked, because that half lives
+   * in a different rule from the half that reads it: `@property` in
+   * `src/design/index.css` registers the four lengths, and without a registration
+   * a transition on a custom property is *discrete* — the mask draws correctly at
+   * rest, the transition is still declared, and the snap comes back in silence.
    */
   if (process.env.SILLAGE_FADE_ATTACK) {
     await page.evaluate(() => {
@@ -2600,6 +2618,17 @@ async function main() {
       add('mask-image: linear-gradient(to top, transparent, black 40px)')
       // A mask this reader cannot measure, which must be said rather than skipped.
       add('mask-image: radial-gradient(circle, black 40%, transparent 70%)')
+      /*
+       * A ramp driven by a custom property nobody registered — the shape US-15's
+       * fix depends on *not* being, and the one whose two halves sit in different
+       * rules. The ramp itself is comfortably under the line box, so this probe can
+       * only be reported for the reason it exists.
+       */
+      add(
+        '--fondu-non-enregistre: 4px;' +
+          ' mask-image: linear-gradient(to bottom, transparent, black var(--fondu-non-enregistre));' +
+          ' transition: --fondu-non-enregistre 150ms',
+      )
       // And the three that must stay silent: the horizontal exemption, a
       // vertical ramp comfortably under its line box, and a ramp expressed as a
       // share of the box, which is a different design and is counted rather than
@@ -2608,7 +2637,15 @@ async function main() {
       add('mask-image: linear-gradient(to bottom, transparent, black 4px)')
       add('mask-image: linear-gradient(to bottom, transparent, black 20%)')
     })
+    /*
+     * `settled` and not only a fixed wait. Every ramp in the product is now a
+     * *transitioning* length, and a computed value read mid-transition is the same
+     * false measurement `--contrast` and `settled` were both written about — this
+     * would have read a growing ramp as a short one. The 120 ms is kept for the
+     * line box, which needs a layout rather than an animation to be finished.
+     */
     await page.waitForTimeout(120)
+    await settled(page)
   }
 
   /*
@@ -2898,11 +2935,12 @@ async function main() {
      */
     const census =
       `${faded.seen} masque(s) vus, ${faded.measured} rampe(s) verticale(s) mesurée(s), ` +
-      `${faded.horizontal} couche(s) sur l'autre axe exemptée(s)` +
+      `${faded.horizontal} couche(s) sur l'autre axe exemptée(s), ` +
+      `${faded.registered} propriété(s) enregistrée(s)` +
       (faded.textless > 0 ? `, ${faded.textless} sans texte` : '') +
       (faded.shares > 0 ? `, ${faded.shares} en pourcentage de la boîte` : '')
-    if (faded.items.length === 0 && faded.unreadable.length === 0) {
-      console.log(`  fondus: ${census} — aucune ne couvre une ligne entière`)
+    if (faded.items.length === 0 && faded.unreadable.length === 0 && faded.discrete.length === 0) {
+      console.log(`  fondus: ${census} — aucune ne couvre une ligne entière, aucune ne saute`)
     } else {
       console.log(`  fondus: ${census}`)
       if (faded.items.length > 0) {
@@ -2921,6 +2959,15 @@ async function main() {
         )
         for (const item of faded.unreadable.slice(0, 8)) {
           console.log(`     ${item.what} — ${item.mask}`)
+        }
+      }
+      if (faded.discrete.length > 0) {
+        console.log(
+          `  ✗ fondus: ${faded.discrete.length} masque(s) dont la rampe est animée par une ` +
+            'propriété non enregistrée — la transition est déclarée et le fondu saute quand même',
+        )
+        for (const item of faded.discrete.slice(0, 8)) {
+          console.log(`     ${item.what} — ${item.properties.join(', ')} sans @property`)
         }
       }
       process.exitCode = 11
@@ -3696,15 +3743,14 @@ async function scrollers(page) {
  * transparent stop to carry a pixel offset:
  * `/rgba\([^)]*,\s*0\)\s+[\d.]+px,\s*[a-z]+\([^)]*\)\s+([\d.]+)px/`. Half of the
  * product's own fade system cannot match that, because CSS lets the first stop
- * drop its `0` and Chromium drops it from the computed value too —
- * `.fade-below[data-above="true"]`, which `ReadingColumn.tsx` and `Review.tsx`
- * put on **every** scrolled column, computes to
- * `linear-gradient(rgba(0, 0, 0, 0), rgb(0, 0, 0) 12px)`. On `review-valider`
- * both masked elements came back with no distance and were skipped in silence; a
- * forced 40px ramp over a 25px line box — the exact defect this check exists for
- * — printed « aucun ne couvre une ligne entière » and exited 0. The same regex
- * also saw only one of the two ramps of the four-stop combined rule, and was
- * defeated by a multi-layer mask, below.
+ * drop its `0` and Chromium drops it from the computed value too — the
+ * `.fade-below` top fade was then `linear-gradient(rgba(0, 0, 0, 0), rgb(0, 0, 0)
+ * 12px)`, on **every** scrolled column `ReadingColumn.tsx` and `Review.tsx` draw.
+ * On `review-valider` both masked elements came back with no distance and were
+ * skipped in silence; a forced 40px ramp over a 25px line box — the exact defect
+ * this check exists for — printed « aucun ne couvre une ligne entière » and
+ * exited 0. The same regex also saw only one of the two ramps of a four-stop
+ * gradient, and was defeated by a multi-layer mask, below.
  *
  * What replaced it parses the value: layers split at top-level commas, then a
  * direction, then stops of a colour and up to two positions, with the implicit
@@ -3713,9 +3759,22 @@ async function scrollers(page) {
  * each: `transparent` and `rgba(0, 0, 0, 0)`, `black` and `currentColor`, the
  * dropped default direction and a named `to bottom`, `0` and `0px` and no offset
  * at all, `Npx` and `calc(100% - Npx)`, `mask-image` and its `-webkit-` twin, and
- * the four-stop rule whose **two** ramps are both measured rather than maxed.
+ * the four-stop form whose **two** ramps are both measured rather than maxed.
  *
- * Four things are deliberate.
+ * Five things are deliberate.
+ *
+ * **A ramp that cannot animate is a finding, not a matter of taste** (US-15). The
+ * product's two fading scrollers used to carry three gradients each and *switch*
+ * between them as the rep scrolled, so crossing the first twelve pixels of a
+ * reading column put a 12px hard edge on screen in one paint — on the pane where
+ * the rep meets the compte-rendu. `mask-image` is not interpolable between two
+ * gradients, so the fix is one gradient whose lengths are **registered** custom
+ * properties; an unregistered one transitions *discretely*, which draws the
+ * correct ramp at rest and snaps exactly as before while the `transition`
+ * declaration sits there looking right. That registration is four `@property`
+ * rules in a different part of the file from the rule that reads them, which is
+ * the « declaration with no caller » shape with its halves separated — so it is
+ * asked for here, of every masked element, rather than assumed.
  *
  * **The ink band, not the line box**, is what the reported alpha describes: a
  * 12px font inside a 19.5px line box paints roughly the middle 12px, so the
@@ -3925,8 +3984,46 @@ async function fades(page) {
       return { kind: 'ramps', ramps, shares }
     }
 
+    /*
+     * **Every custom property the page has *registered*, because a ramp that
+     * animates is a ramp whose length is a registered property — and an
+     * unregistered one transitions discretely, in silence.**
+     *
+     * `mask-image` is not animatable between two gradients, so the only way a
+     * fade can grow or shrink instead of snapping is a `<length>` inside it that
+     * *is*. `.fade-below` and `.filter-scroller` are built that way now, and the
+     * declaration that makes it work is four `@property` rules in
+     * `src/design/index.css` — nowhere near the rule that reads them. Delete them
+     * and the mask still draws the right ramp at rest, the transition is still
+     * declared, and every check in this repo stays green while the snap comes
+     * back: a 12px hard edge arriving in one paint on the pane where the rep meets
+     * the compte-rendu. That is the « a declaration with no caller » shape with the
+     * two halves in different files, which is the version nothing catches.
+     *
+     * Read off the CSSOM rather than probed, because there is no API that answers
+     * « is this property registered »: `CSSPropertyRule` is what `@property`
+     * becomes. A stylesheet whose rules cannot be read is skipped — the harness
+     * serves everything same-origin, and a cross-origin sheet cannot be carrying
+     * this product's own tokens.
+     */
+    const registered = new Set()
+    for (const sheet of document.styleSheets) {
+      let rules = null
+      try {
+        rules = sheet.cssRules
+      } catch {
+        continue
+      }
+      for (const rule of rules ?? []) {
+        if (rule?.constructor?.name === 'CSSPropertyRule' && typeof rule.name === 'string') {
+          registered.add(rule.name)
+        }
+      }
+    }
+
     const out = []
     const unreadable = []
+    const discrete = []
     let seen = 0
     let measured = 0
     let horizontal = 0
@@ -3948,6 +4045,16 @@ async function fades(page) {
         el.id ||
         el.getAttribute('aria-label') ||
         `${el.tagName.toLowerCase()}.${String(el.className?.baseVal ?? el.className ?? '').split(' ')[0]}`
+
+      /*
+       * A custom property this element says it transitions, which nothing
+       * registered. `transition-property: all` is not asked about: it cannot name
+       * a custom property, and Blink does not interpolate one under it either.
+       */
+      const unregistered = splitTop(style.transitionProperty ?? '', true).filter(
+        (name) => name.startsWith('--') && !registered.has(name),
+      )
+      if (unregistered.length > 0) discrete.push({ what, properties: unregistered })
 
       const ramps = []
       let unreadableHere = false
@@ -4009,6 +4116,8 @@ async function fades(page) {
       textless,
       shares,
       unreadable,
+      discrete,
+      registered: registered.size,
     }
   })
 }

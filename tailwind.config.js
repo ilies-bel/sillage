@@ -120,8 +120,25 @@ module.exports = {
         DEFAULT: 'var(--radius)',
         lg: 'var(--radius-lg)',
       },
+      /*
+       * **One entry, and `shadow-card` is gone because nothing wore it.**
+       *
+       * It was mapped here, backed by `--shadow-card` in `tokens.css`, and had
+       * **zero** `className` occurrences anywhere under `src/` — a utility a
+       * developer could reach for and that no screen had ever used. Same shape as
+       * the two motion tokens US-3 found unspent, and as `ring-card`, which named a
+       * colour `ringColor` did not have and drew nothing: the class name is right,
+       * something resolves, and no screenshot shows anything.
+       *
+       * Deleted rather than sprinkled onto a surface to justify it. Every card in
+       * this product is a 1px `--border-card` on `--bg-card`, which is what VISION
+       * §6's « Borders 1px » and « Density over decoration » produce, and adding an
+       * elevation to one pane to use up a declaration is the opposite of a design
+       * system. `--shadow-card` stays in `tokens.css` — VISION §6 names its value,
+       * and `--shadow-overlay`'s own reasoning is stated *relative* to it — so the
+       * day a surface genuinely lifts off the paper this is one line again.
+       */
       boxShadow: {
-        card: 'var(--shadow-card)',
         /* The in-meeting widget, which floats over another application. */
         overlay: 'var(--shadow-overlay)',
       },
