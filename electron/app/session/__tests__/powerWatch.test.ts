@@ -111,7 +111,13 @@ const harness = (
   /** A window created later — the widget over the call, or `activate`'s. */
   openWindow: () => FakeWindow
   notices: Notices
-  opened: string[]
+  /**
+   * Every argument `onOpen` was handed, `null` included — never the ids only.
+   * `null` is `focusMainWindow`'s « forward and nowhere », so a collector that
+   * filtered it could not tell a withheld navigation from a click nothing
+   * registered, which is the whole of R33-3.
+   */
+  opened: (string | null)[]
   records: DiagInput[]
 } => {
   const store = openMemoryStore()
@@ -119,7 +125,7 @@ const harness = (
   const records: DiagInput[] = []
   const diagnostics: DiagRecorder = { record: (input) => records.push(input) }
   const notices: Notices = { shown: [], clicks: [] }
-  const opened: string[] = []
+  const opened: (string | null)[] = []
 
   const listeners = new Map<PowerMonitorEvent, (() => void)[]>()
   const power: PowerEmitter = {
@@ -174,10 +180,14 @@ const harness = (
 }
 
 /** A meeting that is genuinely recording, the way the rep's press leaves it. */
-const recording = (orchestrator: Orchestrator, id = 'm-neovia-cadrage'): string => {
-  orchestrator.create({ id, title: 'Néovia — cadrage', context: null })
+const recording = (
+  orchestrator: Orchestrator,
+  id = 'm-neovia-cadrage',
+  title = 'Néovia — cadrage',
+): string => {
+  orchestrator.create({ id, title, context: null })
   const outcome = orchestrator.dispatch(id, 'start', 'le commercial a démarré')
-  assert.equal(outcome.ok, true)
+  assert.equal(outcome.ok, true, `\`start\` was refused for ${id}`)
   return id
 }
 
@@ -433,6 +443,84 @@ test('the rep is told once when they open the lid, and the notice names the obje
   store.close()
 })
 
+test('a click on a stale notice never takes the rep off the call they are on', () => {
+  /*
+   * **R33-3, and the one situation nothing in the repo had staged: a pending
+   * notification and a live recording at the same time.**
+   *
+   * The test above asserts the click opens the interrupted meeting, which is
+   * correct in isolation — it stages one call and clicks immediately. A real
+   * notification is not read immediately: it sits in the notification centre until
+   * the rep clears it, and what they are doing when they clear it is their next
+   * call. Measured on this watch over a real `Orchestrator` before the fix:
+   *
+   *     après suspend     ["ended"]
+   *     B démarre         true
+   *     états en direct   ["ended","recording"]
+   *     onOpen a reçu     ["m-A-sodexial"]
+   *
+   * — `session:open` on a finished meeting, through an unconditional `setRoute`,
+   * off the live call's notepad. The navigation is the cost (the notes themselves
+   * survive: `Notepad.tsx` flushes on unmount), and this is one of exactly two
+   * things in the product that navigate with no press inside the window (DEC-46),
+   * whose whole weight is that it is rare and welcome.
+   *
+   * Both directions are asserted, because « never navigate » passes the first one
+   * on its own and is a worse defect than the finding: the notice's click is the
+   * rep's only way back to that call from the OS, so it has to work the moment the
+   * screen is free again.
+   */
+  const { store, orchestrator, emit, notices, opened } = harness()
+  const a = recording(orchestrator, 'm-sodexial-staffing', 'Sodexial — comité de staffing')
+
+  emit('suspend')
+  emit('resume')
+  assert.equal(notices.shown.length, 1)
+  assert.equal(notices.shown[0]?.title, 'Sodexial — comité de staffing')
+
+  // The 15:05 call. `dispatch`'s one-recording-at-a-time guard allows it: the
+  // sleep already moved Sodexial to `ended`.
+  const b = recording(orchestrator, 'm-neovia-cadrage')
+  assert.deepEqual(
+    [...orchestrator.liveStates()],
+    ['ended', 'recording'],
+    'the harness did not stage a live recording beside the pending notice',
+  )
+
+  notices.clicks[0]?.()
+  assert.deepEqual(
+    opened,
+    [null],
+    'the click navigated off a live recording onto a finished meeting (DEC-46)',
+  )
+  assert.equal(orchestrator.stateOf(b), 'recording', 'the click disturbed the live call')
+
+  /*
+   * And what the rep reads at that instant offers nothing the product refuses.
+   * The body is fixed at the raise and cannot be rewritten, so it may not name
+   * *Démarrer une réunion* — which `dispatch` is refusing for as long as B runs.
+   */
+  assert.doesNotMatch(
+    notices.shown[0]?.body ?? '',
+    /démarrer/i,
+    'the notice offers a new recording while the product is refusing one',
+  )
+
+  /*
+   * The other direction: the withholding is a re-check and not a loss. The rep
+   * ends the 15:05 call, clears the notice, and it takes them to the call the
+   * sleep interrupted — which is the whole reason the notice carries a click.
+   */
+  orchestrator.dispatch(b, 'end', 'le commercial a terminé')
+  notices.clicks[0]?.()
+  assert.deepEqual(
+    opened,
+    [null, a],
+    'the click stopped working for good — a dead control (DEC-26), not a guard',
+  )
+  store.close()
+})
+
 test('and nothing at all when the sleep ended no recording', () => {
   const { store, orchestrator, emit, notices, records } = harness()
 
@@ -495,6 +583,21 @@ test('`main.ts` calls it — a watch nobody installs is the shape this repo keep
     main,
     /all: \(\) => BrowserWindow\.getAllWindows\(\)/,
     '`main.ts` no longer passes the windows that are already open',
+  )
+  /*
+   * **And the other end of `onOpen(null)`, which `tsc` cannot hold** (R33-3).
+   * `focusMainWindow` takes `string | null` and the guard above is worth exactly
+   * the conditional in it: spell it `broadcast('session:open', { meetingId:
+   * meetingId ?? '' })` and every test in this file stays green while
+   * `src/App.tsx`'s `useBroadcast('session:open', ({ meetingId }) => open(…))`
+   * — an unconditional route change — fires on the withheld navigation. The
+   * renderer cannot help, it knows nothing about what is recording.
+   */
+  assert.match(
+    main,
+    /if \(meetingId !== null\) broadcast\('session:open'/,
+    '`focusMainWindow` navigates unconditionally again — `onOpen(null)` no longer ' +
+      'means « forward and nowhere », and the guard in this file is void',
   )
 })
 

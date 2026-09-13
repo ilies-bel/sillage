@@ -314,12 +314,20 @@ const createWindow = (): BrowserWindow => {
 /**
  * Restore, show and focus the main window, and optionally send it to a meeting.
  *
- * Two callers, and both are the app navigating on a press the rep made
- * elsewhere: the 14:30 notification (DEC-46) and the widget's « Ouvrir »
- * (`window:focus`). `show()` before `focus()` and both before the broadcast —
- * a renderer told to navigate while its window is still minimised navigates
- * somewhere nobody can see, and on Windows a minimised window ignores `focus()`
- * until it is shown.
+ * Three callers, and all three are the app navigating on a press the rep made
+ * elsewhere: the 14:30 notification (DEC-46), the sleep notice
+ * (`app/session/PowerWatch.ts`, the other of DEC-46's exactly two) and the
+ * widget's « Ouvrir » (`window:focus`). `show()` before `focus()` and both before
+ * the broadcast — a renderer told to navigate while its window is still minimised
+ * navigates somewhere nobody can see, and on Windows a minimised window ignores
+ * `focus()` until it is shown.
+ *
+ * **`null` is forward and nowhere, and it is a caller's answer rather than an
+ * absence** (R33-3). The window is raised and no `session:open` is sent, so the
+ * route stays where the rep left it — which is what the sleep notice asks for
+ * once another call is recording: `src/App.tsx`'s handler is an unconditional
+ * `setRoute` and the router knows nothing about what is live, so the decision is
+ * made here, where both facts are.
  *
  * False when there is no main window to raise. That is a real state — on macOS
  * the rep can close the window and leave the app running — and the caller is
@@ -2496,6 +2504,9 @@ const boot = async (): Promise<void> => {
   // **And neither does the machine going to sleep, or off** —
   // `app/session/PowerWatch.ts`. `windows` is where Windows' `session-end` is
   // heard: it is a window event, not an `app` one (HR-2, and that file says why).
+  // `onOpen` is passed a `null` when the watch decides the notice's click must not
+  // navigate — another call is recording — and `focusMainWindow` answers that by
+  // raising the window and broadcasting nothing (R33-3).
   watchPower({ power: powerMonitor, windows: { all: () => BrowserWindow.getAllWindows(), onOpened: (listener) => { app.on('browser-window-created', (_event, window) => listener(window)) } }, orchestrator, store, diagnostics, notification: Notification, onOpen: (id) => focusMainWindow(id, broadcast) })
 
   /**

@@ -153,14 +153,29 @@ export const decidePowerEvent = (event: PowerEvent): PowerDecision => {
  * What the rep reads when they open the lid, because the screen was off when the
  * recording stopped (DEC-26: a stated degradation, never a silent one).
  *
- * It says a new recording and not « reprendre »: `start` is not a legal command
- * from `ended` (`MeetingSession`'s table), so the meeting that was interrupted
- * cannot be resumed, and offering that would be the dead control DEC-26 forbids.
- * The title is the objet, the way the arming notification's is (DEC-46).
+ * It never says « reprendre »: `start` is not a legal command from `ended`
+ * (`MeetingSession`'s table), so the meeting that was interrupted cannot be
+ * resumed, and offering that would be the dead control DEC-26 forbids. The title
+ * is the objet, the way the arming notification's is (DEC-46).
+ *
+ * **And it offers nothing at all, because an OS notification is read at an instant
+ * this function cannot see** (R33-3). The first version dodged « reprendre » and
+ * ended « Ouvrir Sillage pour en démarrer un nouveau ? » instead, which is true
+ * when the lid opens and false as soon as the rep is on their next call:
+ * `Orchestrator.dispatch` allows one recording at a time, so *Démarrer une
+ * réunion* is refused for as long as that call lasts — and a notice sits in the
+ * notification centre until it is cleared, which on a working day is hours. A
+ * notification cannot be rewritten once shown, so the body may name no control
+ * whose availability moves. What is left is what happened, which is true at every
+ * instant it can be read: the sleep stopped the recording, nothing resumed it, and
+ * what was captured before it is kept. DEC-26 the other way round — a fact the rep
+ * can act on rather than an offer the product may refuse.
  */
 export const sleepInterruptedNotice = (
   subject: string | null,
 ): { title: string; body: string } => ({
   title: subject && subject.trim() !== '' ? subject : 'Réunion',
-  body: 'La mise en veille a arrêté l’enregistrement. Ouvrir Sillage pour en démarrer un nouveau ?',
+  body:
+    'La mise en veille a arrêté l’enregistrement ; il n’a pas repris. ' +
+    'Ce qui a été capté avant est conservé.',
 })

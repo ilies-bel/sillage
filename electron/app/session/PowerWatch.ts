@@ -57,9 +57,10 @@
  * And the rep is told, because the screen was off when it happened (DEC-26: a
  * stated degradation, never a silent one). Mirrors the arming notification
  * (DEC-46, `announceMeeting` in `main.ts`) rather than inventing a second
- * mechanism: one `Notification`, its click brings the window forward on that
- * meeting, and failing to show is free — a notification that will not show is not
- * a meeting that will not end.
+ * mechanism: one `Notification`, its click brings the window forward — on that
+ * meeting, unless another call is recording by then; see `clickTarget` — and
+ * failing to show is free, because a notification that will not show is not a
+ * meeting that will not end.
  *
  * A shutdown and a Windows session end raise **nothing**: the sentence names the
  * sleep, there is no `resume` to read it on, and a meeting remembered against one
@@ -73,6 +74,27 @@
  * with no call in between must say nothing either time, and a rep who resumes,
  * suspends and resumes again must not read a stale sentence about a call that has
  * since been dealt with.
+ *
+ * **And the click is decided at the click, because a notice outlives the
+ * situation it was raised in** (R33-3). `announce` closed over the interrupted id
+ * and `main.ts` wires it to `focusMainWindow`, which broadcasts `session:open`
+ * unconditionally into an unconditional `setRoute` — so the notice is a live
+ * navigation for as long as it sits in the notification centre, which on both
+ * platforms is until the rep clears it. Driven on this watch over a real
+ * `Orchestrator`: call A, `suspend`, `resume`, the notice left unclicked, the
+ * 15:05 call started, then the click — `états en direct ["ended","recording"]`,
+ * `onOpen a reçu ["m-A-sodexial"]`. A rep tidying their notification centre
+ * during a client call was thrown off that call's notepad onto a finished
+ * meeting, on the second of exactly two things in this product that navigate
+ * without a press inside the window (DEC-46) — whose whole weight is that this is
+ * rare and welcome.
+ *
+ * So the re-check is here and not in the renderer: `src/App.tsx`'s router knows
+ * which route it is on and nothing about what is recording, and this process
+ * knows both. A recording under way keeps the screen, the window still comes
+ * forward, and `onOpen(null)` is how that is said — see its declaration. Only the
+ * *navigation* is withheld, never the notice and never the focus, because a click
+ * that does nothing at all is the dead control DEC-26 forbids.
  *
  * Electron is reached only through injected objects and a structural type, so
  * this file imports nothing from `electron` at runtime and the whole of it is
@@ -160,8 +182,17 @@ export interface PowerWatchDeps {
    * recording still ends.
    */
   notification?: NotificationHost | null
-  /** The notification's click: bring the window forward on that meeting. */
-  onOpen?: (meetingId: MeetingId) => void
+  /**
+   * The notification's click: bring the window forward, on that meeting.
+   *
+   * `null` means **forward and nowhere** — raise the window and leave the route
+   * exactly where the rep left it. It is not a refusal and not an absence: it is
+   * what a click on this notice does once another call is recording, because the
+   * one screen that must not be taken away during a recording is that call's
+   * (R33-3). `main.ts`'s `focusMainWindow` already takes `string | null` and
+   * broadcasts `session:open` only for the first.
+   */
+  onOpen?: (meetingId: MeetingId | null) => void
 }
 
 export const watchPower = (deps: PowerWatchDeps): void => {
@@ -170,6 +201,17 @@ export const watchPower = (deps: PowerWatchDeps): void => {
    * sleep cost nothing, which is the case that must stay silent.
    */
   let interrupted: MeetingId | null = null
+
+  /**
+   * The meetings this process is holding in `recording`, which is the one
+   * predicate this file has and is asked for two different reasons.
+   *
+   * `endRecordings` walks it — those are the recordings a sleep costs.
+   * `announce`'s click asks whether it is *empty*, which is a question about
+   * right now and not about the instant the notice was raised.
+   */
+  const nowRecording = (): MeetingId[] =>
+    deps.orchestrator.liveIds().filter((id) => deps.orchestrator.stateOf(id) === 'recording')
 
   const endRecordings = (
     event: PowerEvent,
@@ -190,9 +232,7 @@ export const watchPower = (deps: PowerWatchDeps): void => {
      * weakening both gives two of each on « two windows, one shutdown ». So do not
      * read either as decorative, and do not rely on one of them on the way out.
      */
-    const recording = deps.orchestrator
-      .liveIds()
-      .filter((id) => deps.orchestrator.stateOf(id) === 'recording')
+    const recording = nowRecording()
 
     for (const meetingId of recording) {
       /*
@@ -232,6 +272,27 @@ export const watchPower = (deps: PowerWatchDeps): void => {
     }
   }
 
+  /**
+   * Where a click on this notice sends the window — asked at the click, never at
+   * the raise (R33-3).
+   *
+   * The interrupted meeting when the app is between calls, which is the ordinary
+   * case and the useful one: the rep wakes the machine, reads the notice, and the
+   * call it names is what they want to see. `null` — forward and nowhere — the
+   * moment anything is recording, because that recording's screen is the one
+   * thing the app may not take away, and the notice's own title names a different
+   * meeting so landing the rep on the live one would be a second surprise.
+   *
+   * There is no third branch for « the interrupted meeting is itself recording
+   * again »: it was dispatched to `ended`, and `start` is not legal from there.
+   *
+   * The id is a parameter and not a read of `interrupted`, which `announce`
+   * clears one line before it registers this — the notice's subject is fixed at
+   * the raise, and only the question about what is live is asked late.
+   */
+  const clickTarget = (interruptedId: MeetingId): MeetingId | null =>
+    nowRecording().length === 0 ? interruptedId : null
+
   const announce = (): void => {
     const meetingId = interrupted
     if (meetingId === null) return
@@ -250,7 +311,7 @@ export const watchPower = (deps: PowerWatchDeps): void => {
         deps.store.projections.getMeeting(meetingId)?.title ?? null,
       )
       const notification = new host({ title: notice.title, body: notice.body, silent: false })
-      notification.on('click', () => deps.onOpen?.(meetingId))
+      notification.on('click', () => deps.onOpen?.(clickTarget(meetingId)))
       notification.show()
     } catch {
       // A notification that will not show is not a meeting that will not end.

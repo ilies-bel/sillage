@@ -128,7 +128,7 @@ test('every event carries a French sentence, and it is the one the log shows', (
   assert.equal(decidePowerEvent('session-end').reason, 'fermeture de la session Windows')
 })
 
-test('the resume notice names the objet, and offers a new recording rather than a resumption', () => {
+test('the resume notice names the objet, and offers nothing the product can refuse', () => {
   const notice = sleepInterruptedNotice('Néovia — cadrage')
   assert.equal(notice.title, 'Néovia — cadrage')
   /*
@@ -136,8 +136,25 @@ test('the resume notice names the objet, and offers a new recording rather than 
    * l’enregistrement » would be a control that cannot exist — the dead control
    * DEC-26 forbids, in a sentence.
    */
-  assert.match(notice.body, /nouveau/)
-  assert.doesNotMatch(notice.body, /reprendre|relancer l’enregistrement/)
+  assert.doesNotMatch(notice.body, /reprendre|relancer/)
+  /*
+   * **And « en démarrer un nouveau » was the same defect one verb over** (R33-3).
+   * This body is read whenever the rep clears their notification centre, which on
+   * a working day is hours after the lid opened and routinely during their next
+   * call — and `Orchestrator.dispatch` allows one recording at a time, so
+   * *Démarrer une réunion* is refused for the whole of it. A notification cannot
+   * be rewritten once shown, so the sentence may not name a control whose
+   * availability changes; what it states instead is what happened, which is true
+   * at every instant it can be read.
+   */
+  assert.doesNotMatch(
+    notice.body,
+    /démarrer|Ouvrir Sillage/,
+    'the body offers a control the product refuses while the next call is recording',
+  )
+  assert.match(notice.body, /veille a arrêté l’enregistrement/)
+  assert.match(notice.body, /n’a pas repris/)
+  assert.match(notice.body, /conservé/, 'the rep is not told what survived the sleep')
 
   // A meeting with no objet still gets a title: an OS notification with an empty
   // one is a notification the rep cannot identify.
