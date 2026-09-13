@@ -36,6 +36,7 @@ import {
   type WindowPowerEvent,
 } from '../../../core/domain/powerEvents.ts'
 import { openMemoryStore } from '../../../modules/store/index.ts'
+import { recordingRig, quitPath } from './recordingFakes.ts'
 import type { DiagInput, DiagRecorder } from '../../../core/contracts/diagnostics.ts'
 
 /** Every notification the watch asked the OS for, and the click it registered. */
@@ -290,7 +291,7 @@ test('« j’ai éteint le PC » — a Windows session end ends it, in the log b
   store.close()
 })
 
-test('and it is ended once, whichever of `session-end` and the quit path arrives first', () => {
+test('and it is ended once, whichever of `session-end` and the quit path arrives first', async () => {
   /*
    * **The double-end question, driven in both orders and on every window.**
    * `WM_ENDSESSION` reaches every top-level window of the process — the main one
@@ -310,15 +311,26 @@ test('and it is ended once, whichever of `session-end` and the quit path arrives
    * `before-quit` is modelled by its own filter rather than by booting `main.ts`
    * — `liveIds().filter(stateOf === 'recording')`, which is the line it uses, and
    * the one this file's `endRecordings` uses too.
+   *
+   * **And for a dozen rounds that model stopped one line too early, which is why
+   * nothing here could see R32-1.** `before-quit` does not only dispatch: it then
+   * awaits `stopRecording` so the transcriber flushes the tail, and it asks a
+   * *second* predicate — `orchestrator.flushing()` — because this file's handler
+   * moves the meeting out of `recording` synchronously and therefore empties the
+   * first one. What was written down here was « the quit path finds nothing », with
+   * a comment calling that the useful direction; finding nothing was the defect.
+   * Measured, before the fix: `session-end` left `defers the quit? false`, the
+   * store closed a few microtasks later, and the tail arrived at « database is not
+   * open » inside the provider's own `stop()`.
+   *
+   * So the model carries both predicates and the flush. `deferred` is what
+   * `before-quit` would do with it, `ended` is what it dispatched itself — still
+   * empty after a `session-end`, which is the property the double-end test below
+   * is about and is unchanged.
+   *
+   * `quitPath` is imported rather than written here: two copies of that handler is how
+   * one of them came to stop at the dispatch.
    */
-  const quitPath = (orchestrator: Orchestrator): string[] =>
-    orchestrator
-      .liveIds()
-      .filter((meetingId) => orchestrator.stateOf(meetingId) === 'recording')
-      .map((meetingId) => {
-        orchestrator.dispatch(meetingId, 'end', 'fermeture de l’application')
-        return meetingId
-      })
 
   const ends = (store: ReturnType<typeof openMemoryStore>, id: string): number =>
     store.log
@@ -334,7 +346,8 @@ test('and it is ended once, whichever of `session-end` and the quit path arrives
 
     main.emit('session-end')
     widget.emit('session-end')
-    assert.deepEqual(quitPath(orchestrator), [], 'the quit path found a recording to end again')
+    const quit = await quitPath(orchestrator)
+    assert.deepEqual(quit.ended, [], 'the quit path ended a meeting the watch had already ended')
 
     assert.equal(store.projections.getMeeting(id)?.state, 'ended')
     assert.equal(ends(store, id), 1, 'the log carries the end twice')
@@ -358,7 +371,7 @@ test('and it is ended once, whichever of `session-end` and the quit path arrives
     const id = recording(orchestrator)
     const main = openWindow()
 
-    assert.deepEqual(quitPath(orchestrator), [id])
+    assert.deepEqual((await quitPath(orchestrator)).ended, [id])
     main.emit('session-end')
 
     assert.equal(store.projections.getMeeting(id)?.state, 'ended')
@@ -532,4 +545,87 @@ test('one meeting that will not end does not cost the next one its end, nor the 
   )
   assert.equal(records[0]?.origin, 'foreign', 'the message is the thrower’s, not ours')
   store.close()
+})
+
+test('« Se déconnecter » keeps the tail: the flush it starts is what the quit waits for', async () => {
+  /*
+   * **R32-1's second half, and the one US-1/US-2 made worse rather than missed.**
+   *
+   * This watch ends the recording synchronously inside the OS handler — it must,
+   * the machine may never come back — and that dispatch is what starts the flush.
+   * `before-quit` then filtered on « is a meeting *recording* », which this handler
+   * has just made false, so on `session-end` (a Windows shutdown, « Se
+   * déconnecter » — the one power branch a rep on the primary platform can reach)
+   * the quit was **not even deferred**: `store.close()` landed a few microtasks
+   * later and the tail arrived at « database is not open », inside the provider's
+   * own `stop()`, where nothing records it. Measured on this file's own watch over
+   * a real `Orchestrator`:
+   *
+   *     WITHOUT PowerWatch (pre-b2cc981)  state: recording   defers the quit? true
+   *     WITH PowerWatch (before the fix)  state: ended       defers the quit? false
+   *
+   * Strictly worse than before this file existed, on the primary platform, on the
+   * thing this file exists to protect.
+   *
+   * Every other test here uses `harness()`, whose orchestrator opens no device, so
+   * none of them could have seen it: there is no `Recording` to flush and no
+   * `onEnded` to race it. This one holds a real one — `recordingFakes.ts` says why
+   * both halves of that matter — and the watch is installed **on it** rather than
+   * on a second orchestrator, because the question is what the quit inherits from
+   * this handler.
+   */
+  const windowListeners: (() => void)[] = []
+  const handle: SessionEndEmitter = {
+    on: (_event, listener) => {
+      windowListeners.push(listener)
+      return handle
+    },
+  }
+  const rig = await recordingRig({
+    // A long-enough flush that a quit which does not wait cannot accidentally pass:
+    // `before-quit` runs in the same turn as the handler, so a 5 ms tail would be
+    // decided by the scheduler rather than by the code.
+    delayMs: 40,
+    install: (orchestrator, store, records) => {
+      watchPower({
+        power: { on: () => null },
+        windows: { all: () => [handle], onOpened: () => {} },
+        orchestrator,
+        store,
+        diagnostics: { record: (input) => records.push(input) },
+        notification: null,
+      })
+    },
+  })
+
+  // `WM_ENDSESSION`, delivered to the window.
+  assert.ok(windowListeners.length > 0, 'the watch claimed nothing on the window')
+  for (const listener of windowListeners) listener()
+
+  assert.equal(
+    rig.orchestrator.stateOf(rig.meetingId),
+    'ended',
+    'the transition has to be in the log before the handler returns',
+  )
+  assert.equal(rig.transcribe.flushed, false, 'the flush cannot already be over — see delayMs')
+
+  const quit = await quitPath(rig.orchestrator)
+  assert.deepEqual(quit.ended, [], 'the quit path ended a meeting the watch had already ended')
+  assert.equal(
+    quit.deferred,
+    true,
+    'the quit was not deferred, so `store.close()` lands under a live flush: this is the ' +
+      'measurement above, « defers the quit? false »',
+  )
+  assert.equal(quit.settled, true)
+  assert.equal(
+    rig.tails(),
+    1,
+    'the last utterance of the call was lost to the shutdown — the case this file is for',
+  )
+
+  // `overlay.hide(); store.close()` is what `before-quit` does next.
+  rig.store.close()
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  assert.equal(rig.transcribe.refused, null, 'the tail was written into a closed database')
 })

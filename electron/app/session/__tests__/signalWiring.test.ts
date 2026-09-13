@@ -7,7 +7,19 @@
  * The properties tested here are the ones neither module's unit tests can see:
  * that a chip is *persisted* rather than merely broadcast, that the transcript
  * pane never waits on a model, and that a meeting records perfectly well with
- * no model at all.
+ * no model at all. *
+ * **Every `Orchestrator` here is built without `onEnded`, and that is deliberate
+ * and no longer load-bearing.** It is also the shape that hid R32-1 for a dozen
+ * rounds: with no `onEnded`, `#enhance` returns on its first line, so nothing
+ * races `stopRecording` for the `Recording` and a direct call to it flushes — which
+ * is *not* what the product does, because `main.ts` injects `onEnded` on every
+ * launch and `dispatch(id, 'end')` therefore takes the `Recording` away before the
+ * quit path asks for it. What is asserted below is the signal wire, which does not
+ * depend on that axis; the axis itself is measured in
+ * `orchestrator.test.ts` (« closing the window during a call keeps the tail ») and
+ * in `powerWatch.test.ts`, both over `recordingFakes.ts`. Do not add a
+ * quit-path or tail assertion here — a fixture simpler than the product on the axis
+ * that decides the answer is this repo's fifth shape.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
