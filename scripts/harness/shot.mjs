@@ -2249,6 +2249,65 @@ const SCREENS = {
       await page.getByRole('heading', { name: 'Facultatifs' }).waitFor()
     },
   },
+
+  /**
+   * **The suggested action on the note, pressed** (`session/askActions.ts`).
+   *
+   * The chip that answers « et maintenant, je fais quoi de ça ? » — it names the
+   * follow-up draft the gate composes and asks the recording what was committed
+   * to. Its own stage rather than a line added to `session-demander`, for the
+   * reason that stage states about itself: that one *types*, deliberately,
+   * because the question chips are dropped below a 430px container and it has to
+   * work at 960. This chip is outside that container query on purpose — measured
+   * on the shipped panel, at 960×600 the compte-rendu pane offered **zero**
+   * suggestions — so pressing it is the assertion, at both smoke sizes, that the
+   * one offer the note carries is reachable on the window's own minimum.
+   */
+  'session-suivi': {
+    scenario: 'compte-rendu',
+    async drive(page) {
+      await SCREENS['session-compte-rendu'].drive(page)
+      await page.getByRole('button', { name: 'Préparer le mail de suivi' }).click()
+      /*
+        The question the chip actually sent, above the answer — the chip's label
+        is never the last word on what was asked — and then a citation, because
+        an answer with no citation is no answer (DEC-21).
+      */
+      await page.getByText(/Quels engagements ont été pris/).waitFor()
+      /*
+        `:not(.ask-suggestions)` because the question chips are `li`s too — and
+        at 960 they are `display: none`, so a locator that caught them would
+        wait for a hidden element and hang on exactly the size this stage exists
+        to cover.
+      */
+      await page.locator('.ask ul:not(.ask-suggestions) > li').first().waitFor()
+    },
+  },
+
+  /**
+   * **And the same note on the build the first demo ships in** (DEC-28).
+   *
+   * No Entra registration, so `draftIntents` marks `mail.draft` « Aucun compte
+   * Microsoft connecté. » and no follow-up draft will ever be created. The chip
+   * is *absent*, not disabled and not refusing — a control that is present and
+   * does nothing is DEC-26's own example — and everything *Demander* already was
+   * is untouched, which is the half an absence check has to assert or it is
+   * satisfied by the panel having disappeared.
+   */
+  'session-suivi-sans-entra': {
+    scenario: 'compte-rendu',
+    entra: false,
+    async drive(page) {
+      await SCREENS['session-compte-rendu'].drive(page)
+      await page.getByLabel('Poser une question sur cet appel').waitFor()
+      const chip = page.getByRole('button', { name: 'Préparer le mail de suivi' })
+      if ((await chip.count()) !== 0) {
+        throw new Error(
+          'le mail de suivi est offert sans compte Microsoft — aucun brouillon ne peut être créé',
+        )
+      }
+    },
+  },
 }
 
 const openAgenda = (page) => page.getByRole('region', { name: 'Calendrier' }).waitFor()
