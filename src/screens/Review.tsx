@@ -366,7 +366,17 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * watches the screen they were confirming on disappear is owed the reason.
    */
   const [rewriting, setRewriting] = useState<{ to: RecipeId; from: string } | null>(null)
-  const [recipeBusy, setRecipeBusy] = useState(false)
+  /**
+   * **One press, one run — and a ref because React batches.**
+   *
+   * A `useState` flag is set for the *next* render, so two clicks delivered in
+   * one batch (a double-click, `Enter` held on a focused button) both read it as
+   * false and both reach `meeting:recipe`: measured, two calls, two
+   * `meeting.recipe.chosen` events and two `Orchestrator.enhance` runs for one
+   * conversation. The same shape as `Overlay`'s timer handles — a value that
+   * answers a question about *now* cannot live in render state.
+   */
+  const pressing = useRef(false)
   const [recipeFailure, setRecipeFailure] = useState<string | null>(null)
   /*
    * Has the rail been read to the end?
@@ -1205,12 +1215,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    *
    * **Both columns stop being read.** Coverage is keyed by what a column is
    * showing, and a rewrite replaces the compte-rendu, the eleven rows and the
-   * draft — so *nothing* in either column is a thing the rep has seen. Leaving
-   * *Valider* armed across a rewrite would defeat DEC-4 outright: the press would
-   * ship a document nobody has read. `sent` changes on its own when the new panel
-   * lands and would uncover them anyway; this says it at the press, because « the
-   * key happened to change » is not the same statement as « this has not been
-   * read », and the guard's whole history is of the two coming apart.
+   * draft — so *nothing* in either column is a thing the rep has seen.
+   *
+   * Driven on the real gate at both smoke sizes, this is worth exactly two things
+   * and the second is the one that will outlive this story. **The window between
+   * the press and the new document**: without these five lines *Valider* stays on
+   * screen with no page turn offered (`armed at the press: true, remedy: null`),
+   * over a compte-rendu the rep has just asked to replace, and `confirm` is legal
+   * from `awaiting_confirmation` — so that press ships the superseded document into
+   * VerySwing, where `POST /v1/crm/tasks` has no idempotency key. And **the
+   * rewrite the coverage key cannot see**: `viewOf` reads `sent`, which carries the
+   * *lengths* of the pre-filled values, so a new document of the same length with
+   * the same field verdicts leaves the key identical — measured, `armed on the new:
+   * true` and « re-armed after 0 page turns », a document nobody has read with the
+   * one irreversible control live over it. The two declared recipes differ in their
+   * field count so `sent` does move today; that is a property of `RECIPES`, not of
+   * this guard, and « the key happened to change » is not the statement « this has
+   * not been read ». The guard's whole history is of those two coming apart.
    *
    * **And the honest answer is re-measured rather than asserted.** `measure` is
    * what decides whether a column still has something under its fold, and it
@@ -1224,8 +1245,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    */
   const rewrite = useCallback(
     async (next: RecipeId) => {
-      if (recipeBusy || busy) return
-      setRecipeBusy(true)
+      if (pressing.current || busy) return
+      pressing.current = true
       setRecipeFailure(null)
       try {
         const outcome = await invoke('meeting:recipe', { meetingId, recipe: next })
@@ -1244,10 +1265,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           error instanceof Error ? error.message : 'Le modèle n’a pas pu être enregistré.',
         )
       } finally {
-        setRecipeBusy(false)
+        pressing.current = false
       }
     },
-    [against, busy, measure, meetingId, recipeBusy],
+    [against, busy, measure, meetingId],
   )
   /*
    * `Ctrl/⌘ Entrée`, and **only when the button is already armed**
@@ -1614,14 +1635,21 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               `data-unmeasured` on the wrapper, for the reason *Demander* and the
               inline `source ▸` panel carry it: the arming guard's promise is that
               everything *leaving the machine* has been shown, and a picker is not
-              content. It is the stronger half of the mark that matters here —
-              `shippedHeight` **subtracts** the marked subtree wherever it sits, so
-              the panel opening in the middle of a column that has already been
-              read changes the measured height by nothing, and the chip arriving
-              one invoke after the document changes it by nothing either. Inside
-              the measurement, opening it would have deleted the coverage and taken
-              *Valider* off the screen — the fourth instance of one shape, avoided
-              by reading the three already in this file.
+              content. `shippedHeight` **subtracts** the marked subtree wherever it
+              sits, so the panel opening in the middle of a column already read
+              changes the measured height by nothing, and the chip arriving one
+              invoke after the document changes it by nothing either — measured at
+              both smoke sizes, **+230 px of scroll range and +0.0 px measured**.
+
+              What the mark buys here is *not* the arming, and saying otherwise
+              would be the prose this file keeps catching. Unmarked, opening the
+              panel is forgiven anyway: the press is inside this column and holds
+              the caret, and `read()` credits growth under the rep's own cursor —
+              driven, *Valider* survives either way. What it buys is that the
+              coverage keeps the **document's** content height (2 375 px) rather
+              than the document plus a control (2 630 px), so the next arrival of
+              real unseen prose is measured against the document instead of against
+              254 px of slack a control bought.
 
               Absent in *Transcription*: the column then holds the record, and a
               chip naming the shape of a document that is not in the box would be
@@ -1637,7 +1665,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 <RecipeSwitch
                   current={recipe}
                   edited={edited}
-                  busy={recipeBusy || rewriting !== null}
                   failure={recipeFailure}
                   onRewrite={(next) => void rewrite(next)}
                 />

@@ -30,10 +30,15 @@
  *
  * **It is chrome, so it does not ship, so it is marked.** The caller wraps this
  * in `data-unmeasured` — the arming guard measures what leaves the machine, and
- * a control is not content. Left inside the measurement, opening this panel
- * would grow the document column past `GROWTH_SLACK` and take *Valider* off the
- * screen, which is the third instance of one shape this repo has already paid
- * for twice (*Demander*, then the inline `source ▸` panel).
+ * a control is not content. Measured on the shipped gate at both smoke sizes:
+ * opening the panel grows the column's scroll range by **230 px** and its
+ * *measured* height by **0.0 px**. What the mark buys is stated honestly and is
+ * not an arming difference — unmarked, the panel is forgiven anyway, because the
+ * press that opened it is inside the column and holds the caret, and `read()`
+ * credits growth under the rep's own cursor. What it buys is that the recorded
+ * content height stays the document's (2 375 px) instead of the document plus a
+ * control (2 630 px), so a later arrival of real unseen prose is measured against
+ * the document rather than against 254 px of slack a control bought.
  *
  * No sparkle. The reference frame marks its recipe chip with ✨ because that is
  * how it marks « AI »; nothing in this product does, and `⚠ faible` is the only
@@ -41,7 +46,7 @@
  */
 import { useState } from 'react'
 import { RECIPES, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
-import { Button, unavailable } from '../../ui/index.ts'
+import { Button } from '../../ui/index.ts'
 import { cn } from '../../lib/utils.ts'
 
 export interface RecipeSwitchProps {
@@ -56,14 +61,12 @@ export interface RecipeSwitchProps {
    * Counted by the caller, which is the only thing holding both.
    */
   edited: number
-  /** A rewrite is on its way. One control, one run. */
-  busy: boolean
   /** Why the last press recorded nothing, in French, or null. */
   failure: string | null
   onRewrite: (next: RecipeId) => void
 }
 
-export function RecipeSwitch({ current, edited, busy, failure, onRewrite }: RecipeSwitchProps) {
+export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwitchProps) {
   const [open, setOpen] = useState(false)
   if (current === null) return null
 
@@ -131,10 +134,21 @@ export function RecipeSwitch({ current, edited, busy, failure, onRewrite }: Reci
               <li key={other.id} className="mt-2">
                 <Button
                   variant="bordered"
-                  onClick={() => onRewrite(other.id)}
-                  {...unavailable(busy, 'Réécriture du compte-rendu en cours.')}
+                  /*
+                    Closed by the press, because the gesture is over: the choice
+                    is recorded, and what happens next is a document arriving in
+                    the column behind this panel. Leaving it open would put a
+                    second « Réécrire avec … » under the rep's pointer over a
+                    document that is already being replaced. A press that was
+                    *refused* still says so — `failure` is drawn outside this
+                    block, beside the chip.
+                  */
+                  onClick={() => {
+                    setOpen(false)
+                    onRewrite(other.id)
+                  }}
                 >
-                  {busy ? 'Réécriture…' : `Réécrire avec « ${other.title} »`}
+                  {`Réécrire avec « ${other.title} »`}
                 </Button>
                 {/*
                   The recipe's own `description`, which states what it does *and*

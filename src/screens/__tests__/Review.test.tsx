@@ -1541,12 +1541,23 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
   })
 
   /*
-   * One control, one run — the rule `RecipePicker` carries on the session header
-   * for the same reason: `meeting:recipe` would happily record a second choice
-   * mid-run, and the run already reading the first would finish and store a
-   * document whose recipe is not the one the chip shows.
+   * **One press, one run — and the lock lasts exactly as long as the request.**
+   *
+   * `meeting:recipe` would happily record a second choice mid-run, and the run
+   * already reading the first would finish and store a document whose recipe is
+   * not the one the chip shows. So the panel is closed by the press: the gesture
+   * is over, and what happens next arrives in the column behind it.
+   *
+   * The lock is deliberately **not** « a rewrite has been asked for ». On the
+   * build DEC-28 ships first, `Enhancement.run` returns without moving the
+   * machine when no model is configured — not a failure, and deliberately not a
+   * state change — so the gate stays open and no document ever arrives. A lock
+   * keyed on the request would then hold « Réécriture… » over a live gate for the
+   * life of the window with nothing saying why, which is the dead control DEC-26
+   * forbids; and the renderer cannot tell that case from a slow one, because
+   * `enhancement:status` answers `idle` for every meeting past `ended`.
    */
-  test('a rewrite in flight refuses a second press', async () => {
+  test('the press closes the picker, and two clicks are one run', async () => {
     bridge
       .when('review:get', () => openGate())
       .when('meeting:recipe', (payload) => ({
@@ -1557,14 +1568,18 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
 
+    const press = await openPicker()
     await act(async () => {
-      ;(await openPicker()).click()
-    })
-    const again = screen.getByRole('button', { name: 'Réécriture…' })
-    expect(again.hasAttribute('disabled')).toBe(true)
-    await act(async () => {
-      again.click()
+      press.click()
+      press.click()
     })
     expect(bridge.calls.filter((c) => c.channel === 'meeting:recipe')).toHaveLength(1)
+    // Gone with the gesture, not greyed: there is no second « Réécrire » under
+    // the pointer over a document that is already being replaced.
+    expect(screen.queryByRole('button', { name: /^Réécrire avec/ })).toBeNull()
+    // And the control it was opened from is still live, still naming what was
+    // recorded — never stuck on a promise the main process may not keep.
+    const chip = await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })
+    expect(chip.hasAttribute('disabled')).toBe(false)
   })
 })
