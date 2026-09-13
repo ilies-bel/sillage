@@ -413,7 +413,7 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | US-2 | Windows ended the session while a call was live | `session` | **done** — `2c7fe2b` |
 | US-3 | A motion vocabulary, not one curve | `motion` | **done** — `c6ea550` |
 | US-4 | The suggested next thing, on the note | `ui-session` | **done** — merged |
-| US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
+| US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo — **local, not a server story** (grilled) |
 | US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | **half done** — `73edb2c` |
 | US-7 | A first run that has already seen a meeting | `ui-onboarding` | deferred — the rep asked for this later |
 | US-8 | The recipe is visible on the document, and changeable | `ui-review` | **done** — merged |
@@ -436,21 +436,21 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | R32-3 | Two ports declared outside `core/contracts/` | `checks` | **done** — merged |
 | R32-4 | `tokens.test.ts` pinned the mapping, not the numbers | `checks` | **done** — merged |
 | | **The simplicity pass — round 34** | | *the user, on the screenshots* |
-| US-22 | The screen is named by what changed | `ui-agenda` `ui-history` | in flight, two lanes |
+| US-22 | The screen is named by what changed | `ui-agenda` `ui-history` | agenda half **done** — merged; history half in flight |
 | US-23 | A caption only where the content cannot name itself | `ui-session` `ui-history` | session half **done** — merged; history half in flight |
 | US-24 | Well is silent | `ui-status` | **done** — merged |
 | US-25 | The product stops explaining itself during a call | `ui-session` | **done** — merged |
-| US-26 | One filled control per list | `ui-agenda` | in flight |
+| US-26 | One filled control per list | `ui-agenda` | **done** — merged |
 | US-27 | The session header says « recording » four times | `ui-session` | todo |
-| US-28 | Réglages captions the pane with its own nav item | `ui-reglages` | todo — `--echo` must find it |
-| US-29 | What happened last time, before the call | `ui-agenda` | todo — **the parity row the table missed** |
+| US-28 | Réglages captions the pane with its own nav item | `ui-reglages` | todo — `--echo` ships; point it at `reglages` |
+| US-29 | What happened last time, before the call | `ui-agenda` | **next** — grilled; exact `client_name`, fails closed |
 | US-30 | `StatusControl`'s only remaining rendering is unmeasured | `harness` | todo |
 | US-31 | The gate's prose is read twice, or not at the press | `ui-review` | blocked on R33-1 |
 | US-32 | The manual draws over a past record | `ui-history` | assigned to the running lane |
 | R33 | Round 33 adversarial review | — | **ran at `0f4a457` — NOT IMPRESSED, five findings above** |
 | R33-1 | A rewrite that cannot run takes *Valider* away silently | `ui-review` | in flight |
 | R33-2 | The mention control eats the refusal it yields to | `widget` | **done** — merged |
-| R33-3 | The sleep notice navigates off a live recording | `session` | in flight |
+| R33-3 | The sleep notice navigates off a live recording | `session` | **done** — merged |
 | R33-4 | `check:surfaces` visited 20 of 52 invoke channels | `checks` | **done** — merged |
 | R33-5 | The pill asks twice when the meeting carries marks | `widget` | **done** — merged with R33-2 |
 | | The two found while merging, not by a round | | |
@@ -1663,3 +1663,67 @@ things survive that are the same class as what was removed.
 
 Neither is urgent. Both are recorded because the screen was looked at *after* the change, which
 is the half of a design pass that usually does not happen.
+
+---
+
+# Grilling the next features — before building, not after
+
+Three of the queued stories were argued from their own descriptions. Measured against the
+tree, two of my claims were wrong and one story is more expensive than it says.
+
+## US-5 does not need a server, and my parity note said it did
+
+The parity table records three of the four gaps as « the same missing thing — a server »:
+Spaces, Shared with me, **cross-meeting chat**. The first two are right. The third is not:
+US-5 as written is *« one account, a bounded window »* over the local store — no server, no
+index, nothing shared between machines. Corrected here rather than silently.
+
+## US-29 and US-5 are the same missing primitive, and neither has it
+
+Both need « this account's past calls », and **the meetings projection has no account key**.
+`Projections`' `meetings` row carries `client_name` and nothing else about who the client is;
+`accountId` lives in the extraction and in the push intents — in the **event log**, foldable
+but not queryable.
+
+Two ways, and they are not equivalent:
+
+- **Exact `client_name`.** Costs nothing, needs no migration, and is wrong across sibling
+  companies — which is not hypothetical: the gate itself offers « Rattacher plutôt à une
+  autre société du groupe » with « Néovia Santé — Pôle Ouest » and « Néovia Hospitalisation »
+  beside it, so the product already knows one account has several names.
+- **An `account_id` column on the projection.** The right key, and it means touching the
+  schema stamp and the refold — the one place in the store where CLAUDE.md records a latent
+  defect (« a new stamp over empty projections, and the next boot reads that as already
+  upgraded »), in databases that by then hold real meeting history.
+
+**Take the first, and let it fail closed.** A brief that is missing costs a rep a glance at
+*Historique*. A brief that attaches **the wrong client's promise** to the call they are about
+to take is the worst thing this product could put on a screen, and a `client_name` match
+across siblings is exactly how that happens. Exact match, no brief for siblings, and the
+column becomes a story of its own the day a rep asks why.
+
+## US-29's own fixture claim was wrong
+
+It says « the fixture has to grow a second call for one of its accounts ». It does not: the
+stub already stages **two** repeat clients — `m-lefort-decouverte` → `m-lefort-cv` and
+`m-nordis-support` → `m-nordis-renouvellement`. The first pair is « découverte du besoin »
+followed by « restitution des CV DevOps », which is precisely the promise-then-delivery arc a
+brief exists to show. The fixture was ready before the story was.
+
+## The order, and why it is not the obvious one
+
+**US-29 before US-5.** US-29 is deterministic end to end — no model, no citation to verify, no
+corpus to truncate — so it builds the account-history primitive against the easiest possible
+consumer. US-5 first would mean solving cross-meeting DEC-21 citations (a citation must name
+*which call* and open that call's reader on that turn) **and** the corpus-size problem
+(`ASK_MAX_INPUT_CHARS` silently kept the tail of one 90-minute call; six months of an account
+is one corpus size away from the same defect) before anything at all is visible before a call.
+
+## The strongest objection to US-29, stated rather than dodged
+
+Round 34 has just spent a day taking things **off** the home screen, and US-29 puts a line
+back on every row. The answer is not that this line is special; it is that the test is the
+same one round 34 applied — **is it about the call, or about the app?** « 09/09 — 3 CV avec
+TJM avant vendredi · tâche VerySwing créée » is about the call. It must also be absent rather
+than empty, must not restate the objet already on the row, and must be measured by `--echo`
+and against the row's `.measure` at both sizes. If it cannot clear those, it does not ship.
