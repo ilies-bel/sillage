@@ -330,6 +330,241 @@ const expandTheRow = async (): Promise<void> => {
   })
 }
 
+/**
+ * **The title, which is the one thing on this screen that is information.**
+ *
+ * Every assertion here is about a *string*, which is why it can live in jsdom:
+ * the geometry — that the count is the tallest text box above the fold, and that
+ * nothing on the screen is drawn twice — is measured on the shipped renderer at
+ * both smoke sizes, because every box in jsdom is zero.
+ */
+describe('the screen is named by what it holds, not by what it is (US-22)', () => {
+  const titleOf = () => screen.getByRole('heading', { level: 1 }).textContent
+
+  test('the count is the number of calls in the list, and « Historique » is gone', async () => {
+    answered({
+      rows: [
+        row(),
+        row({ meeting: meeting({ id: 'm2' }) }),
+        row({ meeting: meeting({ id: 'm3' }) }),
+      ],
+    })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    expect(titleOf()).toBe('3 appels')
+    // The word named the furniture. A back link on another screen still names
+    // this one as a destination; standing on it, it said nothing.
+    expect(screen.queryByText('Historique')).toBeNull()
+  })
+
+  test('one row is one appel', async () => {
+    answered({ rows: [row()] })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+    expect(titleOf()).toBe('1 appel')
+  })
+
+  /*
+   * An empty list is a count, and the chips beside it are why: « Aucun appel ·
+   * 7 jours » says the période is the reason, which is more than the empty state
+   * under it can say.
+   */
+  test('an empty list still says what it is empty of', async () => {
+    answered({ rows: [] })
+    render(<Historique onBack={() => {}} />)
+    await screen.findByText('Aucun appel enregistré.')
+    expect(titleOf()).toBe('Aucun appel')
+  })
+
+  /*
+   * **The ceiling, and the one number it must never print.** `history:search`
+   * collects one row past its limit and drops it, so what is known is « more than
+   * fifty » — never how many. This screen has already shipped that ceiling
+   * *silently* once, under a preview promising « l’historique les porte tous ».
+   */
+  test('fifty rows with more behind them never claim fifty', async () => {
+    answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: true })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    expect(titleOf()).toBe('Plus de 50 appels')
+    expect(titleOf()!.startsWith('50')).toBe(false)
+  })
+
+  test('exactly fifty rows with nothing behind them is a plain count', async () => {
+    answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 60, capped: false })
+    render(<Historique onBack={() => {}} />)
+    await settled()
+    expect(titleOf()).toBe('50 appels')
+  })
+
+  test('a pressed chip is named in the title, in the chip’s own words', async () => {
+    bridge.when('history:search', (payload) => ({
+      query: payload.query ?? '',
+      filter: withDefaults(payload.filter),
+      scanned: 9,
+      clients: ['Acme Industries'],
+      // The main process is what narrows; the answer is what the title describes.
+      rows: withDefaults(payload.filter).statut === 'validees' ? [row()] : [row(), row()],
+    }))
+
+    render(<Historique onBack={() => {}} />)
+    await settled()
+    expect(titleOf()).toBe('2 appels')
+
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByRole('group', { name: 'Statut' })).getByRole('button', {
+          name: 'Validées',
+        }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 260))
+    })
+
+    await waitFor(() => expect(titleOf()).toBe('1 appel · Validées'))
+  })
+
+  /*
+   * The query is **not** in the title: it is in the box three rows below, where
+   * the rep typed it. What it does to the title is change the number.
+   */
+  test('the typed query narrows the count and is not restated in it', async () => {
+    bridge.when('history:search', (payload) => ({
+      query: payload.query ?? '',
+      filter: withDefaults(payload.filter),
+      scanned: 9,
+      clients: [],
+      rows: (payload.query ?? '') === '' ? [row(), row()] : [row()],
+    }))
+
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    await act(async () => {
+      fireEvent.change(box(), { target: { value: 'TJM' } })
+      await new Promise((resolve) => setTimeout(resolve, 260))
+    })
+
+    await waitFor(() => expect(titleOf()).toBe('1 appel'))
+    expect(titleOf()).not.toContain('TJM')
+  })
+})
+
+/**
+ * **A pane is named by its content (US-23).**
+ *
+ * Two of the record’s four panes name themselves — a transcript is offsets, sides
+ * and sentences; a compte-rendu opens on its own `#` heading — and two do not:
+ * « Mes notes » and « Extraction » are blocks of plain French prose side by side,
+ * and nothing about either box says which is the rep’s own typing.
+ *
+ * What this cannot see is the pixels, so those are measured on the shipped
+ * renderer: the head row of each captionless pane, and the record’s own height.
+ */
+describe('a caption only where the content cannot name itself (US-23)', () => {
+  const headings = () => screen.getAllByRole('heading').map((h) => (h.textContent ?? '').trim())
+
+  test('the transcript and the compte-rendu are not captioned; the two prose panes are', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+    await screen.findByText('on est plutôt sur un TJM de 520 euros')
+
+    expect(headings()).not.toContain('Transcription')
+    expect(headings()).not.toContain('Compte-rendu')
+    expect(headings()).toContain('Mes notes')
+    expect(headings()).toContain('Extraction')
+  })
+
+  /*
+   * **Deleting the caption must not take the control with it.** Both captionless
+   * panes carried their *Copier* on the same row as the heading, and that is the
+   * one gesture a rep needs from an archive — a compte-rendu from three weeks ago,
+   * pasted into a proposal.
+   */
+  test('both panes keep the control that was beside the caption', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+    await screen.findByText('on est plutôt sur un TJM de 520 euros')
+
+    expect(screen.getByRole('button', { name: 'Copier la transcription' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Copier le compte-rendu' })).toBeTruthy()
+  })
+
+  /*
+   * **A pane with no caption and nothing to copy draws no head row at all.** A
+   * call whose transcription failed has no segments, so there is nothing to put on
+   * the clipboard either — and an empty 24-pixel band above « Aucune transcription
+   * pour cet appel. » would be the caption's hole rather than its absence.
+   */
+  test('a call with no transcript draws no head row over the sentence saying so', async () => {
+    answered()
+    bridge.when('history:record', () => record({ segments: [], marks: [] }))
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+    await screen.findByText('Aucune transcription pour cet appel.')
+
+    expect(screen.queryByRole('button', { name: 'Copier la transcription' })).toBeNull()
+    expect(headings()).not.toContain('Transcription')
+  })
+
+  /*
+   * **And no typesetting manual on a read-only record.** « Les marques # ## – ∗∗
+   * font partie du texte : VerySwing reçoit exactement ce qui est affiché » is a
+   * real promise, owed once, where the rep can act on it: the gate, where the
+   * document is editable and where the press that writes it into VerySwing lives.
+   * `Review.test.tsx` asserts it is there and `session-output.test.tsx` that it is
+   * not on the call screen; this was the third call site, on the one surface where
+   * nothing can be corrected and nothing ships anywhere.
+   */
+  test('the record explains nothing about its own typesetting', async () => {
+    answered()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} />)
+    await expandTheRow()
+    await screen.findByText(/Renfort de deux profils Java/)
+
+    expect(screen.queryByText(/font partie du texte/)).toBeNull()
+  })
+
+  /*
+   * **And the word survives where it is doing work.** Under a collapsed row the
+   * five surfaces a query can hit are five one-line fragments of identical shape,
+   * and that first column is the only thing saying which one matched — « what the
+   * rep typed was in the transcript » and « …in their own notes » are two
+   * different facts. Deleting it there would be the opposite mistake.
+   */
+  test('the search excerpt keeps the surface it came from', async () => {
+    answered({
+      rows: [
+        row({
+          matches: [
+            { where: 'transcript', excerpt: '…plutôt sur un TJM de 520 euros…' },
+            { where: 'compteRendu', excerpt: '…un TJM de 520 euros…' },
+          ],
+        }),
+      ],
+    })
+
+    render(<Historique onBack={() => {}} />)
+    await settled()
+
+    expect(screen.getByText('Transcription')).toBeTruthy()
+    expect(screen.getByText('Compte-rendu')).toBeTruthy()
+    // …and neither of them is a heading, which is what a pane caption is.
+    expect(headings()).not.toContain('Transcription')
+    expect(headings()).not.toContain('Compte-rendu')
+  })
+})
+
 describe('a row expands into the full record (DEC-25)', () => {
   test('the four sections are all there, and the transcript keeps its channels', async () => {
     answered()

@@ -411,7 +411,14 @@ try {
 
   await step('Ctrl H opens the reader over the real store', async () => {
     await page.keyboard.press('Control+h')
-    await page.getByRole('heading', { name: 'Historique' }).waitFor()
+    /*
+      The reader's title is the **count**, not the word « Historique »: the screen
+      is a search field over a list of past calls and every part of it names
+      itself, so the h1 carries the one thing on it that is information. Waiting
+      on the number rather than on a noun is also the stronger wait — it cannot be
+      satisfied before `history:search` has answered out of SQLite.
+    */
+    await page.getByRole('heading', { level: 1, name: /\d+ appels?/ }).waitFor()
     // The meeting just created is a row, which means `history:search` answered
     // from SQLite.
     await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
@@ -716,22 +723,31 @@ try {
      * a stated reason rather than `failed` (which would offer a retry against a
      * record nobody knows the existence of — `POST /v1/crm/tasks` has no
      * idempotency key).
+     *
+     * **Read through `history:record`, not `meeting:get`.** `meeting:get` carried
+     * an `outbox` array folded on every read of the session screen and read by
+     * nothing under `src/`, and it has been deleted. What became of an envoi is
+     * said in exactly one place in the product — *Historique*, on
+     * `history:record.intents` — so asking the same question this run asked
+     * before now goes through the channel a rep's own screen goes through, which
+     * is the stronger read of the two: a field only this file consults is a field
+     * that can be right here and wrong everywhere a rep looks.
      */
     await page.getByRole('button', { name: /^Valider/ }).click()
     await page.waitForTimeout(2_000)
 
-    const { outbox } = await page.evaluate(
-      (meetingId) => window.app.invoke('meeting:get', { meetingId }),
+    const { intents } = await page.evaluate(
+      (meetingId) => window.app.invoke('history:record', { meetingId }),
       gated,
     )
-    if (!Array.isArray(outbox) || outbox.length === 0) {
+    if (!Array.isArray(intents) || intents.length === 0) {
       throw new Error('la validation n’a écrit aucune intention dans l’outbox')
     }
-    const drained = outbox.filter((row) => row.state === 'drained')
+    const drained = intents.filter((row) => row.state === 'drained')
     if (drained.length > 0) {
       throw new Error(`une intention est partie sans connecteur : ${drained[0].kind}`)
     }
-    for (const row of outbox) {
+    for (const row of intents) {
       if (row.state === 'failed' && !row.lastError) {
         throw new Error(`${row.kind} a échoué sans dire pourquoi`)
       }
@@ -778,8 +794,10 @@ try {
      * needs a configured connector. `MeetingSession`'s unit tests hold it, and
      * this step says so rather than pretending to measure it.
      */
-    const { meeting, outbox } = await page.evaluate(
-      (meetingId) => window.app.invoke('meeting:get', { meetingId }),
+    // One read, through the channel *Historique* reads: the record carries the
+    // meeting and what became of each intent, which is both halves of this step.
+    const { meeting, intents } = await page.evaluate(
+      (meetingId) => window.app.invoke('history:record', { meetingId }),
       gated,
     )
     if (meeting.state === 'pushing') {
@@ -788,14 +806,14 @@ try {
           'elle y resterait pour la vie de la base, et le bloc de mise à jour avec elle',
       )
     }
-    const kept = outbox.filter((row) => row.state === 'pending')
+    const kept = intents.filter((row) => row.state === 'pending')
     if (kept.length === 0) {
       throw new Error(
         `la réunion est « ${meeting.state} » et rien n’attend dans l’outbox — ` +
           'régler la réunion ne doit pas vider la file',
       )
     }
-    for (const row of outbox) {
+    for (const row of intents) {
       if (row.state === 'failed') {
         throw new Error(
           `${row.kind} est « failed » alors qu’aucune tentative n’a pu démarrer — ` +
@@ -977,7 +995,8 @@ try {
 
   await step('the meeting written last time is still there', async () => {
     await page.keyboard.press('Control+h')
-    await page.getByRole('heading', { name: 'Historique' }).waitFor()
+    // The count again, and on this launch it counts rows a dead process wrote.
+    await page.getByRole('heading', { level: 1, name: /\d+ appels?/ }).waitFor()
     // Rows, from SQLite, written by the process that has since exited.
     await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
     const rows = await page.locator('[aria-label="Appels enregistrés"] > li').count()
