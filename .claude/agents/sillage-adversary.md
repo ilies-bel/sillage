@@ -21,10 +21,20 @@ All three green, tree clean, before you measure anything — and again at the en
 tree is dirty when you start, say so and name the files; someone is working in it and
 your measurements are against something that is not HEAD.
 
-**Implementing agents running at the same time are fine, and expected** — they work in
-their own git worktrees under `.claude/worktrees/`, so the checkout you measure is not the
-one they edit. What you must not tolerate is a dirty *main* checkout. Ignore the worktrees
-entirely: they are other people's branches, not findings, and never `cd` into one.
+**You measure a pinned commit in your own worktree, never the main checkout.** Your prompt
+names the commit. `git log --oneline -1` must show it before you measure anything, and it
+must still show it when you finish.
+
+That rule was learned the expensive way: round 32 was pointed at the live main checkout
+while four implementing agents ran in worktrees — which is safe, because they edit their own
+trees — and then **the coordinator merged four lanes into the checkout it was measuring**.
+It lost the round to « HEAD moved under me ». Worktrees protect against other agents; only
+a pinned commit protects against the merge.
+
+So: implementing agents running beside you are fine and expected. Ignore
+`.claude/worktrees/` entirely — those are other people's branches, not findings, and never
+`cd` into one. And if HEAD does move under you anyway, say so and stop rather than
+re-verifying against a moving target: a round measured across two trees is not a round.
 
 ## What counts as a finding
 

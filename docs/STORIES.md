@@ -723,7 +723,14 @@ uncommitted `.gitignore` line that was not its own.
 3. Launch them **in one message**, one per lane, each with `isolation: "worktree"`.
 4. Merge as they land, running `npm run check` between merges: two clean diffs can be a
    broken tree, and the gate that catches it is cheap.
-5. Then, and only then, run `sillage-adversary` against the merged HEAD.
+5. Run `sillage-adversary` **in its own worktree, pinned to a named commit** — concurrently
+   with the wave if you like; it is the merges, not the agents, that break it.
+
+   This is the one rule in this file that was learned by breaking it. Round 32 was pointed
+   at the live main checkout, correctly reasoning that the implementing agents were isolated
+   in worktrees — and then four lanes were merged into that same checkout while it measured.
+   « HEAD moved under me » cost the whole round. Isolation from other agents is not
+   isolation from yourself.
 6. Its findings become the next wave's first entries, which is what the section above is.
 
 A finding from an agent is checked before it is acted on. R31-4 is why.
