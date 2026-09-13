@@ -196,6 +196,37 @@ Two consequences worth stating plainly:
 The folder structure **is** the pipeline. Data flows one direction; folders are ordered
 by that direction.
 
+**What this tree is and is not, because it was read as a description and it is a target.**
+The shape below is load-bearing and unchanged: the four layers, the one direction, the import
+rule under it. The *contents* have moved, and four divergences are worth naming rather than
+leaving for a reader to discover by opening a file:
+
+- **`core/contracts/` holds 33 files, not the fifteen listed.** The eighteen that arrived since
+  are the surfaces this product grew: `ask.ts`, `boot.ts`, `bootSteps.ts`, `essai.ts`,
+  `history.ts`, `identity.ts`, `llm.ts`, `marks.ts`, `mention.ts`, `models.ts`,
+  `onboarding.ts`, `recipes.ts`, `refusal.ts`, `review.ts`, `secrets.ts`, `settings.ts`,
+  `status.ts`, `update.ts`. The rule that matters — `src/*` may import this directory and
+  nothing else — is why they are here rather than in a module, and `check:ports` now discovers
+  its port list from this directory instead of a hand-written one.
+- **`app/main.ts` is 2 685 lines, against « boot, ~150 lines ».** That is a real divergence and
+  not a typo: the file is the one place that knows which ports exist, so every « inject the
+  thing only `main.ts` can know » decision has landed in it — `routable`, `offlineOnly`,
+  `onSettingsChanged`, `watchPower`, the overlay factory, `before-quit`. Some of it is wiring
+  that genuinely belongs nowhere else; some is behaviour that belongs in `app/session/`, and
+  round 32's worst finding was in this file's `before-quit`. Nothing in the repo boots it, which
+  is the second half of the same problem.
+- **`src/widget/` is missing from the tree entirely**, and it is the second window — DEC-49, the
+  pill drawn over the client's call, the most visible surface in the product and the only one a
+  rep cannot alt-tab back to. `app/windows/` holds `Overlay.ts` and `overlayPlacement.ts`
+  beside it.
+- **`crm/vsa/VsaAdapter.ts` is `VsaCrm.ts`**, and the module has grown `http.ts`, `resolve.ts`,
+  `directory.ts` and `config.ts` around it. `preload.ts` is 75 lines and does have logic — it
+  strips the `Error invoking remote method '<channel>'` prefix Electron composes, because
+  nothing Electron writes reaches a rep's eyes.
+
+`docs/STORIES.md` is where work is tracked; this section is where the *shape* is decided. A
+divergence from it is either a decision to record here or a story there.
+
 ```
 electron/
   core/                     ← pure. no electron, no i/o, no network.
