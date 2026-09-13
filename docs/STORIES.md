@@ -1483,3 +1483,52 @@ of a meeting with no marks, which the crash-recovered and rehydrated cases are n
 `widget-entree` reads `window.__entree[0]` and never reads `__entree.length` — an assertion
 about the first ask cannot tell one ask from two, which is the converse of the sentence in
 `Overlay`'s own test docblock.
+
+## US-30 — the only rendering `StatusControl` has left is measured by nothing
+
+**Lane** `harness` · `scripts/harness/shot.mjs` · **not yet assigned**
+
+US-24 made the header silent when everything is up, which is right and which had a
+consequence its own agent reported rather than hid: **no stage stages a degraded required
+connector**, so every staging renders the `ok` case — and the `ok` case is now *nothing*. The
+control's degraded and down renderings, the only ones left, are visited by none of the ten
+measured checks at either size.
+
+The gap pre-existed — every stage was `ok` — and US-24 took it from « one of two renderings
+unmeasured » to **all of them**. Measured by hand instead, which is exactly what a stage is
+for: 128.9 × 28.6 (clears 24×24) and the label at 4.56:1 on the chip, both sizes.
+
+**Acceptance** — a stage with a required connector `degraded` and one with it `down`, and the
+ten checks run on both at both sizes. `capture` degraded is the honest one to stage: DEC-45
+says a missing channel is `degraded` and never `down`, and the sentence names which side.
+
+## US-31 — the gate's prose is read once at the top or once at the decision, never twice
+
+**Lane** `ui-review` · `src/screens/Review.tsx` · **not yet assigned, and blocked on R33-1**
+
+Proposed by the agent that landed US-25, after measuring the gate it had just changed. Three
+muted paragraphs sit above the first heading of a 2 647 px column: the markers legend, « Les
+corrections faites à droite vont dans l'opportunité… », and the rail's foot paragraph. A rep
+meets roughly ninety words of instruction **before** the document and none of it again at the
+press.
+
+Neither paragraph should be deleted — both say what *ships*, which is the gate's whole job and
+the thing DEC-4 exists to protect. What is wrong is placement. Whatever is about *what ships*
+belongs immediately above *Valider*, where `reassurance` already lives; what stays at the top
+is only the gutter legend, because that is the one sentence explaining something visible in
+that exact spot.
+
+**Blocked on R33-1**, which holds `Review.tsx` and is changing what the gate says when a
+rewrite does not run — two stories moving the same prose in one file is a merge conflict for
+no reason. And measure the arming guard either side: moving content between two measured
+columns is the arithmetic this repo has already been wrong about three times.
+
+## US-32 — one more caption, on the surface that cannot act on it
+
+**Lane** `ui-history` · `src/screens/Historique.tsx` · **assigned to the running `ui-history`
+agent by message**
+
+`CompteRenduMarkersNote` turned out not to be an inherited default but three explicit call
+sites. US-25 deleted the session one and pinned the gate's; the third draws the typesetting
+manual over a **past** record in *Historique*, which is as read-only as a surface gets —
+nothing there can be corrected and nothing there ships to VerySwing.
