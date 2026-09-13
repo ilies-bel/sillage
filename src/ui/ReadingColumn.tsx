@@ -24,16 +24,45 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { PageTurn } from './PageTurn.tsx'
+import { readingTurnLabels, type ReadingSubject } from './readingSubject.ts'
 import { scrollElementBy, scrollElementTo } from '../lib/scroll.ts'
 
-export interface ReadingColumnProps {
-  children: ReactNode
-  /** Completes the turn's label: « Lire la suite du compte-rendu ». */
-  what: string
-  className?: string
+/**
+ * The one string form still accepted, and it is one literal wide.
+ *
+ * `src/screens/session/AskPanel.tsx` is the seventh caller of this component and
+ * is held by another lane this round, so it cannot be converted here. Typing the
+ * door as the literal that file passes keeps its label **correct** — the subject
+ * is resolved from `LEGACY_SUBJECT` below, so « Remonter dans les réponses » and
+ * « Lire la suite des réponses », not the interpolation this round removed —
+ * while no new caller can reach it and `tsc` says so at the call site. When that
+ * file supplies a `subject`, this type, the map and the union go with it.
+ */
+type LegacyWhat = 'des réponses'
+
+const LEGACY_SUBJECT: Record<LegacyWhat, ReadingSubject> = {
+  'des réponses': { determiner: 'les', noun: 'réponses' },
 }
 
-export function ReadingColumn({ children, what, className }: ReadingColumnProps) {
+/**
+ * `subject` and `what` are exclusive, and each shape is complete.
+ *
+ * That is the half of R32-2 that keeps it fixed: the previous prop was one
+ * `string`, so « the genitive » and « the nominative » were the same type and a
+ * caller supplying one of them supplied the other by accident.
+ */
+export type ReadingColumnProps = {
+  children: ReactNode
+  className?: string
+} & (
+  | { subject: ReadingSubject; what?: never }
+  | {
+      subject?: never
+      what: LegacyWhat
+    }
+)
+
+export function ReadingColumn({ children, subject, what, className }: ReadingColumnProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   /** `null` when the column fits: there is nothing to turn to and no control. */
   const [turn, setTurn] = useState<'down' | 'up' | null>(null)
@@ -94,10 +123,7 @@ export function ReadingColumn({ children, what, className }: ReadingColumnProps)
         reveals, a page turn is read.
       */}
       {turn === null ? null : (
-        <PageTurn
-          what={turn === 'up' ? `Remonter dans ${what}` : `Lire la suite ${what}`}
-          onTurn={onTurn}
-        />
+        <PageTurn what={readingTurnLabels(subject ?? LEGACY_SUBJECT[what])[turn]} onTurn={onTurn} />
       )}
     </div>
   )

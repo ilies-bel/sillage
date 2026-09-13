@@ -69,6 +69,7 @@ import {
   Row as UiRow,
   RowTitle,
   SectionHeader,
+  type ReadingSubject,
 } from '../ui/index.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
@@ -446,7 +447,7 @@ function Record({
       <div className="min-w-0">
       <Section
         title="Transcription"
-        turnLabel="de la transcription"
+        subject={{ determiner: 'la', noun: 'transcription' }}
         copy={
           record.segments.length > 0
             ? {
@@ -492,7 +493,7 @@ function Record({
       />
       </div>
 
-      <Section title="Mes notes" turnLabel="de vos notes">
+      <Section title="Mes notes" subject={{ determiner: 'vos', noun: 'notes' }}>
         {record.notes.trim() ? (
           <p className="text-strong whitespace-pre-wrap text-copy leading-relaxed">{record.notes}</p>
         ) : (
@@ -502,7 +503,7 @@ function Record({
 
       <Section
         title="Compte-rendu"
-        turnLabel="du compte-rendu"
+        subject={{ determiner: 'le', noun: 'compte-rendu' }}
         copy={record.compteRendu ? { text: record.compteRendu, what: 'le compte-rendu' } : undefined}
       >
         {record.compteRendu ? (
@@ -533,7 +534,7 @@ function Record({
         )}
       </Section>
 
-      <Section title="Extraction" turnLabel="de l’extraction">
+      <Section title="Extraction" subject={{ determiner: 'l’', noun: 'extraction' }}>
         <Extraction fields={record.fields} />
         <PushStatus intents={intents} />
       </Section>
@@ -544,7 +545,7 @@ function Record({
 
 function Section({
   title,
-  turnLabel,
+  subject,
   copy,
   children,
 }: {
@@ -559,8 +560,15 @@ function Section({
    * behind « select the text in a 288px scroller without missing a line ».
    */
   copy?: { text: string; what: string }
-  /** Completes the page turn's label: « Lire la suite de la transcription ». */
-  turnLabel: string
+  /**
+   * What this pane holds, as a noun and its determiner — never as a label.
+   *
+   * The page turn reads it two ways (« Lire la suite **de la** transcription »,
+   * « Remonter dans **la** transcription »), and while this was one string every
+   * one of these four panes supplied the genitive and read « Remonter dans de la
+   * transcription » at the end of the scroll. See `ui/readingSubject.ts`.
+   */
+  subject: ReadingSubject
   children: React.ReactNode
 }) {
   return (
@@ -602,7 +610,7 @@ function Section({
         `bridge-stub.mjs` answers `history:record` with six segments, so every
         screenshot ever taken showed a record that fits.
       */}
-      <ReadingColumn what={turnLabel} className="measure max-h-72 pr-1">
+      <ReadingColumn subject={subject} className="measure max-h-72 pr-1">
         {children}
       </ReadingColumn>
     </section>

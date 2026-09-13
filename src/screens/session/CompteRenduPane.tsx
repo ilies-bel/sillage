@@ -82,7 +82,7 @@ export function CompteRenduPane({
         see the component. The fade and the page turn are the gate's own two
         instruments, on the surface where the rep meets the compte-rendu first.
       */}
-      <ReadingColumn what="du compte-rendu">
+      <ReadingColumn subject={{ determiner: 'le', noun: 'compte-rendu' }}>
         <CompteRenduDocument text={compteRendu} />
       </ReadingColumn>
 
