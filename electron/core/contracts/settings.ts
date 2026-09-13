@@ -156,5 +156,16 @@ export const SettingsSnapshotSchema = z.object({
    * would now call it by its name: declared, and unreached.
    */
   offlineOnly: z.boolean(),
+  /**
+   * **The sentence the rep reads to the client** (US-11, US-19,
+   * `core/contracts/mention.ts`).
+   *
+   * Always resolved, never raw: a blank stored value comes back as the default,
+   * because a control that copies emptiness is the dead control DEC-26 forbids and
+   * this is what the pill draws. So a deployment that has never opened this pane
+   * and one that saved an empty box are the same product, and Réglages can say so
+   * rather than showing a field that looks configured and is not.
+   */
+  mentionSentence: z.string().min(1),
 })
 export type SettingsSnapshot = z.infer<typeof SettingsSnapshotSchema>

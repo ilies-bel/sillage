@@ -92,7 +92,6 @@ import {
   MENTION_LABEL,
   MENTION_NOTE,
   MENTION_NOT_LOGGED,
-  MENTION_SENTENCE,
 } from './mention.ts'
 
 /**
@@ -202,6 +201,18 @@ export function Widget() {
   if (!gone.current) drawn.current = live
   const meeting = drawn.current
   const meetingId = meeting?.meetingId ?? null
+  /**
+   * The sentence the ESN configured, as it stood when this window last read state
+   * (US-19, `core/contracts/mention.ts`).
+   *
+   * Not frozen with `drawn`, because it is not a property of the meeting: it comes
+   * down on **every** `widget:state` answer including `{ meeting: null }`, which is
+   * what makes it present at the one measurement the window is held off screen for.
+   * Null only before that answer arrives, which is the same instant the control is
+   * not drawn — so this file holds no default of its own, and a default written in
+   * two places cannot start disagreeing with itself.
+   */
+  const sentence = state.state.status === 'ready' ? state.state.value.mentionSentence : null
 
   const [open, setOpen] = useState(false)
 
@@ -250,7 +261,17 @@ export function Widget() {
    * before the log answers, deliberately: the sentence is the urgent half and it
    * must not wait on SQLite behind a preload hop while the rep is mid-sentence.
    */
-  const [mention, setMention] = useState<{ copied: boolean; logged: boolean | null } | null>(null)
+  const [mention, setMention] = useState<{
+    /**
+     * The sentence **as it was when the press happened**, not as it is now. Réglages
+     * can be corrected between two calls and `onSettingsChanged` re-reads this
+     * window's state, so a card showing the live setting would rewrite, under the
+     * rep's eyes, the sentence they are in the middle of reading to a client.
+     */
+    sentence: string
+    copied: boolean
+    logged: boolean | null
+  } | null>(null)
 
   /**
    * Which press the card on screen belongs to.
@@ -402,10 +423,17 @@ export function Widget() {
    * card below is already a live region: two would read the same event twice.
    */
   const announce = useCallback(async () => {
-    if (meetingId === null || gone.current) return
+    /*
+     * `sentence` is null only before `widget:state` answers (US-19), which is the
+     * same instant `meetingId` is null and the control is not drawn — so this is the
+     * belt to the braces above rather than a reachable refusal. It is here because a
+     * press that copied the empty string would put a rep in front of a client with a
+     * blank card, and that is the one failure this surface must not have.
+     */
+    if (meetingId === null || sentence === null || gone.current) return
     const token = pressed.current + 1
     pressed.current = token
-    const copied = await copyText(MENTION_SENTENCE)
+    const copied = await copyText(sentence)
     /*
      * **A window that has been told to go away stops taking state**, and this is
      * the one path in this component that crosses an `await` before its first
@@ -426,18 +454,18 @@ export function Widget() {
       return
     }
     setSaid(null)
-    setMention({ copied, logged: null })
+    setMention({ sentence, copied, logged: null })
     try {
       await invoke('meeting:mark', {
         meetingId,
         note: MENTION_NOTE(copied),
         segmentId: null,
       })
-      if (pressed.current === token && !gone.current) setMention({ copied, logged: true })
+      if (pressed.current === token && !gone.current) setMention({ sentence, copied, logged: true })
     } catch {
-      if (pressed.current === token && !gone.current) setMention({ copied, logged: false })
+      if (pressed.current === token && !gone.current) setMention({ sentence, copied, logged: false })
     }
-  }, [meetingId])
+  }, [meetingId, sentence])
 
   const forget = useCallback(
     (markId: string) => {
@@ -496,6 +524,7 @@ export function Widget() {
           */}
           {said?.problem !== true && mention !== null ? (
             <Mention
+              sentence={mention.sentence}
               copied={mention.copied}
               logged={mention.logged}
               onDismiss={() => {
@@ -1293,10 +1322,13 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
  * cap is not what is binding, which is exactly why it costs nothing to be right.
  */
 function Mention({
+  sentence,
   copied,
   logged,
   onDismiss,
 }: {
+  /** What was copied, carried from the press rather than re-read (US-19). */
+  sentence: string
   copied: boolean
   /** `null` while the log write is on the wire — see `mention` in `Widget`. */
   logged: boolean | null
@@ -1308,7 +1340,7 @@ function Mention({
       className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
     >
       <div role="status" className="min-w-0 flex-1">
-        <p className="text-strong measure text-ui">{MENTION_SENTENCE}</p>
+        <p className="text-strong measure text-ui">{sentence}</p>
         {/*
           `--warn` never alone: it is 1.0:1 against `--text-muted` in luminance, so
           a deuteranope and a greyscale screenshot both read it as ordinary prose

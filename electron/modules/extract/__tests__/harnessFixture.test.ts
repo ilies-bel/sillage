@@ -41,6 +41,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
+import { MENTION_SENTENCE_DEFAULT } from '../../../core/contracts/mention.ts'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findDeterministicLeaks } from '../deterministicLeaks.ts'
@@ -564,6 +565,39 @@ test('no harness scenario stages an armed meeting beside a recording one', async
  * the stub is deliberately one browser-shaped file. What is being asserted is an
  * *ordering between files*, so reading the files is the honest instrument.
  */
+/**
+ * **The one sentence this product says to somebody who is not the rep** (US-19).
+ *
+ * `MENTION_SENTENCE_DEFAULT` lives in `core/contracts/mention.ts` precisely so that the
+ * wording the pill hands to a client exists once — and `bridge-stub.mjs` is serialised
+ * into the page by `addInitScript`, so it cannot import it and carries a second copy.
+ * That is the condition this file exists for. A stub sentence that drifted from the
+ * product's would photograph a card of the wrong height on every `widget*` stage and
+ * measure the wrong number of characters a line, which is the « fixture simpler than
+ * the product » shape this fixture has been caught by seven times.
+ *
+ * Read from source, the `preloadUnwrap.test.ts` shape, because the stub is deliberately
+ * one browser-shaped file with no exports but its own function.
+ */
+test('the harness hands over the sentence the product hands over', () => {
+  const source = readFileSync(
+    path.resolve(HERE, '../../../../scripts/harness/bridge-stub.mjs'),
+    'utf8',
+  )
+  const found = /const MENTION_SENTENCE_DEFAULT =\s*([\s\S]*?)\n\n/.exec(source)
+  assert.ok(found, 'la phrase n’est plus déclarée dans bridge-stub.mjs')
+  const literal = (found[1] ?? '')
+    .split('+')
+    .map((part) => part.trim().replace(/^'|'$/g, ''))
+    .join('')
+  assert.equal(
+    literal,
+    MENTION_SENTENCE_DEFAULT,
+    'la phrase du harnais a divergé de celle du produit — toutes les scènes `widget*` ' +
+      'photographient alors une carte qui n’est pas celle qu’un commercial tend à son client',
+  )
+})
+
 test('the widget’s first-frame deadlines are ordered across the three files that hold them', () => {
   const read = (rel: string): string => readFileSync(path.resolve(HERE, rel), 'utf8')
   const number = (source: string, pattern: RegExp, what: string): number => {

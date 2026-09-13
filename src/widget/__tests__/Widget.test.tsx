@@ -21,7 +21,14 @@ import type { TranscriptSegment } from '../../../electron/core/contracts/transcr
 import type { MomentMark } from '../../../electron/core/contracts/marks.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Widget } from '../Widget.tsx'
-import { MENTION_LABEL, MENTION_NOTE, MENTION_SENTENCE } from '../mention.ts'
+import { MENTION_LABEL, MENTION_NOTE } from '../mention.ts'
+/*
+ * The sentence comes down `widget:state` now (US-19), so the test asserts against the
+ * **contract's** default rather than against a constant in the file under test — and a
+ * deployment that has configured its own wording is a separate test below, because
+ * « the pill hands over what Réglages says » is the whole of what US-19 changed.
+ */
+import { MENTION_SENTENCE_DEFAULT } from '../../../electron/core/contracts/mention.ts'
 
 let bridge: FakeBridge
 let uninstall: () => void
@@ -45,7 +52,8 @@ const segment = (
   receivedAt,
 })
 
-const recording = (marks: MomentMark[] = []) => ({
+const recording = (marks: MomentMark[] = [], mentionSentence = MENTION_SENTENCE_DEFAULT) => ({
+  mentionSentence,
   meeting: {
     meetingId: 'm1',
     title: 'Néovia Santé — cadrage',
@@ -383,7 +391,7 @@ test('the way back into the app raises the main window on this meeting', async (
 })
 
 test('with nothing recording it says so and offers no controls', async () => {
-  bridge.when('widget:state', () => ({ meeting: null }))
+  bridge.when('widget:state', () => ({ meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }))
   render(<Widget />)
 
   expect(await screen.findByText('Aucun enregistrement')).toBeTruthy()
@@ -580,7 +588,7 @@ for (const first of ['widget:leave', 'session:changed'] as const) {
 
     // The meeting is over on the main process's side from here on: any read of
     // `widget:state` now answers the truth, which is that nothing is recording.
-    bridge.when('widget:state', () => ({ meeting: null }))
+    bridge.when('widget:state', () => ({ meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }))
 
     await act(async () => {
       if (first === 'widget:leave') {
@@ -819,6 +827,74 @@ const mentionControl = () => screen.getByRole('button', { name: MENTION_LABEL })
  * the main process how big it is and where the pointer is; they carry no meeting
  * payload and they fire on every content change on this surface.
  */
+/**
+ * **The pill hands over the ESN's sentence, not ours** (US-19).
+ *
+ * The half of US-11 that shipped wrong: the wording was a constant in this renderer,
+ * so the one piece of *speech* this product puts in front of a client could not be
+ * changed without a build. It arrives on `widget:state` now — on every answer,
+ * including `{ meeting: null }`, because that is the answer `MEASURE_DEADLINE_MS`
+ * treats as settled either way and the control must not be drawn off a placeholder.
+ *
+ * Asserted in both directions, because only the pair is the property. A file that
+ * kept a fallback would pass the first half and fail here: what goes on the clipboard
+ * and onto the card is what the *state* said, and this renderer holds no default of
+ * its own.
+ */
+test('c’est la phrase configurée qui part, pas celle du code', async () => {
+  const own = 'Cet appel est transcrit par un outil interne. Dites-le si cela vous gêne.'
+  bridge.when('widget:state', () => recording([], own))
+  const clipboard = withClipboard()
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+
+    fireEvent.click(mentionControl())
+    await waitFor(() => expect(clipboard.written).toEqual([own]))
+
+    const notice = await screen.findByRole('status')
+    expect(notice.textContent).toContain(own)
+    expect(notice.textContent).not.toContain(MENTION_SENTENCE_DEFAULT)
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * And the card keeps the sentence **the press copied**, not the one Réglages holds a
+ * moment later.
+ *
+ * `onSettingsChanged` re-reads this window's state, so an administrator correcting the
+ * wording between two calls — or during one — would otherwise rewrite, under the rep's
+ * eyes, the sentence they are in the middle of reading aloud to a client. The card is
+ * a record of a press; the field is a setting.
+ */
+test('la carte garde la phrase qui a été copiée', async () => {
+  const first = 'Première formulation, celle qui a été copiée.'
+  const second = 'Deuxième formulation, arrivée après la pression.'
+  let sentence = first
+  bridge.when('widget:state', () => recording([], sentence))
+  const clipboard = withClipboard()
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    const notice = await screen.findByRole('status')
+    await waitFor(() => expect(notice.textContent).toContain(first))
+
+    // Réglages is saved; the window re-reads its state on the next transition.
+    sentence = second
+    await act(async () => {
+      bridge.emit('session:changed', { meetingId: 'm1', state: 'recording' })
+    })
+
+    expect((await screen.findByRole('status')).textContent).toContain(first)
+    expect(clipboard.written).toEqual([first])
+  } finally {
+    clipboard.restore()
+  }
+})
+
 test('la phrase part au presse-papiers et nulle part ailleurs', async () => {
   const clipboard = withClipboard()
   const marks: unknown[] = []
@@ -832,7 +908,7 @@ test('la phrase part au presse-papiers et nulle part ailleurs', async () => {
     bridge.calls.length = 0
 
     fireEvent.click(mentionControl())
-    await waitFor(() => expect(clipboard.written).toEqual([MENTION_SENTENCE]))
+    await waitFor(() => expect(clipboard.written).toEqual([MENTION_SENTENCE_DEFAULT]))
     await waitFor(() => expect(marks.length).toBe(1))
 
     const reached = bridge.calls
@@ -872,7 +948,7 @@ test('la phrase est à l’écran, dans une carte, pour être lue à voix haute'
     fireEvent.click(mentionControl())
 
     const notice = await screen.findByRole('status')
-    expect(notice.textContent).toContain(MENTION_SENTENCE)
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
     // Inside a card: everything on this window that is not one is halo, and halo
     // is handed to Teams with `setIgnoreMouseEvents(…, { forward: true })`.
     expect(notice.closest('[data-card]')).not.toBeNull()
@@ -918,7 +994,7 @@ test('rien ne prétend que le client a donné son accord', async () => {
     expect((document.body.textContent ?? '').match(claim)).toBeNull()
     expect(MENTION_NOTE(true).match(claim)).toBeNull()
     expect(MENTION_NOTE(false).match(claim)).toBeNull()
-    expect(MENTION_SENTENCE.match(claim)).toBeNull()
+    expect(MENTION_SENTENCE_DEFAULT.match(claim)).toBeNull()
   } finally {
     clipboard.restore()
   }
@@ -950,7 +1026,7 @@ test('un presse-papiers qui refuse est dit, et le journal garde le fait plus fai
   const notice = await screen.findByRole('status')
   // The sentence is still there — it is the half that matters, and reading it out
   // is the route that never needed a clipboard.
-  expect(notice.textContent).toContain(MENTION_SENTENCE)
+  expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
   expect(notice.textContent).toContain('Copie impossible : lisez-la à voix haute.')
   await waitFor(() => expect(marks.length).toBe(1))
   expect(marks[0]?.note).toBe(MENTION_NOTE(false))
@@ -979,7 +1055,7 @@ test('un journal qui refuse est dit, sans emporter la phrase', async () => {
 
     const notice = await screen.findByRole('status')
     await waitFor(() => expect(notice.textContent).toContain('Non inscrit au journal'))
-    expect(notice.textContent).toContain(MENTION_SENTENCE)
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
   } finally {
     clipboard.restore()
   }

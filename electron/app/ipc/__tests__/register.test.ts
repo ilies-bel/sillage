@@ -23,6 +23,7 @@ import {
 } from '../../../core/contracts/ipc.ts'
 import { Store } from '../../../modules/store/index.ts'
 import { ONBOARDING_KEY } from '../../../core/contracts/onboarding.ts'
+import { MENTION_SENTENCE_DEFAULT } from '../../../core/contracts/mention.ts'
 import { Diagnostics } from '../../../modules/diagnostics/index.ts'
 import { Orchestrator } from '../../session/Orchestrator.ts'
 import type { DiagEnvironment } from '../../../core/contracts/diagnostics.ts'
@@ -1767,10 +1768,23 @@ test('meeting:mark records a moment, and refuses one outside a recording', async
  */
 test('widget:state answers the meeting that is really recording, or null', async () => {
   const { ipc, deps, cleanup } = open()
-  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+  /*
+   * **The sentence rides every answer, including the ones with no meeting** (US-19).
+   *
+   * It is not a property of the meeting: `MEASURE_DEADLINE_MS` treats a
+   * `{ meeting: null }` answer as settled either way, and that is the frame the pill
+   * is measured on. Attached to the meeting instead, the sentence — and therefore the
+   * control that hands it over — would arrive only when there is one, which is the
+   * 32 px of width appearing after the measurement that DEC-50 closed.
+   *
+   * `deps.preferences` is unset here, which is the configuration of every run that
+   * has never opened Réglages: the resolved default, not an empty string.
+   */
+  const noMeeting = { meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
 
   deps.orchestrator.create({ id: 'm1', title: 'Néovia Santé — cadrage', context: sampleContext })
-  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
 
   await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
   await ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'noté', segmentId: null })
@@ -1778,9 +1792,50 @@ test('widget:state answers the meeting that is really recording, or null', async
   assert.equal(live.meeting?.meetingId, 'm1')
   assert.equal(live.meeting?.title, 'Néovia Santé — cadrage')
   assert.equal(live.meeting?.marks.length, 1)
+  assert.equal(live.mentionSentence, MENTION_SENTENCE_DEFAULT)
 
   await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
-  assert.deepEqual(await ipc.invoke('widget:state', {}), { meeting: null })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
+  cleanup()
+})
+
+/**
+ * **What Réglages saved is what the pill hands to the client** (US-19).
+ *
+ * The whole of the story on the main-process side, and it is asserted through both
+ * channels because two readers resolving « what does a blank mean » separately is how
+ * two defaults start disagreeing. What is stored is raw; what either channel answers is
+ * resolved, by the one function in `core/contracts/mention.ts`.
+ *
+ * The blank case is the one worth driving: `setMentionSentence('')` is how a rep returns
+ * to the default, and a snapshot that answered `''` would put a control on the pill that
+ * copies emptiness — the dead control DEC-26 forbids, on the one surface a rep uses in
+ * front of a client.
+ */
+test('the sentence Réglages saved is what widget:state and the snapshot answer', async () => {
+  const { ipc, deps, cleanup } = open()
+  let stored: string | null = null
+  deps.preferences = {
+    selectProvider: async () => {},
+    selectModel: async () => {},
+    setField: async () => {},
+    setOfflineOnly: async () => {},
+    mentionSentence: () => stored,
+    setMentionSentence: async (value) => {
+      stored = value.trim() === '' ? null : value.trim()
+    },
+  }
+
+  const own = 'Cet échange est transcrit par un outil interne.'
+  const saved = await ipc.invoke('settings:setMentionSentence', { value: own })
+  assert.equal(saved.mentionSentence, own, 'la sonde ne renvoie pas ce qui vient d’être écrit')
+  assert.equal((await ipc.invoke('widget:state', {})).mentionSentence, own)
+
+  // Emptying it is the request to come back to the default, on both channels.
+  const cleared = await ipc.invoke('settings:setMentionSentence', { value: '   ' })
+  assert.equal(cleared.mentionSentence, MENTION_SENTENCE_DEFAULT)
+  assert.equal((await ipc.invoke('widget:state', {})).mentionSentence, MENTION_SENTENCE_DEFAULT)
+  assert.equal(stored, null, 'une phrase vide laisse une ligne qui veut dire « le défaut »')
   cleanup()
 })
 
@@ -1890,6 +1945,8 @@ test('settings:setOfflineOnly is written and read back on the snapshot', async (
     setOfflineOnly: async (value) => {
       stored = value
     },
+    mentionSentence: () => null,
+    setMentionSentence: async () => {},
   }
   deps.offlineOnly = () => stored ?? false
   let resettled = 0

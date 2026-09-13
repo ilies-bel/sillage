@@ -31,6 +31,7 @@ import {
   ReviewSnapshotSchema,
 } from './review.ts'
 import { HistoryFilterSchema, HistoryRecordSchema, HistorySearchResultSchema } from './history.ts'
+import { MENTION_MAX_CHARS } from './mention.ts'
 import { SettingsSnapshotSchema } from './settings.ts'
 import { ModelProgressSchema, ModelSectionSchema } from './models.ts'
 import { BootStateSchema } from './boot.ts'
@@ -496,6 +497,21 @@ export const invokeChannels = {
           marks: z.array(MomentMarkSchema),
         })
         .nullable(),
+      /**
+       * The sentence the pill's « Prévenir le client » press hands over (US-19).
+       *
+       * It rides here rather than on `settings:snapshot` for two reasons. The widget
+       * does not call that channel at all — it would be a second round trip on the
+       * one critical path the window is deliberately held off screen for
+       * (`MEASURE_DEADLINE_MS`), while two audio devices are opening and a
+       * transcriber is booting. And it arrives with the **same** answer the pill is
+       * measured on, so the control cannot be drawn before the sentence exists.
+       *
+       * Already resolved by `resolveMentionSentence`, so the renderer holds no
+       * fallback of its own: a default written in two places is a default that will
+       * stop agreeing with itself.
+       */
+      mentionSentence: z.string().min(1),
     }),
   },
 
@@ -864,6 +880,27 @@ export const invokeChannels = {
       capability: z.enum(['stt', 'llm']),
       providerId: z.string().min(1).nullable(),
     }),
+    response: SettingsSnapshotSchema,
+  },
+
+  /**
+   * The sentence the rep reads to the client (US-19, `core/contracts/mention.ts`).
+   *
+   * `z.string()` and not `.min(1)`: an empty field **is** the request to return to
+   * the default, and the snapshot answers with what the product will actually use,
+   * so the box refills itself with the default rather than staying blank. That is
+   * the `setProviderField` rule and not the `clearCredential` one — the value is on
+   * screen, retyping it costs nothing, and there is nothing destructive to protect
+   * anyone from.
+   *
+   * Bounded by `MENTION_MAX_CHARS`, which is a statement about a *window*: the card
+   * is drawn inside the frameless, always-on-top overlay that is sized to its own
+   * content, over the face of the person on the call. The bound is stated on the
+   * field and enforced here; nothing truncates, because a sentence silently cut in
+   * half is one a rep reads out to a client with the end missing.
+   */
+  'settings:setMentionSentence': {
+    request: z.object({ value: z.string().max(MENTION_MAX_CHARS) }),
     response: SettingsSnapshotSchema,
   },
 

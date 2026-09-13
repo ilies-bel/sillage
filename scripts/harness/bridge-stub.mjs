@@ -1709,6 +1709,22 @@ export function installAppBridge(config) {
     return SETTINGS
   }
 
+  /*
+    **The sentence the pill hands to the client** (US-19,
+    `electron/core/contracts/mention.ts`).
+
+    Written out rather than imported, because this file is serialised into the page
+    by `addInitScript` and is deliberately one self-contained function with no
+    imports. So it is the *second* copy of a string this repo has just finished
+    arguing must have only one — which is exactly the condition
+    `harnessFixture.test.ts` exists for: it reads this literal out of the source and
+    fails when it stops matching `MENTION_SENTENCE_DEFAULT`. A fixture is checked,
+    not trusted; it has flattered the app seven times.
+  */
+  const MENTION_SENTENCE_DEFAULT =
+    'Je vous informe que j’utilise un outil qui transcrit cet échange pour en rédiger le ' +
+    'compte-rendu ; l’audio n’est pas conservé. Dites-moi si vous préférez que je l’arrête.'
+
   const SETTINGS = {
     /*
       « Cette machine uniquement » (DEC-37), off — which is the default and the
@@ -1716,6 +1732,8 @@ export function installAppBridge(config) {
       is configured and selected, and with the switch on it would not be.
     */
     offlineOnly: false,
+    /* US-19 — resolved, the way `snapshot()` resolves it in the product. */
+    mentionSentence: MENTION_SENTENCE_DEFAULT,
     stt: {
       rows: [
         {
@@ -2855,8 +2873,17 @@ export function installAppBridge(config) {
     */
     'widget:state': () =>
       scenario === 'widget-sans-reunion'
-        ? { meeting: null }
+        ? { meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }
         : {
+            /*
+              US-19 — the sentence rides every answer, including the one with no
+              meeting, because that is the answer `MEASURE_DEADLINE_MS` treats as
+              settled either way. The fixture uses the shipped default rather than a
+              made-up string: a stub sentence shorter than the product's would
+              flatter the card's box, which is the « fixture simpler than the
+              product » shape this repo has been caught by seven times.
+            */
+            mentionSentence: MENTION_SENTENCE_DEFAULT,
             meeting: {
               meetingId: 'm-neovia-cadrage',
               title: 'Néovia Santé — cadrage renfort data',

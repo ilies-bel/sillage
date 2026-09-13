@@ -31,6 +31,7 @@ import type { ProviderSection } from '../../core/contracts/settings.ts'
 import type { ModelSection } from '../../core/contracts/models.ts'
 import type { BootState } from '../../core/contracts/boot.ts'
 import { isRefusal, refuse } from '../../core/contracts/refusal.ts'
+import { resolveMentionSentence } from '../../core/contracts/mention.ts'
 import type { EssaiResult } from '../../core/contracts/essai.ts'
 import type { EnhancementStatus } from '../../core/contracts/extraction.ts'
 import {
@@ -89,6 +90,15 @@ export interface ProviderPreferences {
   selectModel(modelId: string): Promise<void>
   /** « Cette machine uniquement » (DEC-37). */
   setOfflineOnly(value: boolean): Promise<void>
+  /**
+   * The sentence the rep reads to the client (US-19). Raw — null when nobody has
+   * said — because `core/contracts/mention.ts` is the one place that decides what a
+   * blank means, and two readers resolving it separately is how two defaults start
+   * disagreeing.
+   */
+  mentionSentence(): string | null
+  /** Store it. An empty value returns to the default rather than storing emptiness. */
+  setMentionSentence(value: string): Promise<void>
   /** A provider's declared non-secret setting. Empty clears it (DEC-34). */
   setField(providerId: string, key: string, value: string): Promise<void>
 }
@@ -1186,13 +1196,22 @@ export const handlers: Handlers = {
    * widget over it would be a floating pill saying a call is being recorded
    * when no device is open.
    */
-  'widget:state': (_request, { store, orchestrator }) => {
+  'widget:state': (_request, { store, orchestrator, preferences }) => {
+    /*
+     * Sent on **every** answer, including `{ meeting: null }` (US-19). That answer is
+     * the one the renderer's `MEASURE_DEADLINE_MS` waits for and treats as settled
+     * either way, so a sentence attached to the meeting instead would arrive only
+     * when there is one — and the pill measured off the placeholder is exactly the
+     * frame the main process must never be shown (`FONT_DEADLINE_MS`).
+     */
+    const mentionSentence = resolveMentionSentence(preferences?.mentionSentence() ?? null)
     const meetingId =
       orchestrator.liveIds().find((id) => orchestrator.stateOf(id) === 'recording') ?? null
-    if (meetingId === null) return { meeting: null }
+    if (meetingId === null) return { meeting: null, mentionSentence }
     const meeting = store.projections.getMeeting(meetingId)
-    if (!meeting) return { meeting: null }
+    if (!meeting) return { meeting: null, mentionSentence }
     return {
+      mentionSentence,
       meeting: {
         meetingId,
         title: meeting.title,
@@ -1389,6 +1408,22 @@ export const handlers: Handlers = {
   'settings:setOfflineOnly': async ({ value }, deps) => {
     if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
     await deps.preferences.setOfflineOnly(value)
+    deps.onSettingsChanged?.()
+    return snapshot(deps)
+  },
+
+  /**
+   * The sentence the rep reads to the client (US-19).
+   *
+   * `onSettingsChanged` for the same reason `setOfflineOnly` uses it: the widget does
+   * not poll, and a rep who corrects the wording between two calls must not have the
+   * pill still handing over the old one. Nothing here validates the *content* — the
+   * wording is the ESN's and this product has no rule that separates a sentence it
+   * dislikes from one it does not (`check:diag`'s own verdict on free-form text).
+   */
+  'settings:setMentionSentence': async ({ value }, deps) => {
+    if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
+    await deps.preferences.setMentionSentence(value)
     deps.onSettingsChanged?.()
     return snapshot(deps)
   },
@@ -1590,6 +1625,13 @@ const snapshot = (deps: IpcDeps): InvokeResponse<'settings:snapshot'> => {
      * both once guilty of for the whole settings surface.
      */
     offlineOnly: deps.offlineOnly?.() ?? false,
+    /*
+     * Resolved, never raw (US-19): the screen draws what the *pill* will hand over,
+     * so a deployment that saved an empty box sees the default in the field rather
+     * than a box that looks configured and is not. `widget:state` resolves through
+     * the same function, which is why there is no fallback in either renderer.
+     */
+    mentionSentence: resolveMentionSentence(deps.preferences?.mentionSentence() ?? null),
   }
 }
 

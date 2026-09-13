@@ -68,6 +68,10 @@ import type {
 } from '../../electron/core/contracts/settings.ts'
 import type { CapabilityFinding, CapabilityReport } from '../../electron/core/contracts/crm.ts'
 import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
+import {
+  MENTION_MAX_CHARS,
+  MENTION_SENTENCE_DEFAULT,
+} from '../../electron/core/contracts/mention.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { SHORTCUTS } from '../app/shortcuts.ts'
@@ -343,6 +347,23 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
                   void write('offlineOnly', () => invoke('settings:setOfflineOnly', { value }))
                 }
               />
+              {/*
+                Beside « Cette machine uniquement » on purpose (US-19). One says where
+                the client's words go, the other says what the client is told about it,
+                and a rep or an administrator arriving here with « que voit le client »
+                in mind is asking both questions at once. It is not a section of its
+                own: a nav entry for one field would put the product's only legal
+                setting behind a click nobody takes.
+              */}
+              <MentionSentence
+                value={snapshot.mentionSentence}
+                busy={busy === 'mentionSentence'}
+                onSave={(value) =>
+                  void write('mentionSentence', () =>
+                    invoke('settings:setMentionSentence', { value }),
+                  )
+                }
+              />
               <Providers
                 title="Transcription"
                 capability="stt"
@@ -614,6 +635,122 @@ function OfflineOnly({
         </span>
       </span>
     </label>
+  )
+}
+
+/**
+ * **The sentence the rep reads to the client** (US-11, US-19,
+ * `core/contracts/mention.ts`).
+ *
+ * The one setting in this pane whose value is a piece of *speech*, and the reason it
+ * is a setting at all is that the wording is a legal matter belonging to the ESN
+ * rather than to us. DEC-34's rule applied to it literally: declared, stored in the
+ * KV store, rendered as a field.
+ *
+ * Four things, each of which would otherwise be a defect this repo has already had.
+ *
+ * **The field shows what the pill will hand over, never what is stored.** The
+ * snapshot resolves through `resolveMentionSentence`, so a deployment that saved an
+ * empty box and one that never opened this pane look the same here — which is true,
+ * because they behave the same. A box that stayed blank would claim the product says
+ * nothing, and the product says the default.
+ *
+ * **Saving an empty box is how you go back**, and there is a control that says so
+ * rather than a trick a rep has to know: *Rétablir la phrase par défaut* is live
+ * exactly when what is on screen is not the default, which is the `SettingField`
+ * rule — a button is dead precisely when pressing it would do nothing (DEC-26).
+ *
+ * **`[field-sizing:content]` and no scroller.** A four-line sentence in a
+ * three-line box is the eleven clipped textareas at the gate, and `--scrollers`
+ * would find it. `.measure` on the textarea itself and not on a wrapper, because
+ * `ch` resolves against the element's own font size.
+ *
+ * **Nothing here claims consent.** There is no second field for « le client a
+ * accepté » and no sentence in the explanation that implies pressing the pill's
+ * control obtained anything. The product knows what it handed to the rep; what the
+ * client said is not in the record and must not look as though it is.
+ */
+function MentionSentence({
+  value,
+  busy,
+  onSave,
+}: {
+  value: string
+  busy: boolean
+  onSave: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const dirty = draft.trim() !== value.trim()
+  const customised = value.trim() !== MENTION_SENTENCE_DEFAULT
+
+  return (
+    <section className="border-card bg-card mb-block rounded-sm border p-row">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSave(draft.trim())
+        }}
+      >
+        <label className="text-strong block text-ui font-medium" htmlFor="mention-sentence">
+          Ce que vous dites au client
+        </label>
+        <p className="text-muted measure mt-tight text-meta">
+          Pendant l’appel, la pastille propose de copier cette phrase en un clic : vous la collez
+          dans la conversation, ou vous la lisez à voix haute. Sillage n’envoie rien et
+          n’enregistre pas la réponse du client — il note seulement que la phrase vous a été
+          remise. La formulation vous appartient ; celle-ci est vraie de l’outil tel qu’il
+          fonctionne.
+        </p>
+        <textarea
+          id="mention-sentence"
+          value={draft}
+          maxLength={MENTION_MAX_CHARS}
+          onChange={(event) => setDraft(event.target.value)}
+          className="measure text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
+        />
+        <div className="mt-1 flex items-center gap-inline">
+          <Button
+            type="submit"
+            variant="bordered"
+            {...unavailable(
+              busy || !dirty,
+              busy ? 'enregistrement en cours' : 'aucune modification',
+            )}
+          >
+            {/*
+              Not the bare « Enregistrer » `SettingField` uses. This pane already holds
+              one per provider row, and a second verb with a different meaning under the
+              same accessible name is the `--a11y` failure one step up from a control
+              whose only name is « ‹ » : a rep tabbing the pane, or reading it with a
+              screen reader, gets two identical offers that do different things.
+            */}
+            Enregistrer la phrase
+          </Button>
+          {/*
+            Not a *Supprimer*. Emptying the box is the request to come back to the
+            default, and the default is what the pill would then hand over — so the
+            control says what happens rather than what it clears.
+          */}
+          <Button
+            type="button"
+            variant="text"
+            onClick={() => {
+              setDraft(MENTION_SENTENCE_DEFAULT)
+              onSave('')
+            }}
+            {...unavailable(
+              busy || !customised,
+              busy ? 'enregistrement en cours' : 'c’est déjà la phrase par défaut',
+            )}
+          >
+            Rétablir la phrase par défaut
+          </Button>
+          <span className="text-muted ml-auto shrink-0 tabular-nums text-meta">
+            {draft.trim().length} / {MENTION_MAX_CHARS}
+          </span>
+        </div>
+      </form>
+    </section>
   )
 }
 

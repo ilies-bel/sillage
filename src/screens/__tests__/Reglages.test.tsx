@@ -27,6 +27,7 @@ import {
   OPTIONAL_CONNECTORS,
   REQUIRED_CONNECTORS,
 } from '../../../electron/core/contracts/status.ts'
+import { MENTION_SENTENCE_DEFAULT } from '../../../electron/core/contracts/mention.ts'
 import type { SettingsSnapshot } from '../../../electron/core/contracts/settings.ts'
 import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
@@ -37,6 +38,7 @@ let uninstall: () => void
 
 const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
   offlineOnly: false,
+  mentionSentence: MENTION_SENTENCE_DEFAULT,
   stt: {
     rows: [
       {
@@ -1147,5 +1149,137 @@ describe('mise à jour', () => {
     // Without this line the same download appears to restart itself, which
     // reads as the app being broken rather than as the app coping.
     expect(pane().getByText(/reprise du téléchargement \(essai 2 sur 3\)/)).toBeTruthy()
+  })
+})
+
+/**
+ * **The sentence a rep reads to a client is the ESN's, and this pane is where it is
+ * theirs** (US-11, US-19, `core/contracts/mention.ts`).
+ *
+ * US-11 shipped the wording as a constant in the renderer, which is the
+ * `SILLAGE_STT_OFFLINE_ONLY` mistake DEC-37 has already paid for once: a legal
+ * sentence nobody deploying this product can change without a build.
+ *
+ * What is asserted here is the four properties that keep it honest — the field shows
+ * what the *pill* will hand over rather than what is stored; an empty save is how you
+ * return to the default and there is a control that says so; the box cannot clip its
+ * own sentence; and nothing in the pane claims the client agreed to anything.
+ */
+describe('the sentence the client hears (US-19)', () => {
+  const LABEL = 'Ce que vous dites au client'
+  const field = () => pane().getByLabelText(LABEL) as HTMLTextAreaElement
+  /*
+   * Scoped to its own `<section>`: the Transcription pane also holds a provider's
+   * *Enregistrer*, and a query that matched both would be asserting about whichever
+   * one the tree happened to yield first.
+   */
+  const box = () => within(field().closest('section') as HTMLElement)
+  const save = () => box().getByRole('button', { name: 'Enregistrer la phrase' }) as HTMLButtonElement
+  const restore = () =>
+    box().getByRole('button', { name: 'Rétablir la phrase par défaut' }) as HTMLButtonElement
+
+  test('the pane shows the sentence the pill will hand over', async () => {
+    mount()
+    await open('Transcription')
+    expect(field().value).toBe(MENTION_SENTENCE_DEFAULT)
+    // The explanation says what the press does and, more importantly, what it does
+    // not: no send, and no record of what the client said.
+    expect(box().getByText(/n’envoie rien/)).toBeTruthy()
+  })
+
+  test('a deployment that wrote its own wording sees its own wording', async () => {
+    /*
+     * The whole of US-19 in one assertion. The snapshot is the only source: a field
+     * that fell back to the default when a value was stored would show every ESN our
+     * sentence while the pill handed over theirs, or the reverse — and either way the
+     * pane would be lying about what happens on the call.
+     */
+    const own = 'Cet échange est transcrit par un outil interne. Dites-le si cela vous gêne.'
+    mount({ mentionSentence: own })
+    await open('Transcription')
+    expect(field().value).toBe(own)
+    expect(field().value).not.toBe(MENTION_SENTENCE_DEFAULT)
+  })
+
+  test('saving sends what was typed, and saves nothing until it differs', async () => {
+    mount()
+    let sent: string | null = null
+    bridge.when('settings:setMentionSentence', ({ value }) => {
+      sent = value
+      return snapshot({ mentionSentence: value.trim() === '' ? MENTION_SENTENCE_DEFAULT : value })
+    })
+    await open('Transcription')
+
+    // Dead exactly when pressing it would do nothing — the `SettingField` rule.
+    expect(save().disabled).toBe(true)
+
+    const own = 'Je vous signale que cet appel est transcrit pour le compte-rendu.'
+    await act(async () => {
+      fireEvent.change(field(), { target: { value: own } })
+    })
+    expect(save().disabled).toBe(false)
+    await act(async () => {
+      save().click()
+    })
+    await waitFor(() => expect(sent).toBe(own))
+  })
+
+  test('coming back to the default is a control, not a trick', async () => {
+    /*
+     * « Empty the box and save » is how the store deletes the row, and a rep is not
+     * going to guess that. The control is live exactly when the wording is not the
+     * default, and what it sends is the empty string — which `setMentionSentence`
+     * reads as « forget it » and the snapshot answers as the default.
+     */
+    mount({ mentionSentence: 'Nous enregistrons cet appel.' })
+    let sent: string | null = null
+    bridge.when('settings:setMentionSentence', ({ value }) => {
+      sent = value
+      return snapshot({ mentionSentence: MENTION_SENTENCE_DEFAULT })
+    })
+    await open('Transcription')
+
+    expect(restore().disabled).toBe(false)
+    await act(async () => {
+      restore().click()
+    })
+    await waitFor(() => expect(sent).toBe(''))
+    await waitFor(() => expect(field().value).toBe(MENTION_SENTENCE_DEFAULT))
+  })
+
+  test('and it is dead when the wording already is the default', async () => {
+    mount()
+    await open('Transcription')
+    expect(restore().disabled).toBe(true)
+    // DEC-26: disabled is never silent.
+    expect(box().getByText(/déjà la phrase par défaut/)).toBeTruthy()
+  })
+
+  test('nothing in the pane claims the client agreed', async () => {
+    /*
+     * The same sweep `Widget.test.tsx` runs over the card, on the surface that
+     * *describes* the feature — which is where somebody would be tempted to write
+     * « le client a été informé » and turn a record of what was handed over into a
+     * claim about what was said.
+     */
+    mount()
+    await open('Transcription')
+    const claim = /consentement|a accept|a donn[ée]|autoris|accord du client|le client a été/i
+    expect((screen.getByRole('main').textContent ?? '').match(claim)).toBeNull()
+  })
+
+  test('the box grows with its content rather than clipping it', async () => {
+    /*
+     * jsdom measures every box as zero, so what is asserted is the *declaration* —
+     * `field-sizing: content` and no scroller. The measurement is
+     * `shot.mjs reglages --scrollers`, which is where the eleven clipped textareas at
+     * the gate were found; a four-line sentence in a three-line box is that defect on
+     * a field whose content is, by construction, four lines.
+     */
+    mount()
+    await open('Transcription')
+    expect(field().className).toContain('[field-sizing:content]')
+    expect(field().className).toContain('measure')
+    expect(field().className).toContain('resize-none')
   })
 })

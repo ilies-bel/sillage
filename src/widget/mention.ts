@@ -35,60 +35,31 @@
  * reachable — *Terminer* is on the same pill, two presses away — so it is an
  * offer and not a dead one (DEC-26).
  *
- * ## Where this will live once Réglages can hold it
+ * ## Where the sentence lives (US-19, shipped)
  *
- * DEC-34 says no environment variable is required to run this app and every
- * provider setting is a declared, stored, rendered field. The sentence belongs
- * in that set: the ESN's legal wording is theirs, not ours. Réglages is another
- * lane and `core/contracts/` belongs to the coordinator, so today the default is
- * declared here, once, and read by one surface. The setting to route is named in
- * the report; nothing in this file has to change shape to accept it, because the
- * widget already reads the sentence through a single import.
+ * Not here. DEC-34 says every setting a deployment needs is declared, stored and
+ * rendered, and the ESN's legal wording is theirs rather than ours — so the default
+ * and the « a blank means the default » rule are in `core/contracts/mention.ts`,
+ * Réglages edits it, and `widget:state` hands the resolved string to this window.
+ * What stays here is what the *product* says about the press, which is not
+ * configurable: a configurable sentence must not become a configurable claim.
  */
 
-/**
- * The sentence, in French, with the typographic apostrophe (U+2019) the rest of
- * this product uses — `check:french` enforces it, and *Historique*'s search
- * folding exists because everything stored here carries it.
+/*
+ * **The sentence itself is not here** (US-19).
  *
- * What each clause is doing, because a sentence a rep reads out to a client is
- * not a place for a word that cannot be defended:
+ * It was, for one commit. The wording a rep reads to a client is a legal matter and
+ * belongs to the ESN, so it is a declared, stored, rendered setting like every other
+ * deployment setting (DEC-34) — `electron/core/contracts/mention.ts` holds the default
+ * and the one function that decides what a blank value means, Réglages edits it, and
+ * `widget:state` carries the resolved string to this window on every answer.
  *
- *  · « j’utilise un outil » — the rep is the one speaking, and the tool is a tool.
- *    Not « Sillage », which means nothing to the person on the call.
- *  · « qui transcrit cet échange » — what actually happens. Not « enregistre »:
- *    the audio is transcribed and discarded (DEC-12), and a client told they are
- *    being *recorded* has been told something this product does not do.
- *  · « pour en rédiger le compte-rendu » — the purpose, which is the question
- *    anyone asks next.
- *  · « l’audio n’est pas conservé » — DEC-12 again, said plainly, because it is
- *    the one fact that changes how the answer feels.
- *  · « dites-moi si vous préférez que je l’arrête » — an offer the rep can
- *    honour: *Terminer* is on this same pill.
- *
- * It claims nothing about the client's answer, and there is deliberately no
- * second string for « the client agreed »: the product has no way to know that
- * and must not carry a field that invites somebody to assert it.
+ * There is deliberately **no fallback in this file**. A default written in two places
+ * is a default that will stop agreeing with itself, and the one the pill hands to a
+ * client is the wrong one to have a second copy of. The control is drawn on the same
+ * answer that brings the sentence, so it cannot exist without one.
  */
-export const MENTION_SENTENCE =
-  'Je vous informe que j’utilise un outil qui transcrit cet échange pour en rédiger le ' +
-  'compte-rendu ; l’audio n’est pas conservé. Dites-moi si vous préférez que je l’arrête.'
 
-/**
- * What goes in the log, and it is deliberately the weaker of the two claims the
- * press could make.
- *
- * « did I tell them » is a question a rep gets asked months later, and the log is
- * where the answer lives — which is why the press is written down at all. What is
- * written down is what happened *here*: the sentence was handed to the rep. Not
- * that it was said, not that it was read, and certainly not that anybody agreed.
- *
- * Two variants because the clipboard can refuse — a renderer with no
- * `navigator.clipboard`, a browser that will not write to it without focus, and
- * this window is shown with `showInactive()` and is never focused by the app. A
- * single « copiée » would then be a false sentence in the one record that exists
- * to be trusted, so the honest weaker fact is stored instead.
- */
 export const MENTION_NOTE = (copied: boolean): string =>
   copied
     ? 'Phrase d’information sur la transcription copiée.'
