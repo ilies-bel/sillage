@@ -41,6 +41,17 @@
  * the rep can put into the record from here, and it goes into the *log*, never
  * into their document (DEC-5) and never into a prompt (DEC-7).
  *
+ * **Telling the client** (`mention.ts`, US-11). One press that puts the French
+ * sentence on the clipboard and draws it, so the rep pastes it into the Teams
+ * chat or reads it out. It is the whole of this product's answer to « est-ce que
+ * j’ai le droit d’enregistrer ce client ? », and it is deliberately the smallest
+ * possible one: Granola runs a native messaging host, a socket per user, a
+ * browser extension and a cross-machine arbitration to post the same sentence
+ * into the meeting chat, and DEC-49 says this product never joins the call. So
+ * the rep stays the one who speaks. It **sends nothing**, it is **never a gate**
+ * — a rep who does not press it records exactly as before — and it claims only
+ * that the sentence was handed over, never that anybody agreed.
+ *
  * **The two ways out**: *Ouvrir Sillage*, which raises the main window on this
  * meeting, and *Terminer*, which ends the recording — behind a second press,
  * for the reason stated where it is drawn.
@@ -76,6 +87,13 @@ import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { formatElapsed } from '../app/format.ts'
 import { LevelMeter } from '../screens/session/LevelMeter.tsx'
 import { Button } from '../ui/index.ts'
+import {
+  MENTION_COPY_STATE,
+  MENTION_LABEL,
+  MENTION_NOTE,
+  MENTION_NOT_LOGGED,
+  MENTION_SENTENCE,
+} from './mention.ts'
 
 /**
  * How many turns the widget keeps.
@@ -88,6 +106,37 @@ const KEPT_TURNS = 60
 
 /** Both windows' idea of « rien n'a encore été dit ». */
 const NOTHING_YET = 'Rien n’a encore été transcrit.'
+
+/**
+ * **The clipboard, and the fact that it is allowed to say no.**
+ *
+ * This is the whole transport US-11 has, and the window it runs in is the least
+ * favourable one in the product for it: frameless, transparent, always on top,
+ * shown with `showInactive()` and never focused by the app. Chromium refuses
+ * `writeText` from a document that is not focused — a click on the pill does focus
+ * this window (`focusable: true`), which is why it works, and that is a property
+ * of another process's window options rather than something this file can assert.
+ *
+ * So a refusal is an ordinary outcome and not an error: the story's own first
+ * route is the rep *reading the sentence out*, which costs a clipboard nothing.
+ * `false` is reported upward, the card says « lisez-la à voix haute » instead of
+ * « collez-la », and the log records the weaker of the two facts (`MENTION_NOTE`).
+ * Nothing here throws and nothing here is retried — a rep mid-sentence over a
+ * client's face is not going to read a stack trace.
+ *
+ * jsdom has no `navigator.clipboard` at all, which is the same branch and is how
+ * the renderer's tests reach it.
+ */
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    const clipboard = navigator.clipboard
+    if (!clipboard || typeof clipboard.writeText !== 'function') return false
+    await clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export function Widget() {
   const state = useInvoke('widget:state', {})
@@ -186,6 +235,32 @@ export function Widget() {
    * announced, so the polite paragraph draws only what the alert does not.
    */
   const [said, setSaid] = useState<{ text: string; problem: boolean } | null>(null)
+
+  /**
+   * **The sentence the rep just took, and what became of it** (US-11).
+   *
+   * Three facts, and the card draws all three because each leads to a different
+   * next move: the sentence itself, so it can be read out; whether the clipboard
+   * took it, because « collez-la » and « lisez-la » are different instructions;
+   * and whether the log took it, because « did I tell them » is answered from the
+   * log and a write that failed silently would leave the rep believing it was
+   * answered.
+   *
+   * `logged: null` is « the write is on the wire ». The card is drawn on the copy,
+   * before the log answers, deliberately: the sentence is the urgent half and it
+   * must not wait on SQLite behind a preload hop while the rep is mid-sentence.
+   */
+  const [mention, setMention] = useState<{ copied: boolean; logged: boolean | null } | null>(null)
+
+  /**
+   * Which press the card on screen belongs to.
+   *
+   * The log's answer lands after the card is drawn, and a rep who dismissed the
+   * card in between would otherwise have it **reappear** — a card that comes back
+   * over a client's face on its own is the one thing DEC-14 forbids of this
+   * window. Dismissing bumps the token, so a late answer has nothing to write to.
+   */
+  const pressed = useRef(0)
 
   // The marks the meeting already had when this window opened — a widget that
   // is created mid-call after a crash, or a second recording in one window.
@@ -293,6 +368,58 @@ export function Widget() {
     [meetingId],
   )
 
+  /**
+   * **The press that tells the client** (US-11, `mention.ts`).
+   *
+   * Two effects and no third. It copies the sentence, and it writes down that it
+   * did. There is no transport: nothing is posted into the meeting, nothing is
+   * mailed, nothing touches the Outlook event body — DEC-10, which mails every
+   * attendee and destroys the Teams join blob, is the reason that last one is
+   * named rather than merely absent. `Widget.test.tsx` asserts the *set* of
+   * channels this press reaches, because « it sends nothing » is a claim about
+   * everything that is not here and a docblock cannot hold it.
+   *
+   * **It is not a gate.** It returns nothing, it sets no flag any other control
+   * reads, and the recording is untouched whether it is pressed, refused or never
+   * found. Refusing to record a client call because a sentence was not copied is
+   * not this product's decision to make.
+   *
+   * **`meeting:mark` is the log, and reusing it is a decision with a cost worth
+   * stating.** It is the only channel that appends to a meeting's event log from
+   * this window, so the alternative is a new event type, a new channel and a new
+   * fold in three files the coordinator owns — for a row that would be drawn in
+   * exactly the same place, by `interleaveMarks`, at the gate and in *Historique*.
+   * What it costs is that `MomentMarkSchema.note` documents itself as « the rep's
+   * own words » and this note is the product's: the row the rep reads back at the
+   * gate says « Phrase d’information sur la transcription copiée. » in a list of
+   * their own notes, and the pill's counter moves by one. Both are true — a
+   * moment in the call was marked, by the rep, on purpose — and the counter moving
+   * is the second receipt the press gets. If a dedicated event is ever declared,
+   * this call is the one line that changes.
+   *
+   * **`said` is cleared and never written.** A success there would announce
+   * « Moment marqué » to a screen reader for a press that was not a mark, and the
+   * card below is already a live region: two would read the same event twice.
+   */
+  const announce = useCallback(async () => {
+    if (meetingId === null) return
+    const token = pressed.current + 1
+    pressed.current = token
+    const copied = await copyText(MENTION_SENTENCE)
+    setSaid(null)
+    setMention({ copied, logged: null })
+    try {
+      await invoke('meeting:mark', {
+        meetingId,
+        note: MENTION_NOTE(copied),
+        segmentId: null,
+      })
+      if (pressed.current === token) setMention({ copied, logged: true })
+    } catch {
+      if (pressed.current === token) setMention({ copied, logged: false })
+    }
+  }, [meetingId])
+
   const forget = useCallback(
     (markId: string) => {
       if (meetingId === null) return
@@ -322,6 +449,7 @@ export function Widget() {
             placed={placed}
             onToggle={() => setOpen((was) => !was)}
             onMark={() => void mark(null, '')}
+            onMention={() => void announce()}
           />
           {/*
             A refusal, where the press was.
@@ -336,6 +464,26 @@ export function Widget() {
           */}
           {said?.problem === true ? (
             <Refus text={said.text} onDismiss={() => setSaid(null)} />
+          ) : null}
+          {/*
+            The sentence, in the same slot and never beside the refusal.
+
+            Two cards stacked over a video call is twice the window for one press,
+            and the two can genuinely coincide: a mark refused at minute 40 and a
+            mention pressed at minute 41. A refusal outranks it — it is the case
+            where the rep believes something was written and it was not — and the
+            mention is one press away from being asked for again, so it is the
+            half that yields.
+          */}
+          {said?.problem !== true && mention !== null ? (
+            <Mention
+              copied={mention.copied}
+              logged={mention.logged}
+              onDismiss={() => {
+                pressed.current += 1
+                setMention(null)
+              }}
+            />
           ) : null}
           {open && meetingId !== null ? (
             <Panel
@@ -1091,6 +1239,85 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
   )
 }
 
+/**
+ * **The sentence, where the rep can read it out** (US-11, `mention.ts`).
+ *
+ * The clipboard is invisible. A press that only wrote to it would be the
+ * `sr-only` paragraph `Refus` exists to replace: nothing on screen changes, and
+ * the rep — who is mid-sentence on a call and did not press this to admire it —
+ * has no way to tell it worked. Drawing the sentence is also the *other* route the
+ * story names first, and the one a rep uses more: « or reads it out, which is what
+ * a rep does anyway ». So this card is not a receipt, it is the feature's second
+ * half.
+ *
+ * Four properties, each ruling something out:
+ *
+ *  · **`data-card`.** Everything on this window that is not a card is halo, and
+ *    halo is handed to Teams with `setIgnoreMouseEvents(…, { forward: true })` — a
+ *    card that forgot the attribute would draw a dismiss button the pointer goes
+ *    straight through. Same rule, same sentence, as `Refus`.
+ *  · **`role="status"`, not `alert`.** Nothing has gone wrong. It is announced
+ *    politely, it takes no focus and it traps nothing: a rep is talking to a
+ *    client, and the keyboard is theirs.
+ *  · **Dismissed, never timed out.** The whole failure mode on this window is a
+ *    rep not looking at it at the moment it had something to say, and a sentence
+ *    they are about to read aloud is the last thing to remove on a four-second
+ *    timer. It is replaced by the next press rather than stacked.
+ *  · **It states the clipboard and the log separately, and claims nothing about
+ *    the client.** There is no « le client a été informé » on this card and no
+ *    string anywhere that could become one: the product knows what it handed over
+ *    and nothing about what was said.
+ *
+ * `measure` on the sentence because it is prose and `.measure` is where prose
+ * lives in this product — `ch` resolves against the element's own size, so the
+ * class goes on the element holding the text and not on a wrapper. At 260 px the
+ * cap is not what is binding, which is exactly why it costs nothing to be right.
+ */
+function Mention({
+  copied,
+  logged,
+  onDismiss,
+}: {
+  copied: boolean
+  /** `null` while the log write is on the wire — see `mention` in `Widget`. */
+  logged: boolean | null
+  onDismiss: () => void
+}) {
+  return (
+    <div
+      data-card
+      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+    >
+      <div role="status" className="min-w-0 flex-1">
+        <p className="text-strong measure text-ui">{MENTION_SENTENCE}</p>
+        {/*
+          `--warn` never alone: it is 1.0:1 against `--text-muted` in luminance, so
+          a deuteranope and a greyscale screenshot both read it as ordinary prose
+          unless the weight carries it too. Same rule as `⚠ faible` at the gate.
+        */}
+        <p
+          className={`mt-1 text-meta ${copied ? 'text-muted' : 'text-warn font-semibold'}`}
+        >
+          {MENTION_COPY_STATE(copied)}
+        </p>
+        {logged === false ? (
+          <p className="text-warn mt-1 text-meta font-semibold">{MENTION_NOT_LOGGED}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Masquer cette phrase"
+        className="no-drag text-muted hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
+    </div>
+  )
+}
+
 interface PillProps {
   title: string | null
   startedAt: number | null
@@ -1107,6 +1334,8 @@ interface PillProps {
   placed: boolean
   onToggle: () => void
   onMark: () => void
+  /** US-11 — one press, the sentence on the clipboard and on screen. */
+  onMention: () => void
 }
 
 /**
@@ -1130,6 +1359,7 @@ function Pill({
   placed,
   onToggle,
   onMark,
+  onMention,
 }: PillProps) {
   return (
     <div
@@ -1191,6 +1421,38 @@ function Pill({
       )}
 
       <Elapsed since={startedAt} />
+
+      {/*
+        **Telling the client, in one press** (US-11, `mention.ts`).
+
+        On the pill and not in the panel, and that is the whole shape of the
+        feature: the moment it is wanted is the first thirty seconds of a call,
+        when the rep is greeting somebody and has not opened anything. A control
+        behind a 340-pixel card over the client's face is a control that gets
+        pressed after the interesting part of the conversation, or not at all.
+
+        It costs 32 px of pill — 24 of button and the row's own 8 of gap, measured,
+        240 → 272 — and every one of them is a pixel of Teams the rep cannot click.
+        That is the price of the one thing on this list with a procurement
+        consequence, and it is paid in the state that is always up rather than in a
+        surface that only exists while the rep is looking at it.
+
+        Drawn exactly when the mark button is: `meetingId === null` is the pill
+        before `widget:state` answers, which is the placeholder the main process
+        must never be shown measuring (see `MEASURE_DEADLINE_MS`). So this control
+        arrives with the real pill, inside the one measurement the window is held
+        off screen for, and adds no settling step of its own.
+      */}
+      {meetingId === null ? null : (
+        <button
+          type="button"
+          onClick={onMention}
+          aria-label={MENTION_LABEL}
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm px-1 transition"
+        >
+          <Speech />
+        </button>
+      )}
 
       {/*
         **Marking, without opening anything.**
@@ -1587,6 +1849,28 @@ function Bookmark() {
   return (
     <svg aria-hidden width="10" height="12" viewBox="0 0 10 12" fill="currentColor">
       <path d="M1 0h8a1 1 0 0 1 1 1v10.2a.5.5 0 0 1-.77.42L5 8.9l-4.23 2.72A.5.5 0 0 1 0 11.2V1a1 1 0 0 1 1-1Z" />
+    </svg>
+  )
+}
+
+/**
+ * Something said out loud, drawn rather than typed.
+ *
+ * Sixteen pixels of path for the same reason `Bookmark` is: `💬` and `🗣` are
+ * emoji, `⌨` and `☞` are not in Inter, and a glyph that falls through to whatever
+ * the system has is **invisible to every check in this repo** — the accessible
+ * name is correct, the box is correct, and the shape is whatever the font stack
+ * happened to land on. `Bookmark`'s own docblock records that failing once, with
+ * `⌁` rendering as an arrow: *go* on a control that meant *remember this*.
+ *
+ * A speech bubble and not a megaphone: the rep says a sentence to one person on a
+ * call, they do not broadcast it. Distinct from `Bookmark` in silhouette at 12 px,
+ * which is the only size either is ever drawn at.
+ */
+function Speech() {
+  return (
+    <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+      <path d="M1.4 0h9.2A1.4 1.4 0 0 1 12 1.4v5.3a1.4 1.4 0 0 1-1.4 1.4H5l-2.8 2.2a.5.5 0 0 1-.81-.4V8.1H1.4A1.4 1.4 0 0 1 0 6.7V1.4A1.4 1.4 0 0 1 1.4 0Z" />
     </svg>
   )
 }

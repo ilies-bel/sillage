@@ -21,6 +21,7 @@ import type { TranscriptSegment } from '../../../electron/core/contracts/transcr
 import type { MomentMark } from '../../../electron/core/contracts/marks.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Widget } from '../Widget.tsx'
+import { MENTION_LABEL, MENTION_NOTE, MENTION_SENTENCE } from '../mention.ts'
 
 let bridge: FakeBridge
 let uninstall: () => void
@@ -756,4 +757,347 @@ test('un refus de placement dessine quand même la pilule', async () => {
 test('un rendu qui ne peut rien mesurer dessine quand même la pilule', async () => {
   render(<Widget />)
   await waitFor(() => expect(pillCard().className).toContain('widget-arrived'))
+})
+
+/* ------------------------------------------------------------------------- *
+ * US-11 — telling the client they are being transcribed.
+ *
+ * Granola ships a consent subsystem for this: a native messaging host installed
+ * into the browser on both platforms, a socket per user, a browser extension, and
+ * a coordinated send that posts the sentence into the meeting chat and arbitrates
+ * between two attendees both running it. DEC-49 says this product never joins the
+ * call, so what ships here is one press that hands the rep the sentence.
+ *
+ * jsdom measures no boxes, so nothing below asserts layout — the pill's 24×24 and
+ * the card's own box are measured on real layout at both smoke sizes. What jsdom
+ * *can* answer is the set of things the press touches, which is the half of this
+ * story with a business consequence: it must not send, it must reach the log, and
+ * it must claim nothing about the client.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The clipboard jsdom does not have.
+ *
+ * Installed per test rather than globally, because the *absence* of it is a branch
+ * this feature ships — `copyText` answers `false` and the card then says « lisez-la
+ * à voix haute » instead of « collez-la ». A global stub would make that branch
+ * unreachable from here, which is the fixture-cannot-exercise-its-own-property
+ * shape this repo keeps producing.
+ */
+const withClipboard = (): { written: string[]; restore: () => void } => {
+  const written: string[] = []
+  const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: (text: string) => {
+        written.push(text)
+        return Promise.resolve()
+      },
+    },
+  })
+  return {
+    written,
+    restore: () => {
+      if (previous) Object.defineProperty(navigator, 'clipboard', previous)
+      else delete (navigator as { clipboard?: unknown }).clipboard
+    },
+  }
+}
+
+const mentionControl = () => screen.getByRole('button', { name: MENTION_LABEL })
+
+/**
+ * **One press, the sentence, and nothing sent.**
+ *
+ * The set of channels is the assertion, not a sample of it. « it never sends » is a
+ * claim about every channel that is *not* here — a chat post, a mail draft, a write
+ * to the Outlook event body (DEC-10, which mails every attendee and destroys the
+ * Teams join blob) — and a docblock cannot hold that. So the press is measured by
+ * what it reached: `meeting:mark`, once, and nothing else. `widget:resize` and
+ * `widget:passThrough` are excluded by name because they are this window telling
+ * the main process how big it is and where the pointer is; they carry no meeting
+ * payload and they fire on every content change on this surface.
+ */
+test('la phrase part au presse-papiers et nulle part ailleurs', async () => {
+  const clipboard = withClipboard()
+  const marks: unknown[] = []
+  bridge.when('meeting:mark', (payload) => {
+    marks.push(payload)
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+  })
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    bridge.calls.length = 0
+
+    fireEvent.click(mentionControl())
+    await waitFor(() => expect(clipboard.written).toEqual([MENTION_SENTENCE]))
+    await waitFor(() => expect(marks.length).toBe(1))
+
+    const reached = bridge.calls
+      .map((call) => call.channel)
+      .filter((channel) => channel !== 'widget:resize' && channel !== 'widget:passThrough')
+    expect(reached).toEqual(['meeting:mark'])
+
+    // What the log was told, which is the weakest true claim available: the
+    // sentence was copied. Never that it was said, never that anybody agreed.
+    expect(marks).toEqual([{ meetingId: 'm1', note: MENTION_NOTE(true), segmentId: null }])
+    expect(MENTION_NOTE(true)).toBe('Phrase d’information sur la transcription copiée.')
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **The sentence is drawn, because the clipboard is invisible.**
+ *
+ * A press that only wrote to the clipboard would be the `sr-only` paragraph the
+ * refused mark was rescued from: nothing on screen changes and the rep — mid-
+ * sentence, over a client's face — has no way to tell it worked. Drawing it is also
+ * the route the story names first, « or reads it out, which is what a rep does
+ * anyway », so the card is the second half of the feature and not a receipt.
+ */
+test('la phrase est à l’écran, dans une carte, pour être lue à voix haute', async () => {
+  const clipboard = withClipboard()
+  bridge.when('meeting:mark', () => ({
+    id: 'mk-mention',
+    at: STARTED + 30_000,
+    note: MENTION_NOTE(true),
+    segmentId: null,
+  }))
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+
+    const notice = await screen.findByRole('status')
+    expect(notice.textContent).toContain(MENTION_SENTENCE)
+    // Inside a card: everything on this window that is not one is halo, and halo
+    // is handed to Teams with `setIgnoreMouseEvents(…, { forward: true })`.
+    expect(notice.closest('[data-card]')).not.toBeNull()
+    expect(notice.closest('.sr-only')).toBeNull()
+    // `status`, not `alert`: nothing has gone wrong, and this window must not take
+    // a rep's keyboard away mid-sentence.
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    // And it goes away when asked, rather than on a timer — a sentence a rep is
+    // about to read aloud is the last thing to remove after four seconds.
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
+    expect(screen.queryByRole('status')).toBeNull()
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **No string here claims the client agreed, and none may.**
+ *
+ * This is the acceptance line with the legal consequence: the product knows it
+ * handed the rep a sentence. It cannot know whether the rep said it, and it
+ * certainly cannot know what the client answered. So the whole of the window's
+ * rendered text after the press is swept for the vocabulary of an obtained
+ * consent, and the log's own note is swept with it — a row read back at the gate
+ * months later is the one most likely to be mistaken for a receipt.
+ */
+test('rien ne prétend que le client a donné son accord', async () => {
+  const clipboard = withClipboard()
+  bridge.when('meeting:mark', () => ({
+    id: 'mk-mention',
+    at: STARTED + 30_000,
+    note: MENTION_NOTE(true),
+    segmentId: null,
+  }))
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    await screen.findByRole('status')
+
+    const claim = /consentement|a accept|a donn[ée]|autoris|accord du client|informé que le client/i
+    expect((document.body.textContent ?? '').match(claim)).toBeNull()
+    expect(MENTION_NOTE(true).match(claim)).toBeNull()
+    expect(MENTION_NOTE(false).match(claim)).toBeNull()
+    expect(MENTION_SENTENCE.match(claim)).toBeNull()
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **A clipboard that refuses is an ordinary outcome, and the log records the
+ * weaker fact.**
+ *
+ * This window is frameless, transparent, always on top, shown with
+ * `showInactive()` and never focused by the app; Chromium refuses `writeText` from
+ * an unfocused document. So « copiée » can be false, and a single note saying it
+ * anyway would be a false sentence in the one record that exists to be trusted.
+ * What the rep is told is the instruction that still works.
+ *
+ * jsdom has no `navigator.clipboard`, so this test reaches that branch by doing
+ * nothing — which is exactly why the stub above is installed per test.
+ */
+test('un presse-papiers qui refuse est dit, et le journal garde le fait plus faible', async () => {
+  const marks: Array<{ note?: string }> = []
+  bridge.when('meeting:mark', (payload) => {
+    marks.push(payload)
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+  })
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  fireEvent.click(mentionControl())
+  const notice = await screen.findByRole('status')
+  // The sentence is still there — it is the half that matters, and reading it out
+  // is the route that never needed a clipboard.
+  expect(notice.textContent).toContain(MENTION_SENTENCE)
+  expect(notice.textContent).toContain('Copie impossible : lisez-la à voix haute.')
+  await waitFor(() => expect(marks.length).toBe(1))
+  expect(marks[0]?.note).toBe(MENTION_NOTE(false))
+  expect(MENTION_NOTE(false)).toBe('Phrase d’information sur la transcription affichée.')
+})
+
+/**
+ * **A log that refused says so, and the sentence stays.**
+ *
+ * `meeting:mark` refuses whenever the meeting is not `recording` — which
+ * `EndOfMeetingWatch` can make true with the pill still up — and on any store
+ * failure. « did I tell them » is answered from the log, so a write that failed
+ * silently would leave the rep believing it had been answered. The card says both
+ * things at once because they lead to different next moves: say the sentence
+ * anyway, and know that this call carries no record of it.
+ */
+test('un journal qui refuse est dit, sans emporter la phrase', async () => {
+  const clipboard = withClipboard()
+  bridge.when('meeting:mark', () => {
+    throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+  })
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+
+    const notice = await screen.findByRole('status')
+    await waitFor(() => expect(notice.textContent).toContain('Non inscrit au journal'))
+    expect(notice.textContent).toContain(MENTION_SENTENCE)
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **A card the rep dismissed does not come back.**
+ *
+ * The log answers after the card is drawn — deliberately: the sentence is the
+ * urgent half and must not wait on SQLite behind a preload hop. So a rep who
+ * dismisses in between must not have the card reappear on its own. A card that
+ * returns over a client's face with nobody having pressed anything is the one
+ * thing DEC-14 forbids of this window.
+ */
+test('une carte écartée ne revient pas quand le journal répond', async () => {
+  const clipboard = withClipboard()
+  let answer: (() => void) | null = null
+  bridge.when(
+    'meeting:mark',
+    () =>
+      new Promise((resolve) => {
+        answer = () =>
+          resolve({
+            id: 'mk-mention',
+            at: STARTED + 30_000,
+            note: MENTION_NOTE(true),
+            segmentId: null,
+          })
+      }),
+  )
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    await screen.findByRole('status')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
+    expect(screen.queryByRole('status')).toBeNull()
+
+    await act(async () => {
+      answer?.()
+      await Promise.resolve()
+    })
+    expect(screen.queryByRole('status')).toBeNull()
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **It is never a gate.**
+ *
+ * The acceptance line, driven rather than argued: a rep who never presses the
+ * control records exactly as before. Nothing on this window asks whether the
+ * sentence was copied — not the mark, not *Terminer*, not the way back into the
+ * app — and refusing to record a client call because a sentence was not copied is
+ * not this product's decision to make.
+ *
+ * Also the *other* direction, which is what makes this more than a tautology: a
+ * clipboard that is simply absent, which is this environment, leaves every one of
+ * those controls working. A feature that failed closed here would take the
+ * recording with it.
+ */
+test('ne rien presser n’empêche rien, et une mention qui échoue n’empêche rien non plus', async () => {
+  const ended: unknown[] = []
+  const marked: unknown[] = []
+  bridge.when('session:command', (payload) => {
+    ended.push(payload)
+    return { ok: true as const, state: 'ended' as const }
+  })
+  bridge.when('meeting:mark', (payload) => {
+    marked.push(payload)
+    return {
+      id: `mk${marked.length}`,
+      at: STARTED + 1_000,
+      note: String(payload.note),
+      segmentId: null,
+    }
+  })
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  // Never pressed: the mark works and the recording can be ended.
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Marquer ce moment/ }))
+  await waitFor(() => expect(marked.length).toBe(1))
+
+  // Pressed, with no clipboard at all: every control is untouched.
+  fireEvent.click(mentionControl())
+  await waitFor(() => expect(marked.length).toBe(2))
+  await openPanel()
+  fireEvent.click(screen.getByRole('button', { name: 'Terminer' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Arrêter l’enregistrement' }))
+  expect(ended).toEqual([{ meetingId: 'm1', command: 'end', reason: 'terminée depuis le widget' }])
+})
+
+/**
+ * **The control arrives with the real pill, never with the placeholder.**
+ *
+ * `MEASURE_DEADLINE_MS` holds the window off screen until `widget:state` has
+ * settled, precisely so the main process never sizes a frameless always-on-top
+ * window to a pill saying « Aucun enregistrement ». A control that appeared before
+ * that read would be 32 px of width arriving *after* the measurement the window was
+ * revealed at — the clipped-first-frame defect DEC-50 closed, reintroduced by this
+ * story. It is drawn on exactly the condition the mark button is.
+ */
+test('la mention n’est pas dessinée avant que l’état n’arrive', async () => {
+  let settle: ((value: unknown) => void) | null = null
+  bridge.when('widget:state', () => new Promise((resolve) => (settle = resolve)))
+  render(<Widget />)
+
+  expect(await screen.findByText('Aucun enregistrement')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: MENTION_LABEL })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^Marquer ce moment/ })).toBeNull()
+
+  await act(async () => {
+    settle?.(recording())
+    await Promise.resolve()
+  })
+  expect(screen.getByRole('button', { name: MENTION_LABEL })).toBeTruthy()
 })
