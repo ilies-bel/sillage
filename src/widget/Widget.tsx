@@ -263,10 +263,11 @@ export function Widget() {
    */
   const [mention, setMention] = useState<{
     /**
-     * The sentence **as it was when the press happened**, not as it is now. Réglages
-     * can be corrected between two calls and `onSettingsChanged` re-reads this
-     * window's state, so a card showing the live setting would rewrite, under the
-     * rep's eyes, the sentence they are in the middle of reading to a client.
+     * The sentence **as it was when the press happened**, not as it is now. This
+     * window re-reads `widget:state` whenever `session:changed` fires, so a card
+     * bound to the live value would rewrite itself out from under a rep who is in
+     * the middle of reading it aloud to a client. A card is a record of a press; the
+     * field in Réglages is a setting.
      */
     sentence: string
     copied: boolean

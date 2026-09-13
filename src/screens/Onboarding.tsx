@@ -43,7 +43,7 @@ import type { ConnectorHealth, ConnectorId, HealthSnapshot } from '../../electro
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { Button, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
+import { Button, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
 import type { SectionId } from './Reglages.tsx'
 
 export interface OnboardingProps {
@@ -181,11 +181,39 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         `my-auto` inside a flex column: a short step is centred in the window,
         and a long one is not clipped — auto margins collapse to zero the moment
         the child is taller than the box, which `items-center` does not do.
+
+        **And a step taller than the box needed the other half of that sentence.**
+        `<main>` carried `overflow-y-auto` and nothing else, so it scrolled with no
+        edge and no control — measured on the shipped screen at 960×600, the size
+        `app/main.ts` declares as the minimum: step 3 held 514 pixels in a 460-pixel
+        box and **hid 54 of them behind a hard edge**, on the one screen a rep sees
+        exactly once, with the last beat — « vous validez, une fois », which is the
+        whole of DEC-4 — the thing cut. Nothing in the repo could see it either:
+        `--scrollers` skips a landmark, correctly, because a landmark is the page's
+        own scroll region rather than a box inside one.
+        `ReadingColumn` is that missing half and is deliberately the *shared* one —
+        the same mask and the same page turn the compte-rendu pane and *Historique*
+        wear, never a number this screen picks for itself. `<main>` stays the
+        landmark and stops being the scroller, so there is exactly one.
       */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-gutter pb-block">
-        <div className="measure mx-auto my-auto w-full">
-          {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai onReglages={() => void toReglages('connecteurs')} />}
-        </div>
+      <main className="flex min-h-0 flex-1 flex-col">
+        {/*
+          `what` completes two templates inside `ReadingColumn` — « Lire la suite
+          {what} » and « Remonter dans {what} » — and **no French phrase is correct
+          in both**: the first wants « de », the second refuses it. Measured on the
+          shipped component at 960×600, where two presses reach the foot of step 3,
+          the control then reads « Remonter dans de cette étape ». The descending
+          label is the one every rep meets, at every size, and the ascending one
+          only after the column has been read to its end, so that is the one kept
+          right. *Historique* feeds the same template « de la transcription » on
+          four panes; `Review.tsx` composes both labels itself instead, which is the
+          fix — in `src/ui/`, which is another lane's file.
+        */}
+        <ReadingColumn what="de cette étape" className="flex flex-col px-gutter pb-block">
+          <div className="measure mx-auto my-auto w-full">
+            {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai onReglages={() => void toReglages('connecteurs')} />}
+          </div>
+        </ReadingColumn>
       </main>
 
       <footer className="border-subtle bg-card shrink-0 border-t px-gutter py-row">
@@ -449,10 +477,54 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
  * a page is a capture nobody asked for. It stores nothing, transcribes nothing
  * and creates no meeting.
  *
- * ## The three beats
+ * ## The beats, and the two surfaces they used to leave out (US-18)
  *
- * They stay, above the trial, because knowing where the button is and what the
- * end asks for is what makes the first real call unremarkable.
+ * They exist because knowing where the button is and what the end asks for is
+ * what makes the first real call unremarkable. Measured on the version before
+ * this one, on this file:
+ *
+ *     grep -niE "pastille|par-dessus|planifi|détect|notification" Onboarding.tsx
+ *       → nothing
+ *
+ * Two things the product does on the first call were described nowhere, on the
+ * one screen whose entire job is « voilà ce qui se passera ».
+ *
+ * **The pill** (`app/windows/Overlay.ts`, `src/widget/Widget.tsx`). Beat 1 said
+ * « L'en-tête affiche alors deux barres de niveau » — the header of the window
+ * the rep is about to leave behind Teams for fifty minutes. What actually
+ * happens on *Enregistrer* is a second window: `main.ts` creates it `frame:
+ * false`, `transparent: true`, `skipTaskbar: true`, at the `screen-saver`
+ * always-on-top level and visible on every Space, positioned by
+ * `overlayPlacement.ts`'s `defaultOrigin` — bottom centre of the work area —
+ * over the face of the person on the call, and it carries
+ * `window.setContentProtection(true)` (`main.ts`, « out of the screen share »).
+ * It is the most visible thing this product does and the one surface with **no
+ * taskbar entry and nothing to alt-tab to**, which is why `overlayPlacement.ts`
+ * treats even a saved origin as « a request, never an instruction ». A rep who
+ * has not been told what it is has that same problem on their first call, so
+ * beat 2 names where it appears, what is on it, that it is out of a screen
+ * share, that it can be dragged (`.drag-region`, `index.css`), and the two ways
+ * out of it — *Ouvrir Sillage* and *Terminer*, both in the panel the chevron
+ * opens, the second behind a confirmation.
+ *
+ * **The unscheduled-call detector** (`core/domain/adHoc.ts`). `AD_HOC_DWELL_MS`
+ * is 25 000 ms of an application holding a **microphone** without interruption —
+ * not a calendar entry, not a process list — and `Agenda.#armAdHoc` then arms a
+ * meeting and fires `onArmed`, which `main.ts` turns into one OS notification
+ * (DEC-46) whose click opens the window on it. Beat 1 described only the manual
+ * route, which is exactly the case the detector now covers, so the detector
+ * arrived as the app doing something nobody had mentioned, during a client call.
+ * It is an **offer**: nothing in `adHoc.ts` starts a recording, the row is a
+ * « Prêt » in the day list carrying *Enregistrer* (`agenda/DayPane.tsx`), and
+ * ignoring it costs nothing.
+ *
+ * **The mention sentence** (`src/widget/mention.ts`, US-11) is named in the same
+ * beat as the pill and in one clause, because it is a control *on* the pill —
+ * not a fourth thing to read.
+ *
+ * What this section still refuses: a picture of the pill (an image of a surface
+ * is a second place it is described, and it goes stale), and a fourth step —
+ * three is the count the progress dots draw.
  */
 function Essai({ onReglages }: { onReglages: () => void }) {
   return (
@@ -467,32 +539,62 @@ function Essai({ onReglages }: { onReglages: () => void }) {
       <EssaiAudio onReglages={onReglages} />
 
       <ol className="space-y-row">
-        <Beat n="1" title="Vous démarrez">
-          Depuis le calendrier, sur la réunion du jour — ou avec « Démarrer une réunion » si elle
-          n’y est pas. L’en-tête affiche alors deux barres de niveau : la vôtre et celle du client.
-          Tant qu’elles bougent, l’appel est capté.
-        </Beat>
-        <Beat n="2" title="Vous prenez vos notes, normalement">
-          Le bloc-notes est à vous. À droite, Sillage note au passage ce qu’il entend — profil, TJM,
-          durée, objections — sans rien écrire chez vous.
-        </Beat>
-        <Beat n="3" title="Vous validez, une fois">
-          À la fin, le compte-rendu s’écrit et Sillage vous montre ce qu’il s’apprête à créer.
-          Chaque valeur porte l’extrait de l’appel dont elle vient, et celles qu’il n’a pas pu
-          retrouver dans l’enregistrement sont signalées. Vous corrigez, vous validez, c’est parti.
-        </Beat>
+        <Beat
+          n="1"
+          title="Vous démarrez"
+          says={[
+            'Depuis le calendrier, sur la réunion du jour — ou avec « Démarrer une réunion » si elle n’y est pas.',
+            'Et si l’appel n’était pas prévu, Sillage le remarque : quand une application garde le micro vingt-cinq secondes d’affilée, la journée affiche une ligne « Prêt » et une notification vous le dit. C’est une proposition, jamais un enregistrement — rien ne s’enregistre avant que vous n’appuyiez sur « Enregistrer », et ne pas y répondre ne coûte rien.',
+          ]}
+        />
+        <Beat
+          n="2"
+          title="Une pastille reste au-dessus de l’appel"
+          says={[
+            'Dès que l’enregistrement commence, une pastille s’affiche en bas de l’écran, au centre, par-dessus l’appel : les deux barres de niveau — la vôtre et celle du client, et tant qu’elles bougent l’appel est capté —, la durée, de quoi marquer un moment, et un bouton qui copie la phrase prévenant votre interlocuteur que l’échange est transcrit, à coller dans la conversation ou à lire à voix haute.',
+            'Elle n’apparaît ni dans un partage d’écran, ni dans la barre des tâches : pour revenir à l’application, ouvrez son panneau puis « Ouvrir Sillage ». « Terminer » est au même endroit et demande confirmation avant d’arrêter l’enregistrement. Vous pouvez la déplacer en la faisant glisser : elle revient au même endroit à l’appel suivant, sauf si cet écran n’est plus branché.',
+          ]}
+        />
+        <Beat
+          n="3"
+          title="Vous prenez vos notes, normalement"
+          says={[
+            'Le bloc-notes est à vous. À droite, Sillage note au passage ce qu’il entend — profil, TJM, durée, objections — sans rien écrire chez vous.',
+          ]}
+        />
+        <Beat
+          n="4"
+          title="Vous validez, une fois"
+          says={[
+            'À la fin, le compte-rendu s’écrit et Sillage vous montre ce qu’il s’apprête à créer. Chaque valeur porte l’extrait de l’appel dont elle vient, et celles qu’il n’a pas pu retrouver dans l’enregistrement sont signalées. Vous corrigez, vous validez, c’est parti.',
+          ]}
+        />
       </ol>
     </section>
   )
 }
 
-function Beat({ n, title, children }: { n: string; title: string; children: string }) {
+/**
+ * One beat, in one or two paragraphs.
+ *
+ * `says` is a list rather than a `children` string because two of the four beats
+ * now hold two sentences' worth of two different facts — what the pill *is* and
+ * how to get out of it — and one paragraph of six lines on a first-run screen is
+ * a paragraph nobody finishes. `.measure` goes on each `<p>`, never on the
+ * wrapper: `ch` resolves against the element's own font size, so a wrapper
+ * wearing it at one size leaves a child at another completely unconstrained.
+ */
+function Beat({ n, title, says }: { n: string; title: string; says: readonly string[] }) {
   return (
     <li className="flex gap-3">
       <span className="text-brand-700 w-4 shrink-0 tabular-nums text-copy font-semibold">{n}</span>
-      <div className="min-w-0">
+      <div className="min-w-0 space-y-1">
         <h3 className="text-strong text-copy font-semibold">{title}</h3>
-        <p className="text-muted measure text-ui leading-relaxed">{children}</p>
+        {says.map((line) => (
+          <p key={line} className="text-muted measure text-ui leading-relaxed">
+            {line}
+          </p>
+        ))}
       </div>
     </li>
   )

@@ -864,10 +864,17 @@ test('c’est la phrase configurée qui part, pas celle du code', async () => {
  * And the card keeps the sentence **the press copied**, not the one Réglages holds a
  * moment later.
  *
- * `onSettingsChanged` re-reads this window's state, so an administrator correcting the
- * wording between two calls — or during one — would otherwise rewrite, under the rep's
- * eyes, the sentence they are in the middle of reading aloud to a client. The card is
- * a record of a press; the field is a setting.
+ * This window re-reads `widget:state` on every `session:changed`, so any answer that
+ * carries a different sentence would otherwise rewrite, under the rep's eyes, the one
+ * they are in the middle of reading aloud to a client. The card is a record of a press;
+ * the field in Réglages is a setting.
+ *
+ * Note what is *not* claimed, because the obvious assumption is wrong and was written
+ * down wrong here once: `settings:setMentionSentence` pushes nothing to this window.
+ * `onSettingsChanged` is `drainDeferredEnhancements` in `main.ts` — it retries a
+ * compte-rendu waiting on a model (DEC-39) — and a recording has no transitions, so a
+ * wording changed *during* a call reaches the pill at the next recording. This test
+ * drives `session:changed` directly, which is the real route and the only one.
  */
 test('la carte garde la phrase qui a été copiée', async () => {
   const first = 'Première formulation, celle qui a été copiée.'
@@ -882,7 +889,8 @@ test('la carte garde la phrase qui a été copiée', async () => {
     const notice = await screen.findByRole('status')
     await waitFor(() => expect(notice.textContent).toContain(first))
 
-    // Réglages is saved; the window re-reads its state on the next transition.
+    // Réglages is saved; the window re-reads its state on the next transition — which
+    // is the only route, and is why a mid-call change lands at the next recording.
     sentence = second
     await act(async () => {
       bridge.emit('session:changed', { meetingId: 'm1', state: 'recording' })

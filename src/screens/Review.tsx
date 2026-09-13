@@ -35,6 +35,8 @@ import type {
   ReviewPanel,
 } from '../../electron/core/contracts/review.ts'
 import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
+import type { RecipeId } from '../../electron/core/contracts/recipes.ts'
+import { recipeById } from '../../electron/core/contracts/recipes.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { scrollElementBy, scrollElementTo } from '../lib/scroll.ts'
@@ -59,6 +61,7 @@ import {
 } from './session/CompteRenduDocument.tsx'
 import { AskPanel } from './session/AskPanel.tsx'
 import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
+import { RecipeSwitch } from './review/RecipeSwitch.tsx'
 
 /** The one thing a rep must notice without reading (DEC-21). */
 const FAIBLE = '⚠ faible'
@@ -285,6 +288,21 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       .join(',')
     return `${fields}#${intents}#${filled}`
   }, [panel])
+
+  /**
+   * **The document the rep's corrections were made against, as an identity.**
+   *
+   * `sent` is what the arming guard keys on and it carries the *lengths* of the
+   * pre-filled values, which is right for « is there text here nobody has seen »
+   * and not strong enough for « is this the same document ». A rewrite that
+   * produced a compte-rendu of the same length with different words would be
+   * invisible to it, and this is the comparison that decides whether a
+   * correction still applies to what is on screen — so it is the document
+   * itself, beside the rest of the panel. Same length *and* same words means the
+   * corrections still land where they were typed.
+   */
+  const against = useMemo(() => (panel ? `${panel.edits.compteRendu} ${sent}` : ''), [panel, sent])
+
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   /*
@@ -312,6 +330,54 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * neither has to be remembered while the other is found.
    */
   const [focus, setFocus] = useState<TranscriptFocus | null>(null)
+  /**
+   * **Which compte-rendu this meeting is set to produce** (DEC-43).
+   *
+   * Read from `meeting:get`, which is the one channel that answers it, and it is
+   * the *meeting's* choice rather than the stored document's — the two differ
+   * exactly while a rewrite is in flight, and in that window the chip has to show
+   * what the rep just pressed.
+   *
+   * It is not on `review:get`, and adding it there would be a shared-contract
+   * change. The cost of reading it here is one extra invoke per gate open, whose
+   * answer carries the stored segments as well — `review:transcript` exists
+   * precisely so a fifty-minute call is not shipped to a screen most reps confirm
+   * without opening a source, so this read is paid once, on mount, and never
+   * again: a rewrite the rep asks for answers with its own recipe, and there is
+   * no second window that could change it behind this one.
+   *
+   * **Nothing on this screen waits for it.** A failure leaves `chosen` null, the
+   * chip absent and the gate exactly as it was (DEC-26) — a picker is worth less
+   * than the one confirmation in the product.
+   */
+  const meetingRead = useInvoke('meeting:get', { meetingId })
+  /** What the rep pressed, which outranks what the read answered. */
+  const [chosen, setChosen] = useState<RecipeId | null>(null)
+  const recipe: RecipeId | null =
+    chosen ?? (meetingRead.state.status === 'ready' ? meetingRead.state.value.recipe : null)
+  /**
+   * **A rewrite the rep asked for, and the document it is replacing.**
+   *
+   * `from` is `against` at the moment of the press: the panel is re-read on
+   * `session:changed` and the gate closes to `extracting` and back, so the way
+   * to know the new document has arrived is that the panel is no longer the one
+   * the corrections were made against. Held as state and not a ref because the
+   * closed gate draws a sentence from it — a rep who presses a control and
+   * watches the screen they were confirming on disappear is owed the reason.
+   */
+  const [rewriting, setRewriting] = useState<{ to: RecipeId; from: string } | null>(null)
+  /**
+   * **One press, one run — and a ref because React batches.**
+   *
+   * A `useState` flag is set for the *next* render, so two clicks delivered in
+   * one batch (a double-click, `Enter` held on a focused button) both read it as
+   * false and both reach `meeting:recipe`: measured, two calls, two
+   * `meeting.recipe.chosen` events and two `Orchestrator.enhance` runs for one
+   * conversation. The same shape as `Overlay`'s timer handles — a value that
+   * answers a question about *now* cannot live in render state.
+   */
+  const pressing = useRef(false)
+  const [recipeFailure, setRecipeFailure] = useState<string | null>(null)
   /*
    * Has the rail been read to the end?
    *
@@ -995,16 +1061,43 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   // typing the first time a broadcast lands.
   useEffect(() => {
     if (!panel) return
+    const available = panel.intents.filter((i) => i.available).map((i) => i.id)
+    /*
+     * **A rewrite the rep asked for is the one case that must *not* keep what is
+     * held.**
+     *
+     * `previous ?? …` is what makes a correction survive a broadcast, and it is
+     * exactly wrong here: the document those corrections were made against has
+     * been replaced, and keeping them would leave the **old** compte-rendu in
+     * `edits.compteRendu` — which is the string *Valider* puts in the VerySwing
+     * task. Measured on the shipped gate before this existed, at both smoke
+     * sizes: a fresh extraction landing while the gate was open dropped the rail
+     * from eleven rows to two and left the document at « # Néovia Santé —
+     * cadrage renfort data » instead of the one that had just been written. A
+     * rep who switched recipes would have shipped the document they asked to
+     * replace.
+     *
+     * So the seed is replaced, once, when the panel stops being the one the
+     * corrections were against — and `PENDING_EDITS` is cleared with it, because
+     * a draft that outlived its document would come back on the next mount.
+     * Nothing is discarded silently: `RecipeSwitch` says it, with the count, one
+     * press earlier.
+     */
+    if (rewriting !== null) {
+      if (rewriting.from === against) return
+      setRewriting(null)
+      PENDING_EDITS.delete(meetingId)
+      setEdits(panel.edits)
+      setChecked(available)
+      availableBefore.current = new Set(available)
+      return
+    }
     // What the rep had typed, if they left and came back; otherwise the
     // server's pre-fill. See `PENDING_EDITS`.
     setEdits((previous) => previous ?? PENDING_EDITS.get(meetingId) ?? panel.edits)
-    setChecked((previous) =>
-      previous ?? panel.intents.filter((i) => i.available).map((i) => i.id),
-    )
-    availableBefore.current ??= new Set(
-      panel.intents.filter((i) => i.available).map((i) => i.id),
-    )
-  }, [panel])
+    setChecked((previous) => previous ?? available)
+    availableBefore.current ??= new Set(available)
+  }, [against, meetingId, panel, rewriting])
 
   /*
    * *Ce qui sera créé*, kept honest while the rep types.
@@ -1100,6 +1193,83 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       setBusy(false)
     }
   }, [busy, checked, edits, meetingId, onConfirmed])
+
+  /**
+   * **Rewrite this compte-rendu with another declared recipe** (DEC-43, US-8).
+   *
+   * One channel, `meeting:recipe`, which records the choice as an event and then
+   * fires `runEnhancement` — `Orchestrator.enhance`, the same path the end of a
+   * meeting takes. That is the whole reason this does not dispatch `extract` or
+   * reach for `enhancement:retry`: `#enhance` gathers the transcript, the context
+   * and the rep's notes the same way whichever way the run is reached, so a
+   * re-extraction **can never analyse less material than the attempt it
+   * replaces**. A second copy of that gathering here would be a second place for
+   * it to quietly analyse less.
+   *
+   * Three things happen on `regenerating`, and only the first is about the
+   * picker.
+   *
+   * **The drafts go, and they were named before the press.** See the seed effect
+   * — `RecipeSwitch` states the count first, because a correction discarded
+   * silently is the one thing this screen exists to prevent.
+   *
+   * **Both columns stop being read.** Coverage is keyed by what a column is
+   * showing, and a rewrite replaces the compte-rendu, the eleven rows and the
+   * draft — so *nothing* in either column is a thing the rep has seen.
+   *
+   * Driven on the real gate at both smoke sizes, this is worth exactly two things
+   * and the second is the one that will outlive this story. **The window between
+   * the press and the new document**: without these five lines *Valider* stays on
+   * screen with no page turn offered (`armed at the press: true, remedy: null`),
+   * over a compte-rendu the rep has just asked to replace, and `confirm` is legal
+   * from `awaiting_confirmation` — so that press ships the superseded document into
+   * VerySwing, where `POST /v1/crm/tasks` has no idempotency key. And **the
+   * rewrite the coverage key cannot see**: `viewOf` reads `sent`, which carries the
+   * *lengths* of the pre-filled values, so a new document of the same length with
+   * the same field verdicts leaves the key identical — measured, `armed on the new:
+   * true` and « re-armed after 0 page turns », a document nobody has read with the
+   * one irreversible control live over it. The two declared recipes differ in their
+   * field count so `sent` does move today; that is a property of `RECIPES`, not of
+   * this guard, and « the key happened to change » is not the statement « this has
+   * not been read ». The guard's whole history is of those two coming apart.
+   *
+   * **And the honest answer is re-measured rather than asserted.** `measure` is
+   * what decides whether a column still has something under its fold, and it
+   * reads the boxes: forcing `below` here would draw a page turn on a column with
+   * no page to turn where the document happens to fit. In jsdom every box is zero
+   * and the guard therefore fails open, which is why this half is driven against
+   * real layout and not asserted here.
+   *
+   * `regenerating: false` means the recorded choice matched the stored
+   * document's, so there is nothing to replace and nothing of the rep's to lose.
+   */
+  const rewrite = useCallback(
+    async (next: RecipeId) => {
+      if (pressing.current || busy) return
+      pressing.current = true
+      setRecipeFailure(null)
+      try {
+        const outcome = await invoke('meeting:recipe', { meetingId, recipe: next })
+        setChosen(outcome.recipe)
+        if (!outcome.regenerating) return
+        setRewriting({ to: outcome.recipe, from: against })
+        covered.current.document.clear()
+        covered.current.rail.clear()
+        shownAs.current = { document: null, rail: null }
+        seen.current = { document: null, rail: null }
+        measure()
+      } catch (error) {
+        // Stated, never swallowed. Nothing was recorded, so the chip goes on
+        // naming the recipe that is still in force, which is the truth.
+        setRecipeFailure(
+          error instanceof Error ? error.message : 'Le modèle n’a pas pu être enregistré.',
+        )
+      } finally {
+        pressing.current = false
+      }
+    },
+    [against, busy, measure, meetingId],
+  )
   /*
    * `Ctrl/⌘ Entrée`, and **only when the button is already armed**
    * (`app/shortcuts.ts`).
@@ -1208,6 +1378,22 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       <ClosedGate
         state={loaded.state.value.state}
         reason={loaded.state.value.reason}
+        /*
+          **The rep pressed a control and the screen they were confirming on
+          disappeared.**
+
+          `STATE_REASON.extracting` is « Analyse en cours… », which is the right
+          bland sentence for a meeting the rep never touched and is not an answer
+          to « I pressed *Réécrire avec « Compte-rendu libre »* and the gate went
+          away ». Named only while the state really is `extracting`: a run that
+          fails lands back in `ended`, and a sentence claiming a rewrite is under
+          way would then be false (DEC-26).
+        */
+        note={
+          rewriting !== null && loaded.state.value.state === 'extracting'
+            ? `Le compte-rendu est en cours de réécriture avec « ${recipeById(rewriting.to).title} ». La validation reprendra dès qu’il sera prêt.`
+            : null
+        }
         onBack={onBack}
       />
     )
@@ -1218,6 +1404,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   // The server's draft until the first preview lands, so the rows are never
   // blank — then what the form currently says.
   const intents = live ?? panel.intents
+
+  /*
+   * **How many of the rep's corrections a rewrite would discard — counted.**
+   *
+   * Against `panel.edits`, which is what the main process pre-filled, so a
+   * « correction » is a field whose value the rep changed and nothing else. The
+   * sentence `RecipeSwitch` prints before the press is this number, so a
+   * plausible-sounding « vos corrections seront perdues » over a screen nobody
+   * has touched, or over one they have rewritten end to end, is not something
+   * this screen can say.
+   */
+  const edited = (Object.keys(panel.edits) as (keyof ReviewEdits)[]).filter(
+    (key) => edits[key] !== panel.edits[key],
+  ).length
 
   /*
    * **Whether a correction typed in the rail can reach anything.**
@@ -1427,6 +1627,49 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 }}
               />
             </div>
+
+            {/*
+              **Which compte-rendu this is, under the document's own title, and
+              one press from the other shape** (DEC-43).
+
+              `data-unmeasured` on the wrapper, for the reason *Demander* and the
+              inline `source ▸` panel carry it: the arming guard's promise is that
+              everything *leaving the machine* has been shown, and a picker is not
+              content. `shippedHeight` **subtracts** the marked subtree wherever it
+              sits, so the panel opening in the middle of a column already read
+              changes the measured height by nothing, and the chip arriving one
+              invoke after the document changes it by nothing either — measured at
+              both smoke sizes, **+230 px of scroll range and +0.0 px measured**.
+
+              What the mark buys here is *not* the arming, and saying otherwise
+              would be the prose this file keeps catching. Unmarked, opening the
+              panel is forgiven anyway: the press is inside this column and holds
+              the caret, and `read()` credits growth under the rep's own cursor —
+              driven, *Valider* survives either way. What it buys is that the
+              coverage keeps the **document's** content height (2 375 px) rather
+              than the document plus a control (2 630 px), so the next arrival of
+              real unseen prose is measured against the document instead of against
+              254 px of slack a control bought.
+
+              Absent in *Transcription*: the column then holds the record, and a
+              chip naming the shape of a document that is not in the box would be
+              the same defect as the sentence that used to point « à gauche » at
+              it.
+
+              Not drawn while a confirmation is in flight, either. `busy` means
+              *Valider* is on the wire; offering to rewrite what is being sent is
+              two writes racing for one meeting.
+            */}
+            {mode === 'transcription' || busy ? null : (
+              <div data-unmeasured>
+                <RecipeSwitch
+                  current={recipe}
+                  edited={edited}
+                  failure={recipeFailure}
+                  onRewrite={(next) => void rewrite(next)}
+                />
+              </div>
+            )}
 
             {mode === 'transcription' ? (
               <TranscriptReader
@@ -2380,15 +2623,23 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
 function ClosedGate({
   state,
   reason,
+  note,
   onBack,
 }: {
   state: MeetingState
   reason: string
+  /**
+   * What this screen knows and the state does not — today, that the rep asked
+   * for the compte-rendu to be rewritten and that is why the gate closed under
+   * them. Null everywhere else, because `STATE_REASON` is already the answer.
+   */
+  note?: string | null
   onBack: () => void
 }) {
   return (
     <Centered>
       <p className="text-body text-copy">{reason}</p>
+      {note ? <p className="text-body measure mt-1.5 text-ui">{note}</p> : null}
       {state === 'recording' ? (
         <p className="text-muted mt-1.5 text-ui">
           Le compte-rendu sera prêt à la fin de la réunion.
