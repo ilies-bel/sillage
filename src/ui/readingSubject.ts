@@ -37,15 +37,18 @@
 /**
  * The determiner a column's noun takes, spelled as it is read.
  *
- * A possessive is one of them: « vos notes » is what *Historique* calls the
- * rep's own notepad, and `de vos notes` contracts the same way.
+ * An article is not the only kind. « vos notes » is what *Historique* calls the
+ * rep's own notepad and « cette étape » is what the onboarding calls the step a
+ * rep is on; `de vos` and `de cette` are uncontracted, which is exactly why the
+ * genitive has to be declared per determiner rather than guessed by prefixing
+ * « de » — the half of French that does contract is `le` and `les`.
  */
-export type ReadingDeterminer = 'le' | 'la' | 'l’' | 'les' | 'vos'
+export type ReadingDeterminer = 'le' | 'la' | 'l’' | 'les' | 'vos' | 'cette'
 
 export interface ReadingSubject {
-  /** « le », « la », « l’ », « les », « vos » — read as part of the label. */
+  /** « le », « la », « l’ », « les », « vos », « cette » — read as part of the label. */
   readonly determiner: ReadingDeterminer
-  /** « compte-rendu », « fiche », « transcription », « notes », « extraction ». */
+  /** « compte-rendu », « fiche », « transcription », « notes », « étape ». */
   readonly noun: string
 }
 
@@ -56,6 +59,7 @@ const OF: Record<ReadingDeterminer, string> = {
   'l’': 'de l’',
   les: 'des',
   vos: 'de vos',
+  cette: 'de cette',
 }
 
 /**

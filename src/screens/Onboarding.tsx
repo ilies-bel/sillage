@@ -198,18 +198,19 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
       */}
       <main className="flex min-h-0 flex-1 flex-col">
         {/*
-          `what` completes two templates inside `ReadingColumn` — « Lire la suite
-          {what} » and « Remonter dans {what} » — and **no French phrase is correct
-          in both**: the first wants « de », the second refuses it. Measured on the
-          shipped component at 960×600, where two presses reach the foot of step 3,
-          the control then reads « Remonter dans de cette étape ». The descending
-          label is the one every rep meets, at every size, and the ascending one
-          only after the column has been read to its end, so that is the one kept
-          right. *Historique* feeds the same template « de la transcription » on
-          four panes; `Review.tsx` composes both labels itself instead, which is the
-          fix — in `src/ui/`, which is another lane's file.
+          The noun and its determiner, never a label (R32-2, `ui/readingSubject.ts`).
+          `ReadingColumn` draws one control in two grammatical frames — « Lire la
+          suite **de cette** étape » going down, « Remonter dans **cette** étape »
+          coming back — and it used to interpolate one string into both, so this
+          screen read « Remonter dans de cette étape » after the two presses that
+          reach the foot of step 3 at 960×600. There is no phrase that is correct
+          in both frames, which is why the caller stopped supplying one: `cette`
+          is a determiner the component knows how to put « de » in front of.
         */}
-        <ReadingColumn what="de cette étape" className="flex flex-col px-gutter pb-block">
+        <ReadingColumn
+          subject={{ determiner: 'cette', noun: 'étape' }}
+          className="flex flex-col px-gutter pb-block"
+        >
           <div className="measure mx-auto my-auto w-full">
             {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai onReglages={() => void toReglages('connecteurs')} />}
           </div>
