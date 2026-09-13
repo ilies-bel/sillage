@@ -435,9 +435,14 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
           `app/main.ts` declares — scrolling the day list to its end takes it from
           top 138 to **−10**, above `main`'s own top edge at 78, on a 148px scroll;
           in *Liste* it goes to −365 at 1280×800 and −565 at 960×600. A page whose
-          title scrolls away has no title, and at 1280×800 on *Jour* the list fits,
-          so that version measures perfectly on the comfortable size and fails on
-          the small one — which is the shape `smoke.mjs` drives two sizes for.
+          title scrolls away has no title. **And note the shape of how that hides:
+          at 1280×800 on *Jour* the day list fits, so nothing scrolls and the
+          version measures perfectly — it only breaks at the size `main.ts` declares
+          as the minimum, and in the one view a rep switches to when they want more
+          than a day.** That is HR-2's mac-first failure one level over: correct on
+          the comfortable machine, wrong on the one that ships, and invisible to
+          anybody who looked once. It is why `smoke.mjs` drives two sizes, and it is
+          worth not re-deriving.
           Here it is outside the scroller and the tallest text box above the fold
           at both sizes (28px against the grid's 14px `h2`).
 

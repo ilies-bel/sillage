@@ -3657,22 +3657,70 @@ async function main() {
   }
   if (flags.echo) {
     /*
+     * **A stage this file does not know fails, and it fails on every run.**
+     *
+     * `check:ports`' `HOMES` named a preload that has never existed, so its own
+     * exclusion excluded nothing and the sentence a failure printed pointed at a file
+     * nobody could open. A declared stage is a fact about `SCREENS`, so it is checked
+     * against `SCREENS` — here rather than inside the per-stage branch below, because
+     * a typo must not wait for the one run that happens to stage it.
+     */
+    const unknown = ECHO_DECLARED.flatMap((entry) =>
+      entry.stages.filter((name) => !(name in SCREENS)).map((name) => ({ name, text: entry.text })),
+    )
+    if (unknown.length > 0) {
+      console.log(
+        `  ✗ échos: ${unknown.length} écho(s) déclaré(s) nomment une mise en scène inconnue`,
+      )
+      for (const item of unknown.slice(0, 8)) {
+        console.log(`     « ${item.text} » sur « ${item.name} », qui n’est pas dans SCREENS`)
+      }
+      process.exitCode = 14
+    }
+
+    const declared = ECHO_DECLARED.filter((entry) => entry.stages.includes(screen))
+    const allowed = new Set(declared.map((entry) => entry.text))
+    const undeclared = repeats.items.filter((item) => !allowed.has(item.text))
+    /*
+     * **The half that matters: an allowance that no longer has a finding fails.**
+     *
+     * Without it the list is a blanket exemption that grows and never shrinks, which
+     * is the rot `check-platform.mjs` records as the reason its own staleness check
+     * exists. Every entry here names a story; when that story lands, this is what
+     * tells whoever landed it to delete the entry.
+     */
+    const stale = declared.filter((entry) => !repeats.items.some((item) => item.text === entry.text))
+
+    /*
      * The census, for the reason `--fade` prints one: a run that visited zero
      * elements has to read differently from a run that compared every string on
      * the screen. « aucune chaîne dessinée deux fois » over an empty set is the
-     * false green this repo has recorded five times.
+     * false green this repo has recorded five times. The declared count is part of
+     * it — a screen that is quiet because everything on it is excused must not read
+     * like a screen that is quiet.
      */
     const census =
       `${repeats.seen} chaîne(s) comparée(s), ${repeats.column} colonne(s), ` +
-      `${repeats.named} contrôle(s) qui nomment leur cible`
-    if (repeats.items.length === 0) {
-      console.log(`  échos: ${census} — aucune chaîne dessinée deux fois`)
+      `${repeats.named} contrôle(s) qui nomment leur cible` +
+      (declared.length > 0 ? `, ${declared.length} écho(s) déclaré(s)` : '')
+    if (undeclared.length === 0) {
+      console.log(`  échos: ${census} — aucune chaîne dessinée deux fois hors déclaration`)
     } else {
-      console.log(`  ✗ échos: ${repeats.items.length} chaîne(s) dessinée(s) plus d’une fois (${census})`)
-      for (const item of repeats.items.slice(0, 8)) {
-        console.log(`     « ${item.text} » ×${item.times} — ${item.where.join(' · ')}`)
+      console.log(`  ✗ échos: ${undeclared.length} chaîne(s) dessinée(s) plus d’une fois (${census})`)
+      for (const item of undeclared.slice(0, 8)) {
+        console.log(`     « ${item.text.slice(0, 60)} » ×${item.times} — ${item.where.join(' · ')}`)
       }
       process.exitCode = 12
+    }
+    if (stale.length > 0) {
+      console.log(
+        `  ✗ échos: ${stale.length} écho(s) déclaré(s) ne se répètent plus — ` +
+          'une dispense qui a survécu à son constat, à supprimer',
+      )
+      for (const entry of stale.slice(0, 8)) {
+        console.log(`     « ${entry.text} » sur « ${screen} » — ${entry.story}`)
+      }
+      process.exitCode = 14
     }
     if (process.env.SILLAGE_ECHO_ATTACK) {
       const found = (needle) => repeats.items.some((item) => item.text.includes(needle))
@@ -4286,6 +4334,192 @@ async function prose(page) {
  * On the shipped `agenda` at 1280×800 and at 960×600: 38 strings repeat, 2 are
  * columns, and before US-22 the one finding was the date. After it, none.
  */
+/**
+ * **The echoes this product has declared, each with the reason it is not a defect
+ * *yet* and what removing it would cost.**
+ *
+ * `--echo` found 44 stagings on its first run. Two of them were this lane's and are
+ * fixed; the rest are in three other files, and a check that exits 1 on every run
+ * is a check nobody can gate on — so they are declared, in the shape
+ * `check-platform.mjs` and `check:ports`' `UNWIRED` already use in this repo.
+ *
+ * Three rules, and the third is the one that matters:
+ *
+ *  · an entry names **one stage and one string**, never a bare string everywhere —
+ *    « transcription » is legitimate on *Historique* and would be a defect on the
+ *    session screen, and a list of words rather than pairs is a blanket exemption
+ *    with extra steps;
+ *  · it says what the pair **is** (both elements, both files), why it stands, and
+ *    which story removes it — « declared debt » with no owner is a comment;
+ *  · **a stale entry fails the run.** If the string stops repeating on that stage,
+ *    the allowance has outlived its finding and the check exits 14 naming it. That
+ *    is the half `check-platform.mjs` records as mattering most: without it the
+ *    list rots into a permanent exemption, which this repo has now written down
+ *    twice. A stage this file does not know also fails, which is `check:ports`'
+ *    `HOMES`-not-on-disk lesson.
+ *
+ * So an entry costs whoever lands its story exactly one deletion, and forgetting
+ * that deletion is loud rather than silent.
+ */
+const ECHO_DECLARED = [
+  /*
+   * ── *Historique*: a search result's surface label against a pane heading ──
+   *
+   * `Results.tsx` draws `span.w-28` on each result row saying **which of the four
+   * searchable surfaces matched** — « Intitulé », « Transcription », « Mes notes »,
+   * « Compte-rendu » — and `Historique.tsx` captions its panes with the same words.
+   * The label is per row and answers « why is this row here »; the heading names a
+   * box. Neither file is in this lane.
+   */
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'transcription',
+    pair: 'span.w-28 (search/Results.tsx, quelle surface a répondu) · h2.pane-label (Historique.tsx)',
+    why: 'l’étiquette de résultat dit pourquoi la ligne est là ; le titre nomme le volet',
+    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
+  },
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'compte-rendu',
+    pair: 'span.w-28 (search/Results.tsx) · h2.pane-label (Historique.tsx)',
+    why: 'comme ci-dessus',
+    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
+  },
+  /*
+   * The one of the three that needs a **decision** rather than a story: US-23 keeps
+   * « Mes notes » deliberately (it and « Extraction » are two blocks of plain French
+   * prose side by side with no shape of their own), so this pair survives that story
+   * and something has to give — the heading or the surface label.
+   */
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'mes notes',
+    pair: 'span.w-28 ×3 (search/Results.tsx) · h2.pane-label (Historique.tsx)',
+    why: 'US-23 garde ce titre exprès — de la prose à côté de la prose, aucune ne se nomme',
+    story: 'aucune : l’étiquette de surface ou le titre doit bouger (suite de la ronde 34)',
+  },
+  /*
+   * ── The gate: the client's name, drawn by the screen and by the document ──
+   *
+   * Round 34's own finding, in its own words: « the client's name appears five times
+   * above the fold ». The header line names the call; the compte-rendu's first line
+   * is `# <objet>`, which is the string VerySwing receives and cannot be rewritten
+   * here (DEC-44). The fixture's objet is what the entry matches, so a fixture change
+   * fails this entry loudly, which is correct.
+   */
+  {
+    stages: [
+      'review',
+      'review-valider',
+      'review-garde',
+      'review-garde-citation',
+      'review-garde-frappe',
+      'review-garde-mort',
+      'review-garde-sources',
+      'review-garde-tapis',
+      'review-citation-prose',
+      'review-sans-entra',
+      'review-sans-opportunite',
+    ],
+    text: 'néovia santé — cadrage renfort data',
+    pair: 'p.text-muted (l’en-tête de Review.tsx) · span (session/CompteRenduDocument.tsx, la ligne « # <objet> »)',
+    why: 'le document ouvre sur son propre titre (DEC-44) et l’en-tête nomme l’appel',
+    story: 'lane US-23 / US-25 (Review.tsx, CompteRenduPane.tsx)',
+  },
+  /*
+   * ── A **decision**, not debt: the recap shares a name with the chapter ──
+   *
+   * Checked rather than assumed. The composer really does write `## Prochaines
+   * étapes` (the model's narrative chapter, declared in `COMPTE_RENDU_SECTIONS`)
+   * and `### Prochaines étapes` (the appended field recap under « Éléments
+   * retenus »), and the gate draws the field's label beside them — three
+   * occurrences, two levels. That is not the collision CLAUDE.md records as fixed:
+   * `modules/extract/__tests__/compteRendu.test.ts` asserts on the *level* and its
+   * comment says so outright — « sharing a name between a chapter and a field of
+   * the recap is fine and is what the recap is for ».
+   *
+   * What is left is a real question and it is a **recipe** question, not a renderer
+   * one: the document states its two most operative sections twice, once as prose
+   * and once as bullets, and VerySwing receives both. Nothing in `src/` can decide
+   * that.
+   */
+  {
+    stages: [
+      'review',
+      'review-valider',
+      'review-garde',
+      'review-garde-citation',
+      'review-garde-frappe',
+      'review-garde-mort',
+      'review-garde-sources',
+      'review-garde-tapis',
+      'review-citation-prose',
+      'review-sans-entra',
+      'review-sans-opportunite',
+    ],
+    text: 'prochaines étapes',
+    pair: 'chapitre « ## » · sous-section « ### » du récapitulatif (CompteRenduDocument) · label.text-muted (le champ)',
+    why: 'deux niveaux par construction (compteRendu.test.ts affirme le niveau, pas l’orthographe) ; le récapitulatif est fait pour partager le nom du chapitre',
+    story: 'décision de recette pour la ronde 34 — si le document doit dire les deux',
+  },
+  /*
+   * ── A **decision**, and DEC-47 is the reason ──
+   *
+   * « Client » is the rail's account field *and* the speaker label on every
+   * far-channel turn — 215 of them on the gate's reader. DEC-47: a turn is
+   * attributed to a **side** and never to a person, so « Client » is precisely what
+   * the record is entitled to say when there is more than one interlocutor, and
+   * `speakerLabel` produces it once per turn by design. Renaming either half would
+   * cost more than the collision: the field is the VSA account and the label is the
+   * only honest thing the two channels establish.
+   */
+  {
+    stages: ['review-transcription', 'review-transcription-introuvable', 'review-garde-transcription'],
+    text: 'client',
+    pair: 'label.text-muted (le champ Compte du rail) · span.text-muted ×215 (speakerLabel, DEC-47)',
+    why: 'DEC-47 — un tour nomme un côté, jamais une personne ; 215 tours, c’est le compte-rendu qui fait son travail',
+    story: 'aucune. C’est la décision',
+  },
+  /*
+   * ── The reader naming the row it was opened from ──
+   *
+   * `TranscriptReader` heads the column with « Citation du champ « Besoin » », which
+   * is the thread back to the `source ▸` the rep just pressed, and the rail beside
+   * it still draws that field's own label. It is exemption 2 one frame later — a
+   * control naming its target, except the naming outlives the press — and the two
+   * files are another lane's.
+   */
+  {
+    stages: ['review-transcription'],
+    text: 'besoin',
+    pair: 'span.text-body (review/TranscriptReader.tsx, « Citation du champ … ») · label.text-muted (le champ d’où il a été ouvert)',
+    why: 'le lecteur dit de quelle ligne il vient ; le rail montre encore cette ligne',
+    story: 'lane US-23 / US-25 (Review.tsx, TranscriptReader.tsx)',
+  },
+  /*
+   * ── The session screen: the slate and the document name the same field ──
+   *
+   * The compte-rendu's fact line « Démarrage : … » against the rail's slate label.
+   * This may well be correct and the argument is already written down: DEC-14 and
+   * DEC-38 put the two side by side precisely so « Durée — » empty and the prose
+   * silent about it can be seen *in one glance*, which needs the field named in
+   * both. `SignalRail.tsx` is US-25's file, so the call is theirs.
+   */
+  {
+    stages: [
+      'session-compte-rendu',
+      'session-suivi',
+      'session-suivi-sans-entra',
+      'session-demander',
+      'session-remonter',
+    ],
+    text: 'démarrage',
+    pair: 'strong.text-strong (la ligne de fait du compte-rendu) · span.slate-label (session/SignalRail.tsx)',
+    why: 'DEC-14 / DEC-38 mettent l’ardoise à côté du document pour qu’on juge l’un par l’autre, ce qui demande le champ nommé des deux côtés',
+    story: 'lane US-25 (SignalRail.tsx) — probablement une décision à garder, déclarée pour que le compte soit honnête',
+  },
+]
+
 async function echo(page) {
   return page.evaluate(() => {
     const CONTROL =
@@ -4355,7 +4589,14 @@ async function echo(page) {
         continue
       }
       out.push({
-        text: text.slice(0, 60),
+        /*
+         * The **whole** normalised string, not a display slice. It is what a
+         * declared exemption is matched against (`ECHO_DECLARED`), and matching a
+         * truncation would let one entry cover every string sharing its first sixty
+         * characters — a bare string standing in for a pair, which is the shape the
+         * declaration is written to avoid. The slicing happens at print time.
+         */
+        text,
         times: hits.length,
         where: hits.slice(0, 4).map((hit) => `${hit.what} y=${hit.y}`),
       })

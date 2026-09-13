@@ -489,6 +489,41 @@ describe('meetings already held are reachable from the calendar', () => {
     expect(screen.getAllByText('Acme — cadrage')).toHaveLength(1)
     expect(cell(today()).getAttribute('aria-label')).toMatch(/1 réunion, dont une prête$/)
   })
+
+  /*
+   * **The legend names what the day holds; the row names its state** (US-22's rule).
+   *
+   * The legend's middle entry was « prêt », which is `STATE_LABEL.armed` — so an
+   * armed day drew that word twice, 248 pixels apart, once as the key for a 6px dot
+   * and once as the condition of the row the dot points at. `shot.mjs --echo` found
+   * it on `agenda-appel-imprevu` at both sizes; here it is pinned as a pair,
+   * because a rename in either direction is silent to every other check.
+   */
+  test('the legend does not repeat the row’s state word', async () => {
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('agenda:snapshot', () => ({
+        events: [event('e1', 'Acme — cadrage', 10)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: { meetingId: 'evt-abc', eventId: 'e1', subject: 'Acme — cadrage' },
+        reason: '',
+      }))
+      .when('meeting:list', () => [
+        meeting('evt-abc', { title: 'Acme — cadrage', eventId: 'e1', state: 'armed' }),
+      ])
+
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByText('Acme — cadrage')
+
+    // The row still says it, once, and the legend still explains the dot.
+    expect(screen.getAllByText('Prêt')).toHaveLength(1)
+    expect(within(grid()).getByText('réunion prête')).toBeTruthy()
+    // And the accessible name of the cell says the same thing the legend does,
+    // which is what `MARK_NAME`'s docblock promises and what « prêt » broke.
+    expect(cell(today()).getAttribute('aria-label')).toMatch(/dont une prête$/)
+  })
 })
 
 // ── What the screen carried before, and still does ──────────────────────────
