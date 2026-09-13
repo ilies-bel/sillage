@@ -527,6 +527,30 @@ machine) or in `core/domain/` — never in an IPC handler.
   omissions: `data-scrolls` on the notepad and the widget's live log, which hold more than their
   box by definition, and a size guard for `sr-only`, which is a 1×1 clipped box by construction.
   Same shape as the `drawn()` false-green already recorded for `--contrast`.
+- **A pane is named by its content, and the strongest thing on a screen is what changed.**
+  The home screen led with « Calendrier » — serif, 42 px, the largest thing on it — over a
+  calendar, above a date it then printed **a second time** 170 pixels lower, beside a filled
+  pill saying nothing was wrong. The live client call was the fourth-strongest thing on its
+  own screen. One screen over, « COMPTE-RENDU » captioned the compte-rendu and « SIGNAUX » the
+  signals, the client's name appeared five times above the fold, and two permanent sentences
+  explained the product's own typesetting to a rep who was on a call. None of it was a defect
+  any check could see: every string was correct, every contrast passed, every box was the
+  right size. It was simply the app talking about itself.
+  So: a caption earns its place only where two things on the same screen could otherwise be
+  confused, and it is the content that names the box — a transcript has timestamps and speaker
+  names, a compte-rendu opens on its own `#` heading, a rail is seven labelled slots. The
+  exceptions are real and are the reason this is a rule rather than a purge: *Historique*'s
+  « Mes notes » and « Extraction » are two blocks of plain French prose side by side with no
+  shape of their own, and *Réglages*' section headers are a long form's navigation. A page
+  title names what **changed** — the day, the client, the count — never what the screen
+  permanently is; the back link « ‹ Calendrier » still names a *destination*, which is a
+  different job. And **well is silent**: `StatusControl` already held the header empty while
+  it did not yet know, and says nothing at all when the answer is good, so the degraded case
+  is the only thing that ever appears there. What reassures a rep that capture works is the
+  meter during the call (DEC-38) and the dry run before it (DEC-45), never a badge.
+  `shot.mjs --echo` is the check, and it measures the one half a screenshot review cannot:
+  a visible string drawn twice on the same screen.
+
 - **A reading column says how much of itself is left** (`ui/ReadingColumn.tsx`).
   The mask and the page turn were built at the gate, where they are a safety
   property, and the pane where the rep *meets* the compte-rendu had neither: it

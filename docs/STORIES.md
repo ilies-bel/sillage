@@ -1113,3 +1113,141 @@ This is the `widget-sortie` lesson said again: no stage emitted `widget:leave`, 
 is not 1×1 and that `closest('[data-card]')` is non-null — because a card that forgot
 `data-card` draws a dismiss button the pointer goes straight through into Teams. Then
 `smoke.mjs` runs the nine checks on it at both sizes. The staging count moves from 114.
+
+---
+
+# The simplicity pass — round 34
+
+Not an adversarial finding. The direction came from the person this is being built for, on
+the screenshots, and it is one sentence in three parts: **focus on simplicity, avoid obvious
+labels — « calendar? we already know it's one » — and put the priority on what should be
+visible directly.**
+
+It is right, and it is measurable on the home screen as shipped today. Above the fold,
+1280×800:
+
+| What the eye lands on, in order | What it is |
+|---|---|
+| « Calendrier », serif, 42 px, the largest thing on the screen | the name of the furniture |
+| « DIMANCHE 13 SEPTEMBRE », in the header | the date |
+| « Tout fonctionne », a filled pill, top right | nothing is wrong |
+| « Dimanche 13 septembre », 170 px lower | **the same date, again** |
+| six outlined buttons of identical weight | four *Ouvrir*, two *Enregistrer* |
+
+The rep opened this app at 14:30 because a client is on the line. The live call is the
+fourth-strongest thing on its own screen, and the two strongest are a noun that never changes
+and a date printed twice.
+
+The same disease, worse, one screen over: the session pane carries « COMPTE-RENDU » over the
+compte-rendu and « SIGNAUX » over the signals, the client's name appears **five times** above
+the fold, and two permanent sentences explain the product's own rendering conventions to a rep
+who is on a call.
+
+**The rule these five stories share, and it goes in CLAUDE.md:**
+
+> A pane is named by its content. A caption earns its place only where two things on the same
+> screen could otherwise be confused — and the strongest thing on a screen is the thing that
+> *changed*, never the thing the screen always is.
+
+That is a rule with a live exception on both sides, which is why it is worth stating rather
+than a purge: *Historique*'s « Mes notes » and « Extraction » sit side by side and are both
+plain French prose with no shape of their own, so they keep their captions; *Réglages*' eleven
+section headers are a long form's navigation and keep theirs. What goes is every caption over
+a box that already announces itself — a transcript with timestamps and speaker names, a
+document whose first line is its own `#` heading, a rail of seven labelled slots.
+
+## US-22 — the screen is named by what changed
+
+**Lane** `ui-agenda` · `src/screens/Agenda.tsx`, `src/screens/Historique.tsx`
+
+`Agenda.tsx:367` draws `<h1 class="font-display text-display">Calendrier</h1>` and the date
+beside it, and `DayPane` draws the same date again 170 px below. Delete the h1; the day
+becomes the page's own title, drawn once. The back-link « ‹ Calendrier » on the other screens
+stays — a destination needs a name, a page you are standing on does not.
+
+*Historique* has no natural « what changed », so its h1 becomes the one thing on that screen
+that is information: the record count and the active filter (« 47 appels · 90 jours »),
+recomputed as the chips change. `scripts/e2e.mjs` waits on « Historique » in two steps and
+must be moved with it.
+
+**Acceptance** — measured, both sizes: no visible string is drawn twice on either screen, and
+the tallest text box above the fold is the date (agenda) / the count (historique). A probe
+that normalises visible text and counts repeats is the evidence, and it belongs in `shot.mjs`
+as a tenth check — `--echo` — because « the same sentence twice » is exactly the class of
+defect a screenshot review cannot see and this repo has now shipped on its home screen.
+
+## US-23 — a caption only where the content cannot name itself
+
+**Lane** `ui-panes` · `CompteRenduPane.tsx`, `SignalRail.tsx`, `Historique.tsx`
+
+Delete four: « Compte-rendu » over the typeset document (its first line is `# <objet>`),
+« Signaux » over seven labelled field boxes, and *Historique*'s « Transcription » and
+« Compte-rendu ». Keep « Mes notes » and « Extraction » for the reason above, keep
+« Passées » (it separates two lists of identical shape on one screen) and keep « En attente de
+validation » (it carries a count and a link — it is doing work, not naming furniture).
+
+`SectionHeader` stays; what changes is who calls it. Add the rule to its docblock so the next
+pane does not reintroduce one.
+
+**Acceptance** — the four are gone from the rendered accessibility tree, the three kept are
+still there, and the vertical space recovered is reported per screen at both sizes. Three
+stages wait on « Compte-rendu » in `shot.mjs`.
+
+## US-24 — well is silent
+
+**Lane** `ui-status` · `src/screens/StatusControl.tsx`
+
+« Tout fonctionne » is a filled pill in the header of every screen, permanently, saying that
+nothing is wrong. Its own docblock already contains the argument for this story: *« it says
+nothing before it knows anything … the header holds the space empty instead »*. Silence when
+the answer is good is the same gesture one step further, and it makes the degraded case — the
+one that matters, on the primary platform, thirty seconds before a client joins — the only
+thing that ever appears there.
+
+Nothing else changes: the tone, the wording and the click-through to *Réglages → Connecteurs*
+stay exactly as they are for `degraded` and `down`, and the full board stays in Réglages.
+DEC-32 is untouched — this is still one general status and still only the three required
+subsystems. And it does not weaken DEC-45: what reassures a rep that capture works is the
+input meter during the call (DEC-38) and the dry run before it, not a badge.
+
+**Acceptance** — `ok` renders nothing at all (not an empty box with padding: measure it), the
+degraded and down cases are pixel-identical to today, and `StatusControl.test.tsx`'s four
+« Tout fonctionne » assertions are rewritten to assert absence rather than deleted.
+
+## US-25 — the product stops explaining itself during a call
+
+**Lane** `ui-session` · `CompteRenduPane.tsx`, `SignalRail.tsx`
+
+Two permanent sentences on the screen a rep has open while a client is talking:
+
+- « Les marques # ## – ∗∗ font partie du texte : VerySwing reçoit exactement ce qui est
+  affiché. » — a manual for our own typesetting convention. It is a real promise and it is
+  needed **once**, at the moment the rep can act on it: the gate, where the document is
+  editable and where the press that sends it to VerySwing lives. Move it there; do not delete
+  it.
+- « Rien ne migre dans vos notes. » — a statement about a thing that does not happen. US-18's
+  onboarding now names the rail and what it does; that is where it belongs, and it is already
+  said there.
+
+« Lecture seule — corrigez-le à l'étape « Relire et valider » » **stays**: it names where the
+action is, which is the opposite of explaining a convention.
+
+**Acceptance** — both strings gone from the session screen, the markers sentence present at
+the gate, and `session-output.test.tsx`'s two assertions moved rather than dropped.
+
+## US-26 — one filled control per list
+
+**Lane** `ui-rows` · `src/screens/agenda/DayPane.tsx`, `PendingGates.tsx`
+
+Six outlined buttons of identical weight on the home screen, and the rep's next action is
+exactly one of them. The live call — the row already saying « En cours » — and the rows saying
+« À valider » are the two things a rep acts on; they are today drawn in the same ink as a
+17:30 invite four hours away.
+
+One filled control per list, on the row the app believes is next; every other row keeps the
+quiet one. This is a hierarchy change and not a new control: nothing gains or loses an
+affordance, and *Démarrer une réunion* in the header stays what it is.
+
+**Acceptance** — driven, both sizes: exactly one filled control in the day list, and it is on
+the live row when one exists and on the earliest `à valider` otherwise. The `agenda`,
+`agenda-liste` and `agenda-semaine` stages photograph it.
