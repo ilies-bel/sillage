@@ -50,10 +50,12 @@ import type {
   HistoryIntent,
   HistoryRecord,
   HistoryRow,
+  HistorySearchResult,
 } from '../../electron/core/contracts/history.ts'
 import type { ReviewField } from '../../electron/core/contracts/review.ts'
 import { speakerLabel, type TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { invoke } from '../app/bridge.ts'
+import { cn } from '../lib/utils.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { AskPanel } from './session/AskPanel.tsx'
 import { useShortcuts } from '../app/shortcuts.ts'
@@ -71,18 +73,83 @@ import {
   SectionHeader,
   type ReadingSubject,
 } from '../ui/index.ts'
-import { NO_FILTER, isSearchActive } from './search/filters.ts'
-import { IntentSummary } from './search/Intents.tsx'
 import {
-  CompteRenduDocument,
-  CompteRenduMarkersNote,
-} from './session/CompteRenduDocument.tsx'
+  INTENTION_LABEL,
+  NO_FILTER,
+  PERIODE_LABEL,
+  STATUT_LABEL,
+  isSearchActive,
+} from './search/filters.ts'
+import { IntentSummary } from './search/Intents.tsx'
+import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 import { Matches } from './search/Matches.tsx'
 import { SearchBar } from './search/SearchBar.tsx'
 import { useHistorySearch } from './search/useHistorySearch.ts'
 
 /** The full record, so the cap is the corpus and not a viewport. */
 const SEARCH_LIMIT = 50
+
+/**
+ * The page's title: how many calls are listed under it, and what narrows them.
+ *
+ * *Historique* has no « what changed » — it is a search field, a chip row and a
+ * list of past calls, and every one of those names itself. So the h1 carries the
+ * one thing on the screen that is information rather than furniture, and it is
+ * recomputed on every answer.
+ *
+ * Four things it must never get wrong, and the fourth is a defect this repo has
+ * already shipped:
+ *
+ *  - **Zero is a count.** « Aucun appel » beside the active chips is what tells a
+ *    rep that « 7 jours » is the reason the list is empty, which is more than the
+ *    empty state under it can say.
+ *  - **One is singular.** « 1 appels » on the only row that matched is the app
+ *    failing to read its own answer.
+ *  - **The count describes the rows, so it comes from the answer.** `result.filter`
+ *    and never the live chips: `useHistorySearch` debounces, so for 200 ms the
+ *    state says one thing and the list under the title shows another. The
+ *    truncation sentence at the foot of the list reads the answer for exactly this
+ *    reason.
+ *  - **It never claims fifty.** `history:search` stops at `SEARCH_LIMIT` and the
+ *    handler reports `capped` — it collected one row *past* the limit and dropped
+ *    it, so what is known is « more than fifty », never how many. « 50 appels »
+ *    over a corpus of eight hundred is the silent ceiling this screen has already
+ *    been caught on once, under a preview promising « l’historique les porte
+ *    tous » (DEC-25), and the sentence at the foot of the list says so too — with
+ *    the corpus it is fifty of.
+ *
+ * The query is deliberately **not** in it. It is in the box three rows below,
+ * where the rep typed it; restating it in 28 px serif is the one thing this round
+ * is about. What the query does to this title is change the number.
+ */
+const listTitle = (result: HistorySearchResult, capped: boolean): string =>
+  [countPhrase(result.rows.length, capped), ...scopePhrases(result.filter)].join(' · ')
+
+const countPhrase = (shown: number, capped: boolean): string => {
+  if (capped) return `Plus de ${SEARCH_LIMIT} appels`
+  if (shown === 0) return 'Aucun appel'
+  return shown === 1 ? '1 appel' : `${shown} appels`
+}
+
+/**
+ * The chips that are on, in the chip row's own words.
+ *
+ * The labels come from `filters.ts` rather than being written again here: a chip
+ * reading « 90 jours » and a title reading « 3 derniers mois » would be two names
+ * for one filter, one line apart.
+ */
+const scopePhrases = (filter: HistoryFilter): string[] =>
+  [
+    filter.client,
+    // The neutral value is compared as a literal and not as `NO_FILTER.periode`,
+    // which is typed as the whole axis and therefore narrows nothing. The three
+    // label tables are `Record<Exclude<Axis, neutral>, string>`, so renaming a
+    // neutral value in `core/contracts/history.ts` makes each of these three
+    // comparisons a compile error rather than a silent extra word in the title.
+    filter.periode === 'toute' ? null : PERIODE_LABEL[filter.periode],
+    filter.statut === 'tous' ? null : STATUT_LABEL[filter.statut],
+    filter.intention === 'toutes' ? null : INTENTION_LABEL[filter.intention],
+  ].filter((label): label is string => label !== null)
 
 interface HistoriqueProps {
   onBack: () => void
@@ -122,7 +189,26 @@ export function Historique({
           <Button variant="nav" onClick={onBack}>
             ‹ Calendrier
           </Button>
-          <h1 className="font-display text-strong flex-1 text-display leading-none">Historique</h1>
+          {/*
+            **The title is the count, not the noun.**
+
+            It read « Historique » — serif, the largest thing on the screen, over
+            a search field, a chip row and a list of past calls. Nothing on that
+            screen could be mistaken for anything else, so the strongest ink was
+            spent on the one string that never changes, while the one number a rep
+            cannot get anywhere else — how many calls the list under it actually
+            holds — was nowhere at all.
+
+            A non-breaking space while the first answer is in flight, and never a
+            word: the h1 is 28 px with `leading-none`, an *empty* one generates no
+            line box at all and an ordinary space collapses to nothing, so the search
+            field under it would jump by the height of a title when the count lands,
+            200 ms of debounce later. « Chargement… » is already said once, inside
+            the list, and saying a thing twice is the defect this round is about.
+          */}
+          <h1 className="font-display text-strong flex-1 text-display leading-none">
+            {search.result ? listTitle(search.result, search.capped) : '\u00A0'}
+          </h1>
         </div>
 
         {/*
@@ -437,16 +523,22 @@ function Record({
   return (
     <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-5 py-4">
       {/*
-        « Transcription », not « Transcript ». The second is not a French word;
-        the review gate's own tab already says the first, and two screens naming
-        the same artefact differently is two things for a rep to learn.
+        **No « TRANSCRIPTION » over it.** A transcript names itself: every row is
+        an offset, a side and a sentence, and nothing else on this record looks
+        remotely like that. The label was not wrong, it was the app reading its own
+        layout out loud.
+
+        The word survives where it is doing work and *only* there — on the search
+        excerpt under a collapsed row, where five one-line fragments of identical
+        shape (« Intitulé », « Moments marqués », « Transcription », « Mes notes »,
+        « Compte-rendu ») have nothing but that first column to say which surface
+        the query hit.
       */}
       {/* One grid cell holding the record and the question about it, so the
           panel sits *under* the section's capped scroller rather than inside
           it — an answer clipped at 288px is an answer nobody can read. */}
       <div className="min-w-0">
       <Section
-        title="Transcription"
         subject={{ determiner: 'la', noun: 'transcription' }}
         copy={
           record.segments.length > 0
@@ -501,8 +593,13 @@ function Record({
         )}
       </Section>
 
+      {/*
+        **No « COMPTE-RENDU » over it either.** The document's own first line is
+        `# <objet>` — `CompteRenduDocument` hangs the marker in the gutter and sets
+        the objet as a title — so the caption was a heading above a heading, and the
+        smaller of the two was the app's.
+      */}
       <Section
-        title="Compte-rendu"
         subject={{ determiner: 'le', noun: 'compte-rendu' }}
         copy={record.compteRendu ? { text: record.compteRendu, what: 'le compte-rendu' } : undefined}
       >
@@ -517,18 +614,20 @@ function Record({
             the machine had produced. That was never the point of DEC-5's
             provenance rule: the *ink* carries the authorship, not the face.
           */
-          <>
-            {/*
-              The same affordance the gate gives it, and here the record is in
-              the box above: pressing a quotation lights the turn it came from.
-            */}
-            <CompteRenduDocument
-              text={record.compteRendu}
-              onQuote={(quote) => setLocated(quote)}
-            />
-            {/* Why the gutter is there, in the same words the other two screens use. */}
-            <CompteRenduMarkersNote className="text-muted mt-2 text-meta" />
-          </>
+          /*
+            The same affordance the gate gives it, and here the record is in the
+            box above: pressing a quotation lights the turn it came from.
+
+            **And no typesetting manual under it.** « Les marques # ## – ∗∗ font
+            partie du texte : VerySwing reçoit exactement ce qui est affiché » is a
+            real promise and it is owed **once**, at the moment the rep can act on
+            it — the gate, where the document is editable and where the press that
+            writes it into VerySwing lives. This screen is as read-only as a surface
+            gets: nothing here can be corrected and nothing here ships anywhere, so
+            the sentence was the app explaining its own rendering to somebody who
+            cannot use the explanation.
+          */
+          <CompteRenduDocument text={record.compteRendu} onQuote={(quote) => setLocated(quote)} />
         ) : (
           <p className="text-muted text-ui">Cet appel n’a pas produit de compte-rendu.</p>
         )}
@@ -549,7 +648,17 @@ function Section({
   copy,
   children,
 }: {
-  title: string
+  /**
+   * The caption, **only where the content cannot name itself**.
+   *
+   * Two of the four panes have none. A transcript is offsets, sides and
+   * sentences; a compte-rendu opens on its own `# <objet>`. « Mes notes » and
+   * « Extraction » keep theirs, and they are the reason this is optional rather
+   * than gone: they sit side by side, they are both plain French prose, and
+   * nothing about either box says which is the rep's own typing and which is what
+   * the model read off the call.
+   */
+  title?: string
   /**
    * What « Copier » puts on the clipboard for this section, if anything.
    *
@@ -573,21 +682,46 @@ function Section({
 }) {
   return (
     <section className="min-w-0">
-      <div className="mb-2 flex items-center gap-inline">
-        {/*
-          `h2`, and through the same component every other screen's section
-          header goes through.
+      {/*
+        The head row exists for whatever is in it, and it is **absent** when there
+        is nothing: a captionless pane with no *Copier* draws no row at all rather
+        than an empty 24-pixel band above its first line.
 
-          It was a hand-written `<h3 className="pane-label">`: the right ink,
-          the wrong level. The page's only other heading is `<h1>Historique</h1>`
-          — the calls themselves are buttons, not headings — so the four panes
-          of DEC-25 jumped h1 → h3, and a screen reader's heading list, which is
-          how the record is navigated without a mouse, reported a level that
-          nothing on the page defines.
-        */}
-        <SectionHeader className="mb-0 min-w-0 flex-1">{title}</SectionHeader>
-        {copy ? <CopyButton text={copy.text} what={copy.what} className="text-meta" /> : null}
-      </div>
+        A pane that keeps only the control gets no `mb-2` — the 8 px under a 10 px
+        uppercase eyebrow is what stops it touching the prose, and a button sitting
+        at the far right of the row, four hundred pixels from the first word, is not
+        near anything to be held off.
+      */}
+      {title || copy ? (
+        <div className={cn('flex items-center gap-inline', title ? 'mb-2' : null)}>
+          {/*
+            `h2`, and through the same component every other screen's section
+            header goes through.
+
+            It was a hand-written `<h3 className="pane-label">`: the right ink,
+            the wrong level. The page's only other heading is the h1 — the calls
+            themselves are buttons, not headings — so the panes of DEC-25 jumped
+            h1 → h3, and a screen reader's heading list, which is how the record is
+            navigated without a mouse, reported a level that nothing on the page
+            defines.
+          */}
+          {title ? <SectionHeader className="mb-0 min-w-0 flex-1">{title}</SectionHeader> : null}
+          {/*
+            `ml-auto`, and not `flex-1` on a heading that may not be there: the
+            control belongs at the end of the rule either way, and this is the
+            lesson the gate reader's own *Copier la transcription* carries — it
+            floated sixty pixels inside its own rule at 1280×800 the day the
+            paragraph beside it stopped growing.
+          */}
+          {copy ? (
+            <CopyButton
+              text={copy.text}
+              what={copy.what}
+              className="ml-auto text-meta"
+            />
+          ) : null}
+        </div>
+      ) : null}
       {/*
         `.measure` — the product's one reading width, so a compte-rendu read
         three weeks later is set the way it was set at the gate — and

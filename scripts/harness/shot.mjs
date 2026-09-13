@@ -1449,7 +1449,24 @@ const SCREENS = {
         */
         .getByRole('button', { name: /Groupe Lefort.*découverte du besoin plateforme/ })
         .click()
-      await page.getByText('Compte-rendu').first().waitFor()
+      /*
+        **The one caption the record still has, asked for as a heading.**
+
+        This waited on `getByText('Compte-rendu')`, and that caption is gone — the
+        document opens on its own `#` heading. What matters more is that the old
+        wait never proved the caption was there in the first place: measured on the
+        open record, that substring matches **three** elements and not one — the
+        page turn « Lire la suite du compte-rendu », the search excerpt's own
+        « Compte-rendu » label under the collapsed row, and « Tâche compte-rendu
+        (VerySwing) » in *Envois*. So it still passed with the caption deleted, and
+        it would have passed on a record that never opened.
+
+        `getByRole('heading')` is one element (measured: 1 for « Extraction », 0 for
+        « Transcription » and « Compte-rendu »), and a heading is exactly what a
+        pane caption is — so this wait now goes red if either deleted caption comes
+        back, and red if the two kept ones stop being headings.
+      */
+      await page.getByRole('heading', { name: 'Extraction' }).waitFor()
       await page.getByText('deux ingénieurs DevOps confirmés', { exact: false }).first().waitFor()
     },
   },
@@ -1884,7 +1901,8 @@ const SCREENS = {
       await page
         .getByRole('button', { name: /Groupe Lefort.*découverte du besoin plateforme/ })
         .click()
-      await page.getByText('Compte-rendu').first().waitFor()
+      // « Extraction » — the one caption the record still has. See `historique`.
+      await page.getByRole('heading', { name: 'Extraction' }).waitFor()
       // Typed rather than clicked, for the reason `session-demander` carries:
       // the suggestion chips are dropped in a narrow column.
       await page
