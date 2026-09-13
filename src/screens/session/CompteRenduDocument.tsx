@@ -360,9 +360,22 @@ function Marker({ children }: { children: string }) {
  * receives (DEC-44), which is a promise no markdown renderer can keep and the
  * only reason the markers survive at all.
  *
- * A component rather than a constant so the three surfaces that carry it — the
- * session pane, the gate, the history record — cannot drift into three
- * different explanations of the same gutter.
+ * A component rather than a constant so the surfaces that carry it cannot drift
+ * into different explanations of the same gutter.
+ *
+ * **It is drawn once, at the gate, and on no read-only surface.** It was on all
+ * three that typeset a compte-rendu, two of which a rep can do nothing about —
+ * including the session pane, during the call, where the document is read-only
+ * and the line beside it already says the correction happens at the gate. A
+ * legend a reader can only obey is a manual; the same sentence where the text is
+ * editable and one press from a client's CRM is a promise (DEC-44). So a new
+ * surface that draws a `CompteRenduDocument` draws no legend unless the document
+ * there can be *changed*, and `Review.test.tsx` pins it to the gate while
+ * `session-output.test.tsx` pins its absence from the session screen.
+ *
+ * One call site is left over and it is in another lane as this is written:
+ * `Historique.tsx` draws it over a past record, which is as read-only as a
+ * surface gets. Deleting it there is one line and the reason is this paragraph.
  *
  * It names four marks and not two. It said « ## et - », which are the two the
  * *recap* uses — while the first screenful of any compte-rendu is dominated by

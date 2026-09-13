@@ -1489,32 +1489,51 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/*
-        The screen names itself (`5.3 Revue`). It used to open with the meeting
-        title and nothing else, which left the one irreversible screen in the
-        product looking like a second view of the meeting — a rep who arrives
-        here from a broadcast has to be told, in a word, that this is the gate.
-        The meeting is the line under it, where the design puts it.
+        **What says this is the gate is what the gate does, not its name.**
+
+        `5.3 Revue` had the screen name itself, and for a round it did: « Revue »
+        in 28px serif, because a rep arriving from a broadcast had to be told in a
+        word that this is the confirmation. Everything else on the screen now says
+        it louder than the word did — « Prêt à envoyer » over the rail, « Ce qui
+        sera créé » over the three intents, the reassurance line naming what does
+        and does not reach the client, and a primary reading « Valider ». What the
+        header owes is the call, so that is what it carries.
       */}
       <header className="border-subtle flex shrink-0 items-center gap-inline border-b px-gutter py-3">
         <Button variant="nav" onClick={onBack}>
           ‹ Calendrier
         </Button>
         <span aria-hidden className="border-subtle h-4 shrink-0 border-l" />
-        <h1 className="font-display text-strong shrink-0 text-display leading-none">Revue</h1>
         {/*
-          The client, unless the title already says it.
+          **The title is the call, not the word « Revue ».**
 
-          « Néovia Santé — cadrage renfort data · Néovia Santé » is the account
-          name printed twice on one line, which is how a rep learns to stop
-          reading the end of it. Meeting titles in this trade almost always open
-          with the client, so the common case is the redundant one.
+          It was a 28px serif `<h1>Revue</h1>` — the largest thing on the screen,
+          naming the furniture — with « Néovia Santé — cadrage renfort data » in
+          muted 12px beside it. The rep arrived here by pressing *Relire et
+          valider* on that call thirty seconds ago; what they need the strongest
+          ink for is which call this is, because the one press on this screen
+          writes into that client's CRM. The back link still names a destination
+          and the primary still names the act, so nothing is lost by the screen
+          not saying its own name.
+
+          The account, unless the title already says it: « Néovia Santé — cadrage
+          renfort data · Néovia Santé » is the account printed twice on one line,
+          which is how a rep learns to stop reading the end of it. Meeting titles
+          in this trade almost always open with the client, so the common case is
+          the redundant one.
+
+          `text-copy` and not `text-display`: at 960 — the width `main.ts`
+          declares as the minimum — a 28px setting of this objet truncates to
+          « Néovia Santé — cadrage… » beside a `⚠ faible` banner that is itself
+          load-bearing, and a title that hides the objet to be large is the
+          echo it replaced with a different word missing.
         */}
-        <p className="text-muted min-w-0 flex-1 truncate text-ui">
+        <h1 className="text-strong min-w-0 flex-1 truncate text-copy font-semibold">
           {panel.meeting.title}
           {edits.accountName && !panel.meeting.title.includes(edits.accountName)
             ? ` · ${edits.accountName}`
             : ''}
-        </p>
+        </h1>
         {/*
           The count, and a way to reach it.
 
@@ -1588,10 +1607,31 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             white down the right of the pane.
           */}
           <div className="measure mx-auto">
-            <div className="mb-3 flex items-center gap-inline">
-              <SectionHeader className="mb-0 min-w-0 flex-1">
-                {mode === 'transcription' ? 'Transcription' : 'Compte-rendu'}
-              </SectionHeader>
+            {/*
+              **No caption over this column.**
+
+              It read « COMPTE-RENDU », or « TRANSCRIPTION » in the third tab —
+              over a document whose own first line is `# <objet>`, two inches
+              under a segmented control whose current option says which of the
+              three is showing, so « Transcription » was drawn twice on one
+              screen. A pane is named by its content (`ui/SectionHeader.tsx`):
+              this one opens on its own heading and the switch beside it says
+              which view it is.
+
+              `justify-end` and not a spacer: the row is the two controls, and
+              they keep the right edge of the measure they used to share with the
+              eyebrow.
+
+              It recovers **no vertical space and that is the honest number**:
+              the eyebrow sat on this row beside two controls taller than itself,
+              so the column is within 4 px of where it was at both smoke sizes
+              (747 → 751 at 1280×800, 547 → 551 at 960×600 — and those 4 px are
+              the header above, not this row). The arming guard is therefore
+              undisturbed: *Valider* still costs seven page turns at 1280×800 and
+              nine at 960×600, driven, with no press that fails to move a
+              scroller.
+            */}
+            <div className="mb-3 flex items-center justify-end gap-inline">
               {/*
                 The way out of the app.
 
@@ -2436,7 +2476,15 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
           which is what the recipient line says, and what the eyebrow now says
           with it instead of against it.
         */}
-        <SectionHeader as="h3" className="mb-0 min-w-0 flex-1">
+        {/*
+          `h2`, not `h3`. It was a level under the « COMPTE-RENDU » eyebrow that
+          used to head this column; that eyebrow named furniture and is gone, and
+          `--a11y` caught the hole it left on the first run — « niveau de titre
+          sauté (h1 → h3) », at both sizes. This is now the first section heading
+          in the column and sits at the same level as « Prêt à envoyer » beside
+          it, which is what it always was: a second document on the screen.
+        */}
+        <SectionHeader className="mb-0 min-w-0 flex-1">
           {to.length === 0 ? 'Email de relance — à copier' : 'Email de relance (brouillon)'}
         </SectionHeader>
         {/*

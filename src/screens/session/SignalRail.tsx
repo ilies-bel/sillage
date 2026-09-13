@@ -116,8 +116,20 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
 
   return (
     <section className="flex h-full min-h-0 flex-col">
+      {/*
+        **No caption.** It read « SIGNAUX » over seven boxes each carrying its own
+        label — « TJM », « Profil », « Démarrage » — on the screen a rep has open
+        while a client is talking. A rail of labelled slots names itself; see the
+        rule in `ui/SectionHeader.tsx`. What is left in the header is the one
+        thing that changes as the call runs: the count.
+
+        It gave back **no pixels**, measured at both smoke sizes: it shared this
+        baseline row with « Masquer », which is 24 px tall by WCAG 2.2, so the
+        header is exactly as tall without it and the slate starts where it
+        started. What it took was the first thing the eye landed on in the
+        column, which no measured check reports.
+      */}
       <header className="flex items-baseline justify-between gap-inline px-4 pb-2 pt-4">
-        <h2 className="pane-label">Signaux</h2>
         {/*
           A count, not a score. With a slate it answers "how much of it has come
           up" at a glance, which is the question the list below answers slowly.
@@ -192,16 +204,31 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
           </p>
         ) : null}
         {/*
-          One clause, and it is the one that is about the rep.
+          **And no promise about a thing that does not happen.**
 
-          It read « Se remplit à mesure · ne clique nulle part · rien ne migre
-          dans vos notes. » Two of those three defend decisions nobody
-          questioned — no rep has ever suspected a panel of reordering itself —
-          and they were the last line of the rail, which is where the eye ends.
-          What is worth a line is DEC-5's promise: the one surface the rep owns
-          is not written into by anything here.
+          The last line of the rail read « Rien ne migre dans vos notes. » — a
+          statement, drawn permanently, about something the product never does,
+          at the foot of the column, which is where the eye ends. It was already
+          two clauses shorter than the version before it (« Se remplit à mesure ·
+          ne clique nulle part · rien ne migre dans vos notes. »), and the same
+          argument finishes the job: a rep who has never suspected this panel of
+          typing into their notes is being told not to, during a client call.
+
+          DEC-5's promise is not dropped, it is made where a rep is reading
+          rather than talking, and it is made twice: step 1 of first run carries
+          « Vos notes restent les vôtres — Sillage n’écrit jamais dans votre
+          bloc-notes pendant l’appel », and step 3's third beat names this rail
+          and what it does — « À droite, Sillage note au passage ce qu’il
+          entend … sans rien écrire chez vous » (`Onboarding.tsx`, read before
+          this line was deleted rather than assumed). The
+          slate-less sentence above stays: it is not a promise, it is the reason
+          an empty rail is empty (DEC-43).
+
+          Measured on the shipped renderer: 33 px of content — one line plus its
+          `mt-row` — which at 960×600, the only size where this rail overflows,
+          is 197 → 164 px of slate below the fold during a recording and
+          192 → 159 px once a compte-rendu is beside it.
         */}
-        <p className="text-muted mt-row text-label">Rien ne migre dans vos notes.</p>
       </ReadingColumn>
     </section>
   )
