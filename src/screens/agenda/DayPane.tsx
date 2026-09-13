@@ -68,6 +68,20 @@ interface DayPaneProps {
    * is a calendar: being trusted about what is on it is the whole job.
    */
   unsynced?: boolean
+  /**
+   * **The one meeting on this screen that carries a filled control** (US-26).
+   *
+   * An id and not a predicate, and it comes from `Agenda` rather than being
+   * decided here, because « exactly one filled control » is a fact about the
+   * *screen* and this pane is one of two lists on it — the other is *En attente de
+   * validation*, which offers the same *Ouvrir* on the same kind of row. Two
+   * components each answering « is this row the important one » from what they can
+   * see is how a screen ends up with two blues, and the comparison it takes is
+   * across both lists: the oldest `à valider` call may be in either.
+   *
+   * `null` means no row does, which is an ordinary day.
+   */
+  emphasis: string | null
   onOpen: (meetingId: string) => void
   /**
    * Start a scheduled call now, keeping the invite it came from.
@@ -88,6 +102,7 @@ export function DayPane({
   when,
   action,
   unsynced = false,
+  emphasis,
   onOpen,
   onArm,
 }: DayPaneProps) {
@@ -124,7 +139,14 @@ export function DayPane({
       {upcoming.length > 0 ? (
         <List>
           {upcoming.map((entry) => (
-            <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} onArm={onArm} />
+            <EntryRow
+              key={entry.key}
+              entry={entry}
+              showDay={showDay}
+              filled={entry.meetingId !== null && entry.meetingId === emphasis}
+              onOpen={onOpen}
+              onArm={onArm}
+            />
           ))}
         </List>
       ) : suppressed ? null : (
@@ -161,7 +183,14 @@ export function DayPane({
           <SectionHeader>Passées</SectionHeader>
           <List>
             {past.map((entry) => (
-              <EntryRow key={entry.key} entry={entry} showDay={showDay} onOpen={onOpen} onArm={onArm} />
+              <EntryRow
+                key={entry.key}
+                entry={entry}
+                showDay={showDay}
+                filled={entry.meetingId !== null && entry.meetingId === emphasis}
+                onOpen={onOpen}
+                onArm={onArm}
+              />
             ))}
           </List>
           {/*
@@ -182,12 +211,14 @@ export function DayPane({
 interface EntryRowProps {
   entry: AgendaEntry
   showDay: boolean
+  /** This is the screen's one filled control — see `DayPaneProps.emphasis`. */
+  filled: boolean
   onOpen: (meetingId: string) => void
   /** Start a scheduled call now, keeping the invite (`agenda:arm`). */
   onArm: (eventId: string) => void
 }
 
-function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
+function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
 
   return (
@@ -265,26 +296,32 @@ function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
       ) : null}
 
       {/*
-        **The armed row gets the weight, and its own verb.**
+        **One row on this screen gets the weight, and the verb is the row's own.**
 
-        The call happening right now wore the same outline *Ouvrir* as the four
-        rows around it, while the filled blue primary in the header —
-        « Démarrer une réunion » — starts a *different*, unscheduled meeting.
-        So the strongest control on the home screen pointed away from the one
-        thing the rep was there to do, and the one thing they were there to do
-        looked like a row of history.
+        Two things were wrong at once and they have one fix. The row *being
+        recorded* wore the same outline *Ouvrir* as the four rows around it — and
+        because `Agenda` steps *Démarrer une réunion* down beside an armed row,
+        and a recording row is still armed, the home screen a rep opens mid-call
+        had **no filled control anywhere**: measured at 1280×800, six controls in
+        the right-hand column, all `rgb(255,255,255)` on a 1px border, and the
+        header's primary bordered too. The weight had been given up and nothing
+        took it.
 
-        HR-7's whole case is that row. `primary` on it, and *Enregistrer* rather
-        than *Ouvrir*, because those are two different acts: one opens a meeting
-        that already exists, the other starts capturing a call that is beginning
-        now. There is at most one armed meeting at a time (`core/domain/arming.ts`
-        picks the earliest), so this stays one primary per view.
+        `filled` is decided once for the whole screen in `Agenda` (see
+        `DayPaneProps.emphasis`) — the live call, else the armed offer, else the
+        oldest call still `à valider`, which may be in the other list. Reading
+        `entry.armed` here instead is what made that impossible to get right: it
+        cannot see the recording, it cannot see the pending list, and two lists
+        deciding separately is two blues.
+
+        The **verb** stays this row's own, and it is not the same question.
+        *Enregistrer* means « start capturing a call that is beginning now », which
+        is what an armed row offers; *Ouvrir* means « take me to this meeting »,
+        which is what a call already recording, and a compte-rendu waiting to be
+        validated, both want. A live call is opened, never started again.
       */}
       {meetingId ? (
-        <Button
-          variant={entry.armed && entry.state !== 'recording' ? 'primary' : 'bordered'}
-          onClick={() => onOpen(meetingId)}
-        >
+        <Button variant={filled ? 'primary' : 'bordered'} onClick={() => onOpen(meetingId)}>
           {entry.armed && entry.state !== 'recording' ? 'Enregistrer' : 'Ouvrir'}
         </Button>
       ) : entry.eventId !== null && !entry.past ? (
@@ -307,10 +344,11 @@ function EntryRow({ entry, showDay, onOpen, onArm }: EntryRowProps) {
           instead of « Client », and the strongest signal account resolution has.
           The rep pays that for being on time.
 
-          `bordered`, not `primary`. There is at most one armed meeting and it
-          owns the screen's single filled button (HR-7); a row of blue
-          *Enregistrer*s down the upcoming list would take that weight away from
-          the call that is actually starting now.
+          `bordered`, always, and this row is not an `emphasis` candidate at all:
+          a row with no meeting has no id to name. One row owns the screen's single
+          filled control (HR-7, US-26); a column of blue *Enregistrer*s down the
+          upcoming list would take that weight away from the call that is actually
+          happening.
         */
         <Button variant="bordered" onClick={() => onArm(entry.eventId as string)}>
           Enregistrer

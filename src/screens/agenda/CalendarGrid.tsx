@@ -157,10 +157,23 @@ export function CalendarGrid({
  *
  * Built from `MARK_CLASS`, so a dot cannot change colour in the grid and keep
  * its old colour in the legend.
+ *
+ * **Each entry names what the day holds, and the middle one used to name a
+ * *state* instead.** It was « prêt », which is `STATE_LABEL.armed` — the word the
+ * row beside it already draws through `StateDot`. So on `agenda-appel-imprevu` the
+ * screen said « prêt » twice, 248 pixels apart: once as a key for a 6px dot in the
+ * grid and once as the condition of the row that dot points at. `shot.mjs --echo`
+ * measures it at both sizes.
+ *
+ * « réunion prête » is the fix and it is a consistency gain rather than a dodge:
+ * the other two entries are noun phrases about the day's content, and `MARK_NAME`
+ * below — whose own docblock says the wording tracks this list deliberately —
+ * already announces the same mark to a screen reader as « dont une prête ». The
+ * state word stays where it belongs, on the row.
  */
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
   { mark: 'captured', label: 'réunion enregistrée' },
-  { mark: 'armed', label: 'prêt' },
+  { mark: 'armed', label: 'réunion prête' },
   { mark: 'scheduled', label: 'événement seul' },
 ]
 

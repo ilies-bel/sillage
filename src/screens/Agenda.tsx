@@ -35,7 +35,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { HistoryFilter } from '../../electron/core/contracts/history.ts'
 import type { AgendaSnapshotPayload } from '../../electron/core/contracts/ipc.ts'
 import type { AuthState } from '../../electron/core/contracts/identity.ts'
-import type { Meeting } from '../../electron/core/contracts/meeting.ts'
+import { meetingAnchor, type Meeting } from '../../electron/core/contracts/meeting.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { useShortcuts } from '../app/shortcuts.ts'
 import {
@@ -225,6 +225,62 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
   }, [entries, view, selected, month])
 
   /**
+   * **The one row that carries the screen's filled control** (US-26, HR-7).
+   *
+   * Measured on the shipped home screen at 1280×800, at 14:35 with the Néovia call
+   * being recorded: six controls in the right-hand column — *Ouvrir* at y=206,
+   * *Enregistrer* at 276 and 345, *Ouvrir* at 464, 534 and 681 — every one of them
+   * `bordered`, `rgb(255,255,255)` on a 1px `rgb(211,222,230)` border. And
+   * *Démarrer une réunion* in the header was **bordered too**, because
+   * `NewMeeting` steps it down beside an armed row (`armedElsewhere`) and the armed
+   * row here is `recording`, which `DayPane` drew as an ordinary *Ouvrir*. So the
+   * screen a rep opens mid-call had **no filled control at all**: the header had
+   * given the weight up and nothing took it.
+   *
+   * One row gets it, and the ranking is what the rep would do next:
+   *
+   *  1. the call that is **being recorded** — « En cours », opened and not started;
+   *  2. the **armed** row — « Prêt », the offer `core/domain/arming.ts` made, which
+   *     is what carried the fill before and still does. It cannot coexist with (1):
+   *     `Orchestrator.dispatch` allows one recording at a time and `Agenda.#arm`
+   *     refuses beside a live one, so the two are a ranking and never a tie;
+   *  3. the **oldest** row still `à valider`, across the day list *and* *En attente
+   *     de validation*, because a compte-rendu that never reached VerySwing is the
+   *     product's quietest failure and the rep owes it one gesture.
+   *
+   * It is an id and not a flag per component, which is the whole point: « exactly
+   * one filled control » is a fact about the *screen*, and two components each
+   * deciding locally is how a screen ends up with two. `null` is an ordinary
+   * answer — a quiet day owes nothing, and then the header's *Démarrer une
+   * réunion* is the only fill, which is what it was built to be.
+   *
+   * Nothing gains or loses an affordance here. Every control that was on a row is
+   * still on it, with the same verb and the same handler; only the ink moves.
+   */
+  const emphasis = useMemo<string | null>(() => {
+    const live = inRange.find((entry) => entry.state === 'recording')
+    if (live?.meetingId) return live.meetingId
+    const armed = inRange.find((entry) => entry.armed)
+    if (armed?.meetingId) return armed.meetingId
+
+    /*
+     * Oldest first, and over both lists at once — `entry.start` and
+     * `meetingAnchor` are the same clock. The day pane draws its past rows newest
+     * first and the pending section is ordered by the store, so « the earliest »
+     * cannot be read off either render order.
+     */
+    const owed = inRange
+      .filter((entry) => entry.state === 'awaiting_confirmation' && entry.meetingId !== null)
+      .map((entry) => ({ id: entry.meetingId as string, at: entry.start }))
+    for (const row of pending.result?.rows ?? []) {
+      if (owed.some((seen) => seen.id === row.meeting.id)) continue
+      owed.push({ id: row.meeting.id, at: meetingAnchor(row.meeting) })
+    }
+    owed.sort((a, b) => a.at - b.at)
+    return owed[0]?.id ?? null
+  }, [inRange, pending.result])
+
+  /**
    * **Whether the range on screen is one Graph was actually asked about.**
    *
    * The sync window is yesterday through a week ahead — eight days — and this
@@ -359,16 +415,47 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
       */}
       <header className="border-subtle flex items-baseline justify-between gap-4 border-b px-gutter pb-4 pt-7">
         {/*
-          Title and date on one line (`5.1 Aujourd'hui — Canonical`). Stacked,
-          the date read as a subtitle of the screen; beside the title it reads
-          as what it is — which day the calendar is opened on.
+          **The page is named by what changed, and the day is drawn once.**
+
+          This held « Calendrier » in 42px serif — the largest thing on the screen,
+          over a calendar — and beside it `formatDayLong(now)` at 11px uppercase,
+          which the day pane's own `h2` then drew a *second* time: measured on the
+          shipped screen, « dimanche 13 septembre » at y=40 and « Dimanche 13
+          septembre » at y=148, 108px apart at 1280×800 and 107 at 960×600. The
+          casefold is why no review round saw it — one was `text-transform:
+          uppercase`, so as strings they differed.
+
+          Of the two positions this one survives, and the `h2` in `main` goes. Both
+          were built and measured, and the difference is not the one the layout
+          suggests: promoting the `h2` costs **nothing** vertically (the row's
+          height is set by the `Jour · Semaine · Mois · Liste` switch beside it, so
+          the first day row stays at y=188 either way, and the header loses 4px).
+          What decides it is the scroller. `main` is `overflow-y-auto`, so a title
+          promoted there **leaves the screen**: measured at 960×600 — the minimum
+          `app/main.ts` declares — scrolling the day list to its end takes it from
+          top 138 to **−10**, above `main`'s own top edge at 78, on a 148px scroll;
+          in *Liste* it goes to −365 at 1280×800 and −565 at 960×600. A page whose
+          title scrolls away has no title. **And note the shape of how that hides:
+          at 1280×800 on *Jour* the day list fits, so nothing scrolls and the
+          version measures perfectly — it only breaks at the size `main.ts` declares
+          as the minimum, and in the one view a rep switches to when they want more
+          than a day.** That is HR-2's mac-first failure one level over: correct on
+          the comfortable machine, wrong on the one that ships, and invisible to
+          anybody who looked once. It is why `smoke.mjs` drives two sizes, and it is
+          worth not re-deriving.
+          Here it is outside the scroller and the tallest text box above the fold
+          at both sizes (28px against the grid's 14px `h2`).
+
+          It carries the **selected range** rather than `now`, which is a
+          correction and not a move: the `h2` it replaces answered « what is the
+          right column showing » — the day, the week, the month, or « Toutes les
+          réunions » — while the header answered « what day is it today », so a rep
+          who clicked Thursday read a list of Thursday under a title saying Sunday.
+          The day the rep is *on* is what changed; today is marked in the grid.
         */}
-        <div className="flex items-baseline gap-inline">
-          <h1 className="font-display text-strong text-display leading-none">Calendrier</h1>
-          <p className="text-muted text-label font-semibold uppercase tracking-wider">
-            {formatDayLong(now)}
-          </p>
-        </div>
+        <h1 className="font-display text-strong text-display leading-none">
+          {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month, inRange.length))}
+        </h1>
 
         <div className="flex items-center gap-3">
           {/*
@@ -406,7 +493,25 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             today={today}
             onCreated={created}
             showSchedule={searching || inRange.some((entry) => !entry.past)}
-            armedElsewhere={inRange.some((entry) => entry.armed)}
+            /*
+              **`armedElsewhere` is read by `NewMeeting` as « the list already
+              carries the screen's one fill », and the set of rows that can claim
+              it has widened.**
+
+              Its own comment is « never the second filled blue on the screen »,
+              with the measurement beside it: *Démarrer une réunion* at x=1099 and
+              the armed row's *Enregistrer* at x=1140, both `--brand-700`, 172px
+              apart and horizontally overlapping — « one primary per view »
+              (VISION.md §6) being two. That reasoning is about the *fill*, not
+              about arming; arming was simply the only thing that could take it.
+              US-26 gives it to a live call and to the oldest unvalidated call as
+              well, so this is the same question asked of the same answer.
+
+              Passing `entry.armed` here now would put a second blue on the home
+              screen the moment a call is being recorded or a compte-rendu is
+              waiting, which is most afternoons.
+            */
+            armedElsewhere={emphasis !== null}
           />
         </div>
       </header>
@@ -487,10 +592,15 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             className="mb-3"
           />
 
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-strong text-copy">
-              {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month))}
-            </h2>
+          {/*
+            The range label was here, in `text-copy`, and it is the page's `h1`
+            now — US-22. Nothing replaces it: this row holds the switch that
+            *changes* the range, and the title above says which one is on, so a
+            caption between the two would be the third rendering of one fact.
+            `justify-end` rather than `justify-between`, because the control it
+            holds has always sat at the end of the rule.
+          */}
+          <div className="mb-3 flex items-center justify-end gap-4">
             {/*
               The view switch belongs to the day list, so it goes with it. A
               `Jour · Semaine · Mois · Liste` left on screen over a list of
@@ -536,6 +646,8 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             <DayPane
               onArm={armNow}
               entries={inRange}
+              /* The screen's one filled control, decided once, above. */
+              emphasis={emphasis}
               reason={snapshot?.reason ?? null}
               signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
@@ -601,6 +713,9 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
                  answer, so « 50+ » is drawn when a row was hidden and never
                  because the count happens to equal the limit. */
               capped={pending.capped}
+              /* The same one id the day list is given: whichever list holds that
+                 row draws the fill, and neither can invent a second. */
+              emphasis={emphasis}
               now={now}
               onSeeAll={() => onHistorique('', pendingFilter)}
               onOpen={onOpen}
@@ -612,14 +727,35 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
   )
 }
 
-/** What the right column is showing, in French, always on screen. */
-const rangeLabel = (view: View, selected: DayKey, month: DayKey): string => {
+/**
+ * What the right column is showing, in French — and it is the page's title
+ * (US-22), not a caption over the list.
+ *
+ * This used to be drawn as an `h2` inside `main` *and* the day was printed a
+ * second time in the header, which is the echo `shot.mjs --echo` now measures.
+ *
+ * **`mois` names the count, because the month is already named beside it.**
+ * `--echo` found this the moment the title moved into the header and changed tag:
+ * « Novembre 2026 » at y=28 as the page title and « Novembre 2026 » at y=99 as the
+ * calendar's own pager, on `agenda-hors-fenetre` at both sizes. Seventy pixels
+ * apart, and the pager is the control the rep uses to *change* it — so the title
+ * repeating it said nothing at all. (It was there before US-22 too, as an `h2`
+ * against the pager's `h2`; identical tag and class, which is the one pair
+ * exemption 1 cannot see. Changing the tag is what exposed it.) The count is what
+ * switching to *Mois* actually asks about, and it is the same gesture US-22 asks
+ * of *Historique*'s title.
+ */
+const rangeLabel = (view: View, selected: DayKey, month: DayKey, held: number): string => {
   if (view === 'jour') return formatDayLong(noonOf(selected))
   if (view === 'semaine') {
     const first = startOfWeek(selected)
     const week = weekOf(selected)
     return `Semaine du ${formatDayMedium(noonOf(first))} au ${formatDayMedium(noonOf(week[6]))}`
   }
-  if (view === 'mois') return formatMonthLong(noonOf(month))
+  if (view === 'mois') {
+    const on = formatMonthLong(noonOf(month))
+    if (held === 0) return `Aucune réunion en ${on}`
+    return `${held} réunion${held > 1 ? 's' : ''} en ${on}`
+  }
   return 'Toutes les réunions'
 }

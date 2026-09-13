@@ -13,6 +13,7 @@
  *   --geometry       measure the hanging markers against the box they hang in
  *   --targets        measure every control against WCAG 2.2's 24×24 minimum
  *   --prose          count the characters a line of each prose surface really holds
+ *   --echo           fail on a visible string the screen draws more than once
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
  *   --motion         every transition through the tokens, and silent under reduced motion
@@ -2655,6 +2656,7 @@ function parseArgs(argv) {
     geometry: false,
     targets: false,
     prose: false,
+    echo: false,
     a11y: false,
     contrast: false,
     motion: false,
@@ -2677,6 +2679,7 @@ function parseArgs(argv) {
     else if (arg === '--geometry') flags.geometry = true
     else if (arg === '--targets') flags.targets = true
     else if (arg === '--prose') flags.prose = true
+    else if (arg === '--echo') flags.echo = true
     else if (arg === '--a11y') flags.a11y = true
     else if (arg === '--contrast') flags.contrast = true
     else if (arg === '--scrollers') flags.scrollers = true
@@ -2705,7 +2708,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion] [--fade]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -2798,6 +2801,192 @@ async function main() {
   if (flags.prose) {
     await page.evaluate(() => document.fonts.ready)
     long = await prose(page)
+  }
+
+  /*
+   * **`--echo`'s own self-test, and it is twelve probes rather than a count.**
+   *
+   * A check whose self-test measures nothing while reporting green is the failure
+   * this repo has already shipped five times, once inside an instrument
+   * (`SILLAGE_MOTION_ATTACK` injected at `#root h1`, and the widget renderer has
+   * no `h1`). So this one creates every element it attacks, asserts each probe
+   * **by the string it draws** rather than by a total, and carries eight probes
+   * that must stay silent — because a rule whose whole difficulty is its
+   * exemptions can only be trusted if the exemptions are shown to hold, and
+   * because a false positive here is worse than a hole: a repeated control label
+   * is on every list in this product, so a check that reported one would be
+   * worked around and gone.
+   *
+   *   SILLAGE_ECHO_ATTACK=1 node scripts/harness/shot.mjs agenda /dev/null \
+   *     --no-png --echo
+   *
+   * must report the four echoes below, exempt the three columns and the control
+   * naming its target, skip the value and the two invisible second copies, stay
+   * silent on the declared blind spot, and exit 12.
+   *
+   * A harness-only development override, which is what `process.env` is for
+   * here: DEC-34 is about the *app* requiring none, and nothing in `electron/` or
+   * `src/` reads this.
+   */
+  if (process.env.SILLAGE_ECHO_ATTACK) {
+    await page.evaluate(() => {
+      const root = document.querySelector('#root')
+      if (!root) throw new Error('SILLAGE_ECHO_ATTACK: pas de #root à attaquer')
+      const bench = document.createElement('div')
+      // Off to the side and out of the way, but genuinely laid out: a probe with
+      // no box is a probe this check is documented to skip.
+      bench.setAttribute('style', 'position:fixed;left:0;top:0;width:600px;opacity:.01;z-index:0')
+      root.append(bench)
+      const say = (html) => {
+        const el = document.createElement('div')
+        el.innerHTML = html
+        bench.append(el)
+      }
+
+      /* 1. The shipped defect's own shape: one sentence, two different elements. */
+      say('<h3 class="attaque-titre">Le compte-rendu part chez VerySwing</h3>')
+      say('<p class="attaque-prose">Le compte-rendu part chez VerySwing</p>')
+
+      /*
+       * 2. Case and trailing punctuation, which is *exactly* how the home screen's
+       * duplicate date hid: `text-transform: uppercase` leaves the DOM in lower
+       * case, so a raw comparison reported the screen clean for every review round.
+       */
+      say('<p class="attaque-casse" style="text-transform:uppercase">Jeudi 9 avril</p>')
+      say('<span class="attaque-casse-bis">jeudi 9 avril.</span>')
+
+      /*
+       * 3. A cell of a list row echoed by a heading outside it. Two components,
+       * neither of them a control, so nothing exempts it.
+       *
+       * The client is invented rather than borrowed from the fixture, and that is
+       * not decoration: every probe is asserted by its own string, so a probe
+       * sharing copy with the staged screen would be satisfied — or defeated — by
+       * the product rather than by the injection.
+       */
+      say(
+        '<ul><li class="attaque-ligne"><span class="attaque-cellule">Sonaverre Industrie</span></li></ul>' +
+          '<h4 class="attaque-ailleurs">Sonaverre Industrie</h4>',
+      )
+
+      /*
+       * 4. A page title against a pager's value — two headings, two levels. This is
+       * the pair US-22 created and `--echo` found on `agenda-hors-fenetre`: the
+       * calendar's own `‹ Septembre 2026 ›` and the page's `h1` saying the same
+       * month. It is the probe that proves exemption 1 is about the *tag* and not
+       * about « anything that looks like a heading ».
+       */
+      say('<h1 class="attaque-titre-page">Brumaire 2031</h1>')
+      say('<h2 class="attaque-pagineur">Brumaire 2031</h2>')
+
+      /*
+       * The first that must stay **silent**: the same control label on five rows,
+       * which is every day list in this product — and deliberately on rows in two
+       * *different* lists, because that is the shape on the home screen (the day
+       * list and *En attente de validation* both offer *Ouvrir*) and the shape
+       * that a positional-parallelism rule would report.
+       */
+      say(
+        '<ul>' +
+          [1, 2, 3]
+            .map(() => '<li><button class="attaque-ouvrir">Rouvrir l’appel</button></li>')
+            .join('') +
+          '</ul>' +
+          '<section><ul>' +
+          [1, 2]
+            .map(() => '<li><button class="attaque-ouvrir">Rouvrir l’appel</button></li>')
+            .join('') +
+          '</ul></section>',
+      )
+
+      /*
+       * The second that must stay silent, and it is the one an allow-list of
+       * button labels could never cover: a repeated *cell of prose* — the same
+       * component, the same variant, one per row. « Rien n’a été envoyé » is on
+       * every row of *En attente de validation* and is not the app repeating
+       * itself; it is a column. Nor are these rows `<li>`s, because the rail's
+       * eleven field rows and Réglages' provider rows are not either.
+       */
+      say(
+        '<div>' +
+          [1, 2, 3]
+            .map(() => '<div><span class="attaque-colonne">Rien n’a été envoyé</span></div>')
+            .join('') +
+          '</div>',
+      )
+
+      /*
+       * The third that must stay silent, and it is the false positive that decided
+       * exemption 1's unit: two cells of one list whose classes differ because the
+       * *row* differs. `TranscriptReader` draws a cited turn `text-strong` and an
+       * ordinary one `text-body`, so comparing class lists reported one tiled
+       * sentence **seventeen times** on `review-transcription` — the fixture's own
+       * volume, reported as a defect of the product.
+       */
+      say(
+        '<ul><li><span class="attaque-variante-a">Envoi interrompu</span></li>' +
+          '<li><span class="attaque-variante-b">Envoi interrompu</span></li></ul>',
+      )
+
+      /*
+       * The fourth: a control naming its target. A filter chip beside the rows it
+       * filters, Réglages' section nav beside the pane it opens, « ‹ Calendrier »
+       * beside the *Calendrier* connector row — one gesture, three screens.
+       */
+      say(
+        '<button class="attaque-onglet">Cadrage support N2</button>' +
+          '<p class="attaque-cible">Cadrage support N2</p>',
+      )
+
+      /*
+       * The fifth: a value, drawn twice, **by two different tags** — which is what
+       * makes this probe measure the letter floor rather than exemption 1. Written as
+       * two `<p>`s it was silent either way, because the column exemption had already
+       * taken it: measured, removing the floor changed nothing. A time is not a thing
+       * said, and the month grid genuinely draws « 1 » twice.
+       */
+      say('<p class="attaque-heure">07:42</p><span class="attaque-heure-bis">07:42</span>')
+
+      /*
+       * The sixth, and it is the **declared blind spot rather than a property**: two
+       * elements of the same tag saying the same thing in two unrelated places.
+       * Exemption 1 cannot tell that from a column, which is written down in
+       * `echo()`'s docblock with the measurement behind the choice — every
+       * alternative cost a true positive, and the tightest of them reported *Ouvrir*
+       * across two lists. If this probe ever starts firing, exemption 1 has been
+       * tightened and the two probes above it are what to re-measure.
+       */
+      say('<p class="attaque-jumelle-a">Deux fois la même balise, hors liste</p>')
+      say('<p class="attaque-jumelle-b">Deux fois la même balise, hors liste</p>')
+
+      /*
+       * The seventh and eighth: two strings drawn **once** where a rep can read them
+       * and a second time where nobody can — an `sr-only` box, which is 1×1 and
+       * clipped by construction, and a `display: none`. Each carries its own
+       * string and neither may appear in the findings, which is how the assertion
+       * reaches the skip directly instead of inferring it from a count.
+       */
+      say('<p class="attaque-visible-a">Le second exemplaire est pour les lecteurs d’écran</p>')
+      const hidden = document.createElement('span')
+      hidden.setAttribute(
+        'style',
+        'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)',
+      )
+      hidden.textContent = 'Le second exemplaire est pour les lecteurs d’écran'
+      bench.append(hidden)
+
+      say('<p class="attaque-visible-b">Le second exemplaire n’est pas dessiné</p>')
+      const gone = document.createElement('p')
+      gone.setAttribute('style', 'display:none')
+      gone.textContent = 'Le second exemplaire n’est pas dessiné'
+      bench.append(gone)
+    })
+    await page.waitForTimeout(60)
+  }
+  let repeats = { items: [], seen: 0, column: 0, named: 0 }
+  if (flags.echo) {
+    await page.evaluate(() => document.fonts.ready)
+    repeats = await echo(page)
   }
 
   let dim = []
@@ -3476,6 +3665,153 @@ async function main() {
       process.exitCode = 6
     }
   }
+  if (flags.echo) {
+    /*
+     * **A stage this file does not know fails, and it fails on every run.**
+     *
+     * `check:ports`' `HOMES` named a preload that has never existed, so its own
+     * exclusion excluded nothing and the sentence a failure printed pointed at a file
+     * nobody could open. A declared stage is a fact about `SCREENS`, so it is checked
+     * against `SCREENS` — here rather than inside the per-stage branch below, because
+     * a typo must not wait for the one run that happens to stage it.
+     */
+    const unknown = ECHO_DECLARED.flatMap((entry) =>
+      entry.stages.filter((name) => !(name in SCREENS)).map((name) => ({ name, text: entry.text })),
+    )
+    if (unknown.length > 0) {
+      console.log(
+        `  ✗ échos: ${unknown.length} écho(s) déclaré(s) nomment une mise en scène inconnue`,
+      )
+      for (const item of unknown.slice(0, 8)) {
+        console.log(`     « ${item.text} » sur « ${item.name} », qui n’est pas dans SCREENS`)
+      }
+      process.exitCode = 14
+    }
+
+    const declared = ECHO_DECLARED.filter((entry) => entry.stages.includes(screen))
+    const allowed = new Set(declared.map((entry) => entry.text))
+    const undeclared = repeats.items.filter((item) => !allowed.has(item.text))
+    /*
+     * **The half that matters: an allowance that no longer has a finding fails.**
+     *
+     * Without it the list is a blanket exemption that grows and never shrinks, which
+     * is the rot `check-platform.mjs` records as the reason its own staleness check
+     * exists. Every entry here names a story; when that story lands, this is what
+     * tells whoever landed it to delete the entry.
+     */
+    const stale = declared.filter((entry) => !repeats.items.some((item) => item.text === entry.text))
+
+    /*
+     * The census, for the reason `--fade` prints one: a run that visited zero
+     * elements has to read differently from a run that compared every string on
+     * the screen. « aucune chaîne dessinée deux fois » over an empty set is the
+     * false green this repo has recorded five times. The declared count is part of
+     * it — a screen that is quiet because everything on it is excused must not read
+     * like a screen that is quiet.
+     */
+    const census =
+      `${repeats.seen} chaîne(s) comparée(s), ${repeats.column} colonne(s), ` +
+      `${repeats.named} contrôle(s) qui nomment leur cible` +
+      (declared.length > 0 ? `, ${declared.length} écho(s) déclaré(s)` : '')
+    if (undeclared.length === 0) {
+      console.log(`  échos: ${census} — aucune chaîne dessinée deux fois hors déclaration`)
+    } else {
+      console.log(`  ✗ échos: ${undeclared.length} chaîne(s) dessinée(s) plus d’une fois (${census})`)
+      for (const item of undeclared.slice(0, 8)) {
+        console.log(`     « ${item.text.slice(0, 60)} » ×${item.times} — ${item.where.join(' · ')}`)
+      }
+      process.exitCode = 12
+    }
+    if (stale.length > 0) {
+      console.log(
+        `  ✗ échos: ${stale.length} écho(s) déclaré(s) ne se répètent plus — ` +
+          'une dispense qui a survécu à son constat, à supprimer',
+      )
+      for (const entry of stale.slice(0, 8)) {
+        console.log(`     « ${entry.text} » sur « ${screen} » — ${entry.story}`)
+      }
+      process.exitCode = 14
+    }
+    if (process.env.SILLAGE_ECHO_ATTACK) {
+      const found = (needle) => repeats.items.some((item) => item.text.includes(needle))
+      const missed = [
+        [found('compte-rendu part chez veryswing'), 'une phrase dessinée dans deux éléments différents'],
+        [
+          found('jeudi 9 avril'),
+          'un doublon que seul le repli de casse peut voir (text-transform: uppercase ' +
+            'd’un côté, un point final de l’autre) — la forme exacte du défaut de l’écran d’accueil',
+        ],
+        [found('sonaverre industrie'), 'une cellule de liste répétée par un titre hors liste'],
+        [
+          found('brumaire 2031'),
+          'un titre de page qui répète la valeur d’un pagineur (h1 contre h2) — ' +
+            'la paire que US-22 a créée et que --echo a trouvée sur agenda-hors-fenetre',
+        ],
+        /*
+         * The seven silent ones, asserted the other way round. A check that can only
+         * fail loudly cannot prove it does not fire, and a false positive here is
+         * worse than a hole: a repeated control label is on every list in the
+         * product, so a check that reported one would be worked around and gone.
+         */
+        [
+          !found('rouvrir l’appel'),
+          'RIEN — le même libellé de contrôle sur cinq lignes, réparties sur deux listes, ' +
+            'a été signalé (faux positif : c’est la forme de l’écran d’accueil)',
+        ],
+        [
+          !found('rien n’a été envoyé'),
+          'RIEN — une colonne de prose répétée ligne par ligne, hors <li>, a été signalée ' +
+            '(faux positif) ; aucune liste de libellés autorisés ne l’aurait couverte',
+        ],
+        [
+          !found('envoi interrompu'),
+          'RIEN — deux cellules d’une liste dont les classes diffèrent parce que la ' +
+            'ligne diffère ont été signalées (faux positif mesuré : dix-sept fois la ' +
+            'même réplique sur review-transcription)',
+        ],
+        [
+          !found('cadrage support n2'),
+          'RIEN — un contrôle qui nomme sa cible a été signalé (faux positif : c’est ' +
+            '« ‹ Calendrier », la nav de Réglages et une puce de filtre)',
+        ],
+        [!found('07:42'), 'RIEN — une heure dessinée deux fois a été signalée (faux positif)'],
+        [
+          !found('pour les lecteurs d’écran'),
+          'RIEN — un second exemplaire dans une boîte sr-only de 1×1 a été compté ' +
+            'comme dessiné (faux positif)',
+        ],
+        [
+          !found('n’est pas dessiné'),
+          'RIEN — un second exemplaire en display:none a été compté comme dessiné (faux positif)',
+        ],
+        /*
+         * And the declared blind spot, asserted as the absence it is. This is not a
+         * property being defended: it is exemption 1's cost, kept visible so that a
+         * later tightening cannot be made without re-measuring « Rouvrir l’appel »
+         * above — the two move together, and the reasoning is in `echo()`'s docblock.
+         */
+        [
+          !found('deux fois la même balise'),
+          'RIEN — angle mort déclaré : deux éléments de même balise qui disent la même ' +
+            'chose à deux endroits sans rapport (resserrer ceci coûte les deux probes ci-dessus)',
+        ],
+      ]
+        .filter(([held]) => !held)
+        .map(([, what]) => what)
+      if (missed.length > 0) {
+        console.log(
+          `  ✗ auto-test des échos: ${missed.length} attaque(s) n’ont rien provoqué — ` +
+            'la vérification ne mesure pas ce qu’elle prétend mesurer sur cette mise en scène',
+        )
+        for (const what of missed) console.log(`     jamais signalé : ${what}`)
+        process.exitCode = 13
+      } else {
+        console.log(
+          '  auto-test des échos: les quatre attaques signalées, les huit dernières restées muettes',
+        )
+      }
+    }
+  }
   if (flags.targets) {
     if (small.length === 0) console.log('  cibles: toutes ≥ 24 px')
     else {
@@ -3908,6 +4244,374 @@ async function prose(page) {
       })
     }
     return out
+  })
+}
+
+/**
+ * **Is the app saying the same thing twice on one screen?**
+ *
+ * The home screen led with « Calendrier » in 42px serif — the name of the
+ * furniture — and printed the day **twice**: « DIMANCHE 13 SEPTEMBRE » in the
+ * header at y=40 and « Dimanche 13 septembre » as an `h2` at y=148, measured
+ * 108px apart at 1280×800 and 106 at 960×600. Every string was correct, every
+ * contrast passed, every box was the right size, and none of the nine checks
+ * before this one could see it, because none of them compares one part of a
+ * screen with another part. A screenshot review cannot see it either: a reader
+ * who has just read a date reads it again as confirmation.
+ *
+ * ## Own text, not `innerText`
+ *
+ * The same reason `--prose` gives, for the same reason: an element's text split
+ * by one inline child is almost all of the prose in this product. `« {excerpt} »`
+ * is three text nodes and `À :{' '}{to.join(', ')}` is two, so reading
+ * `innerText` would report every wrapper as a duplicate of the element inside it
+ * — a screen's worth of false positives — while reading only the first text node
+ * would miss any string a `<mark>` or a `{' '}` splits. The element's own text
+ * nodes are **summed**, and a wrapper therefore owns nothing its children own.
+ *
+ * ## Normalised, and the casefold is load-bearing
+ *
+ * Whitespace collapsed, casefolded, and leading/trailing punctuation and
+ * quotation marks dropped. Casefolding is not tidiness here: the header's date
+ * was `text-transform: uppercase` in CSS, so the DOM held « dimanche 13
+ * septembre » and the `h2` held « Dimanche 13 septembre ». A comparison of raw
+ * strings would have reported the home screen clean — which is exactly what
+ * every review round did.
+ *
+ * A string with **no letter in it** is skipped. A time, a day number, a count or
+ * a « — » is a *value* the screen prints, not a thing it says: two rows at 14:30
+ * is a fact about the day, and the month grid genuinely draws « 1 » twice
+ * (September's first and October's). Requiring a letter is what keeps this check
+ * about sentences.
+ *
+ * A box smaller than 2×2 is skipped, measured rather than named — that is what
+ * `sr-only` is by construction (a 1×1 clipped box), and a visually-hidden label
+ * repeating a visible one is not something a rep's eye can see twice.
+ *
+ * ## The exemption, which is the whole difficulty
+ *
+ * « Ouvrir » on five rows is one control offered five times; « Dimanche 13
+ * septembre » in two places is the app repeating itself. Both are « the same
+ * string drawn more than once », so the rule has to separate them — and it is
+ * stated as a rule rather than as a list of allowed strings, because an allow-list
+ * of copy is an omission dressed as a declaration and goes stale the first time
+ * somebody renames a button.
+ *
+ * What separates them is **how many things on the screen are speaking**, not how
+ * many times the words appear. Two exemptions, each measured across all 122
+ * stagings before being written down:
+ *
+ *  1. **One kind of element drawn more than once is one voice** — a *column*.
+ *     « Ouvrir » on five day rows and again on the *En attente de validation* row,
+ *     « source ▸ » on eleven field rows, « Client » on 215 turns of the gate's
+ *     reader, « sur la machine » on two provider rows in Réglages. Two things it
+ *     deliberately does **not** require. Not that the occurrences sit in a `<li>`:
+ *     half the repeated rows in this product are divs — the rail's eleven field
+ *     rows, Réglages' provider rows — and a version that demanded list membership
+ *     reported every one of them. And not that the **class lists** match: a row's
+ *     class changes with its state, so `TranscriptReader` draws a cited turn in
+ *     `text-strong` and an ordinary one in `text-body`, and comparing classes
+ *     reported the same sentence **seventeen times** on `review-transcription` —
+ *     a fixture tiling its turns for volume, reported as a product defect. The
+ *     tag is the honest unit here, and that is a measurement rather than a
+ *     preference: across 122 stagings **every** true finding is two *different*
+ *     tags, because an echo is one thing said in two different roles — a heading
+ *     and a caption (`h2` against `span`), a document line and a field label
+ *     (`strong` against `span`, `span` against `label`), a legend and a state
+ *     (`li` against `span`), a page title and a pager (`h1` against `h2`).
+ *  2. **A control naming its target is not an echo.** At least one occurrence sits
+ *     inside a `button`, an `a[href]`, a `[role="button"]`, a `[role="tab"]`, a
+ *     `[role="option"]` or a `summary`. CLAUDE.md already draws this line for the
+ *     back link — « ‹ Calendrier » names a *destination*, which is a different job
+ *     — and the same holds for Réglages' section nav beside the pane it opens, the
+ *     *Transcription* tab beside the reader's own heading, and a client filter chip
+ *     beside the rows it filters. A control is an offer to reach something; the
+ *     thing it reaches is allowed to be on the screen that points at it.
+ *
+ * **What exemption 1 cannot see, stated rather than implied**, because every
+ * alternative was measured and each cost a true positive: two elements of the *same
+ * tag* saying the same thing in two unrelated places. Before US-22 there was a live
+ * instance on this very screen — in *Mois*, the calendar's pager and the range
+ * label above the list were both `h2.text-strong text-copy`, so « Septembre 2026 »
+ * twice was invisible here. Moving the title into the header made it an `h1` and
+ * the check found it at once, on `agenda-hors-fenetre` at both sizes, which is why
+ * that title now names the count. Tightening exemption 1 with positional
+ * parallelism (« the same slot of sibling containers ») catches that class of pair
+ * and costs « Ouvrir » across the day list and the pending list — a `div` and a
+ * `section` under `main` — which is a false positive on an entirely correct
+ * control, and a check people work around is gone.
+ *
+ * On the shipped `agenda` at 1280×800 and at 960×600: 38 strings repeat, 2 are
+ * columns, and before US-22 the one finding was the date. After it, none.
+ */
+/**
+ * **The echoes this product has declared, each with the reason it is not a defect
+ * *yet* and what removing it would cost.**
+ *
+ * `--echo` found 44 stagings on its first run. Two of them were this lane's and are
+ * fixed; the rest are in three other files, and a check that exits 1 on every run
+ * is a check nobody can gate on — so they are declared, in the shape
+ * `check-platform.mjs` and `check:ports`' `UNWIRED` already use in this repo.
+ *
+ * Three rules, and the third is the one that matters:
+ *
+ *  · an entry names **one stage and one string**, never a bare string everywhere —
+ *    « transcription » is legitimate on *Historique* and would be a defect on the
+ *    session screen, and a list of words rather than pairs is a blanket exemption
+ *    with extra steps;
+ *  · it says what the pair **is** (both elements, both files), why it stands, and
+ *    which story removes it — « declared debt » with no owner is a comment;
+ *  · **a stale entry fails the run.** If the string stops repeating on that stage,
+ *    the allowance has outlived its finding and the check exits 14 naming it. That
+ *    is the half `check-platform.mjs` records as mattering most: without it the
+ *    list rots into a permanent exemption, which this repo has now written down
+ *    twice. A stage this file does not know also fails, which is `check:ports`'
+ *    `HOMES`-not-on-disk lesson.
+ *
+ * So an entry costs whoever lands its story exactly one deletion, and forgetting
+ * that deletion is loud rather than silent.
+ */
+const ECHO_DECLARED = [
+  /*
+   * ── *Historique*: a search result's surface label against a pane heading ──
+   *
+   * `Results.tsx` draws `span.w-28` on each result row saying **which of the four
+   * searchable surfaces matched** — « Intitulé », « Transcription », « Mes notes »,
+   * « Compte-rendu » — and `Historique.tsx` captions its panes with the same words.
+   * The label is per row and answers « why is this row here »; the heading names a
+   * box. Neither file is in this lane.
+   */
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'transcription',
+    pair: 'span.w-28 (search/Results.tsx, quelle surface a répondu) · h2.pane-label (Historique.tsx)',
+    why: 'l’étiquette de résultat dit pourquoi la ligne est là ; le titre nomme le volet',
+    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
+  },
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'compte-rendu',
+    pair: 'span.w-28 (search/Results.tsx) · h2.pane-label (Historique.tsx)',
+    why: 'comme ci-dessus',
+    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
+  },
+  /*
+   * The one of the three that needs a **decision** rather than a story: US-23 keeps
+   * « Mes notes » deliberately (it and « Extraction » are two blocks of plain French
+   * prose side by side with no shape of their own), so this pair survives that story
+   * and something has to give — the heading or the surface label.
+   */
+  {
+    stages: ['historique', 'historique-demander'],
+    text: 'mes notes',
+    pair: 'span.w-28 ×3 (search/Results.tsx) · h2.pane-label (Historique.tsx)',
+    why: 'US-23 garde ce titre exprès — de la prose à côté de la prose, aucune ne se nomme',
+    story: 'aucune : l’étiquette de surface ou le titre doit bouger (suite de la ronde 34)',
+  },
+  /*
+   * ── The gate: the client's name, drawn by the screen and by the document ──
+   *
+   * Round 34's own finding, in its own words: « the client's name appears five times
+   * above the fold ». The header line names the call; the compte-rendu's first line
+   * is `# <objet>`, which is the string VerySwing receives and cannot be rewritten
+   * here (DEC-44). The fixture's objet is what the entry matches, so a fixture change
+   * fails this entry loudly, which is correct.
+   */
+  {
+    stages: [
+      'review',
+      'review-valider',
+      'review-garde',
+      'review-garde-citation',
+      'review-garde-frappe',
+      'review-garde-mort',
+      'review-garde-sources',
+      'review-garde-tapis',
+      'review-citation-prose',
+      'review-sans-entra',
+      'review-sans-opportunite',
+    ],
+    text: 'néovia santé — cadrage renfort data',
+    pair: 'p.text-muted (l’en-tête de Review.tsx) · span (session/CompteRenduDocument.tsx, la ligne « # <objet> »)',
+    why: 'le document ouvre sur son propre titre (DEC-44) et l’en-tête nomme l’appel',
+    story: 'lane US-23 / US-25 (Review.tsx, CompteRenduPane.tsx)',
+  },
+  /*
+   * ── A **decision**, not debt: the recap shares a name with the chapter ──
+   *
+   * Checked rather than assumed. The composer really does write `## Prochaines
+   * étapes` (the model's narrative chapter, declared in `COMPTE_RENDU_SECTIONS`)
+   * and `### Prochaines étapes` (the appended field recap under « Éléments
+   * retenus »), and the gate draws the field's label beside them — three
+   * occurrences, two levels. That is not the collision CLAUDE.md records as fixed:
+   * `modules/extract/__tests__/compteRendu.test.ts` asserts on the *level* and its
+   * comment says so outright — « sharing a name between a chapter and a field of
+   * the recap is fine and is what the recap is for ».
+   *
+   * What is left is a real question and it is a **recipe** question, not a renderer
+   * one: the document states its two most operative sections twice, once as prose
+   * and once as bullets, and VerySwing receives both. Nothing in `src/` can decide
+   * that.
+   */
+  {
+    stages: [
+      'review',
+      'review-valider',
+      'review-garde',
+      'review-garde-citation',
+      'review-garde-frappe',
+      'review-garde-mort',
+      'review-garde-sources',
+      'review-garde-tapis',
+      'review-citation-prose',
+      'review-sans-entra',
+      'review-sans-opportunite',
+    ],
+    text: 'prochaines étapes',
+    pair: 'chapitre « ## » · sous-section « ### » du récapitulatif (CompteRenduDocument) · label.text-muted (le champ)',
+    why: 'deux niveaux par construction (compteRendu.test.ts affirme le niveau, pas l’orthographe) ; le récapitulatif est fait pour partager le nom du chapitre',
+    story: 'décision de recette pour la ronde 34 — si le document doit dire les deux',
+  },
+  /*
+   * ── A **decision**, and DEC-47 is the reason ──
+   *
+   * « Client » is the rail's account field *and* the speaker label on every
+   * far-channel turn — 215 of them on the gate's reader. DEC-47: a turn is
+   * attributed to a **side** and never to a person, so « Client » is precisely what
+   * the record is entitled to say when there is more than one interlocutor, and
+   * `speakerLabel` produces it once per turn by design. Renaming either half would
+   * cost more than the collision: the field is the VSA account and the label is the
+   * only honest thing the two channels establish.
+   */
+  {
+    stages: ['review-transcription', 'review-transcription-introuvable', 'review-garde-transcription'],
+    text: 'client',
+    pair: 'label.text-muted (le champ Compte du rail) · span.text-muted ×215 (speakerLabel, DEC-47)',
+    why: 'DEC-47 — un tour nomme un côté, jamais une personne ; 215 tours, c’est le compte-rendu qui fait son travail',
+    story: 'aucune. C’est la décision',
+  },
+  /*
+   * ── The reader naming the row it was opened from ──
+   *
+   * `TranscriptReader` heads the column with « Citation du champ « Besoin » », which
+   * is the thread back to the `source ▸` the rep just pressed, and the rail beside
+   * it still draws that field's own label. It is exemption 2 one frame later — a
+   * control naming its target, except the naming outlives the press — and the two
+   * files are another lane's.
+   */
+  {
+    stages: ['review-transcription'],
+    text: 'besoin',
+    pair: 'span.text-body (review/TranscriptReader.tsx, « Citation du champ … ») · label.text-muted (le champ d’où il a été ouvert)',
+    why: 'le lecteur dit de quelle ligne il vient ; le rail montre encore cette ligne',
+    story: 'lane US-23 / US-25 (Review.tsx, TranscriptReader.tsx)',
+  },
+  /*
+   * ── The session screen: the slate and the document name the same field ──
+   *
+   * The compte-rendu's fact line « Démarrage : … » against the rail's slate label.
+   * This may well be correct and the argument is already written down: DEC-14 and
+   * DEC-38 put the two side by side precisely so « Durée — » empty and the prose
+   * silent about it can be seen *in one glance*, which needs the field named in
+   * both. `SignalRail.tsx` is US-25's file, so the call is theirs.
+   */
+  {
+    stages: [
+      'session-compte-rendu',
+      'session-suivi',
+      'session-suivi-sans-entra',
+      'session-demander',
+      'session-remonter',
+    ],
+    text: 'démarrage',
+    pair: 'strong.text-strong (la ligne de fait du compte-rendu) · span.slate-label (session/SignalRail.tsx)',
+    why: 'DEC-14 / DEC-38 mettent l’ardoise à côté du document pour qu’on juge l’un par l’autre, ce qui demande le champ nommé des deux côtés',
+    story: 'lane US-25 (SignalRail.tsx) — probablement une décision à garder, déclarée pour que le compte soit honnête',
+  },
+]
+
+async function echo(page) {
+  return page.evaluate(() => {
+    const CONTROL =
+      'button, a[href], [role="button"], [role="tab"], [role="option"], [role="link"], summary'
+
+    /* Whitespace collapsed, casefolded, edges of punctuation dropped. */
+    const normalise = (raw) =>
+      raw
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLocaleLowerCase('fr')
+        .replace(/^[\s"'«»‹›(\[.,;:!?…·—–-]+/u, '')
+        .replace(/[\s"'«»‹›)\].,;:!?…·—–-]+$/u, '')
+
+    const describe = (el) =>
+      `${el.tagName.toLowerCase()}.${((el.className ?? '').toString().trim() || '—').split(' ')[0]}`
+
+    /*
+     * **The role the element plays, which in this codebase is its tag.**
+     *
+     * Not the class list — measured, and the reason is in the docblock: a row's
+     * class changes with its state, so the gate reader's cited turn is a different
+     * class from an ordinary one and comparing class lists reported the same turn
+     * seventeen times on `review-transcription`.
+     */
+    const shape = (el) => el.tagName
+
+    const groups = new Map()
+    for (const el of document.querySelectorAll('body *')) {
+      const own = [...el.childNodes]
+        .filter((node) => node.nodeType === 3)
+        .map((node) => node.textContent ?? '')
+        .join(' ')
+      const text = normalise(own)
+      // A value is not a thing said: a time, a day number, a count, a dash.
+      if (text.length < 2 || !/\p{L}/u.test(text)) continue
+
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
+      if (el.offsetParent === null && style.position !== 'fixed') continue
+      const box = el.getBoundingClientRect()
+      // `sr-only` is a 1×1 clipped box by construction — measured, not named.
+      if (box.width < 2 || box.height < 2) continue
+
+      if (!groups.has(text)) groups.set(text, [])
+      groups.get(text).push({
+        shape: shape(el),
+        control: el.closest(CONTROL) !== null,
+        what: describe(el),
+        y: Math.round(box.y),
+      })
+    }
+
+    const out = []
+    let column = 0
+    let named = 0
+    for (const [text, hits] of groups) {
+      if (hits.length < 2) continue
+      // One component, drawn more than once: a column, and one voice.
+      if (new Set(hits.map((hit) => hit.shape)).size === 1) {
+        column += 1
+        continue
+      }
+      // A control naming its target: the target may be on the screen it reaches.
+      if (hits.some((hit) => hit.control)) {
+        named += 1
+        continue
+      }
+      out.push({
+        /*
+         * The **whole** normalised string, not a display slice. It is what a
+         * declared exemption is matched against (`ECHO_DECLARED`), and matching a
+         * truncation would let one entry cover every string sharing its first sixty
+         * characters — a bare string standing in for a pair, which is the shape the
+         * declaration is written to avoid. The slicing happens at print time.
+         */
+        text,
+        times: hits.length,
+        where: hits.slice(0, 4).map((hit) => `${hit.what} y=${hit.y}`),
+      })
+    }
+    return { items: out, seen: groups.size, column, named }
   })
 }
 

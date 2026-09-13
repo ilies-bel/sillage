@@ -88,6 +88,20 @@ export interface PendingGatesProps {
    * on the end of it.
    */
   capped: boolean
+  /**
+   * **The one meeting on this screen that carries a filled control** (US-26).
+   *
+   * Decided in `Agenda` and shared with `DayPane`, because « exactly one filled
+   * control » is a fact about the *screen* and this is the second of its two lists.
+   * The oldest call still `à valider` can be in either one — this section
+   * deliberately drops the rows the day list is already showing — so a section
+   * deciding on its own would draw a second blue whenever the day happened to hold
+   * one of them.
+   *
+   * `null` means no row here does, which is the ordinary case: a live call or an
+   * armed offer outranks a backlog.
+   */
+  emphasis: string | null
   /** Today, from the same clock the day pane uses. */
   now: number
   /** *Tout l'historique* with the same chip on. */
@@ -95,7 +109,15 @@ export interface PendingGatesProps {
   onOpen: (meetingId: string) => void
 }
 
-export function PendingGates({ rows, total, capped, now, onSeeAll, onOpen }: PendingGatesProps) {
+export function PendingGates({
+  rows,
+  total,
+  capped,
+  emphasis,
+  now,
+  onSeeAll,
+  onOpen,
+}: PendingGatesProps) {
   // Nothing to owe is not an empty state — it is a section that does not exist.
   // A permanent « rien à valider » panel would be a congratulation the rep gets
   // every day and reads on none of them.
@@ -179,7 +201,19 @@ export function PendingGates({ rows, total, capped, now, onSeeAll, onOpen }: Pen
                 ? 'Rien n’a été envoyé'
                 : `Rien n’a été envoyé depuis ${staleFor(row, now)} jours`}
             </span>
-            <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
+            {/*
+              Filled only on the row `Agenda` named — the oldest thing the rep
+              owes, and only when nothing is being recorded and nothing is armed.
+              The control, the verb and the handler are the same on every row: this
+              is ink, not an affordance (US-26). Nothing here confirms anything; the
+              one confirmation stays at the gate (DEC-4).
+            */}
+            <Button
+              variant={row.meeting.id === emphasis ? 'primary' : 'bordered'}
+              onClick={() => onOpen(row.meeting.id)}
+            >
+              Ouvrir
+            </Button>
           </Row>
         ))}
       </List>

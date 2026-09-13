@@ -51,6 +51,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced={false}
+        emphasis={null}
         onOpen={() => {}} onArm={() => {}}
       />,
     )
@@ -74,6 +75,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced
+        emphasis={null}
         onOpen={() => {}} onArm={() => {}}
       />,
     )
@@ -92,6 +94,7 @@ describe('DayPane — the day it is describing', () => {
         showDay={false}
         unsynced={false}
         action={<button type="button">Ajouter au 4 août</button>}
+        emphasis={null}
         onOpen={() => {}} onArm={() => {}}
       />,
     )
@@ -108,6 +111,7 @@ describe('DayPane — the day it is describing', () => {
         when="past"
         showDay={false}
         unsynced={false}
+        emphasis={null}
         onOpen={() => {}} onArm={() => {}}
       />,
     )
@@ -124,6 +128,7 @@ describe('DayPane — the day it is describing', () => {
         when="today"
         showDay={false}
         unsynced={false}
+        emphasis={null}
         onOpen={() => {}} onArm={() => {}}
       />,
     )
@@ -133,7 +138,12 @@ describe('DayPane — the day it is describing', () => {
 })
 
 describe('DayPane — a call under way is not a call about to start', () => {
-  const draw = (over: Partial<AgendaEntry>) =>
+  /*
+   * `emphasis` defaults to this row, because `Agenda` names the live call first and
+   * the armed offer second and both of those are what this block draws. A test that
+   * passed `null` here would be asserting the ink of a row the screen did not choose.
+   */
+  const draw = (over: Partial<AgendaEntry>, emphasis: string | null = 'm1') =>
     render(
       <DayPane
         entries={[row(over)]}
@@ -142,6 +152,7 @@ describe('DayPane — a call under way is not a call about to start', () => {
         when="today"
         showDay={false}
         unsynced={false}
+        emphasis={emphasis}
         onOpen={() => {}}
         onArm={() => {}}
       />,
@@ -163,12 +174,36 @@ describe('DayPane — a call under way is not a call about to start', () => {
     expect(control.className).toContain('bg-brand-700')
   })
 
-  test('and the recording says En cours, and is opened rather than started again', () => {
+  /*
+   * **The verb and the ink are two questions, and this test used to conflate them.**
+   *
+   * It asserted that a recording row is *not* filled, which was true and was the
+   * defect US-26 names: on the shipped screen the live call wore the same outline as
+   * a 17:30 invite, and the header's primary had already stepped down beside it, so
+   * the home screen a rep opens mid-call carried no fill at all. The verb assertion
+   * is the one that stands — a call under way is opened, never started again.
+   */
+  test('and the recording says En cours, is opened rather than started again, and gets the weight', () => {
     draw({ armed: true, state: 'recording' })
     expect(screen.queryByText('Prêt')).toBeNull()
     expect(screen.getByText('En cours')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
     const control = screen.getByRole('button', { name: 'Ouvrir' })
+    expect(control.className).toContain('bg-brand-700')
+  })
+
+  /*
+   * **The pane obeys the screen's decision and never re-derives it** (US-26).
+   *
+   * Reading `entry.armed` for the ink is what made « exactly one filled control »
+   * impossible: this pane cannot see the live call in another view, and it cannot see
+   * *En attente de validation* below it, which holds the same kind of row and offers
+   * the same *Ouvrir*. So an armed row that `Agenda` did not name stays quiet.
+   */
+  test('an armed row the screen did not name keeps the quiet ink', () => {
+    draw({ armed: true, state: 'armed' }, null)
+    expect(screen.getByText('Prêt')).toBeTruthy()
+    const control = screen.getByRole('button', { name: 'Enregistrer' })
     expect(control.className).not.toContain('bg-brand-700')
   })
 
@@ -180,5 +215,65 @@ describe('DayPane — a call under way is not a call about to start', () => {
   test('an unarmed recording still names itself', () => {
     draw({ armed: false, state: 'recording' })
     expect(screen.getByText('En cours')).toBeTruthy()
+  })
+})
+
+/*
+ * **Exactly one filled control across both of the pane's lists** (US-26).
+ *
+ * The shipped home screen drew six outlined controls of identical weight in the
+ * right-hand column — four *Ouvrir* and two *Enregistrer*, measured at 1280×800 —
+ * and the rep's next action was exactly one of them. The count is what regressed
+ * and what a screenshot cannot state, so it is asserted as a count: a pane drawing
+ * two blues looks perfectly reasonable in a picture.
+ *
+ * It is driven over a day that holds an upcoming half *and* a `Passées` half,
+ * because `DayPane` renders two `List`s and an earlier version decided the ink per
+ * row — which is one fill per list, not one per screen.
+ */
+describe('DayPane — one filled control for the whole pane', () => {
+  const day: readonly AgendaEntry[] = [
+    row({ key: 'a', meetingId: 'm-live', state: 'recording', armed: true, past: false }),
+    row({ key: 'b', meetingId: null, eventId: 'ev-b', state: null, past: false }),
+    row({ key: 'c', meetingId: null, eventId: 'ev-c', state: null, past: false }),
+    row({ key: 'd', meetingId: 'm-owed', state: 'awaiting_confirmation', past: true }),
+    row({ key: 'e', meetingId: 'm-done', state: 'done', past: true }),
+  ]
+
+  const drawDay = (emphasis: string | null) =>
+    render(
+      <DayPane
+        entries={day}
+        reason={null}
+        signedOut={false}
+        when="today"
+        showDay={false}
+        unsynced={false}
+        emphasis={emphasis}
+        onOpen={() => {}}
+        onArm={() => {}}
+      />,
+    )
+
+  const filled = () =>
+    screen.getAllByRole('button').filter((b) => b.className.includes('bg-brand-700'))
+
+  test('the live call takes it, and nothing else on the day does', () => {
+    drawDay('m-live')
+    // Five rows, five controls: nothing gains or loses an affordance (US-26).
+    expect(screen.getAllByRole('button')).toHaveLength(5)
+    expect(filled()).toHaveLength(1)
+    expect(filled()[0].textContent).toBe('Ouvrir')
+  })
+
+  test('a row under *Passées* can take it, and still only one does', () => {
+    drawDay('m-owed')
+    expect(filled()).toHaveLength(1)
+  })
+
+  test('and a day the screen named nothing on draws no fill at all', () => {
+    drawDay(null)
+    expect(screen.getAllByRole('button')).toHaveLength(5)
+    expect(filled()).toHaveLength(0)
   })
 })

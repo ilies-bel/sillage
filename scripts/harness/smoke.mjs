@@ -54,6 +54,19 @@
  * a count of characters — and `ch` is the advance of the digit zero, so it
  * rendered eighty-one. Nothing counted, so nothing noticed, for four rounds.
  *
+ * It carries `--echo`, which asks the one question none of the other nine can:
+ * does this screen draw the same visible string twice? The home screen printed
+ * the day in the header and again as an `h2` 108 pixels lower, under
+ * « Calendrier » in 42px serif — every string correct, every contrast passing,
+ * every box the right size, and invisible to a screenshot review because a
+ * reader who has just read a date reads it again as confirmation. The casefold
+ * is load-bearing: the header's copy was `text-transform: uppercase`, so the two
+ * differed as strings. A repetition *along a list* is exempt by rule — same tag,
+ * same class list, every occurrence in a row — because « Ouvrir » on five rows is
+ * one control offered five times, and an allow-list of copy would go stale the
+ * first time somebody renamed a button. `SILLAGE_ECHO_ATTACK=1` holds the reader
+ * to that, five probes that must fire and five that must stay silent.
+ *
  * It carries `--targets` too. Every control is measured against WCAG 2.2's
  * 24×24, with the criterion's own exceptions honoured — a control inline in a
  * sentence, and a checkbox whose label is the thing a rep actually aims at.
@@ -160,7 +173,7 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--echo', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''
