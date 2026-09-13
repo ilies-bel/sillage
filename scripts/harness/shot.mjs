@@ -545,6 +545,68 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **Step 3's second screenful, and whether the control that reveals it works.**
+   *
+   * The beats name the pill and the detector now (US-18), which is 941 pixels of
+   * content in the 660 the column gets at 1280×800 and the 460 it gets at
+   * 960×600 — so the last beat, « Vous validez, une fois », is below the fold at
+   * **both** sizes, on the one screen a rep sees exactly once. Before this, `<main>`
+   * carried `overflow-y-auto` and nothing else: measured at 960×600, 54 pixels
+   * behind a hard edge with no mask and no control, and invisible to all nine
+   * checks — `--scrollers` skips a landmark, rightly, because a landmark *is* the
+   * page's own scroll region.
+   *
+   * So this stage asks the one question none of the nine asks, which is
+   * `review-garde-mort`'s: the turn exists while something is hidden, **every
+   * press moves the scroller**, and the last beat ends up whole inside the column.
+   * Waiting for the button to exist would pass on a dead control, and a stage that
+   * measured nothing would be worse than no stage.
+   */
+  'onboarding-suite': {
+    scenario: 'onboarding',
+    async drive(page) {
+      await SCREENS['onboarding-essai'].drive(page)
+      const column = page.locator('main .fade-below')
+      await column.waitFor()
+
+      // A stage whose fixture cannot exercise its own property is the first shape
+      // on this repo's list: if step 3 fits, there is nothing here to reveal.
+      const hidden = await column.evaluate((el) => el.scrollHeight - el.clientHeight)
+      if (hidden < 40) {
+        throw new Error(`rien sous la ligne de flottaison (${hidden} px) : cette étape ne mesure rien`)
+      }
+
+      const whole = () =>
+        page.evaluate(() => {
+          const col = document.querySelector('main .fade-below')
+          const last = [...document.querySelectorAll('ol > li')].find((li) =>
+            li.textContent?.includes('Vous validez'),
+          )
+          if (!col || !last) return false
+          const box = col.getBoundingClientRect()
+          const beat = last.getBoundingClientRect()
+          return beat.top >= box.top - 1 && beat.bottom <= box.bottom + 1
+        })
+
+      for (let press = 0; press < 8 && !(await whole()); press++) {
+        const turn = page.getByRole('button', { name: /Lire la suite/ })
+        if ((await turn.count()) === 0) break
+        const before = await column.evaluate((el) => el.scrollTop)
+        await turn.first().click()
+        await page.waitForTimeout(500)
+        const after = await column.evaluate((el) => el.scrollTop)
+        if (after <= before) {
+          throw new Error(`« Lire la suite » n’a rien déplacé (scrollTop ${before} → ${after})`)
+        }
+      }
+
+      if (!(await whole())) {
+        throw new Error('le dernier temps de l’étape 3 reste coupé après les tours de page')
+      }
+    },
+  },
+
   'session-demander': {
     scenario: 'compte-rendu',
     async drive(page) {

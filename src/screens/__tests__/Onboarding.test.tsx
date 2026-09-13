@@ -17,6 +17,8 @@
  *    that needs a decision gets the screen where the decision is made, and
  *    neither is offered where it cannot work.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { HealthSnapshot } from '../../../electron/core/contracts/health.ts'
@@ -415,5 +417,172 @@ describe('the three steps', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Retour' }))
     })
     expect(screen.getByText(/Aucun robot ne rejoint la réunion/)).toBeTruthy()
+  })
+})
+
+/**
+ * **Step 3 is prose about behaviour, and prose rots** (US-18).
+ *
+ * The paragraph these replace said « L'en-tête affiche alors deux barres de
+ * niveau » about a screen the rep leaves behind Teams for fifty minutes, and it
+ * was the truth when it was written. What it described was the whole of what the
+ * product did on a call; since then the widget and the unscheduled-call detector
+ * shipped, and neither appeared here — shape #7 on this repo's list, on the one
+ * screen whose job is « voilà ce qui se passera ».
+ *
+ * A paragraph no test can see is a paragraph that rots the same way, so these
+ * read the **rendered** text of step 3 and require the two surfaces to be named
+ * in it. And the twenty-five seconds is read out of `core/domain/adHoc.ts`
+ * itself rather than restated here: the renderer may not import `core/domain/`
+ * (the import rule), so the constant is read as *source*, which is the
+ * `preloadUnwrap.test.ts` shape and the only way a screen's prose can be pinned
+ * to a number that lives in the main process.
+ */
+describe('step 3 describes the product that ships', () => {
+  const toEssai = async () => {
+    await toBesoins()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continuer' }))
+    })
+    return await screen.findByRole('heading', { name: 'Votre premier appel' })
+  }
+
+  /** Everything drawn on step 3, as a reader would meet it. */
+  const stepText = async () => {
+    const heading = await toEssai()
+    const section = heading.closest('section')
+    if (!section) throw new Error('step 3 has no section')
+    return section.textContent ?? ''
+  }
+
+  test('it names the pill, where it is, and the two ways out of it', async () => {
+    open()
+    const said = await stepText()
+
+    // The surface itself, and where it lands — `overlayPlacement.defaultOrigin`
+    // is the bottom centre of the work area, over the call.
+    expect(said).toMatch(/pastille/)
+    expect(said).toMatch(/en bas de l’écran/)
+    expect(said).toMatch(/par-dessus l’appel/)
+
+    // What is on it: the meter (DEC-38), the clock, the mark, and US-11's
+    // sentence in one clause rather than as a beat of its own.
+    expect(said).toMatch(/barres de niveau/)
+    expect(said).toMatch(/marquer un moment/)
+    expect(said).toMatch(/transcrit/)
+
+    /*
+     * And the two facts a window with no taskbar entry cannot leave unsaid:
+     * `skipTaskbar: true` means there is nothing to alt-tab to, so the exits are
+     * stated — *Ouvrir Sillage* and *Terminer*, both in the panel the chevron
+     * opens, the second behind a confirmation, which `Widget.tsx` draws as a
+     * second rectangle and which is said here rather than discovered.
+     */
+    expect(said).toMatch(/barre des tâches/)
+    expect(said).toMatch(/Ouvrir Sillage/)
+    expect(said).toMatch(/Terminer/)
+    expect(said).toMatch(/confirmation/)
+
+    // `main.ts` carries `setContentProtection(true)` on that window, and what is
+    // on it is the client's own name and the rep's commercial notes.
+    expect(said).toMatch(/partage d’écran/)
+  })
+
+  test('it names the detector as an offer, and never as a recording', async () => {
+    open()
+    const said = await stepText()
+
+    // The trigger is a held **microphone** and a dwell — not a calendar entry,
+    // which is the whole of what `adHoc.ts` was written to stop requiring.
+    expect(said).toMatch(/garde le micro/)
+    // What the rep sees: the « Prêt » row carrying *Enregistrer* and one OS
+    // notification (DEC-46), whose click opens the window and starts nothing.
+    expect(said).toMatch(/Prêt/)
+    expect(said).toMatch(/notification/)
+    // An offer, and ignoring it costs nothing (HR-7).
+    expect(said).toMatch(/jamais un enregistrement/)
+    expect(said).toMatch(/ne coûte rien/)
+  })
+
+  /*
+   * The sentence is handed over; nothing here may claim it was accepted. The
+   * product cannot know what the client said (`mention.ts`), and a screen that
+   * implied otherwise would be inviting the rep to rely on it.
+   */
+  test('it never claims the client agreed', async () => {
+    open()
+    const said = await stepText()
+    expect(said).not.toMatch(/consent|accept/i)
+  })
+
+  /*
+   * The one number in this prose, held to the constant it describes.
+   *
+   * Twenty-five seconds is the whole safety argument in `adHoc.ts` — long enough
+   * that a Slack voice note, a dictation and « test your microphone » cannot
+   * reach it — so a rep told a different number has been told something about
+   * their own day that is false. Read as source, because `src/*` may import
+   * `core/contracts/` only.
+   */
+  test('the dwell it names is the dwell the detector waits', async () => {
+    /*
+     * From the project root, not from `import.meta.url`: under vitest's jsdom
+     * environment that is an `http://` URL — the module was served, not read off
+     * disk — and `readFileSync` refuses it (« The URL must be of scheme file »),
+     * which is a different failure from the one this test is for. `vitest.config`
+     * roots the run at the repo, and a path that stops resolving throws here
+     * rather than passing quietly.
+     */
+    const source = readFileSync(
+      join(process.cwd(), 'electron/core/domain/adHoc.ts'),
+      'utf8',
+    )
+    const found = /AD_HOC_DWELL_MS\s*=\s*([\d_]+)/.exec(source)
+    // A fixture that cannot find its subject is the first shape on the list.
+    expect(found).toBeTruthy()
+    const seconds = Number((found as RegExpExecArray)[1]?.replace(/_/g, '')) / 1000
+    expect(seconds).toBe(25)
+
+    const inFrench: Record<number, string> = { 20: 'vingt', 25: 'vingt-cinq', 30: 'trente' }
+    const word = inFrench[seconds]
+    // A dwell nobody here has a French word for is a dwell step 3 cannot state:
+    // say so, rather than let the screen keep the old number.
+    expect(word, `AD_HOC_DWELL_MS is now ${seconds}s — say it in Onboarding.tsx`).toBeTruthy()
+
+    open()
+    const said = await stepText()
+    expect(said).toMatch(new RegExp(`${word} secondes`))
+  })
+})
+
+/**
+ * **The step that scrolls says how much of itself is left** (`ui/ReadingColumn`).
+ *
+ * jsdom measures every box as zero, so nothing here can say how much is hidden —
+ * `scripts/harness`'s `onboarding-suite` presses the turn against real layout and
+ * is the measurement. What a DOM test *can* hold is the structure that decides
+ * which instrument is on the screen at all: the step is inside the shared reading
+ * column, and `<main>` is the landmark rather than a second scroller with no mask
+ * and no control, which is what it was.
+ */
+describe('a first-run step never hides its own last beat', () => {
+  test('the step rides in the shared reading column, and main is not a scroller', () => {
+    open()
+    const main = document.querySelector('main')
+    expect(main).toBeTruthy()
+
+    // `fade-below` is the contract: the mask and the page turn come with it, and
+    // it is the class `--fade` and `--scrollers` both key off.
+    const column = main?.querySelector('.fade-below')
+    expect(column).toBeTruthy()
+    expect(column?.className).toMatch(/overflow-y-auto/)
+
+    /*
+     * And exactly one scroller. `<main>` scrolling as well would put a hard edge
+     * back above the one that fades — the defect measured at 960×600, 54 pixels
+     * of step 3 behind it with nothing saying so, on a landmark `--scrollers`
+     * deliberately skips.
+     */
+    expect(main?.className ?? '').not.toMatch(/overflow-y-auto/)
   })
 })

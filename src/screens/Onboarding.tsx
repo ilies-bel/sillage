@@ -551,8 +551,8 @@ function Essai({ onReglages }: { onReglages: () => void }) {
           n="2"
           title="Une pastille reste au-dessus de l’appel"
           says={[
-            'Dès que l’enregistrement commence, une pastille s’affiche en bas de l’écran, par-dessus l’appel : les deux barres de niveau — la vôtre et celle du client, et tant qu’elles bougent l’appel est capté —, la durée, de quoi marquer un moment, et un bouton qui copie la phrase prévenant votre interlocuteur que l’échange est transcrit, à coller dans la conversation ou à lire à voix haute.',
-            'Elle n’apparaît ni dans un partage d’écran, ni dans la barre des tâches : pour revenir à l’application, ouvrez son panneau puis « Ouvrir Sillage ». « Terminer » est au même endroit et demande confirmation avant d’arrêter l’enregistrement. Vous pouvez la déplacer en la faisant glisser ; elle revient là où vous l’avez posée.',
+            'Dès que l’enregistrement commence, une pastille s’affiche en bas de l’écran, au centre, par-dessus l’appel : les deux barres de niveau — la vôtre et celle du client, et tant qu’elles bougent l’appel est capté —, la durée, de quoi marquer un moment, et un bouton qui copie la phrase prévenant votre interlocuteur que l’échange est transcrit, à coller dans la conversation ou à lire à voix haute.',
+            'Elle n’apparaît ni dans un partage d’écran, ni dans la barre des tâches : pour revenir à l’application, ouvrez son panneau puis « Ouvrir Sillage ». « Terminer » est au même endroit et demande confirmation avant d’arrêter l’enregistrement. Vous pouvez la déplacer en la faisant glisser : elle revient au même endroit à l’appel suivant, sauf si cet écran n’est plus branché.',
           ]}
         />
         <Beat
