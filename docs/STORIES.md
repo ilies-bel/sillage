@@ -1251,3 +1251,41 @@ affordance, and *Démarrer une réunion* in the header stays what it is.
 **Acceptance** — driven, both sizes: exactly one filled control in the day list, and it is on
 the live row when one exists and on the earliest `à valider` otherwise. The `agenda`,
 `agenda-liste` and `agenda-semaine` stages photograph it.
+
+## US-27 — the session header says « recording » four times
+
+**Lane** `ui-session` · `src/screens/Session.tsx` (header only) — **not yet assigned**
+
+The screen a rep has open *while the client is talking*, measured at 1280×800. Its header
+carries, left to right: a back link, an orange dot, the word « ENREGISTREMENT », a running
+clock `00:05:00`, a live two-channel meter, the objet, the account, the word « Modèle », a
+two-option segmented control, and *Terminer*. Ten things, and four of them say the same
+thing — the dot (VISION.md §6 gives orange exactly one meaning: armed or recording), the
+word, the clock that is counting, and the meter that is moving.
+
+The dot and the clock are enough, and the meter is the one that is actually *load-bearing*
+(DEC-38: proof of life is the instrument, not a word). « Modèle » goes for the same reason
+« Compte-rendu » goes in US-23: the two options beside it are named « Prise de besoin » and
+« Libre », which is what a recipe picker looks like.
+
+Do not touch the meter, the clock's format or *Terminer*. This is the one screen where a
+removal that turns out to be load-bearing costs a rep the call they are on.
+
+## US-28 — Réglages captions the pane with the nav item it is under
+
+**Lane** `ui-reglages` · `src/screens/Reglages.tsx` — **not yet assigned**
+
+The left rail has « Connecteurs » selected, in brand blue, with its count beside it. Three
+hundred pixels to the right, the pane opens with « — CONNECTEURS ». The same word, twice,
+on one screen, one of them naming the thing the rep just clicked to get there.
+
+This is the screen US-23 exempts, and the exemption still holds — *Réglages*' section
+headers are a long form's navigation and « REQUIS » / « FACULTATIFS » are doing real work.
+What does not is the pane-level caption that restates the selected rail item. Eleven
+`SectionHeader` call sites live in this file; the rule is the one in CLAUDE.md, applied per
+call site rather than to the file.
+
+**This story should be found by `shot.mjs --echo` (US-22) rather than by this paragraph** —
+it is a visible string drawn twice on one screen, which is exactly what that check measures.
+If `--echo` does not report it on the `reglages` stage, the check is wrong before the screen
+is: fix the check first.
