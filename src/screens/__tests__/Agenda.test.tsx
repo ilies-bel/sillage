@@ -35,7 +35,7 @@ import {
   weekOf,
   type DayKey,
 } from '../../app/calendar.ts'
-import { formatDayLong } from '../../app/format.ts'
+import { formatDayLong, formatMonthLong, upperFirst } from '../../app/format.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Agenda } from '../Agenda.tsx'
 
@@ -1137,6 +1137,279 @@ describe('what is hidden is reported, and only when something is', () => {
       screen.getByLabelText('au moins 50 réunions en attente de validation').textContent,
     ).toBe('50+')
     expect(screen.getByRole('button', { name: 'Toutes ›' })).toBeTruthy()
+  })
+})
+
+// ── US-22: the screen is named by what changed ──────────────────────────────
+
+describe('the page is named by the day, and the day is drawn once', () => {
+  const open = async () => {
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+  }
+
+  /*
+   * « Calendrier » was the `h1`, in 42px serif, over a calendar — the largest thing
+   * on the screen and the one thing about it that never changes. The back link on
+   * the other three screens keeps the word, because a destination needs a name.
+   */
+  test('« Calendrier » is no longer a heading on the screen it names', async () => {
+    await open()
+    expect(screen.queryByRole('heading', { name: 'Calendrier' })).toBeNull()
+  })
+
+  test('the h1 is the selected day, and it is the only one', async () => {
+    await open()
+    const day = formatDayLong(noonOf(today()))
+    const title = screen.getByRole('heading', { level: 1 })
+    expect(title.textContent).toBe(upperFirst(day))
+
+    /*
+     * The defect this replaces, asserted as a count and casefolded — which is how
+     * it hid: the header's copy was `text-transform: uppercase`, so the DOM held
+     * « dimanche 13 septembre » beside an `h2` holding « Dimanche 13 septembre »
+     * and the two differed as strings. `shot.mjs --echo` measures it on the real
+     * layout; here it is the elements owning the text.
+     */
+    const drawn = screen
+      .getAllByText((_, el) => (el?.textContent ?? '').trim().toLowerCase() === day.toLowerCase())
+      .filter((el) => el.children.length === 0)
+    expect(drawn).toHaveLength(1)
+  })
+
+  /*
+   * The `h2` it replaces answered « what is the right column showing » while the
+   * header answered « what day is it today », so a rep who clicked another day read
+   * that day's list under a title naming this one. One title, and it follows the
+   * selection.
+   */
+  test('and it follows the day the rep selected, not today', async () => {
+    await open()
+    const other = addDays(today(), 3)
+    fireEvent.click(cell(other))
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+        upperFirst(formatDayLong(noonOf(other))),
+      ),
+    )
+  })
+
+  /*
+   * The one range where the title had nothing of its own to say: the calendar's
+   * pager, 70px above the list, already names the month and is the control that
+   * changes it. `--echo` found it on `agenda-hors-fenetre` the moment the title
+   * moved into the header. What switching to *Mois* asks is how much the month
+   * holds, so that is what it answers.
+   */
+  test('Mois names the count, because the grid already names the month', async () => {
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('agenda:snapshot', () => ({
+        events: [event('e1', 'Acme — cadrage', 10), event('e2', 'Nordis — suivi', 14)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: null,
+        reason: '',
+      }))
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByText('Nordis — suivi')
+    fireEvent.click(screen.getByRole('button', { name: 'Mois' }))
+
+    const month = formatMonthLong(noonOf(today()))
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+        upperFirst(`2 réunions en ${month}`),
+      ),
+    )
+    // The grid's own pager still says the month, once, and nothing repeats it.
+    expect(within(grid()).getByRole('heading', { name: upperFirst(month) })).toBeTruthy()
+    expect(screen.getAllByText(upperFirst(month))).toHaveLength(1)
+  })
+
+  test('and an empty month says so rather than counting nothing', async () => {
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mois' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+        upperFirst(`Aucune réunion en ${formatMonthLong(noonOf(today()))}`),
+      ),
+    )
+  })
+
+  test('the range switch renames it, and nothing repeats it', async () => {
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Liste' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Toutes les réunions'),
+    )
+    expect(screen.getAllByText('Toutes les réunions')).toHaveLength(1)
+  })
+})
+
+// ── US-26: one filled control per list ──────────────────────────────────────
+
+/**
+ * **Six outlined controls of identical weight, and the rep's next action was one
+ * of them.**
+ *
+ * Measured on the shipped home screen at 1280×800, at 14:35 with a call being
+ * recorded: *Ouvrir* y=206, *Enregistrer* y=276 and y=345, *Ouvrir* y=464, y=534
+ * and y=681, every one `rgb(255,255,255)` on a 1px border — and *Démarrer une
+ * réunion* in the header bordered as well, because `NewMeeting` steps it down
+ * beside an armed row and the armed row was the recording one. No fill anywhere.
+ *
+ * The count is what these assert, because a screen with two blues on it looks
+ * entirely reasonable in a screenshot.
+ */
+describe('one filled control per list (US-26)', () => {
+  const filled = () =>
+    screen.getAllByRole('button').filter((b) => b.className.includes('bg-brand-700'))
+
+  const owed = (id: string, hoursAgo: number): HistoryRow => ({
+    ...historyRow(),
+    meeting: meeting(id, {
+      title: `Acme — restitution ${id}`,
+      state: 'awaiting_confirmation',
+      scheduledStart: at(SUITE_HOUR - hoursAgo),
+    }),
+    status: 'À valider',
+  })
+
+  const pendingRows = (rows: readonly HistoryRow[]) =>
+    bridge.when('history:search', (payload) => ({
+      query: payload.query ?? '',
+      filter: {
+        client: payload.filter?.client ?? null,
+        periode: payload.filter?.periode ?? 'toute',
+        statut: payload.filter?.statut ?? 'tous',
+        intention: payload.filter?.intention ?? 'toutes',
+      },
+      scanned: 0,
+      clients: [],
+      rows: payload.filter?.statut === 'a-valider' ? [...rows] : [],
+    }))
+
+  const draw = async () => {
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
+      onOnboarding={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+  }
+
+  test('the live call takes the weight, and the header gives it up', async () => {
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('meeting:list', () => [
+        meeting('m-live', {
+          state: 'recording',
+          eventId: 'e1',
+          title: 'Acme — cadrage',
+          scheduledStart: at(SUITE_HOUR - 1),
+        }),
+      ])
+      .when('agenda:snapshot', () => ({
+        events: [event('e1', 'Acme — cadrage', SUITE_HOUR - 1), event('e2', 'Nordis — suivi', SUITE_HOUR + 2)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: { meetingId: 'm-live', eventId: 'e1', subject: 'Acme — cadrage' },
+        reason: '',
+      }))
+    await draw()
+    await screen.findByText('En cours')
+
+    expect(filled()).toHaveLength(1)
+    // The live call is *opened*, never started again — the verb is the row's own.
+    expect(filled()[0].textContent).toBe('Ouvrir')
+    /*
+      And *Démarrer une réunion* is not the second blue. Its own comment records the
+      measurement — two `--brand-700` controls 172px apart, horizontally overlapping
+      — and the rule it states is about the fill, not about arming.
+    */
+    expect(
+      screen.getByRole('button', { name: 'Démarrer une réunion' }).className,
+    ).not.toContain('bg-brand-700')
+  })
+
+  test('with nothing live and nothing armed, the oldest à valider takes it', async () => {
+    pendingRows([owed('m-recent', 2), owed('m-oldest', 9)])
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('agenda:snapshot', () => ({
+        events: [event('e2', 'Nordis — suivi', SUITE_HOUR + 2)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: null,
+        reason: '',
+      }))
+    await draw()
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    const one = filled()
+    expect(one).toHaveLength(1)
+    // The oldest, not the first row the store happened to return.
+    const row = one[0].closest('li')
+    expect(row?.textContent).toContain('m-oldest')
+  })
+
+  /*
+   * The ranking, and it is the half a per-row rule cannot reach: a backlog row and a
+   * live call are drawn by two different components, in two different lists.
+   */
+  test('a live call outranks the backlog, which then draws nothing', async () => {
+    pendingRows([owed('m-oldest', 9)])
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('meeting:list', () => [
+        meeting('m-live', {
+          state: 'recording',
+          eventId: 'e1',
+          title: 'Acme — cadrage',
+          scheduledStart: at(SUITE_HOUR - 1),
+        }),
+      ])
+      .when('agenda:snapshot', () => ({
+        events: [event('e1', 'Acme — cadrage', SUITE_HOUR - 1)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: null,
+        reason: '',
+      }))
+    await draw()
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    expect(filled()).toHaveLength(1)
+    expect(filled()[0].closest('li')?.textContent).toContain('En cours')
+  })
+
+  /*
+   * And a quiet day: nothing recording, nothing armed, nothing owed. Then the
+   * header's *Démarrer une réunion* is the only fill on the screen, which is what
+   * it was built to be — starting a call is the rep's next action.
+   */
+  test('a day that owes nothing leaves the header its fill', async () => {
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      .when('agenda:snapshot', () => ({
+        events: [event('e2', 'Nordis — suivi', SUITE_HOUR + 2)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: null,
+        reason: '',
+      }))
+    await draw()
+    await screen.findByText('Nordis — suivi')
+
+    const one = filled()
+    expect(one).toHaveLength(1)
+    expect(one[0].textContent).toBe('Démarrer une réunion')
   })
 })
 
