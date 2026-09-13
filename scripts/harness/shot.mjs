@@ -588,7 +588,17 @@ const SCREENS = {
         .getByRole('button', { name: OPEN_ROW })
         .click()
       await page.getByRole('button', { name: 'Terminer' }).waitFor()
-      await page.getByText('Rien ne migre dans vos notes.').waitFor()
+      /*
+        The rail, by a slot of its own slate.
+
+        It waited on « Rien ne migre dans vos notes. », the sentence that used to
+        close the rail — a promise about a thing that does not happen, drawn
+        permanently over a client call, now made on first run instead
+        (`SignalRail.tsx`). A slot label is the better landmark for the same
+        reason the caption above it went: the rail *is* seven labelled slots, so
+        the wait is on what the pane is rather than on a line about it.
+      */
+      await page.getByText('Démarrage', { exact: true }).first().waitFor()
       // A speech-shaped level history over a broadcast — the same channel the
       // main process would use, and the whole width of the meter, so the still
       // shows the widget as a rep sees it rather than flat.

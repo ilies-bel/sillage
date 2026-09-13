@@ -586,3 +586,43 @@ describe('a first-run step never hides its own last beat', () => {
     expect(main?.className ?? '').not.toMatch(/overflow-y-auto/)
   })
 })
+
+/**
+ * **DEC-5's promise is made here, because the rail stopped repeating it.**
+ *
+ * The signal rail carried « Rien ne migre dans vos notes. » as its last line, in
+ * every meeting, for the whole of every call — a statement, drawn permanently,
+ * about a thing the product never does, at the foot of the column, which is where
+ * the eye ends. Deleting it costs nothing only if the promise really is made
+ * somewhere a rep is reading rather than talking, so this is the assertion that
+ * came over with it from `session-output.test.tsx` (« la promesse ne disparaît
+ * pas, elle change de surface »).
+ *
+ * Two halves, on two steps, and both are asked of the rendered step rather than
+ * of the source: step 1 promises the notepad is untouched, and step 3 names the
+ * rail, says what it collects, and says it writes nothing into the notes.
+ */
+describe('the promise the rail stopped repeating', () => {
+  test('step 1 says the notepad is never written into (DEC-5)', () => {
+    open()
+
+    expect(screen.getByText('Vos notes restent les vôtres')).toBeTruthy()
+    expect(screen.getByText(/n’écrit jamais dans votre bloc-notes pendant l’appel/)).toBeTruthy()
+  })
+
+  test('step 3 names the rail, what it collects, and that it writes nothing', async () => {
+    open()
+    await toBesoins()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continuer' }))
+    })
+    const heading = await screen.findByRole('heading', { name: 'Votre premier appel' })
+    const said = heading.closest('section')?.textContent ?? ''
+
+    // The rail, by where it is and by what lands in it — the same four kinds the
+    // slate draws (DEC-14), so this cannot pass on a sentence about something else.
+    expect(said).toMatch(/À droite/)
+    expect(said).toMatch(/profil, TJM, durée, objections/)
+    expect(said).toMatch(/sans rien écrire chez vous/)
+  })
+})

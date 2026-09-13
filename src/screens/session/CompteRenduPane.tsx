@@ -33,11 +33,31 @@
  * surface that says « · modifiable » precisely because a borderless textarea is
  * indistinguishable from a preview. This one is a preview, so it is typed as
  * prose and takes no cursor.
+ *
+ * ## And it carries no caption and no manual
+ *
+ * It had both, on the screen a rep has open while a client is talking. The
+ * caption read « COMPTE-RENDU » over a document whose own first line is
+ * `# <objet>` at `--type-copy` — 479 px of eyebrow above 1 930 px of document
+ * saying the same word, and the document says it larger. The manual read « Les
+ * marques # ## - ** font partie du texte … » and explained this product's
+ * typesetting convention to somebody who cannot act on it here: the text is
+ * read-only and the line above it already says where the correction goes.
+ * `CompteRenduMarkersNote` is drawn at the gate, which is the surface where the
+ * document is editable and where the press that sends it to VerySwing lives —
+ * see the rule in `ui/SectionHeader.tsx` and the component's own docblock.
+ *
+ * Measured on the shipped renderer, `session-compte-rendu` at both smoke sizes:
+ * the reading column gained **65 px at each** — 458 → 523 of a 1 930 px document
+ * at 1280×800, and 321 → 386 of 2 203 at 960×600, which is 14% and 20% more of
+ * the document on screen. 29 of those pixels are the eyebrow (17 of ink and the
+ * `mb-3` under it) and 36 are the manual, which wrapped to two lines in this
+ * column at both sizes.
  */
-import { ReadingColumn, SectionHeader } from '../../ui/index.ts'
+import { ReadingColumn } from '../../ui/index.ts'
 import { AskPanel } from './AskPanel.tsx'
 import { useFollowUpAction } from './askActions.ts'
-import { CompteRenduDocument, CompteRenduMarkersNote } from './CompteRenduDocument.tsx'
+import { CompteRenduDocument } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
   /** The rendered markdown, as `renderCompteRendu` produced it. */
@@ -64,8 +84,6 @@ export function CompteRenduPane({
 
   return (
     <div className="flex h-full flex-col overflow-hidden px-row py-row">
-      <SectionHeader className="shrink-0">Compte-rendu</SectionHeader>
-
       {/*
         Typeset, and not a markdown renderer — `CompteRenduDocument` keeps every
         `#` and every `- ` on screen, muted, in a gutter. This is the exact text
@@ -101,7 +119,6 @@ export function CompteRenduPane({
       */}
       <div className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
         <p>Lecture seule — corrigez-le à l’étape « Relire et valider ».</p>
-        <CompteRenduMarkersNote className="mt-0.5" />
       </div>
 
       {/*

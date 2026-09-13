@@ -1051,26 +1051,72 @@ describe('a connector that is down (DEC-26)', () => {
   })
 })
 
-describe('the gate says which screen it is', () => {
-  test('open, it is headed *Revue*, with the meeting under the name', async () => {
-    // It used to open with the meeting title alone, which made the one
-    // irreversible screen in the product look like a second view of the
-    // meeting. A rep arriving here from a broadcast is told where they are.
+describe('the gate is headed by the call, never by the word « Revue »', () => {
+  test('open, the one h1 is the meeting, and nothing names the furniture', async () => {
+    /*
+     * It was a 28px serif « Revue » — the largest thing on the screen, naming
+     * what the screen permanently is — with the call in muted 12px beside it.
+     * The rep pressed *Relire et valider* on that call thirty seconds ago; what
+     * the strongest ink owes them is which call the one irreversible press is
+     * about.
+     */
     bridge.when('review:get', () => openPanel())
 
     render(<Review meetingId="m1" onBack={() => {}} />)
 
-    expect(await screen.findByRole('heading', { name: 'Revue' })).toBeTruthy()
-    // The meeting is in the header too — as the line under the screen's name,
-    // not as the name. (It also fills the *Objet* field, which is why this
-    // reads the header rather than the document.)
-    //
-    // The client is *not* appended here: this title already opens with it, and
+    const title = await screen.findByRole('heading', { level: 1 })
+    expect(title.textContent).toContain('Acme Industries — besoin Dev Java')
+    expect(screen.queryByRole('heading', { name: 'Revue' })).toBeNull()
+
+    // The client is *not* appended: this title already opens with it, and
     // « Acme Industries — besoin Dev Java · Acme Industries » is the account
     // name printed twice on one line.
     const banner = screen.getByRole('banner').textContent ?? ''
     expect(banner).toContain('Acme Industries — besoin Dev Java')
     expect(banner).not.toContain('Dev Java · Acme Industries')
+
+    // And the way back still names a *destination*, which is a different job
+    // from a screen naming itself.
+    expect(screen.getByRole('button', { name: '‹ Calendrier' })).toBeTruthy()
+  })
+
+  test('no caption over the document, and the switch is what says which view', async () => {
+    /*
+     * « COMPTE-RENDU » sat over a document whose own first line is `# <objet>`,
+     * two inches under a segmented control already naming the three views — so
+     * in the third tab « Transcription » was drawn twice on one screen. A pane is
+     * named by its content (`ui/SectionHeader.tsx`).
+     *
+     * Asked of the *heading* role, not of the text: « compte-rendu » appears in
+     * this screen's prose in several places that are doing work — the document's
+     * own title, the copy control, the switch's own label.
+     */
+    bridge.when('review:get', () => openPanel())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByRole('button', { name: 'Valider' })
+
+    expect(screen.queryByRole('heading', { name: 'Compte-rendu' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Transcription' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Lecture', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Modifier' })).toBeTruthy()
+  })
+
+  test('the markers sentence is here, where the document is editable', async () => {
+    /*
+     * It used to be drawn on all three surfaces that typeset a compte-rendu, two
+     * of which are read-only — including the session pane, during the call. It is
+     * a real promise (DEC-44: VerySwing receives the string the rep read) and it
+     * is needed once, at the moment the rep can act on it: this screen, where the
+     * text is editable and where the press that writes into the client's CRM is.
+     */
+    bridge.when('review:get', () => openPanel())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByRole('button', { name: 'Valider' })
+
+    expect(screen.getByText(/font partie du texte/)).toBeTruthy()
+    expect(screen.getByText(/VerySwing reçoit exactement ce qui est affiché/)).toBeTruthy()
   })
 
   test('closed, there is no header at all — only the reason and the way back', async () => {
@@ -1083,7 +1129,7 @@ describe('the gate says which screen it is', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
 
     await screen.findByText('Réunion en cours.')
-    expect(screen.queryByRole('heading', { name: 'Revue' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 })
 
