@@ -199,6 +199,174 @@ findings were sound.
 
 ---
 
+## Defects in flight — round 32
+
+Measured against `df28300` in a pinned worktree. The review ended **NOT IMPRESSED**.
+
+| | Finding | Lane | State |
+|---|---|---|---|
+| R32-1 | `before-quit` awaits a flush that has already been taken from it | `session` | **next — the worst thing on this page** |
+| R32-2 | « Remonter dans **du** compte-rendu », on six labels | `ui-read` | **next** |
+| R32-3 | `check:ports` cannot see `MailPort` or `CapturePort` | `checks` | **next** |
+| R32-4 | `--motion-fast` is pinned by its mapping and not by its number | `checks` | **next** |
+
+### R32-1 — the tail of every call closed by its window is lost, and US-1 made it worse
+
+`dispatch(id, 'end')` fires `void this.#enhance(id)`. `#enhance` is `async`, so its body
+runs synchronously to its first `await` — which is `await this.stopRecording(id)`, and
+**evaluating that call runs `stopRecording`'s own body synchronously to its first await**,
+having already executed `this.#recordings.delete(meetingId)`.
+
+So one line later, `before-quit`'s own `await orchestrator.stopRecording(meetingId)`
+returns at `if (!recording) return`. Measured, on the real `Store` and the real
+`Orchestrator`, with a transcriber that flushes a tail segment inside `stop()` the way
+`LocalWhisperSession.#shutdown()` and every REST provider do:
+
+```
+── onEnded injected: no
+   transcriber flushed? true    tail segments in the log: 1
+── onEnded injected: YES — what main.ts:1496 always does
+   transcriber flushed? false   tail segments in the log: 0
+```
+
+`Outbox.settle()` then returns synchronously when nothing is in flight, so `app.quit()` →
+`before-quit` again with `quitting === true` → `overlay.hide(); store.close()` land within
+a few microtasks, while the local engine is still draining on a **thirty-second** budget.
+
+On Windows — the primary platform — `window-all-closed` quits, so « get the app out of the
+way at the end of a call » is a quit. `main.ts` states « `stopRecording` is awaited so both
+providers flush ». It waits for nothing. The last utterance — `stopRecording`'s own docblock
+calls it « the part with the next steps in it », and `GAP_FLUSH_MS` means up to three
+seconds of held speech plus whatever is queued in the model — never reaches the log, so it
+is missing from the transcript the compte-rendu is folded from, from what `[source ▸]`
+reads, and therefore from what VerySwing receives.
+
+**And `b2cc981` (US-1/US-2) made the Windows shutdown and « Se déconnecter » case strictly
+worse than before it landed.** `session-end` moves the meeting out of `recording` first, so
+`before-quit`'s predicate finds nothing and does not even `preventDefault()`:
+
+```
+── WITHOUT PowerWatch (pre-b2cc981) · session-end
+   state at before-quit: ended   defers the quit? true
+── WITH PowerWatch (HEAD) · session-end
+   state at before-quit: ended   defers the quit? false   tail segments: store already closed
+```
+
+`PowerWatch.ts` claims « The flush still happens, on the way out or on the way back ». For
+`session-end` there is no way back, and the way out no longer waits.
+
+**Why nothing saw it.** `powerWatch.test.ts` models the quit path as
+`liveIds().filter(recording).map(dispatch('end'))` and stops there — no `stopRecording`, no
+flush — and it *asserts* that the quit path finds nothing, which is the defect written down
+as the expectation. `signalWiring.test.ts` and `recording.test.ts` call `stopRecording`
+directly on an `Orchestrator` constructed **without `onEnded`**, so `#enhance` returns on
+its first line and the Recording is still there to flush: a fixture simpler than the
+product (shape #5), on the exact axis that decides the outcome. Nothing in the repo boots
+`main.ts`, and `scripts/e2e.mjs` ends its meeting through the UI rather than by quitting
+during a recording.
+
+**Acceptance.** One flush per recording, awaited by whoever needs it — the obvious shape is
+that `stopRecording` memoises its own in-flight promise per meeting so a second caller
+awaits the first rather than finding nothing, but drive it before choosing. `PowerWatch`'s
+`session-end` path must leave `before-quit` something to wait for, or must do the waiting
+itself. The proof is a test that **runs through `#enhance`** — an `Orchestrator` with
+`onEnded` injected, which is the only configuration `main.ts` ever produces — and asserts
+the tail segment is in the log after the quit path has finished; and it must be red on
+today's code, at the boundary, not merely absent. Extend `scripts/e2e.mjs` if a quit during
+a recording can be reached there: this is the one class of defect that only a booted
+`main.ts` can see, and there are now two instances of it.
+
+### R32-2 — one French string interpolated into two grammatical frames
+
+`src/ui/ReadingColumn.tsx:98`:
+
+```tsx
+what={turn === 'up' ? `Remonter dans ${what}` : `Lire la suite ${what}`}
+```
+
+Every caller supplies the genitive, because that is what the *first* state needs:
+`CompteRenduPane` « du compte-rendu », `SignalRail` « de la fiche », `Historique`'s four
+`turnLabel`s « de la transcription », « de vos notes », « du compte-rendu »,
+« de l'extraction ». Six labels. Driven on the shipped renderer:
+
+```
+── session screen        « Remonter dans du compte-rendu »
+── Historique            « Remonter dans de la transcription »
+── review gate, by hand  « Remonter dans le compte-rendu »   ← correct
+```
+
+The rep reads to the end of the compte-rendu on the session screen — four presses at
+1280×800 — and the control under it turns into broken French. The gate, one click away,
+writes its two labels by hand and both are right, so the same document on two screens
+labels the same gesture two ways, one of them ungrammatical, on the most-pressed control in
+three reading surfaces.
+
+**Why nothing saw it.** `ReadingColumn` has **no test file**, and could not have one that
+bites: jsdom measures every box as zero, so `above` and `below` are both false, `turn` is
+`null`, and the control does not render. No stage reaches the `up` state —
+`session-compte-rendu` photographs the pane at `scrollTop 0`. `--a11y` asks whether a
+control *has* a name, never whether the name is French; `check:french` reads prose for the
+straight apostrophe, and « de l'extraction » carries U+2019. Shapes #1 and #8 at once.
+
+**Acceptance.** The component takes what it needs for both frames rather than one string
+bent into two — two labels, or a noun plus its article, decided in the file that knows.
+The gate's two hand-written labels are the reference for what correct reads like, and the
+same gesture must not be named two ways on two screens. And **a stage has to reach the
+`up` state**: press a `ReadingColumn` to its end and photograph the control, at both smoke
+sizes, or this comes back.
+
+### R32-3 — the two ports left outside `core/contracts/` are capture and mail
+
+`check-ports.mjs` discovers ports from `electron/core/contracts/` only. `MailPort` is
+declared in `modules/mail/OutlookMail.ts`; `CapturePort` in `modules/capture/index.ts`.
+Measured, with a temporary mutation since reverted:
+
+```
+# a dead sendNow() on MailPort, implemented on OutlookMail:
+node scripts/check-ports.mjs   → ports ok, 27 méthodes vérifiées
+npm run check                  → twelve gates green
+npm test                       → 1235 + 586 pass
+# the same shape on CrmPort, for contrast:
+node scripts/check-ports.mjs   → « CrmPort.closeSession n’est appelé nulle part »
+```
+
+Corroborating and already live: `CapturePort.running` is declared, implemented twice, and
+read by nothing outside `modules/capture/`.
+
+Not a live false green — `createDraft` is genuinely wired — but the guarantee is gone on
+the two ports where it matters most. CLAUDE.md's own sentence is « every method on a port
+declared in `core/contracts/` », and `MailPort`'s docblock says « one way to create a
+draft, and no second method for anything else » while `Outbox`'s says « narrow enough that
+it has no second verb to grow into a way of sending (HR-8) ». HR-8 is « never
+`Mail.Send` ». Both are prose, and on this port the check that would hold them is not
+looking.
+
+**Acceptance.** Either every `export interface …Port` outside `core/contracts/` fails the
+check by existing — which is the honest rule, and moves the two declarations — or they are
+discovered where they live. Whichever: a dead verb on `MailPort` must fail, and a dead verb
+on `CapturePort` must fail, and `CapturePort.running` is a real finding to resolve rather
+than excuse. Drive both directions, as `check:ports` already does elsewhere: prose naming a
+method must not satisfy it, and an ordinary respelling of a live call must not break it.
+
+### R32-4 — the motion ladder is pinned by its mapping, not by its numbers
+
+`tokens.test.ts` holds every `--motion*` rung to `<= 150ms` and pins
+`durations.DEFAULT === 'var(--motion-fast)'`. So the *mapping* is pinned and the *number*
+is not: setting `--motion-fast: 150ms` reverts the whole measured result of `c6ea550` with
+every check green and every test passing.
+
+US-3's own research is the evidence — Granola's twelve durations, the published standard's
+100–160 ms band for press feedback — and it is committed in `docs/stories/motion-research.md`.
+A ladder whose rungs can all collapse onto one value is one token edit from being the single
+curve US-3 replaced.
+
+**Acceptance.** The rungs are held *apart*, not just under a ceiling, and each is held to
+the band the research gives it. Do not invent numbers: the file has them. A revert of
+`--motion-fast` to 150 ms must be red.
+
+
+---
+
 ## Status
 
 | | Story | Lane | State |
@@ -210,7 +378,7 @@ findings were sound.
 | US-1 | The machine went to sleep during the call | `session` | **done** — `b2cc981` |
 | US-2 | Windows ended the session while a call was live | `session` | **done** — `2c7fe2b` |
 | US-3 | A motion vocabulary, not one curve | `motion` | **done** — `c6ea550` |
-| US-4 | The suggested next thing, on the note | `ui-session` | todo |
+| US-4 | The suggested next thing, on the note | `ui-session` | **done** — merged |
 | US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
 | US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | **half done** — `73edb2c` |
 | US-7 | A first run that has already seen a meeting | `ui-onboarding` | deferred — the rep asked for this later |
@@ -218,15 +386,15 @@ findings were sound.
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
 | US-11 | Telling the client they are being recorded | `widget` | **done** — `c3f337c` |
-| R32 | Round 32 adversarial review | — | **next**, pinned worktree |
+| R32 | Round 32 adversarial review | — | **ran at `df28300` — NOT IMPRESSED, four findings above** |
 | US-12 | What the shared screen says | — | argued debt |
 | US-13 | The widget arrives by popping into existence | `ui-session` | **done** — `a4f35d9` |
 | US-14 | The gate's page turn takes 434 ms | `ui-review` | **done** — `a511d30` |
-| US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
-| US-16 | The harness compte-rendu is missing two constructs | `harness` | todo |
-| US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | in flight |
-| US-18 | Onboarding narrates a product two features old | `ui-onboarding` | **next** |
-| US-19 | The mention sentence belongs to the ESN | coordinator | **next** |
+| US-15 | Three dead declarations, one mask that snaps | `motion` | **done** — merged |
+| US-16 | The harness compte-rendu is missing two constructs | `harness` | **done** — merged |
+| US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | **done** — merged |
+| US-18 | Onboarding narrates a product two features old | `ui-onboarding` | in flight |
+| US-19 | The mention sentence belongs to the ESN | coordinator | **done** — `3609bb6` |
 | US-20 | No stage presses US-11's control, so its card is unmeasured | `harness` | **next** |
 
 ---
