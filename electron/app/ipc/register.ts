@@ -1415,11 +1415,26 @@ export const handlers: Handlers = {
   /**
    * The sentence the rep reads to the client (US-19).
    *
-   * `onSettingsChanged` for the same reason `setOfflineOnly` uses it: the widget does
-   * not poll, and a rep who corrects the wording between two calls must not have the
-   * pill still handing over the old one. Nothing here validates the *content* — the
-   * wording is the ESN's and this product has no rule that separates a sentence it
-   * dislikes from one it does not (`check:diag`'s own verdict on free-form text).
+   * `onSettingsChanged` for the reason every other write in this pane calls it, and
+   * **not** as a way of refreshing the pill: `main.ts` injects
+   * `drainDeferredEnhancements`, so what it does is retry a compte-rendu that was
+   * waiting on a model (DEC-39). It is called here because any Réglages write can be
+   * the one that makes a model usable, and a meeting sitting in `ended` is doing so on
+   * that promise.
+   *
+   * **How the pill actually learns the new wording, stated because the obvious
+   * assumption is wrong.** It does not poll and nothing broadcasts to it here. The
+   * widget re-reads `widget:state` on `session:changed`, and a recording has no
+   * transitions — so a sentence changed *during* a call reaches the pill at the next
+   * recording, not at the next keystroke. That is the honest behaviour and the
+   * defensible one: the wording the pill hands over is the wording that was
+   * configured when the call started, and an administrator rewriting legal text
+   * mid-call is not a case this product should silently win.
+   *
+   * Nothing here validates the *content*. The wording is the ESN's, and this product
+   * has no rule that separates a sentence it dislikes from one it does not —
+   * `check:diag`'s own verdict on free-form text is that a denylist over it cannot be
+   * made safe, only made narrower.
    */
   'settings:setMentionSentence': async ({ value }, deps) => {
     if (!deps.preferences) throw refuse('les préférences ne sont pas disponibles')
