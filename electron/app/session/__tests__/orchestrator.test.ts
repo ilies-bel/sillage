@@ -37,6 +37,7 @@ import { Orchestrator } from '../Orchestrator.ts'
 import { openMemoryStore } from '../../../modules/store/index.ts'
 import { updateReadiness } from '../../../core/domain/updateGate.ts'
 import type { Store } from '../../../modules/store/index.ts'
+import { recordingRig, quitPath } from './recordingFakes.ts'
 
 /** A store carrying one finished call, the way every launch after the first finds one. */
 const withAPastCall = (id = 'm-hier'): Store => {
@@ -216,5 +217,167 @@ test('and a gate that never opened leaves the installer alone', () => {
   // And `atGate` on a meeting the log does not hold is not an error and marks nothing.
   later.atGate('m-inconnu')
   assert.deepEqual(later.liveIds(), [])
+  store.close()
+})
+
+/*
+ * ── The quit path, and the tail it is there to keep ────────────────────────────
+ *
+ * **Everything below runs through `#enhance`, with `onEnded` injected**, because
+ * that is the only configuration `main.ts` ever produces and it is the axis that
+ * decided R32-1's outcome. `signalWiring.test.ts` and `app/__tests__/recording.test.ts`
+ * both call `stopRecording` on an `Orchestrator` built **without** it, so
+ * `#enhance` returns on its first line, nothing has taken the `Recording` away,
+ * and the flush those tests measure is the one the product never gets: a fixture
+ * simpler than the product, on the one axis that mattered (shape #5). Both
+ * configurations are asserted here for that reason — the injected one is the
+ * product, the bare one is the shape that used to be the only thing measured, and
+ * the tail has to reach the log in both.
+ *
+ * What the defect was: `dispatch(id, 'end')` fires `void #enhance(id)`, whose body
+ * runs synchronously to `await this.stopRecording(id)` — and *evaluating that call*
+ * runs `stopRecording`'s body synchronously past `#recordings.delete(meetingId)`.
+ * So `before-quit`'s own `await orchestrator.stopRecording(meetingId)`, one line
+ * after its `dispatch`, returned at `if (!recording) return`: it waited for
+ * nothing, under a docblock saying both providers had flushed. Measured on this
+ * class over a real store: **0** tail segments with `onEnded` injected against 1
+ * without it, and the flush then landing 20 ms after `store.close()`.
+ *
+ * The transcriber emits its tail *inside* `stop()`, after a real await, the way
+ * `LocalWhisperSession.#shutdown()` drains its queue and every REST provider posts
+ * its last chunk. A fake that flushed synchronously could not tell the two
+ * outcomes apart.
+ */
+
+test('closing the window during a call keeps the tail — with `onEnded`, which is the product', async () => {
+  const h = await recordingRig()
+
+  const quit = await quitPath(h.orchestrator)
+  assert.equal(quit.deferred, true, 'the quit was not even deferred')
+  assert.deepEqual(quit.ended, ['m-neovia-cadrage'])
+  assert.equal(quit.settled, true, 'the bounded wait expired on a 5 ms flush')
+
+  assert.equal(
+    h.tails(),
+    1,
+    'the last utterance of the call never reached the log: it is therefore missing from ' +
+      'the compte-rendu, from what `[source ▸]` reads, and from what VerySwing receives',
+  )
+  assert.equal(
+    h.transcribe.flushed,
+    true,
+    'the quit path returned before the transcriber had flushed — `stopRecording` found ' +
+      'nothing, because `#enhance` had already taken the Recording',
+  )
+
+  // And `store.close()` is the very next thing `before-quit` does.
+  h.store.close()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(h.transcribe.refused, null, 'the tail was written into a closed database')
+  assert.equal(
+    h.records.filter((row) => row.code === 'enhancement.unhandled').length,
+    0,
+    'the end-of-meeting path failed on the way out',
+  )
+})
+
+test('and with no `onEnded`, which is the only shape the older fixtures could see', async () => {
+  /*
+   * The control. `signalWiring.test.ts` and `app/__tests__/recording.test.ts` build
+   * the orchestrator this way, so `#enhance` returns on its first line and nothing
+   * has raced `stopRecording` for the `Recording`. Green before the fix and after
+   * it — which is the point: this row alone proves nothing, and for a dozen rounds
+   * it was the only row anybody had.
+   */
+  const h = await recordingRig({ onEnded: false })
+  const quit = await quitPath(h.orchestrator)
+  assert.equal(quit.deferred, true)
+  assert.equal(h.tails(), 1)
+  h.store.close()
+})
+
+test('one flush per recording: two callers await the same one', async () => {
+  /*
+   * The memo, asked directly. `#enhance` and `before-quit` both call
+   * `stopRecording` on the same meeting within one line of each other, and the
+   * provider is stopped **once** — `Recording.stop()` is sticky, so a second
+   * `stop()` would be absorbed there, but a second *caller* used to be handed
+   * `undefined` and no wait at all.
+   */
+  const h = await recordingRig()
+  let stops = 0
+  const spy = h.transcribe.stop.bind(h.transcribe)
+  h.transcribe.stop = async () => {
+    stops += 1
+    await spy()
+  }
+
+  h.orchestrator.dispatch('m-neovia-cadrage', 'end', 'le commercial a terminé')
+  assert.equal(
+    h.orchestrator.flushing(),
+    true,
+    '`before-quit` runs one line later and has to be able to see this flush',
+  )
+  await h.orchestrator.stopRecording('m-neovia-cadrage')
+  assert.equal(h.transcribe.flushed, true, 'the second caller did not await the first flush')
+  assert.equal(stops, 1, 'the provider was stopped twice')
+  assert.equal(h.tails(), 1)
+  assert.equal(h.orchestrator.flushing(), false, 'the memo outlived its own flush')
+  h.store.close()
+})
+
+test('a retry on a meeting that stopped minutes ago is still a no-op', async () => {
+  /*
+   * The path the memo must not break. `enhance()` — a retry, or a first attempt once
+   * a model finally exists — goes through `#enhance`, which calls `stopRecording` on
+   * a meeting whose devices were released long ago and expects nothing to happen.
+   * A memo kept for the life of the process would hand it a settled promise for
+   * ever, and a *rejected* one if that flush had failed.
+   */
+  const h = await recordingRig()
+  await quitPath(h.orchestrator)
+  assert.equal(h.orchestrator.flushing(), false)
+
+  let stops = 0
+  h.transcribe.stop = async () => {
+    stops += 1
+  }
+  await h.orchestrator.enhance('m-neovia-cadrage')
+  assert.equal(stops, 0, 'a retry stopped a provider that had already been stopped')
+  assert.equal(h.tails(), 1, 'the retry lost the tail the first pass had stored')
+  h.store.close()
+})
+
+test('the wait for a flush is bounded, or a rep who pressed close never gets their window back', async () => {
+  /*
+   * The other direction, and the one that would be this fix's own next round: the
+   * providers' `stop()` is bounded (30 s local, an 8 s safety net over REST), and
+   * an unbounded wait here would be a process the rep kills — which loses the tail
+   * as well and looks broken doing it. `settleRecordings` answers `false` and
+   * `before-quit` says so in the log rather than quitting silently (DEC-26).
+   */
+  const h = await recordingRig()
+  h.transcribe.hangs = true
+  h.orchestrator.dispatch('m-neovia-cadrage', 'end', 'le commercial a terminé')
+  assert.equal(h.orchestrator.flushing(), true)
+
+  const started = Date.now()
+  const settled = await h.orchestrator.settleRecordings(40)
+  assert.equal(settled, false, 'a provider that never answers held the quit for ever')
+  assert.ok(Date.now() - started < 1_000, 'the bound did not bound anything')
+  h.store.close()
+})
+
+test('nothing in flight means nothing to wait for, and the quit is not deferred', async () => {
+  /*
+   * `flushing()` must be false in the ordinary case or every quit is deferred for
+   * ever — the shape of a control that is present and does nothing, one layer down.
+   */
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, { onEnded: async () => {} })
+  assert.equal(orchestrator.flushing(), false)
+  assert.equal(await orchestrator.settleRecordings(0), true, 'an empty wait still waited')
+  const quit = await quitPath(orchestrator)
+  assert.equal(quit.deferred, false)
   store.close()
 })

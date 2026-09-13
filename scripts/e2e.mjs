@@ -25,8 +25,17 @@
  * nothing in a headless run can answer. It does start and end a real meeting,
  * because that is the product's spine and the one path where the store, the
  * state machine, the capture module and the end-of-meeting notice all have to
- * agree; the recording is ended before the window closes, so nothing is left
- * holding a device.
+ * agree.
+ *
+ * **And once, deliberately, it closes the app while one is still recording.**
+ * That is not an oversight: on Windows — the primary platform (HR-2) —
+ * `window-all-closed` quits, so « get the app out of the way at the end of a
+ * call » is a quit, and `before-quit`'s deferral is registered on a real `app`
+ * object by a booted main process and by nothing else. It is the second launch's
+ * meeting, so the recording that is left running is one nothing after it needs;
+ * what the step asserts is that the handler ended it on the way *out* — with its
+ * own reason in the log — rather than leaving it for the boot sweep on the way
+ * back, and that the process still exits.
  *
  * **It runs on a throwaway profile.** Electron's own `--user-data-dir` switch
  * points at a fresh temporary directory, so the store is created from nothing on
@@ -804,6 +813,114 @@ try {
     // No first run: `onboarding:seen` was written to this store and read back
     // out of it by a different process.
     await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
+  })
+
+  await step('a quit during a call is deferred, and the call ends on the way out', async () => {
+    /*
+     * **The only place a `before-quit` during a recording can be driven at all.**
+     *
+     * On Windows — the primary platform (HR-2) — `window-all-closed` quits, so
+     * « get the app out of the way at the end of a call » *is* a quit, and the
+     * handler that catches it is registered on a real `app` object by a booted
+     * main process and by nothing else. Two findings now exist that only this file
+     * could have seen, and R32-1 is the third: `before-quit` dispatched `end` and
+     * then awaited `stopRecording`, which returned immediately because
+     * `#enhance` — fired by that very dispatch — had already taken the `Recording`.
+     * « `stopRecording` is awaited so both providers flush » waited for nothing.
+     *
+     * What this step measures, on the real thing:
+     *
+     *  · the quit is **deferred** rather than refused or ignored — the meeting is
+     *    `ended` in the log with *the quit's own reason*, which is what separates
+     *    « the handler ended it » from « the boot sweep found it abandoned »;
+     *  · the process still **exits**, and quickly. The fix turned an await that
+     *    resolved instantly into one that waits for a provider's `stop()`, so
+     *    « the window never goes away » is the failure it could have introduced —
+     *    a bounded wait is worth nothing if nothing ever measures the bound;
+     *  · and nothing **failed** on the way out: no `app.quit.endFailed`, no
+     *    `app.quit.flushUnsettled`, no `enhancement.unhandled` in the diagnostic
+     *    log the next launch reads back.
+     *
+     * What it cannot measure is the tail itself: a headless run produces no audio,
+     * so there is no last utterance to lose. That is measured on the shipped
+     * `Orchestrator` in `app/session/__tests__/orchestrator.test.ts`, over a
+     * transcriber that emits a segment inside `stop()`. This step is the half that
+     * needs the real `app`.
+     */
+    await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
+    await page.getByRole('button', { name: 'Démarrer une réunion' }).click()
+    // *Terminer* on screen means the state machine took `start`: this meeting is
+    // recording, with the devices and the transcriber behind it.
+    await page.getByRole('button', { name: 'Terminer' }).waitFor({ timeout: 30_000 })
+
+    const started = Date.now()
+    // Playwright's close is the polite one — it reaches `before-quit`, which is
+    // the whole point. The crash case is the step below, which fabricates a log.
+    await app.close()
+    app = null
+    const closedInMs = Date.now() - started
+    /*
+     * The bound is the handler's own arithmetic: ten seconds for the flush
+     * (`FLUSH_TIMEOUT_MS`) and eight for a push on the wire (`SETTLE_TIMEOUT_MS`),
+     * neither of which has anything to wait for here. Twenty-five seconds fails on
+     * a wait that hit either ceiling and on a quit that hangs, and passes on the
+     * sub-second exit this should be.
+     */
+    if (closedInMs > 25_000) {
+      throw new Error(`la fermeture a pris ${closedInMs} ms — un quit différé qui ne rend jamais la main`)
+    }
+
+    const dbPath = dbUnder(profile)
+    if (!dbPath) throw new Error('base introuvable après la fermeture')
+    const store = new Store(dbPath)
+    let quitEnded = []
+    let stillRecording = []
+    try {
+      for (const meeting of store.projections.listMeetings(500)) {
+        if (meeting.state === 'recording') stillRecording.push(meeting.id)
+        const ended = store.log
+          .read(meeting.id)
+          .some(
+            (row) =>
+              row.event.type === 'session.transition' &&
+              row.event.to === 'ended' &&
+              row.event.reason === 'fermeture de l’application',
+          )
+        if (ended) quitEnded.push(meeting.id)
+      }
+    } finally {
+      store.log.db.close()
+    }
+
+    if (stillRecording.length > 0) {
+      throw new Error(
+        `${stillRecording.length} réunion(s) toujours « en cours » après la fermeture — ` +
+          'la fenêtre a abandonné un enregistrement',
+      )
+    }
+    if (quitEnded.length !== 1) {
+      throw new Error(
+        `${quitEnded.length} réunion(s) terminées par « fermeture de l’application » (attendu : 1) — ` +
+          'le quit n’a pas été différé, ou la réunion a été récupérée au démarrage suivant à la place',
+      )
+    }
+
+    noise = []
+    await launch()
+    await page.waitForSelector('#root > *', { timeout: 45_000 })
+    const events = await page.evaluate(() =>
+      window.app.invoke('diagnostics:recent', { limit: 300 }),
+    )
+    const onTheWayOut = events.filter((event) =>
+      ['app.quit.endFailed', 'app.quit.flushUnsettled', 'enhancement.unhandled'].includes(
+        event.code,
+      ),
+    )
+    if (onTheWayOut.length > 0) {
+      throw new Error(
+        `la fermeture a laissé ${onTheWayOut.map((e) => `${e.code}: ${e.message}`).join(' · ')}`,
+      )
+    }
   })
 
   await step('a recording the previous process never ended is not left running', async () => {

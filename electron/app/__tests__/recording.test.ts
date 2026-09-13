@@ -4,7 +4,16 @@
  * What is asserted here is the set of rules that belong to neither module and
  * would therefore be nobody's job to keep: the start/stop ordering, the fact
  * that only final segments reach the log, and that a transcription failure
- * leaves capture running.
+ * leaves capture running. *
+ * **The orchestrators here carry no `onEnded`, which is the product's own axis
+ * missing.** `main.ts` injects one on every launch, and with it
+ * `dispatch(id, 'end')` fires `#enhance`, which calls `stopRecording` itself — so
+ * a later caller used to find nothing left to flush (R32-1). Nothing below asks
+ * that question: these drive `stopRecording` directly and assert the module
+ * ordering and the dry-run guard. The tail of a call on the way out of the process
+ * is measured in `app/session/__tests__/orchestrator.test.ts` over
+ * `recordingFakes.ts`, which injects `onEnded` because that is the only shape the
+ * product has.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
