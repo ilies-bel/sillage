@@ -217,6 +217,14 @@ export function AskPanel({
         said nothing about what it was for — which is precisely the complaint.
         One row, one chip, 24px tall, and it is the offer that names what
         happens next rather than the one that explains the box.
+
+        And the price, measured rather than waved at, because the paragraph
+        above is an argument about a budget: the row costs the document **33
+        pixels** at both smoke sizes — 491 → 458 of an 1 868px compte-rendu at
+        1280×800, 354 → 321 of 2 119 at 960×600. A thirteenth of what the three
+        question chips cost at the size they are dropped at, spent once, and
+        returned the moment it is pressed. `ReadingColumn` is what keeps the
+        rest honest: nothing goes below a fold in silence.
       */}
       {offered !== null && failure === null && !busy ? (
         <div className="ask-action mt-2 shrink-0">
