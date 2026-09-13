@@ -1634,3 +1634,32 @@ repo's rule is to tune the register by replaying rather than by reading.
 
 **Out of scope** — the renderer. `CompteRenduDocument` draws what it is given and must keep
 drawing every marker; the fix is upstream or it is not a fix.
+
+## US-35 — two things left on the home screen, after round 34's first pass
+
+**Lane** `ui-agenda` · `src/screens/agenda/PendingGates.tsx`, `CalendarGrid.tsx` ·
+**not yet assigned** · found by looking at the screen after the pass, which is the point
+
+US-22/US-24/US-26 landed and the screen is right: the day is the title and is drawn once, the
+« Tout fonctionne » pill is gone, and exactly one control is filled — the live call. Two
+things survive that are the same class as what was removed.
+
+1. **« 2 autres sont dans la liste du jour, au-dessus. »** — a sentence explaining the app's
+   own list-making, drawn permanently under a section heading. It is there because a meeting
+   can legitimately appear in both the day list and the pending list, and the count on the
+   heading would otherwise look wrong. That is a real problem and this is the wrong solution:
+   the count and the list disagree, and the app narrates the disagreement instead of resolving
+   it. Decide which number the heading states — three pending, or the one not already above —
+   and say it in the count rather than in a sentence under it.
+
+2. **The legend is now three lines.** « réunion enregistrée · réunion prête · événement seul »
+   plus « Synchronisé il y a 4 min », wrapping since `--echo`'s fix lengthened « prêt » to
+   « réunion prête ». It is a key for three 6-px dots, and it is the third-largest block in the
+   left column. Do **not** simply delete it: those dots carry meaning by colour alone, which is
+   the thing `--contrast`'s `data-graphic` rule exists for and which no other text on the
+   screen recovers. The question is whether a key belongs on screen permanently or whether the
+   dots should be reachable another way — measure before deciding, and `--contrast` is the
+   check that must stay green either way.
+
+Neither is urgent. Both are recorded because the screen was looked at *after* the change, which
+is the half of a design pass that usually does not happen.
