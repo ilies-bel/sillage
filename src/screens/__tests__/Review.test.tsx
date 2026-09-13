@@ -1390,7 +1390,6 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
       .when('meeting:recipe', (payload) => ({
         recipe: payload.recipe,
         regenerating: true,
-        state: 'extracting' as const,
       }))
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
@@ -1464,7 +1463,7 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
       )
       .when('meeting:recipe', (payload) => {
         rewritten = true
-        return { recipe: payload.recipe, regenerating: true, state: 'extracting' as const }
+        return { recipe: payload.recipe, regenerating: true }
       })
     render(<Review meetingId="m-libre" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
@@ -1520,7 +1519,7 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
       )
       .when('meeting:recipe', (payload) => {
         rewritten = true
-        return { recipe: payload.recipe, regenerating: true, state: 'extracting' as const }
+        return { recipe: payload.recipe, regenerating: true }
       })
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
@@ -1594,14 +1593,20 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
    * not the one the chip shows. So the panel is closed by the press: the gesture
    * is over, and what happens next arrives in the column behind it.
    *
-   * The lock is deliberately **not** « a rewrite has been asked for ». On the
-   * build DEC-28 ships first, `Enhancement.run` returns without moving the
-   * machine when no model is configured — not a failure, and deliberately not a
-   * state change — so the gate stays open and no document ever arrives. A lock
-   * keyed on the request would then hold « Réécriture… » over a live gate for the
-   * life of the window with nothing saying why, which is the dead control DEC-26
-   * forbids; and the renderer cannot tell that case from a slow one, because
-   * `enhancement:status` answers `idle` for every meeting past `ended`.
+   * The lock is deliberately **not** « a rewrite has been asked for », and the
+   * reason is the case the three tests below drive: on the build DEC-28 ships
+   * first — and on any machine whose key has expired — `Enhancement.run` returns
+   * without moving the machine, so the gate stays open and no document ever
+   * arrives. A *lock* keyed on the request would hold « Réécriture… » over a live
+   * gate for the life of the window, which is the dead control DEC-26 forbids.
+   *
+   * What that reasoning got wrong, and R33-1 measured, is the *conclusion* it
+   * drew: « the renderer cannot tell that case from a slow one, because
+   * `enhancement:status` answers `idle` for every meeting past `ended` ». It can,
+   * because `statusOf` reports `running` off `#running` and off
+   * `state === 'extracting'` — and a run that started is one or the other by the
+   * time the press's own answer crosses the bridge. That is what the gate asks
+   * now, once, and it is the only thing allowed to say a rewrite did not start.
    */
   test('the press closes the picker, and two clicks are one run', async () => {
     bridge
@@ -1609,8 +1614,8 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
       .when('meeting:recipe', (payload) => ({
         recipe: payload.recipe,
         regenerating: true,
-        state: 'extracting' as const,
       }))
+      .when('enhancement:status', () => ({ status: 'running' as const, since: null }))
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
 
@@ -1627,5 +1632,133 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
     // recorded — never stuck on a promise the main process may not keep.
     const chip = await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })
     expect(chip.hasAttribute('disabled')).toBe(false)
+  })
+
+  /*
+   * **A rewrite that cannot run took *Valider* away and said nothing** (R33-1).
+   *
+   * The three cases below are one behaviour and each is a different half of it.
+   * What made this reachable is that nothing on the **open** gate ever learned
+   * the run had not started: `register.ts` answers `changed: true` and fires
+   * `runEnhancement` without awaiting it, `Enhancement.run` finds no recipe,
+   * records `enhancement.deferred` and returns *without moving the machine*, and
+   * the only sentence this screen had was drawn in the `!open` branch under
+   * `state === 'extracting'` — the one branch a deferred rewrite never reaches.
+   *
+   * **Two of the three are visible here only because the withdrawal stopped
+   * being a measurement.** jsdom gives every box a height of zero, so `below` is
+   * null and the arming guard fails open by design — the coverage reset the press
+   * used to do was structurally invisible to every test in this repo, which is
+   * why the five-to-eight page turns it cost were found by driving the browser
+   * and not here. *Valider* is now withheld by the marker itself, which is a fact
+   * about the press rather than about a rectangle, so jsdom can see it; the cost
+   * in page turns is still measured against real layout, in
+   * `review-modele-differe`.
+   */
+  test('a rewrite in flight withholds Valider and says so, without a greyed copy', async () => {
+    let answer: (status: { status: 'running'; since: number | null }) => void = () => {}
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      // Held open, which is the window the marker exists for: between the press
+      // and knowing, *Valider* may not be on screen — `confirm` is legal from
+      // `awaiting_confirmation` and would ship the document being replaced.
+      .when(
+        'enhancement:status',
+        () =>
+          new Promise((resolve) => {
+            answer = resolve as typeof answer
+          }),
+      )
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    expect(screen.queryByRole('button', { name: /^Valider/ })).toBeNull()
+    expect(
+      screen.getByText(
+        /Réécriture avec « Compte-rendu libre » demandée — la validation reprendra/,
+      ),
+    ).toBeTruthy()
+
+    // The run really started: the gate goes on waiting, and the way out is the
+    // machine moving, which the two tests above drive.
+    await act(async () => {
+      answer({ status: 'running', since: null })
+    })
+    expect(screen.queryByRole('button', { name: /^Valider/ })).toBeNull()
+  })
+
+  test('a rewrite that never starts gives Valider back, and names what it ships', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      /*
+       * What the shipped main process answers for this meeting, measured against
+       * the real `Orchestrator` and the real `Enhancement` wired the way `main.ts`
+       * wires them: the meeting is `awaiting_confirmation`, so `statusOf` returns
+       * `idle` — the deferral is recorded and announced, and `idle` is what an
+       * open gate sees.
+       */
+      .when('enhancement:status', () => ({ status: 'idle' as const }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    // Back, at no cost in page turns: nothing on screen changed, so nothing the
+    // rep had read stopped being read.
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+    // And it says what it is about to send, because the panel had just promised
+    // « La validation reprendra dès que le nouveau compte-rendu sera prêt ».
+    expect(
+      screen.getByText(/La réécriture n’a pas démarré : ce que « Valider » envoie est le/),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        /n’a pas démarré\. Le compte-rendu ci-dessous est toujours celui de « Prise de besoin commercial »/,
+      ),
+    ).toBeTruthy()
+  })
+
+  /*
+   * **And the chip names the document, which is also what keeps the retry on the
+   * screen.**
+   *
+   * `recipe` is `chosen ?? meeting:get`, so the press moves it at once. Left
+   * there, the chip claimed the document was the recipe that had just failed to
+   * be written — and `RecipeSwitch`'s `others` excludes the current value, so
+   * « Réécrire avec « Compte-rendu libre » » left the screen: a rep told the
+   * rewrite had not started, on a gate with no way to ask again.
+   */
+  test('a stalled rewrite keeps the document’s recipe on the chip, and the retry offered', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      .when('enhancement:status', () => ({ status: 'idle' as const }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    expect(
+      await screen.findByRole('button', { name: 'Modèle : Prise de besoin commercial' }),
+    ).toBeTruthy()
+    // And pressing it again is a real retry, not a press recording the recipe the
+    // document already has.
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    const calls = bridge.calls.filter((c) => c.channel === 'meeting:recipe')
+    expect(calls).toHaveLength(2)
+    expect(calls[1]?.payload).toEqual({ meetingId: 'm1', recipe: 'libre' })
   })
 })

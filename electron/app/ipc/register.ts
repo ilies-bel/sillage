@@ -719,7 +719,17 @@ export const handlers: Handlers = {
     const changed = existing !== null && existing.extraction.interpretation.recipe !== recipe
     if (changed) void runEnhancement?.(meetingId)
 
-    return { recipe, regenerating: changed, state: orchestrator.stateOf(meetingId) }
+    /*
+     * `regenerating` is « a run was asked for », never « a run started », and the
+     * difference is not this handler's to report. `state` used to ride here for
+     * exactly that purpose and could not do it: `stateOf` is read synchronously
+     * and `Enhancement`'s decision is two microtasks away, behind
+     * `orchestrator.enhance`'s `await stopRecording` — measured,
+     * `awaiting_confirmation` whether a model existed or not. Whoever needs the
+     * answer asks `enhancement:status`, which is the one function that composes
+     * it.
+     */
+    return { recipe, regenerating: changed }
   },
 
   'session:command': ({ meetingId, command, reason }, { orchestrator }) => {

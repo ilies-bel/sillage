@@ -1741,6 +1741,141 @@ const SCREENS = {
   },
 
   /*
+   * **Nothing had ever opened the picker, let alone pressed it** (R33-1, US-8).
+   *
+   * US-8 put a control on the DEC-4 screen and a panel under it — 230 px, three
+   * `.measure` paragraphs and two `Button`s — and across 122 stagings not one of
+   * the ten measured checks had ever visited it: no stage clicked the chip. So
+   * this stage leaves the panel **open** at the end, which is the only way
+   * `--geometry`, `--targets`, `--prose`, `--a11y`, `--contrast`, `--scrollers`,
+   * `--motion`, `--fade`, `--echo` and `--scan` get to see it at either size.
+   *
+   * And on the way there it drives the press, because opening is the cheap half.
+   */
+  'review-modele': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+      await page.getByRole('button', { name: /^Modèle :/ }).click()
+      // The panel's own content, not merely its box: the consequence sentence is
+      // the one thing a rep must read before the press, and it is the thing a
+      // copy change would silently take away.
+      await page.getByText(/Réécrire remplace le compte-rendu, les champs et le brouillon/).waitFor()
+      await page.getByRole('button', { name: /^Réécrire avec/ }).waitFor()
+    },
+  },
+
+  /**
+   * **A rewrite that cannot run took *Valider* away, said nothing, and gave it
+   * back over the document it had promised to replace** (R33-1).
+   *
+   * `register.ts` answers `changed: true` and fires `runEnhancement` without
+   * awaiting it. On the build DEC-28 ships first — and on any machine whose model
+   * key has expired — `Enhancement.run` finds no recipe, records
+   * `enhancement.deferred` and returns *without moving the machine*, so the gate
+   * stays open and no document ever arrives. The one sentence this screen had for
+   * a rewrite was drawn in the `!open` branch under `state === 'extracting'`,
+   * which is precisely the branch a deferred rewrite never reaches.
+   *
+   * Measured on the shipped renderer before the fix, on a gate the rep had read
+   * to the end, at both smoke sizes:
+   *
+   *     avant : valider=true   puce « Modèle : Prise de besoin commercial ▸ »
+   *     après : valider=false  remède « Lire la suite du compte-rendu »
+   *             phrases sur la réécriture : []
+   *     ré-armé après 5 tours de page (8 à 960×600) : valider=true
+   *             puce « Modèle : Compte-rendu libre ▸ »
+   *             document « # Néovia Santé — cadrage renfort data / ## Résumé »
+   *
+   * One press, five to eight page turns, and DEC-4's one irreversible control
+   * back over the document the screen had just said was being replaced, under a
+   * chip naming the recipe that did not run. `POST /v1/crm/tasks` has no
+   * idempotency key.
+   *
+   * **Three things are asserted and the third is the one a unit test cannot
+   * reach.** The sentence is on screen. The chip names the *document* — which is
+   * also what keeps « Réécrire avec « Compte-rendu libre » » on the screen as the
+   * retry, since `others` excludes the current value. And *Valider* is back with
+   * **zero** page turns: jsdom measures every box as zero, so the coverage reset
+   * and its cost were invisible to every renderer test in the repo, and the only
+   * place that number exists is real layout.
+   *
+   * The stub stages the machine this happens on: `meeting:recipe` answers
+   * `regenerating: true` for besoin-commercial → libre the way the shipped
+   * handler does, and `enhancement:status` answers `{status:'idle'}`, which is
+   * what the real `statusOf` answers for an `awaiting_confirmation` meeting whose
+   * rewrite was deferred.
+   */
+  'review-modele-differe': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+
+      // Read both columns first: the withdrawal is only visible on a gate that
+      // was armed, which is also the only state in which it costs anything.
+      for (let i = 0; i < 40; i++) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+        if ((await turn.count()) === 0) break
+        await turn.click()
+        await page.waitForTimeout(STAGING_TURN_MS)
+      }
+      const ship = () => page.getByRole('button', { name: /^Valider/ })
+      await ship().waitFor()
+
+      await page.getByRole('button', { name: /^Modèle :/ }).click()
+      await page.getByRole('button', { name: /^Réécrire avec/ }).click()
+      await page.waitForTimeout(700)
+
+      // The fact, in the rep's own language, on the open gate — which had nothing
+      // at all before this.
+      await page.getByText(/n’a pas démarré/).first().waitFor()
+
+      /*
+       * And the cost, counted. Every press of a page turn here would be a page of
+       * a document that did not change, so the number has to be zero — and it is
+       * printed rather than only asserted, because a fix that traded five turns
+       * for two would pass a `> 0` threshold.
+       */
+      let presses = 0
+      for (; presses < 12; presses += 1) {
+        if ((await ship().count()) > 0) break
+        const turn = page
+          .locator('button')
+          .filter({ hasText: /Lire la suite|Remonter|Voir la suite/ })
+          .first()
+        if ((await turn.count()) === 0) break
+        await turn.click()
+        await page.waitForTimeout(STAGING_TURN_MS)
+      }
+      if ((await ship().count()) === 0) {
+        throw new Error(
+          'une réécriture qui n’a pas démarré laisse « Valider » injoignable : DEC-4 n’a plus de porte',
+        )
+      }
+      if (presses > 0) {
+        throw new Error(
+          `une réécriture qui n’a pas démarré coûte ${presses} tour(s) de page sur un écran ` +
+            'qui n’a pas changé d’un pixel',
+        )
+      }
+
+      // The chip names the document, so the retry is still offered.
+      const chip = (await page.getByRole('button', { name: /^Modèle :/ }).innerText())
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (!chip.includes('Prise de besoin commercial')) {
+        throw new Error(
+          `la puce dit « ${chip} » alors que le compte-rendu affiché est celui de l’ESN — ` +
+            'et « Réécrire avec « Compte-rendu libre » » n’est plus offert',
+        )
+      }
+      console.log(`     réécriture différée: « Valider » revenu en ${presses} tour(s), puce « ${chip} »`)
+    },
+  },
+
+  /*
    * **The prose given the provenance the fields already had** (DEC-21).
    *
    * Eleven typed rows each carried a `[source ▸]` and the twenty-four hundred
