@@ -1372,7 +1372,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   repo could see it: the renderer's tests inject a fake bridge and the harness stubs
   `window.app`. That is what `scripts/e2e.mjs` is for, and it found this on its third day.
 
-- **`npm run test:e2e` starts the actual application.** Everything else tests a slice and all
+- **`npm run test:e2e` starts the actual application — and it needs a dev server, which
+  nothing in the run starts.** The script builds (`tsc && vite build`, then esbuild), and
+  then `electron.launch({ args: [REPO] })` runs `dist-electron/electron/app/main.js`, the
+  built main process. But an app launched that way is not packaged, so `app.isPackaged` is
+  false, `isDev` is true, and `main.ts` does `loadURL(VITE_DEV_SERVER_URL ?? 'http://localhost:5180')`
+  — the renderer comes from **Vite**, and the `dist/index.html` the run just built is never
+  loaded. So what this exercises is the real main process, the real preload, the real channel
+  names, the real Zod validation, the real SQLite file and the real boot sequence; what it does
+  **not** exercise is the packaged renderer bundle or the asar.
+  This file said « the **packaged** application » for as long as the run existed, which is
+  shape #7 in the list below — prose describing what the code does not do — sitting in the
+  file every session reads first, about the test written to catch exactly that. It cost two
+  lanes a 35-of-38 failure in one afternoon, each spent proving the failure was not theirs:
+  a worktree on port 5186 gets a blank `#root` and `net::ERR_CONNECTION_REFUSED`, thirty-five
+  times, with nothing saying why. `e2e.mjs` now refuses in one sentence before it launches
+  anything. Run it with `VITE_DEV_SERVER_URL=http://localhost:<your port>` from a worktree.
+- Everything else tests a slice and all
   of it shared one blind spot: the preload, the real channel names, the Zod validation on both
   sides of them, the SQLite file and the boot sequence were exercised by nothing, so a channel
   renamed on one side of the bridge would ship. **Thirty-seven** steps under Playwright's
@@ -1863,7 +1879,7 @@ only under `electron/modules/crm/vsa/`. Anywhere else means the abstraction leak
 
 ## The end-to-end run reaches the gate
 
-`scripts/e2e.mjs` starts the **packaged** application under Playwright's Electron
+`scripts/e2e.mjs` starts the built application under Playwright's Electron
 driver and walks a rep's first ten minutes. For a dozen rounds it stopped short of
 the one screen that matters most, for an honest reason: a headless run produces no
 audio, so no transcript, so no extraction, so the gate correctly refuses — and the
@@ -1895,7 +1911,8 @@ but the running main process holds the session in memory and never re-reads it.
 ```
 npm test                  # the suite. prints which tests are deferred, and why
 npm run check             # typecheck ×2 + boundaries + CRM + tokens + platform + French + ports + surfaces + reasons + diag + motion
-npm run test:e2e          # builds, then walks the real application under Electron
+npm run test:e2e          # builds, then walks the real main process under Electron.
+                          # NEEDS a dev server: 5180, or VITE_DEV_SERVER_URL=…
 npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
 ```
 

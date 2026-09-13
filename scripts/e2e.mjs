@@ -143,6 +143,41 @@ const dbUnder = (dir) => {
  * which is the launch every rep after their first day actually performs and
  * which nothing here had ever exercised.
  */
+/*
+ * **This run needs a dev server, and nothing here starts one.**
+ *
+ * `electron.launch({ args: [REPO] })` runs the *built* main process, but an app
+ * launched that way is not packaged — `app.isPackaged` is false, so `main.ts`
+ * takes its `isDev` branch and loads the renderer from
+ * `VITE_DEV_SERVER_URL ?? 'http://localhost:5180'`. The `dist/index.html` that
+ * `npm run test:e2e` just built is never loaded.
+ *
+ * Without a server the window opens, paints nothing, and **thirty-five of the
+ * thirty-eight steps fail** on a blank `#root` — which reads as « my change
+ * broke the app » and cost two lanes an afternoon of proving otherwise on the
+ * same day. A missing prerequisite is a fact the run can state before it spends
+ * four minutes discovering it, so it does.
+ *
+ * It is a reachability check and deliberately not a health check: anything
+ * answering on that port is the developer's business. What it refuses is
+ * silence.
+ */
+const requireDevServer = async () => {
+  const url = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5180'
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(4000) })
+  } catch (error) {
+    console.error(
+      `\n✗ aucun serveur de développement sur ${url}\n` +
+        `  Ce run charge le renderer depuis Vite : sans lui les 38 étapes échouent sur un #root vide.\n` +
+        `  Lancez « npm run dev -- --port 5180 --strictPort » dans un autre shell,\n` +
+        `  ou donnez le port du vôtre : VITE_DEV_SERVER_URL=http://localhost:<port> npm run test:e2e\n` +
+        `  (${error instanceof Error ? error.message : String(error)})\n`,
+    )
+    process.exit(2)
+  }
+}
+
 const launch = async () => {
   app = await electron.launch({
     args: [path.join(REPO, '.'), `--user-data-dir=${profile}`],
@@ -168,6 +203,8 @@ const launch = async () => {
   })
   page.on('pageerror', (error) => noise.push(String(error)))
 }
+
+await requireDevServer()
 
 try {
   await launch()
