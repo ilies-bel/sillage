@@ -170,7 +170,10 @@ export const quitPath = async (
   const deferred = recording.length > 0 || orchestrator.flushing()
   for (const meetingId of recording) {
     orchestrator.dispatch(meetingId, 'end', 'fermeture de l’application')
-    await orchestrator.stopRecording(meetingId)
+    // `void`, like the handler: the flush is memoised, so the bounded
+    // `settleRecordings()` below waits for it once rather than awaiting each
+    // provider's own thirty-second budget in turn.
+    void orchestrator.stopRecording(meetingId).catch(() => {})
   }
   const settled = deferred ? await orchestrator.settleRecordings() : true
   return { deferred, ended: recording, settled }

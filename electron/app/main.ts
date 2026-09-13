@@ -2580,29 +2580,45 @@ const boot = async (): Promise<void> => {
       quitting = true
       event.preventDefault()
       void (async () => {
+        const endFailed = (meetingId: string, error: unknown): void => {
+          diagnostics.record({
+            severity: 'error',
+            code: 'app.quit.endFailed',
+            module: 'app',
+            origin: 'foreign',
+            message: error instanceof Error ? error.message : 'arrêt impossible',
+            detail: { meetingId },
+            meetingId,
+          })
+        }
         for (const meetingId of recording) {
           try {
             orchestrator.dispatch(meetingId, 'end', 'fermeture de l’application')
-            await orchestrator.stopRecording(meetingId)
-          } catch (error) {
-            diagnostics.record({
-              severity: 'error',
-              code: 'app.quit.endFailed',
-              module: 'app',
-              origin: 'foreign',
-              message: error instanceof Error ? error.message : 'arrêt impossible',
-              detail: { meetingId },
-              meetingId,
+            /*
+             * **Started here and waited for once, below, with a bound.**
+             *
+             * `stopRecording` memoises the flush per meeting, so this call and the
+             * one `#enhance` makes on the same edge are the same flush — which is
+             * the whole of R32-1's fix, and it is what lets this be `void`. It is
+             * deliberately not awaited *here*: a provider's `stop()` is bounded by
+             * its own budget and the local engine's is **thirty seconds**, so
+             * awaiting each meeting in turn is an unbounded wait on the way out and
+             * a window that will not go away. One bounded wait covers every flush,
+             * including the ones this handler did not start.
+             */
+            void orchestrator.stopRecording(meetingId).catch((error: unknown) => {
+              endFailed(meetingId, error)
             })
+          } catch (error) {
+            endFailed(meetingId, error)
           }
         }
         /*
-         * Whatever this handler did not start: the flush `PowerWatch` began
-         * inside `WM_ENDSESSION`, or the one the rep's own *Terminer* began a
-         * moment before they closed the window. `stopRecording` above already
-         * awaited its own, so this is a second wait only when there is a second
-         * flush; bounded, because the tail is worth waiting for and a window that
-         * never goes away is not.
+         * Every flush in flight: the ones started just above, the one `PowerWatch`
+         * began inside `WM_ENDSESSION` — which is why the meeting may already be
+         * `ended` here — and the one the rep's own *Terminer* began a moment before
+         * they closed the window. Bounded, because the tail is worth waiting for
+         * and a window that never goes away is not.
          */
         if (!(await orchestrator.settleRecordings())) {
           diagnostics.record({
