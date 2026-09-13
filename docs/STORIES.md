@@ -105,6 +105,40 @@ Captured with `screencapture -x -o -l <windowId>`, the window id from
 in front of it, which is the only way to photograph an app while working in a
 terminal.
 
+## Feature parity, measured — what they ship and what we ship
+
+Built from the probe (`ref/*.png`, the 31 nub channels in the Appendix, and `main.js`'s own
+strings) against this tree at `c15a725`. **Ahead / level / behind is about what a rep can do,
+not about lines of code**, and where we are ahead it is because the feature was built to a
+different rule rather than to a smaller one.
+
+| Their surface | Ours | Standing |
+|---|---|---|
+| The on-call widget (their **nub**) | `src/widget/`, DEC-49 | **ahead.** 31 channels compared one by one; structural parity, and `widget:measuring` has no counterpart — their sequence is `setSize()` then `showInactive()`, which is exactly the failure our first-frame handshake exists to prevent. US-13 then fixed our own version of it: the pill used to arrive clipped by 49 px and settle in three steps. |
+| Meeting detection | `core/domain/adHoc.ts` | **level.** Both detect « which application holds a microphone » rather than « is Teams running ». Ours carries a 25 s dwell, per-branch horizons, and excludes its own pid; six consecutive adversarial rounds were spent on the arbitration between the calendar's claim and the detector's. |
+| Silence auto-stop | DEC-16, 75 s / 25 s past a scheduled end | **ahead.** Theirs is 15 minutes; ours is scheduled-end aware, and `graceFor` refuses to shorten on a *synthesised* end because an ad-hoc call has no calendar slot to be past. |
+| Consent / telling the client | US-11, `src/widget/mention.ts` + US-19 | **behind in mechanism, level in outcome.** They run a native messaging host, a socket per user, a browser extension and a cross-machine `coordinated-consent-send` that posts into the meeting chat. DEC-49 says we never join the call, so ours is one press: the sentence on the clipboard, on screen to read out, and the press in the log. It claims only that the rep was *offered* the sentence. |
+| The ✨ *Enhanced* recipe picker | US-8, `src/screens/review/RecipeSwitch.tsx` | **level, with one rule they do not have.** Two declared recipes and no rep-authored template (DEC-43), and the picker states **before the press** how many of the rep's corrections a rewrite discards. |
+| Ask bar + suggested action | `Demander` + US-4 | **ahead on the thing that matters.** Theirs answers from the summary the model itself wrote, so a mistake in the summary becomes a mistake in the answer with nothing left to check it against. Ours answers over the stored transcript, requires a verbatim fragment per claim, verifies each one with the same `locateQuote` the gate uses, and refuses an answer with no citation. |
+| `#` markers in a gutter | `CompteRenduDocument` | **level, arrived at differently.** Ours is a *typesetter*, not a markdown renderer, because VerySwing receives the string the rep read — a hidden marker would land in the CRM as literal pipes. Its one property, `serialize(parse(x)) === x`, is proved for every fixture. |
+| Magnifier on the hovered line | `[source ▸]` | **ahead.** Theirs opens context; ours opens the stored turn, highlighted, and says « introuvable » when the quote is not in the record — which is the one sentence a general-purpose notetaker cannot say. |
+| Sleep / lid-close handling | US-1, US-2, `PowerWatch` | **ahead.** Seven power events and a window `session-end`, with the interrupted recording named on resume. Round 32 then found the flush it does not wait for (R32-1), which is being fixed. |
+| **Spaces, and a note somebody else can open** | nothing | **behind.** US-9, argued debt: it is a sync service, an identity model and a permission model, and this product has no server. Recorded rather than scoped. |
+| **Shared with me** | nothing | **behind**, and the same answer as Spaces. |
+| **Global chat across every note** | nothing | **behind.** US-5. Ours answers one meeting at a time, because a citation is verified against *a* transcript; across meetings it needs a corpus and a per-answer provenance model that does not exist yet. |
+| Folders / *Add to folder* | nothing | **behind**, and deliberately: *Historique* is search over the log (DEC-25), not a filing cabinet. If a rep needs one, it is a story, not a gap. |
+| Virtual camera (11 channels) | nothing | **behind, and not wanted.** It puts a camera device on the rep's machine so the call shows a Granola frame. DEC-49 says this product is invisible to the call. |
+| Meeting-control banner (5 channels) | nothing | **behind.** Mute/leave/join pushed into the conferencing app, which needs the accessibility permissions and per-app automation DEC-49 rules out. |
+| Screenshot attachment (2 channels) | nothing | **behind.** Would need a decision like DEC-37's: a screenshot of a client call is a different class of retained content from a transcript, and DEC-12 retains no audio. |
+| Screen-share OCR | nothing | **behind.** US-12, argued debt — `initScreenShareContextOcr` is why their notes can name a figure that was only on a slide. Reading a client's shared screen is a VISION decision first. |
+
+**What this table is for.** The four rows in bold are the whole remaining gap, and three of the
+four are the same missing thing: a server. That is a product decision and not a story — DEC-28
+says the first deliverable is a live demo against the public VSA sandbox, and nothing in the
+gap list blocks it. The rest of the list is where the work has actually been: not matching
+features, but building each one to a rule theirs does not have, and then finding out by
+measurement where ours was the one that was wrong.
+
 ---
 
 ## Defects in flight — round 31
