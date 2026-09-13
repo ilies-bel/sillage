@@ -1593,3 +1593,44 @@ second recording, fires the click and asserts the route did not move is the real
 notifications rather than two that can drift, and the e2e step above. The refusal keeps
 DEC-26: a click that does nothing is not a dead control here, because the notice is a
 statement and not an offer — but say what the sentence should be if it names a control at all.
+
+## US-34 — the compte-rendu says its two most operative sections twice
+
+**Lane** `extract` · `electron/core/contracts/recipes.ts`, `modules/extract/prompt.ts` ·
+**not yet assigned** · found by `--echo` on its first run, and verified by hand
+
+`--echo` reported « prochaines étapes » three times on the `review*` stages. Two of them are
+**inside one compte-rendu**. I checked it against CLAUDE.md's record of the doubled-heading
+defect and this is *not* that regression: the collision was real, it was fixed by demoting the
+appended recap, and `compteRendu.test.ts:61` documents the fix. The fixture is faithful and the
+product really does write both:
+
+```
+## Prochaines étapes            ← the model's narrative section (COMPTE_RENDU_SECTIONS)
+Envoi de trois CV avec les TJM associés avant vendredi, la validation achats en copie…
+
+### Prochaines étapes           ← the appended field recap, under « Éléments retenus »
+- Envoyer 3 CV avec les TJM associés — Julien Marchand — avant vendredi
+```
+
+Same for « Objections et points de vigilance ». Different heading levels, different parents,
+so nothing is broken — and the rep still reads the same commitment twice under the same name,
+once as prose and once as a bullet, and **VerySwing receives both** because it receives the
+string the rep read (DEC-44).
+
+**This is a decision, not a patch, which is why it is a story and not a defect.** Both halves
+have a reason to exist: the narrative section is what makes the document read as a report
+(DEC-44's register), and « Éléments retenus » is the extraction recap — the fields that
+actually ship, in the order they ship, which is the one place a rep can check what the CRM
+will get. Deleting either is a real loss.
+
+Three ways out, and they are not equivalent. The recap could carry only what the narrative
+*cannot* — the field values with their `⚠ faible` marks, no restated sentences. The narrative
+section could lose the two headings that the recap covers, leaving the prose to end on
+« Échanges et points techniques ». Or the recap could stop repeating headings the narrative
+already used and become one flat field list. Measure the document each way against a real
+transcript with `npm run replay:extract` before choosing — this is a prompt change, and this
+repo's rule is to tune the register by replaying rather than by reading.
+
+**Out of scope** — the renderer. `CompteRenduDocument` draws what it is given and must keep
+drawing every marker; the fix is upstream or it is not a fix.
