@@ -205,10 +205,10 @@ Measured against `df28300` in a pinned worktree. The review ended **NOT IMPRESSE
 
 | | Finding | Lane | State |
 |---|---|---|---|
-| R32-1 | `before-quit` awaits a flush that has already been taken from it | `session` | **next — the worst thing on this page** |
-| R32-2 | « Remonter dans **du** compte-rendu », on six labels | `ui-read` | **next** |
-| R32-3 | `check:ports` cannot see `MailPort` or `CapturePort` | `checks` | **next** |
-| R32-4 | `--motion-fast` is pinned by its mapping and not by its number | `checks` | **next** |
+| R32-1 | `before-quit` awaits a flush that has already been taken from it | `session` | in flight |
+| R32-2 | « Remonter dans **du** compte-rendu », on six labels | `ui-read` | in flight — US-18 made it a **sixth** call site |
+| R32-3 | `check:ports` cannot see `MailPort` or `CapturePort` | `checks` | in flight |
+| R32-4 | `--motion-fast` is pinned by its mapping and not by its number | `checks` | in flight |
 
 ### R32-1 — the tail of every call closed by its window is lost, and US-1 made it worse
 
@@ -382,7 +382,7 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | US-5 | « Qu'est-ce que j'ai dit à Sodexial en juin ? » | `extract` | todo |
 | US-6 | Sending the compte-rendu to someone who was not there | `crm-mail` | **half done** — `73edb2c` |
 | US-7 | A first run that has already seen a meeting | `ui-onboarding` | deferred — the rep asked for this later |
-| US-8 | The recipe is visible on the document, and changeable | `ui-review` | todo |
+| US-8 | The recipe is visible on the document, and changeable | `ui-review` | **done** — merged |
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
 | US-11 | Telling the client they are being recorded | `widget` | **done** — `c3f337c` |
@@ -393,9 +393,10 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | US-15 | Three dead declarations, one mask that snaps | `motion` | **done** — merged |
 | US-16 | The harness compte-rendu is missing two constructs | `harness` | **done** — merged |
 | US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | **done** — merged |
-| US-18 | Onboarding narrates a product two features old | `ui-onboarding` | in flight |
+| US-18 | Onboarding narrates a product two features old | `ui-onboarding` | **done** — merged |
 | US-19 | The mention sentence belongs to the ESN | coordinator | **done** — `3609bb6` |
 | US-20 | No stage presses US-11's control, so its card is unmeasured | `harness` | **next** |
+| US-21 | A landmark that clips its content is unmeasured | `harness` | **next** |
 
 ---
 
@@ -992,6 +993,36 @@ the prose. An empty setting falls back to the default and says so — a blank se
 control that copies emptiness. And there is no second field for « le client a accepté »: the
 product knows what it handed over and nothing about what was said.
 
+
+## US-21 — a landmark that clips its content is invisible to all nine checks
+
+**Lane** `harness` · found by US-18 while fixing US-18, which is the honest way these arrive.
+
+`--scrollers` exempts landmarks, and the reason written beside the exemption is sound as far
+as it goes: « a landmark *is* the page's own scroll region ». But the landmarks in this app
+are not the window's scroll — they are **inner** scrollers wearing a landmark role.
+`<main className="overflow-y-auto">` is a clipped box with a hard edge, and on macOS the
+scrollbar is not drawn until something moves.
+
+Measured, on first run's step 3 before US-18 rewrote it: **54 pixels behind a hard edge at
+960×600**, no mask, no page turn — and `--scrollers` printed « rien de caché ». Reverting
+US-18's `ReadingColumn` reproduces it at **389 hidden pixels**, still green.
+
+That is the third instance of one shape in this check's own history. It once scoped itself to
+`main *, aside *, dialog *` and visited **zero** elements on *Historique*, which has no
+landmark, printing « rien de caché » over four unmeasured panes; widening to `#root *` fixed
+the children and left the landmark itself exempt. `CLAUDE.md` already says of that round that
+« a check that measures nothing is worse than no check ».
+
+**Acceptance** — a landmark that hides its own content is measured, and the exemption becomes
+a *declaration* rather than a class of element: the window's own scroll is exempt because the
+browser draws it; a box with `overflow` and a fixed height is not, whatever role it wears. The
+existing vocabulary is already there — `data-scrolls` declares a box that holds more than
+itself by definition, and `ReadingColumn` is the component that says how much is left. Drive
+both directions: US-18's step 3 must pass, its pre-US-18 form must fail, and no existing stage
+may go red without a stated reason. `onboarding-suite` is the stage that closes it for one
+screen; the other landmark-scrolled screens are still unmeasured on this axis, so say which
+ones the widened check newly visits.
 
 ---
 
