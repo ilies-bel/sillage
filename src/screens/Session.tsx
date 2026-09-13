@@ -408,7 +408,18 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         */}
         {showRail && compteRendu !== null ? (
           <aside className="border-subtle bg-card-soft w-[40%] min-w-[440px] max-w-[560px] shrink-0 border-l">
-            <CompteRenduPane compteRendu={compteRendu} meetingId={meetingId} />
+            {/*
+              `eventId` rides along because the pane's *Demander* offers the
+              follow-up, and a call with no calendar entry has no attendees to
+              address one to — see `askActions.ts`. Read off the meeting rather
+              than guessed from the attendee list, which this screen does not
+              have.
+            */}
+            <CompteRenduPane
+              compteRendu={compteRendu}
+              meetingId={meetingId}
+              fromCalendar={initial.meeting.eventId !== null}
+            />
           </aside>
         ) : null}
 

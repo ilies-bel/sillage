@@ -47,7 +47,8 @@ import type { AskAnswer } from '../../../electron/core/contracts/ask.ts'
 import { speakerLabel } from '../../../electron/core/contracts/transcript.ts'
 import { invoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
-import { Button, ReadingColumn, unavailable } from '../../ui/index.ts'
+import { Button, Chip, ReadingColumn, unavailable } from '../../ui/index.ts'
+import { ASK_QUESTIONS, type AskAction } from './askActions.ts'
 
 export interface AskPanelProps {
   meetingId: string
@@ -80,28 +81,33 @@ export interface AskPanelProps {
    * answer behind an inner edge they cannot see.
    */
   pinned?: boolean
+  /**
+   * **The suggested next thing, and it is offered by the caller — never by this
+   * panel** (`askActions.ts`).
+   *
+   * A question chip is about the call and can be offered anywhere. An *action*
+   * names something the product does next, and whether that thing can happen is
+   * known by the screen, not by a panel that has a meeting id and nothing else:
+   * the follow-up draft needs a Microsoft account and a calendar entry to take
+   * its recipients from. So the decision is made where those facts are and
+   * arrives here already made — absent means « do not offer », and this file
+   * has no opinion about why.
+   *
+   * That is also what keeps the three surfaces apart without any of them
+   * carrying a flag: the compte-rendu pane passes one, the gate does not (the
+   * draft is a textarea on that very screen — a chip pointing at it would be a
+   * signpost to the room you are standing in), and *Historique* does not.
+   */
+  action?: AskAction | null
   className?: string
 }
-
-/**
- * Three questions a rep actually asks, offered as one tap on an empty panel.
- *
- * Not a feature list and not a demo script: an empty text field with a
- * placeholder is a surface where the honest reaction is « what can I ask it »,
- * and answering that with prose costs a paragraph nobody reads. Three real
- * questions answer it in the only way that generalises — by being asked.
- */
-const SUGGESTIONS = [
-  'Qu’est-ce qui bloque côté client ?',
-  'Qu’est-ce qui a été dit sur le TJM ?',
-  'Qui décide, et quand ?',
-]
 
 export function AskPanel({
   meetingId,
   onLocate,
   pinned = false,
   interlocuteurs = [],
+  action = null,
   className,
 }: AskPanelProps) {
   const [question, setQuestion] = useState('')
@@ -138,7 +144,12 @@ export function AskPanel({
     }
   }
 
-  const remaining = SUGGESTIONS.filter((suggestion) => !asked.includes(suggestion))
+  const remaining = ASK_QUESTIONS.filter((suggestion) => !asked.includes(suggestion))
+  /*
+    Spent by its own press, like a question chip, and by nothing else: asking
+    twice for the same list of engagements produces the same list twice.
+  */
+  const offered = action !== null && !asked.includes(action.question) ? action : null
 
   return (
     <section
@@ -183,6 +194,35 @@ export function AskPanel({
           {busy ? 'Recherche…' : 'Demander'}
         </Button>
       </form>
+
+      {/*
+        **The suggested action, on its own row and outside `.ask-suggestions`.**
+
+        Two things about the placement, and the second is the whole reason this
+        is not a fourth chip in the row below.
+
+        *Under the field, not beside it.* The reference frame puts it inside the
+        bar, at the right end, on a window that is a thousand pixels wide. This
+        panel is 407px at 960×600 — the window's own minimum (`main.ts`) — and a
+        chip sharing that row with the field and *Demander* would be the flex
+        fight `shot.mjs --targets` exists to catch.
+
+        *Outside the container query.* `design/index.css` drops
+        `.ask-suggestions` below a 430px container, on the measured argument
+        that three wrapped question chips cost 250px of a 542px column and the
+        document is the deliverable. That argument is right about scaffolding
+        and wrong about this: measured on the shipped panel before this existed,
+        at 960×600 the compte-rendu pane offered **zero** suggestions, so the
+        one screen this product exists to produce ended in an empty field that
+        said nothing about what it was for — which is precisely the complaint.
+        One row, one chip, 24px tall, and it is the offer that names what
+        happens next rather than the one that explains the box.
+      */}
+      {offered !== null && failure === null && !busy ? (
+        <div className="ask-action mt-2 shrink-0">
+          <Chip onClick={() => void ask(offered.question)}>{offered.label}</Chip>
+        </div>
+      ) : null}
 
       {/*
         The ones not yet asked, and they stay until they run out.

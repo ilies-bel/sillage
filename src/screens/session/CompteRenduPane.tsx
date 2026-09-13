@@ -36,6 +36,7 @@
  */
 import { ReadingColumn, SectionHeader } from '../../ui/index.ts'
 import { AskPanel } from './AskPanel.tsx'
+import { useFollowUpAction } from './askActions.ts'
 import { CompteRenduDocument, CompteRenduMarkersNote } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
@@ -43,9 +44,24 @@ interface CompteRenduPaneProps {
   compteRendu: string
   /** Which call *Demander* asks about. */
   meetingId: string
+  /**
+   * Whether this meeting came from the calendar (`eventId !== null`).
+   *
+   * Not a detail of the document: it is half of « can a follow-up draft exist
+   * for this call », because the recipients are the invite's attendees and
+   * nothing else (DEC-7). See `askActions.ts` for the other half and for why
+   * the offer is withheld rather than shown refusing.
+   */
+  fromCalendar: boolean
 }
 
-export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps) {
+export function CompteRenduPane({
+  compteRendu,
+  meetingId,
+  fromCalendar,
+}: CompteRenduPaneProps) {
+  const followUp = useFollowUpAction({ fromCalendar })
+
   return (
     <div className="flex h-full flex-col overflow-hidden px-row py-row">
       <SectionHeader className="shrink-0">Compte-rendu</SectionHeader>
@@ -110,9 +126,17 @@ export function CompteRenduPane({ compteRendu, meetingId }: CompteRenduPaneProps
         « Résumé » — asking a question cost the rep the thing they were asking
         about. The document keeps the majority of the column in every case.
       */}
+      {/*
+        And the one suggested action, which is this pane's and not the panel's:
+        the note is where a rep asks « et maintenant, je fais quoi de ça ? », and
+        the answer this product has is the follow-up draft it composes at the
+        gate. Offered only where that draft can exist — `askActions.ts` holds
+        the rule and the two reasons `draftIntents` gives.
+      */}
       <AskPanel
         meetingId={meetingId}
         pinned
+        action={followUp}
         className="border-subtle mt-3 max-h-[45%] shrink-0 border-t pt-3"
       />
     </div>
