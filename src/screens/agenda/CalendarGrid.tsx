@@ -174,7 +174,6 @@ export function CalendarGrid({
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
   { mark: 'captured', label: 'réunion enregistrée' },
   { mark: 'armed', label: 'réunion prête' },
-  { mark: 'scheduled', label: 'événement seul' },
 ]
 
 function Legend() {
@@ -244,7 +243,9 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
         that flickers all morning.
       */}
       <span aria-hidden className="flex h-1.5 items-center">
-        {mark ? <span className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])} /> : null}
+        {mark && mark !== 'scheduled' ? (
+          <span className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])} />
+        ) : null}
       </span>
     </button>
   )
