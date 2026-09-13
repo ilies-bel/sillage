@@ -939,3 +939,116 @@ test('nothing the fixture stages is dated after the instant the fixture is pinne
       'que le produit ne peut pas produire',
   )
 })
+
+
+/**
+ * **`meeting:recipe` answered `regenerating: false` for every recipe change, so
+ * no stage could produce the one input the channel exists for** (R33-1, and the
+ * eighth time this file has caught the fixture flattering the app).
+ *
+ * `register.ts` compares the choice against the **stored extraction's** recipe and
+ * calls a real difference `changed` — which fires `runEnhancement` and, in the
+ * renderer, withdraws *Valider*: DEC-4's one irreversible control, on the one
+ * screen that writes into a client's CRM. A flat `false` there photographs a press
+ * with no consequence, and the consequence is the whole behaviour. Measured on the
+ * shipped handler wired the way `main.ts` wires it:
+ * `{"recipe":"libre","regenerating":true}`.
+ *
+ * The rule is derived rather than restated: the current recipe comes out of
+ * `meeting:get`, so a fixture that gains a scenario or moves a recipe keeps the
+ * check. Both directions are asked, because `false` is the right answer for the
+ * recipe the document already has — a rep can click the pill they are on, and
+ * that must not spend a model call.
+ *
+ * And the **third** assertion is what makes the stage honest rather than lucky:
+ * the stub never produces a replacement document, so it stages a machine where the
+ * run does not start, and `enhancement:status` has to say so. `statusOf` answers
+ * `running` off `#running` or `state === 'extracting'`; anything else is « no run
+ * in flight », which is what the real deferral looks like from an open gate.
+ */
+test('the fixture calls a recipe change changed, the way register.ts does', async () => {
+  const source = readFileSync(STUB, 'utf8')
+  const scenarios = [
+    ...new Set([...source.matchAll(/scenario [!=]== '([^']+)'/g)].map((m) => m[1] as string)),
+    '__inconnu__',
+  ].sort()
+  assert.ok(
+    scenarios.length >= 8,
+    `l’énumération des scénarios n’en a trouvé que ${scenarios.length} — le stub a changé de ` +
+      'forme et ce test ne regarde plus rien',
+  )
+
+  const offences: string[] = []
+  let asked = 0
+
+  for (const scenario of scenarios) {
+    await withStub(scenario, true, async (invoke) => {
+      const meetings = (await invoke('meeting:list')) as { id: string }[]
+      /*
+       * One `meeting:get` per scenario and not per meeting, which costs 150 ms
+       * instead of 1.4 s: the stub answers `recipe` off the *scenario* and not off
+       * the row, and the expensive part of that channel is the live meeting's
+       * transcript. Stated as a premise rather than assumed silently — a fixture
+       * that starts varying the recipe per row makes this test produce findings,
+       * which is loud.
+       */
+      let current: string | undefined
+      for (const { id } of meetings) {
+        const read = (await invoke('meeting:get', { meetingId: id }).catch(() => null)) as {
+          recipe?: string
+        } | null
+        if (read?.recipe === 'besoin-commercial' || read?.recipe === 'libre') {
+          current = read.recipe
+          break
+        }
+      }
+      if (current === undefined) return
+      const other = current === 'libre' ? 'besoin-commercial' : 'libre'
+
+      for (const { id } of meetings) {
+        asked += 1
+
+        const changed = (await invoke('meeting:recipe', { meetingId: id, recipe: other })) as {
+          regenerating: boolean
+        }
+        if (changed.regenerating !== true) {
+          offences.push(
+            `${scenario}/${id} : ${current} → ${other} répond regenerating: false, alors que ` +
+              'register.ts appelle ce changement « changed » et lance la réécriture',
+          )
+        }
+
+        const same = (await invoke('meeting:recipe', { meetingId: id, recipe: current })) as {
+          regenerating: boolean
+        }
+        if (same.regenerating !== false) {
+          offences.push(
+            `${scenario}/${id} : ${current} → ${current} répond regenerating: true — un clic ` +
+              'sur la pastille déjà active dépenserait un appel de modèle',
+          )
+        }
+
+        const status = (await invoke('enhancement:status', { meetingId: id })) as {
+          status: string
+        }
+        if (status.status === 'running') {
+          offences.push(
+            `${scenario}/${id} : enhancement:status répond « running » alors que le stub ne ` +
+              'produit jamais de nouveau document — la scène promet une réécriture qu’elle ne ' +
+              'peut pas tenir',
+          )
+        }
+      }
+    })
+  }
+
+  assert.ok(
+    asked > 0,
+    'aucune réunion du fixture ne porte de recette — ce test est satisfait par une journée vide',
+  )
+  assert.deepEqual(
+    offences,
+    [],
+    'le fixture ne peut pas produire l’entrée que meeting:recipe existe pour',
+  )
+})

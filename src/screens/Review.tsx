@@ -364,8 +364,73 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * the corrections were made against. Held as state and not a ref because the
    * closed gate draws a sentence from it — a rep who presses a control and
    * watches the screen they were confirming on disappear is owed the reason.
+   *
+   * ## `started`, and why the open gate could not learn it
+   *
+   * `was` is the recipe the document on screen was written with, and `started`
+   * is whether the run the press asked for actually began: `null` until the
+   * answer is in, `true` for a run in flight, `false` for one that never
+   * started.
+   *
+   * **That third case is the whole of R33-1 and nothing on the open gate could
+   * see it.** `register.ts` answers `changed: true` and fires `runEnhancement`
+   * without awaiting it; on a machine with no model — the demo build DEC-28
+   * ships first, and any machine whose key has expired — `Enhancement.run`
+   * finds no recipe, records `enhancement.deferred` and returns *without moving
+   * the machine*, so the gate stays open and no document ever arrives. The
+   * sentence this screen had for that case was drawn in the `!open` branch and
+   * gated on `state === 'extracting'`, which is precisely the branch a deferred
+   * rewrite never reaches. Measured on the shipped renderer, both smoke sizes,
+   * on a gate the rep had read to the end:
+   *
+   *     avant : valider=true   puce « Modèle : Prise de besoin commercial ▸ »
+   *     après : valider=false  remède « Lire la suite du compte-rendu »
+   *             phrases sur la réécriture : []
+   *     ré-armé après 5 tours de page (8 à 960×600) : valider=true
+   *             puce « Modèle : Compte-rendu libre ▸ »
+   *             document : « # Néovia Santé — cadrage renfort data / ## Résumé »
+   *
+   * One press, five to eight page turns, and DEC-4's one irreversible control
+   * back over the document the screen had just said was being replaced, under a
+   * chip naming the recipe that did not run. `POST /v1/crm/tasks` has no
+   * idempotency key.
+   *
+   * **The signal is `enhancement:status`, and the answer `meeting:recipe`
+   * carried was not one.** That response used to ship a `state` field, added so
+   * the renderer could tell the two apart; driven against the real
+   * `Orchestrator` and the real `Enhancement` wired the way `main.ts` wires them
+   * it answered `awaiting_confirmation` in **both** cases, because the handler
+   * reads `stateOf` synchronously and `Enhancement`'s decision sits two
+   * microtasks away behind `await stopRecording`. It could not have worked, and
+   * `check:surfaces` could not see that nobody read it — its reader-join is
+   * `\bstate\b`, which this file matches ten times over. The field is gone.
+   * `enhancement:status` is the one function in the product that answers « what
+   * is this compte-rendu doing », it is read here the way `EnhancementNotice`
+   * reads it, and it is asked **once, after the press**: measured, the decision
+   * is already taken by the time the press's own answer crosses the bridge —
+   * `{"status":"running"}` for a run in flight, `{"status":"idle"}` for the
+   * deferral.
    */
-  const [rewriting, setRewriting] = useState<{ to: RecipeId; from: string } | null>(null)
+  const [rewriting, setRewriting] = useState<{
+    to: RecipeId
+    from: string
+    was: RecipeId | null
+    started: boolean | null
+  } | null>(null)
+  /**
+   * **A rewrite that will not happen has to give the gate back, at no cost.**
+   *
+   * `started === false` means nothing on screen changed and nothing is coming:
+   * the compte-rendu is the one the rep read, their corrections are intact, and
+   * *Valider* ships exactly what is in front of them. Withholding it any longer
+   * would make DEC-4's one confirmation unreachable because a model is missing,
+   * which is the harm `review-garde-mort` exists to refuse, one cause further
+   * back. So the gate arms again **immediately** — nought page turns, not five —
+   * and the screen states the fact instead.
+   */
+  const stalled = rewriting !== null && rewriting.started === false
+  /** A rewrite asked for whose document has not landed. *Valider* waits. */
+  const pending = rewriting !== null && rewriting.started !== false
   /**
    * **One press, one run — and a ref because React batches.**
    *
@@ -1090,6 +1155,29 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       setEdits(panel.edits)
       setChecked(available)
       availableBefore.current = new Set(available)
+      /*
+       * **And both columns stop being read — here, where the content changed,
+       * and no longer at the press.**
+       *
+       * Coverage is keyed by what a column is *showing*, and this is the line
+       * where what it shows stops being the thing the rep read: a new document,
+       * eleven recomposed rows, a new draft. Clearing it at the press instead
+       * charged for a rewrite that may never happen — measured at five page
+       * turns at 1280×800 and eight at 960×600 to get back to a screen that had
+       * not changed by one pixel, on the build DEC-28 ships first, where the run
+       * cannot start at all.
+       *
+       * `measure()` is called rather than left to the observer: `viewOf` reads
+       * the *lengths* of the pre-filled values, so a new document of the same
+       * length leaves the key — and therefore `measure`'s own identity, and
+       * therefore the layout effect that re-runs it — untouched. That is the
+       * case this clear exists for, so it may not depend on it.
+       */
+      covered.current.document.clear()
+      covered.current.rail.clear()
+      shownAs.current = { document: null, rail: null }
+      seen.current = { document: null, rail: null }
+      measure()
       return
     }
     // What the rep had typed, if they left and came back; otherwise the
@@ -1097,7 +1185,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     setEdits((previous) => previous ?? PENDING_EDITS.get(meetingId) ?? panel.edits)
     setChecked((previous) => previous ?? available)
     availableBefore.current ??= new Set(available)
-  }, [against, meetingId, panel, rewriting])
+  }, [against, measure, meetingId, panel, rewriting])
 
   /*
    * *Ce qui sera créé*, kept honest while the rep types.
@@ -1252,12 +1340,51 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         const outcome = await invoke('meeting:recipe', { meetingId, recipe: next })
         setChosen(outcome.recipe)
         if (!outcome.regenerating) return
-        setRewriting({ to: outcome.recipe, from: against })
-        covered.current.document.clear()
-        covered.current.rail.clear()
-        shownAs.current = { document: null, rail: null }
-        seen.current = { document: null, rail: null }
-        measure()
+        /*
+         * Withheld on the press and not on the measurement, which is the half
+         * that could not fail. The coverage clear used to live here; it is in the
+         * seed effect now, where the content actually changes — see there. What
+         * closes this window is the marker itself, so it no longer depends on the
+         * coverage key happening to move: `viewOf` reads the *lengths* of the
+         * pre-filled values, and this file already recorded that a new document
+         * of the same length leaves the key identical and re-arms over prose
+         * nobody has read.
+         */
+        setRewriting((held) => ({
+          to: outcome.recipe,
+          from: against,
+          /*
+           * The **document's** recipe, and sticky across a second press. `recipe`
+           * is `chosen ?? meeting:get`, so once a press has landed it names the
+           * pending choice; reading it again on the retry would make the chip
+           * claim the document is the thing that did not get written — and with
+           * the chip on `libre`, `RecipeSwitch`'s `others` no longer offers
+           * « Réécrire avec « Compte-rendu libre » », so the retry the rep needs
+           * once a model exists would not be on the screen at all.
+           */
+          was: held?.was ?? recipe,
+          started: null,
+        }))
+        /*
+         * And then the one question the press's own answer cannot hold: did the
+         * run start? Asked once, here, because by the time this line runs the
+         * decision has been taken — `void runEnhancement?.(…)` reached
+         * `Enhancement.run` before the handler's answer crossed the bridge.
+         *
+         * Only the *read* may report `false`. A broadcast may not, and that is
+         * deliberate: `statusOf` answers `idle` for every meeting past `ended`,
+         * so the `enhancement:status` that fires when a **successful** run
+         * finishes also carries `idle` — a broadcast allowed to set `started`
+         * would draw « la réécriture n'a pas démarré » in the frame before the
+         * new document arrives, which is the lying sentence this whole fix is
+         * about, one instant earlier.
+         */
+        const status = await invoke('enhancement:status', { meetingId }).catch(() => null)
+        setRewriting((held) =>
+          held === null || held.from !== against || held.started !== null
+            ? held
+            : { ...held, started: status !== null && status.status === 'running' },
+        )
       } catch (error) {
         // Stated, never swallowed. Nothing was recorded, so the chip goes on
         // naming the recipe that is still in force, which is the truth.
@@ -1268,20 +1395,51 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         pressing.current = false
       }
     },
-    [against, busy, measure, meetingId],
+    [against, busy, meetingId, recipe],
   )
   /*
    * `Ctrl/⌘ Entrée`, and **only when the button is already armed**
    * (`app/shortcuts.ts`).
    *
-   * The guard is the same one the button carries — `below === null`, meaning
-   * nothing that is about to leave is still under a fold — and it is expressed
-   * as the absence of a handler rather than as a handler that declines. A
-   * shortcut that could confirm while *Valider* was still refusing would be a
-   * second gate (DEC-4), and one that fired while the reveal control was on
-   * screen would confirm something the rep has not been shown.
+   * The guard is the same one the button carries — `armed`, which is `below ===
+   * null` (nothing that is about to leave is still under a fold) **and** no
+   * rewrite waiting to land — and it is expressed as the absence of a handler
+   * rather than as a handler that declines. A shortcut that could confirm while
+   * *Valider* was still refusing would be a second gate (DEC-4), and one that
+   * fired while the reveal control was on screen would confirm something the rep
+   * has not been shown.
+   *
+   * It is one expression and not two because the two have come apart before: the
+   * accelerator is the path with nothing on screen to look at, so a condition
+   * the button gains and this does not is a confirmation with no rectangle.
    */
-  useShortcuts(below === null && !busy ? { valider: () => void confirm() } : {})
+  const armed = below === null && !pending
+  useShortcuts(armed && !busy ? { valider: () => void confirm() } : {})
+
+  /**
+   * The two sentences a rewrite owes the rep, composed once so the narrowing is
+   * done in one place.
+   *
+   * `pendingLine` goes under the slot the button left. `stalledNote` goes beside
+   * the chip that was pressed, because that is where the rep is looking and
+   * because it is the sentence that corrects `RecipeSwitch`'s own promise —
+   * « La validation reprendra dès que le nouveau compte-rendu sera prêt », which
+   * is true of a run that starts and false of one that cannot.
+   *
+   * It says what was measured and no more. `enhancement:status` answers `idle`
+   * for every meeting past `ended`, so « the run did not start » is the whole of
+   * what this screen knows; « aucun modèle n'est configuré » is the likeliest
+   * cause and is not in the answer, so Réglages is named as the place to look
+   * rather than as the diagnosis (DEC-26).
+   */
+  const pendingLine =
+    rewriting !== null && rewriting.started !== false
+      ? `Réécriture avec « ${recipeById(rewriting.to).title} » demandée — la validation reprendra dès que le nouveau compte-rendu sera prêt.`
+      : null
+  const stalledNote =
+    rewriting !== null && rewriting.started === false
+      ? `La réécriture avec « ${recipeById(rewriting.to).title} » n’a pas démarré. Le compte-rendu ci-dessous est toujours celui de « ${recipeById(rewriting.was ?? rewriting.to).title} » et vos corrections sont intactes. Vérifiez le modèle dans Réglages, puis réessayez ici.`
+      : null
 
   /** One screenful of whichever column still has something under its fold. */
   /**
@@ -1702,12 +1860,35 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */}
             {mode === 'transcription' || busy ? null : (
               <div data-unmeasured>
+                {/*
+                  **The chip names the document, not the choice that did not
+                  run.** `recipe` is `chosen ?? meeting:get`, so the press moves it
+                  immediately — which is right while a run is in flight and wrong
+                  the moment the run never started: the document beside it is
+                  still the old one. It also decides what `RecipeSwitch` offers,
+                  and `others` excludes the current value, so a chip stuck on
+                  « Compte-rendu libre » takes « Réécrire avec « Compte-rendu
+                  libre » » off the screen — the retry, on the one screen where
+                  the rep has just been told it did not happen.
+                */}
                 <RecipeSwitch
-                  current={recipe}
+                  current={stalled ? (rewriting?.was ?? recipe) : recipe}
                   edited={edited}
                   failure={recipeFailure}
                   onRewrite={(next) => void rewrite(next)}
                 />
+                {/*
+                  Inside `data-unmeasured` with the panel, for the same reason:
+                  this is a statement about a control, not a line of the document
+                  that leaves the machine, and charging the arming guard for it
+                  would be charging page turns for the sentence explaining why the
+                  last press cost none.
+                */}
+                {stalledNote !== null ? (
+                  <p role="status" className="text-warn measure mb-3 text-meta font-semibold">
+                    {stalledNote}
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -2122,7 +2303,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               sub-line under it says what is left to read, and the control that
               does it is at the end of the text being read.
             */}
-            {below === null ? (
+            {armed ? (
               <Button
                 /*
                   **The one measurement this product makes about itself reaches
@@ -2164,6 +2345,14 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               « 1 champ non vérifié » on the button is a count and the rep's next
               question is *which*; otherwise it is the reassurance about Outlook,
               which is only worth the line when there is nothing louder to say.
+
+              **And a rewrite waiting to land comes first, because it is the one
+              case where nothing under the fold is what the slot is empty for.**
+              With the coverage no longer cleared at the press, a rep who had read
+              both columns has `below === null` — so the old ladder fell straight
+              through to the reassurance about Outlook, under a slot whose button
+              had just vanished, which is the silence R33-1 is. It is stated here
+              and not only beside the chip because this is where the control was.
             */}
             <p
               className={cn(
@@ -2171,10 +2360,12 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 // was the one `line-length` finding on the screen — on the
                 // sentence a rep reads under time pressure.
                 'measure mx-auto mt-1.5 text-center text-meta',
-                faible.length > 0 && below === null && !busy ? 'text-warn' : 'text-muted',
+                (faible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
               )}
             >
-              {below !== null && !busy
+              {pendingLine !== null && !busy
+                ? pendingLine
+                : below !== null && !busy
                 ? below === 'document'
                   ? // « à gauche » is where the compte-rendu is in two of the three tabs.
                     // In *Transcription* it is not in the column at all, and the sentence
@@ -2188,9 +2379,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   : unreadIsAbove('rail')
                     ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus haut.'
                     : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
-                : faible.length > 0 && !busy
-                  ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
-                  : reassurance}
+                : stalled && !busy
+                  ? `La réécriture n’a pas démarré : ce que « Valider » envoie est le compte-rendu affiché à gauche, avec vos corrections.`
+                  : faible.length > 0 && !busy
+                    ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
+                    : reassurance}
             </p>
           </div>
         </aside>

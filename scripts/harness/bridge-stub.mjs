@@ -2450,11 +2450,33 @@ export function installAppBridge(config) {
       }
     },
 
-    /** The picker. The stub records nothing; the shot is of the control. */
+    /*
+     * The picker — and `regenerating` is answered the way the shipped handler
+     * answers it, which for eight rounds it was not.
+     *
+     * It was a flat `false`, so **no stage could ever produce the one input this
+     * channel exists for**: `register.ts` compares the choice against the stored
+     * extraction's recipe and calls a real change `changed`, which is exactly
+     * besoin-commercial → libre on the `review` scenario. A fixture that answers
+     * `false` there photographs a press with no consequence, and the consequence
+     * is the whole of the behaviour — the gate withdraws *Valider*, DEC-4's one
+     * irreversible control.
+     *
+     * **The run then does not happen, and that is faithful rather than lazy.**
+     * `void runEnhancement?.(…)` is fired and not awaited; on a machine with no
+     * model — the demo build DEC-28 ships first, and any machine whose key has
+     * expired — `Enhancement.run` finds no recipe, records `enhancement.deferred`
+     * and returns without moving the state, so the gate stays open and no new
+     * document ever arrives. Measured on the shipped main process wired the way
+     * `main.ts` wires it: the response is
+     * `{"recipe":"libre","regenerating":true}` and the only thing that follows is
+     * one `enhancement:status` broadcast carrying `{"status":"idle"}`. That is
+     * what `enhancement:status` answers here on this scenario, so the stub stages
+     * that machine and not a luckier one.
+     */
     'meeting:recipe': (payload) => ({
       recipe: payload.recipe,
-      regenerating: false,
-      state: meetingById(payload.meetingId)?.state ?? 'idle',
+      regenerating: payload.recipe !== (scenario === 'libre' ? 'libre' : 'besoin-commercial'),
     }),
     /*
      * The objet and the client, typed in the session header. The stub mutates

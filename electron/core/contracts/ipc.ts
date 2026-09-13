@@ -262,14 +262,33 @@ export const invokeChannels = {
    * wait for it, because the run takes minutes and the renderer is holding a
    * click. The document that replaces the current one arrives the way every
    * other extraction does, over `session:changed`.
+   *
+   * **It used to carry `state`, and that field could not answer the question it
+   * was added for.** The renderer's question is « did the rewrite start », because
+   * a run that cannot start leaves the gate open with nothing arriving. Driven
+   * against the real `Orchestrator` and the real `Enhancement`, wired the way
+   * `main.ts` wires them, the handler answered `awaiting_confirmation` in **both**
+   * cases: it reads `stateOf` synchronously and the decision sits two microtasks
+   * away, behind `orchestrator.enhance`'s `await stopRecording`. Measured —
+   * `{"recipe":"libre","regenerating":true,"state":"awaiting_confirmation"}`
+   * whether a model existed or not, with `session:changed → extracting` and
+   * `enhancement:status → running` arriving a turn later in the one case and
+   * `enhancement:status → idle` in the other. `check:surfaces` could not see that
+   * nobody read it: its reader-join is `\bstate\b`, which the calling file
+   * matches ten times over. The answer the renderer wants is
+   * `enhancement:status`, which is the one function in the product that composes
+   * it.
    */
   'meeting:recipe': {
     request: z.object({ meetingId: MeetingIdSchema, recipe: RecipeIdSchema }),
     response: z.object({
       recipe: RecipeIdSchema,
-      /** True when a run was started to replace the existing compte-rendu. */
+      /**
+       * True when a run was *asked for* to replace the existing compte-rendu —
+       * never a claim that one started. `void runEnhancement?.(…)` is fired and
+       * not awaited, and whether it starts is `enhancement:status`' answer.
+       */
       regenerating: z.boolean(),
-      state: MeetingStateSchema,
     }),
   },
   /**
