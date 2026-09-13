@@ -217,14 +217,17 @@ findings were sound.
 | US-8 | The recipe is visible on the document, and changeable | `ui-review` | todo |
 | US-9 | Spaces, and a note somebody else can open | — | **argued debt, not a story** |
 | US-10 | The installer carries the demolished product's mark | — | argued debt |
-| US-11 | Telling the client they are being recorded | `ui-session` | **next** — business consequence |
+| US-11 | Telling the client they are being recorded | `widget` | **done** — `c3f337c` |
 | R32 | Round 32 adversarial review | — | **next**, pinned worktree |
 | US-12 | What the shared screen says | — | argued debt |
 | US-13 | The widget arrives by popping into existence | `ui-session` | **done** — `a4f35d9` |
 | US-14 | The gate's page turn takes 434 ms | `ui-review` | **done** — `a511d30` |
 | US-15 | Three dead declarations, one mask that snaps | `motion` | todo |
 | US-16 | The harness compte-rendu is missing two constructs | `harness` | todo |
-| US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | **next** |
+| US-17 | A page turn still moving 150 ms later is unmeasured | `harness` | in flight |
+| US-18 | Onboarding narrates a product two features old | `ui-onboarding` | **next** |
+| US-19 | The mention sentence belongs to the ESN | coordinator | **next** |
+| US-20 | No stage presses US-11's control, so its card is unmeasured | `harness` | **next** |
 
 ---
 
@@ -684,9 +687,20 @@ have no first-frame measurement handshake. Whatever else is true, that one is ou
 channels are a virtual camera. Five are an in-meeting control banner. Two are a screenshot
 attachment.
 
-## US-11 — « est-ce que j'ai le droit d'enregistrer ce client ? »
+## US-11 — « est-ce que j'ai le droit d'enregistrer ce client ? » — **done**, `c3f337c`
 
-**Lane** `ui-session` · **Priority: this is the one with a business consequence.**
+**Lane** `widget` · **the one with a business consequence.**
+
+Shipped: one press on the pill puts the sentence on the clipboard, draws it so the rep can
+read it out instead, and writes the press into the meeting's log — reaching `meeting:mark`
+and no other channel, which `Widget.test.tsx` asserts as a *set* because « it sends nothing »
+is a claim about everything that is not there. 240 → 272 px of pill, measured. It found the
+defect it would otherwise have produced: `copyText` is an async clipboard permission check,
+so « press the control, press *Terminer* » lands `widget:leave` between the press and the
+card, and a 145 px card mounting mid-fade asks for the `widget:resize` `Overlay` refuses —
+the ~20 px slide already recorded in this repo. Two things it left: the sentence is not yet
+configurable (**US-19**), and no harness stage presses the control, so the card is visited by
+none of the nine measured checks on any of the 114 stagings (**US-20**).
 
 Granola ships a whole **consent subsystem**: `meet-consent-host` (a native messaging host
 installed into the browser, Windows and macOS), a named pipe or unix socket per user, a
@@ -729,6 +743,88 @@ a substantially larger step than listening to a call the rep is already in: a pr
 a roadmap, another client's name. If it is ever wanted it is a VISION decision first, with
 the same care DEC-37 got.
 
+## US-18 — « on m'a dit trois choses et il s'en passe six »
+
+**Lane** `ui-onboarding` · `src/screens/Onboarding.tsx`
+
+Measured, on the shipped file:
+
+```
+grep -niE "pastille|widget|par-dessus|flottant|fenêtre|planifi|détect|notification|Teams|Zoom" \
+  src/screens/Onboarding.tsx     →  nothing
+```
+
+Three surfaces the product has gained since that screen was written are absent from the one
+screen whose entire job is « voilà ce qui se passera ».
+
+**The widget.** Beat 1 of step 3 says « L'en-tête affiche alors deux barres de niveau » — the
+header of the window the rep is about to leave. What actually happens on *Enregistrer* is a
+frameless, transparent, always-on-top card at the `screen-saver` level, on every Space, over
+the face of the person on the call, carrying `setContentProtection(true)` — **with no taskbar
+entry and nothing to alt-tab to**. It is the most visible thing this product does and the one
+surface a rep has no way back into. Onboarding does not name it once. `overlayPlacement.ts`
+already treats a saved origin as « a request, never an instruction » precisely because this
+window is unrecoverable; a rep who does not know what it is has the same problem on the first
+call.
+
+**The unscheduled-call detector** (`core/domain/adHoc.ts`). Twenty-five seconds of a held
+microphone raises an **OS notification** whose click navigates the rep's window (DEC-46).
+Beat 1 describes only the manual route — « ou avec "Démarrer une réunion" si elle n'y est
+pas » — which is exactly the case the detector now covers, so the detector arrives as the app
+doing something nobody mentioned, during a client call, from an app onboarded once.
+
+**The mention sentence** (US-11, `src/widget/mention.ts`) — this product's whole answer to
+« ai-je le droit d'enregistrer ce client ? », and it lives on the pill the rep has not been
+told about.
+
+That is shape #7 on this repo's list: prose describing what the code does not do — on the
+screen written so that the first real call is unremarkable.
+
+**Acceptance.**
+
+- Step 3 names the pill **before** the first recording: where it appears, that it is the
+  meter and the controls during the call, that it is kept out of a screen share, and the two
+  ways out of it (*Ouvrir Sillage*, *Terminer*). A window with no taskbar entry needs its
+  exits stated once, in the rep's words.
+- Step 3 names the detector: what triggers it (an application holding the microphone), that
+  it is an **offer** and never a recording, and that ignoring it costs nothing.
+- The mention sentence is named where the pill is named, in one clause — not as a fourth
+  beat.
+- **Still not a gate, and still not a wall.** *Continuer* stays live on every step and every
+  exit records `onboarding:seen`. A longer step 3 must be *measured*: drive the onboarding
+  stages at 1280×800 **and** 960×600 with `--prose --scrollers --targets --geometry --a11y`.
+  If the step now scrolls it wears `ReadingColumn` or says how much is left; a first-run
+  screen that hides its own last beat behind a hard edge is exactly the defect
+  `ReadingColumn` exists to end, on the screen a rep sees once.
+- Nothing claims a permission or a health the app has not measured — the screen's own
+  existing rule, and step 2 is untouched.
+- `scripts/e2e.mjs`'s « the empty day can replay first run » and « first run is not shown
+  twice » must still pass.
+
+**Out of scope** — a fourth step (three is the count the progress dots draw, and
+`--contrast` has already been through those dots once); a *picture* of the pill, because an
+image of a surface is a second place it is described and it goes stale; any change to when
+permissions are asked for.
+
+## US-19 — the sentence is the ESN's, not ours — **coordinator, not a lane**
+
+US-11 shipped `MENTION_SENTENCE` as a constant in `src/widget/mention.ts`. The wording a rep
+reads to a client is a legal matter and belongs to the ESN. DEC-34 says every setting is
+declared, stored and rendered, and a sentence hard-coded in the renderer is the
+`SILLAGE_STT_OFFLINE_ONLY` mistake DEC-37 has already paid for once.
+
+It is **one unit and not two**, which is why it is not fanned out: the contract, the channel
+and the Réglages field have to land together or `check:surfaces` correctly fails a
+`settings:setMentionSentence` nothing under `src/` calls — declared, and unreached.
+
+`core/contracts/mention.ts`; `mentionSentence` on `SettingsSnapshotSchema` and on
+`widget:state`, because the widget does not call `settings:snapshot`; the KV key beside
+`settings.offlineOnly`; a textarea in Réglages wearing `.measure` on the element that holds
+the prose. An empty setting falls back to the default and says so — a blank sentence is a
+control that copies emptiness. And there is no second field for « le client a accepté »: the
+product knows what it handed over and nothing about what was said.
+
+
 ---
 
 ## The agents
@@ -765,3 +861,22 @@ uncommitted `.gitignore` line that was not its own.
 6. Its findings become the next wave's first entries, which is what the section above is.
 
 A finding from an agent is checked before it is acted on. R31-4 is why.
+
+## US-20 — no stage presses US-11's control, so its card is unmeasured
+
+**Lane** `harness` · `scripts/harness/shot.mjs`
+
+US-11's button is on the collapsed pill, so `widget`, `widget-ouvert`, `widget-refus` and
+`widget-arret` all measure it — 24×24, named, contrast fine. The **card** it opens is measured
+by nothing: its 260×145 box, its dismiss control and its 39-character lines were driven only
+by the implementing agent's own Playwright script, which is not a gate. Nine measured checks,
+114 stagings, and the newest surface in the product is visited by none of them.
+
+This is the `widget-sortie` lesson said again: no stage emitted `widget:leave`, so
+`.widget-leaving` was invisible to all of them and shipped on the wrong curve.
+
+**Acceptance** — a `widget-mention` stage shaped like `widget-refus`: press
+« Prévenir le client de la transcription », wait for `getByRole('status')`, and assert the box
+is not 1×1 and that `closest('[data-card]')` is non-null — because a card that forgot
+`data-card` draws a dismiss button the pointer goes straight through into Teams. Then
+`smoke.mjs` runs the nine checks on it at both sizes. The staging count moves from 114.
