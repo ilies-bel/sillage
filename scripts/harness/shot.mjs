@@ -93,6 +93,88 @@ const settled = (page) =>
     .catch(() => undefined)
 
 /**
+ * **VISION §6's own ceiling, in milliseconds** — « Motion: ≤150ms ». The one carve-out
+ * (DEC-50) is the widget's *arrival*, a card drawn over another application; a page turn
+ * inside a document on the app's own paper is not that surface.
+ */
+const MOTION_CEILING_MS = 150
+
+/**
+ * How long after the ceiling the second sample is taken.
+ *
+ * Long enough that a scroll still under way has moved by more than the rounding
+ * `at()` does, and short enough that the whole post-press wait stays well under
+ * the 360 ms these stages used to spend. Chromium ran a 747 px `behavior: 'smooth'`
+ * page turn in 415 ms, so at 150 ms it is a third of the way through an ease and
+ * moving at its fastest: 60 ms of that is hundreds of pixels, not one.
+ */
+const MOTION_RESAMPLE_MS = 60
+
+/**
+ * How long a **staging** loop waits after pressing a page turn.
+ *
+ * Staging is not measurement: these loops print no position and assert nothing
+ * about where a column landed — they only need the React commit that publishes
+ * the next label, because `measure` runs from a `ResizeObserver` and leaves one
+ * commit between the scroll and the button. So they carry no second sample and
+ * no refusal; what they *did* carry was a flat 380 ms, spent inside a 415 ms
+ * animation for as long as they have existed.
+ *
+ * Derived from the two measured numbers rather than chosen, so a stage cannot
+ * come to be staged on a wait longer than the ceiling the same file enforces.
+ */
+const STAGING_TURN_MS = MOTION_CEILING_MS + MOTION_RESAMPLE_MS
+
+/**
+ * **Press a control that scrolls, and refuse a scroll still moving at the ceiling.**
+ *
+ * The hole this closes is structural and stayed open for as long as the page turn
+ * existed. `--motion` reads `transitionDuration` and `animationDuration`; a scroll
+ * animation has **neither**, so Chromium's `behavior: 'smooth'` — whose duration
+ * Chromium picks, measured at 415 ms on this very gate, nearly 3× the ceiling and
+ * the only motion in the product above it — was invisible to all nine measured
+ * checks. `check-motion.mjs` holds every *spelling* of an animated scroll to one
+ * file and by construction cannot ask what that file says; `scroll.test.ts` pins
+ * the decision in-lane. Neither of those is a duration, and a duration only exists
+ * in a browser pressing the real control.
+ *
+ * `settled` cannot answer it either: a scroll animation is not a `getAnimations()`
+ * entry, which is the same blind spot one API over.
+ *
+ * So it is measured here, where the control is already being pressed: two samples
+ * of the guarded columns, the first at the ceiling and the second
+ * `MOTION_RESAMPLE_MS` later. Equal means the scroll was over by 150 ms; different
+ * means it was not, and the stage says so instead of printing a mid-flight
+ * position as if it were a landing — which is what these stages did for as long as
+ * they have existed, because 360 ms of waiting sat *inside* a 415 ms animation and
+ * the tail of every press landed during the next query.
+ *
+ * It is deliberately **not** a `--scroll` flag. A check cannot observe a scroll
+ * animation without pressing the control that starts one, so a flag would be this
+ * stage again under another name.
+ *
+ * Returns the settled position, so the caller's « did this press move anything »
+ * comparison is made against a reading that has *stopped changing* rather than
+ * against whatever the clock happened to catch.
+ */
+const pressAndSettle = async (page, { control, at, how, label }) => {
+  await control.click({ timeout: 4000 })
+  await page.waitForTimeout(MOTION_CEILING_MS)
+  const atCeiling = await at()
+  await page.waitForTimeout(MOTION_RESAMPLE_MS)
+  const afterwards = await at()
+  if (atCeiling !== afterwards) {
+    throw new Error(
+      `${how} : « ${label} » — un tour de page encore en mouvement ` +
+        `${MOTION_CEILING_MS} ms après la pression (${atCeiling} puis ${afterwards}, ` +
+        `${MOTION_RESAMPLE_MS} ms plus tard) ; VISION §6 plafonne le mouvement à ` +
+        `${MOTION_CEILING_MS} ms et le garde en impose six à huit par gate (DEC-4)`,
+    )
+  }
+  return afterwards
+}
+
+/**
  * The verb on a day-list row, which is **not** one word.
  *
  * The armed meeting — the call starting now — carries a filled *Enregistrer*;
@@ -802,11 +884,22 @@ const SCREENS = {
    * rather than hides behind a threshold.
    *
    * **Those numbers moved when US-14 made the scroll instant, and the movement was the
-   * stage's own.** It waits 360 ms after each press, which was *inside* the 415 ms smooth
-   * animation — so the tail of every press landed during the next query and the count it
-   * printed was understated. It was 6 and 5 / 10 and 7 against a scroller still moving.
-   * The rep's cost did not change; what changed is that the stage now reads a settled
-   * position. The waits could come down accordingly.
+   * stage's own.** It used to wait a flat 360 ms after each press, which was *inside* the
+   * 415 ms smooth animation — so the tail of every press landed during the next query and
+   * the count it printed was understated. It was 6 and 5 / 10 and 7 against a scroller
+   * still moving. The rep's cost did not change; what changed is that the stage reads a
+   * settled position.
+   *
+   * **And « settled » is now measured rather than waited out** (`pressAndSettle`, US-17).
+   * The flat wait was the only thing standing where a duration should have been, and it
+   * could not fail: a scroll animation carries neither `transitionDuration` nor
+   * `animationDuration`, so `--motion` never saw the 415 ms and `settled` cannot see it
+   * either — a scroll is not a `getAnimations()` entry. Two samples per press, at 150 ms
+   * and at 210 ms, and a disagreement between them *fails the stage*. Measured on the
+   * pre-`a511d30` renderer: red on the first press at both sizes, the columns 637 px apart
+   * across the two samples at 1280×800 (`1427/1802` then `790/1802`) and 680 px at 960×600.
+   * Green after, on byte-identical trails at 7/6 and 9/8 presses — and 150 ms cheaper per
+   * press: the four runs took 39.6 s and now take 33.6 s.
    */
   'review-garde-mort': {
     scenario: 'review',
@@ -850,9 +943,7 @@ const SCREENS = {
           }
           const before = await at()
           const label = (await turn().innerText()).replace(/\s+/g, ' ').trim()
-          await turn().click({ timeout: 4000 })
-          await page.waitForTimeout(360)
-          const after = await at()
+          const after = await pressAndSettle(page, { control: turn(), at, how, label })
           if (before === after && (await ship().count()) === 0) {
             throw new Error(
               `${how}: « ${label} » n’a rien déplacé (${before}) et *Valider* n’est pas ` +
@@ -997,9 +1088,15 @@ const SCREENS = {
           )
         }
         const label = (await turn().innerText()).replace(/\s+/g, ' ').trim()
-        await turn().click({ timeout: 4000 })
-        await page.waitForTimeout(360)
-        const after = await at()
+        // Same instrument as `review-garde-mort`: a treadmill and a scroll still moving
+        // are two different defects and this stage would have printed the second as a
+        // position, so both are asked here.
+        const after = await pressAndSettle(page, {
+          control: turn(),
+          at,
+          how: 'depuis l’onglet Transcription',
+          label,
+        })
         trail.push(after)
         if (been.has(after)) {
           throw new Error(
@@ -1072,7 +1169,7 @@ const SCREENS = {
         const turn = page.getByRole('button', { name: /(la suite|Remonter)/ })
         if ((await turn.count()) === 0) break
         await turn.first().click()
-        await page.waitForTimeout(380)
+        await page.waitForTimeout(STAGING_TURN_MS)
       }
       await page.getByRole('button', { name: /^Valider/ }).waitFor()
       await page.waitForTimeout(400)
@@ -1308,7 +1405,7 @@ const SCREENS = {
         const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
         if ((await turn.count()) === 0) break
         await turn.click()
-        await page.waitForTimeout(380)
+        await page.waitForTimeout(STAGING_TURN_MS)
       }
       if ((await page.getByRole('button', { name: /^Valider/ }).count()) === 0) {
         throw new Error('la garde ne s’arme plus après une lecture honnête des deux colonnes')
@@ -1385,7 +1482,7 @@ const SCREENS = {
         const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
         if ((await turn.count()) === 0) break
         await turn.click()
-        await page.waitForTimeout(380)
+        await page.waitForTimeout(STAGING_TURN_MS)
       }
 
       /*
