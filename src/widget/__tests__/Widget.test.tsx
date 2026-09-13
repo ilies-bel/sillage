@@ -637,3 +637,123 @@ test('une carte qui s’en va ne se remet pas en page', async () => {
 function assertShell(node: Element | null): asserts node is Element {
   if (node === null) throw new Error('la coque du widget n’a pas été trouvée')
 }
+
+/**
+ * **The arrival does not start before the window has been placed** (DEC-50).
+ *
+ * The one bound of that decision that no stage can assert without a race and no
+ * measured check can assert at all, so it is held here, where the reply can simply
+ * be kept on the wire for as long as the test likes.
+ *
+ * What it protects is the whole `MEASURE_DEADLINE_MS` / `FIRST_FRAME_MS`
+ * handshake. `getBoundingClientRect` **includes transforms**, so a pill that is
+ * scaling when `widget:resize` goes out reports a box eight per cent small and the
+ * main process sizes a frameless, always-on-top window to it — the clipped first
+ * frame that handshake exists to end, reintroduced by the polish meant to follow
+ * it. The first draft of this feature did exactly that — a *paused* animation
+ * still holds a transformed `from` frame — and sent `pillHeight: 35` for a 38px
+ * card, measured.
+ *
+ * jsdom needs both of the things the measurement effect guards on: there is no
+ * `ResizeObserver` and every box measures zero, and both of those are *fail-open*
+ * paths that release the arrival at once — correct behaviour (DEC-26), and enough
+ * to make this test pass without ever reaching the gate it is about.
+ */
+const measurable = (): (() => void) => {
+  const rect = {
+    width: 240,
+    height: 78,
+    top: 0,
+    left: 0,
+    right: 240,
+    bottom: 78,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect
+  const realRect = Element.prototype.getBoundingClientRect
+  Element.prototype.getBoundingClientRect = function box() {
+    return rect
+  }
+  const realObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver
+  ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+    observe(): void {}
+    disconnect(): void {}
+  }
+  return () => {
+    Element.prototype.getBoundingClientRect = realRect
+    ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = realObserver
+  }
+}
+
+const pillCard = (): Element => {
+  const pill = document.querySelector('[data-pill]')
+  if (pill === null) throw new Error('la pilule n’a pas été trouvée')
+  return pill
+}
+
+test('la pilule n’arrive pas avant que la fenêtre ne soit posée', async () => {
+  const restore = measurable()
+  try {
+    let answer: ((placement: { ok: true; above: boolean }) => void) | null = null
+    bridge.when(
+      'widget:resize',
+      () =>
+        new Promise<{ ok: true; above: boolean }>((resolve) => {
+          answer = resolve
+        }),
+    )
+    render(<Widget />)
+
+    // The measurement is on the wire and has not been answered.
+    await waitFor(() => {
+      expect(bridge.calls.some((call) => call.channel === 'widget:resize')).toBe(true)
+    })
+    expect(pillCard().className).toContain('widget-arriving')
+    expect(pillCard().className).not.toContain('widget-arrived')
+
+    await act(async () => {
+      answer?.({ ok: true, above: false })
+    })
+    await waitFor(() => expect(pillCard().className).toContain('widget-arrived'))
+    expect(pillCard().className).not.toContain('widget-arriving')
+  } finally {
+    restore()
+  }
+})
+
+/**
+ * **And a refusal is still an answer, here** — which is the opposite reading of
+ * `ok: false` from the test above about `above`, deliberately.
+ *
+ * For `above` a refusal is a *default* and writing it in relaid the card out
+ * mid-fade. For « may this pill be drawn » it is the end of the question: there is
+ * no window, nothing else is coming, and a pill that is never painted is worse
+ * than one painted early — this window has no taskbar entry and nothing to
+ * alt-tab to (DEC-26).
+ */
+test('un refus de placement dessine quand même la pilule', async () => {
+  const restore = measurable()
+  try {
+    bridge.when('widget:resize', () => ({ ok: false as const, above: false }))
+    render(<Widget />)
+    await waitFor(() => expect(pillCard().className).toContain('widget-arrived'))
+  } finally {
+    restore()
+  }
+})
+
+/**
+ * **A renderer that cannot measure at all still draws its pill.**
+ *
+ * The other half of « every path out ends in a `send()` », one level up: the two
+ * environments where the measurement effect returns before it can do anything — no
+ * layout box, no `ResizeObserver` — are exactly the two where nothing would ever
+ * release the arrival, and an unreleased arrival is an invisible pill over a live
+ * call. jsdom is one of them, which is why every other test in this file renders a
+ * drawn pill without doing anything about it.
+ */
+test('un rendu qui ne peut rien mesurer dessine quand même la pilule', async () => {
+  render(<Widget />)
+  await waitFor(() => expect(pillCard().className).toContain('widget-arrived'))
+})

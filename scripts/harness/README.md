@@ -37,7 +37,10 @@ motion at the end the element is actually going** — the one exit in the produc
 the *entering* curve for a round, an expo-out spending 73% of its change in the first
 35 ms, which is a blink followed by 88 ms of a transparent always-on-top window over
 the rep's call, and every curve in `:root` being an allowed curve is precisely why the
-check could not see it), `--fade`, and `--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
+check could not see it — and note what it still cannot ask, which is why `widget-entree`
+makes its own assertions rather than leaning on this: `--motion` reads *declarations*, so
+it can say that the widget's arrival is on tokens and going the right way and never that
+the window was sized off an untransformed box), `--fade`, and `--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
@@ -277,14 +280,15 @@ what `serve.mjs` drops the meta for.
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 | `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
 | `widget-sortie` | **the pill leaving** — `widget:leave`, the broadcast `Overlay.dismiss()` sends so the one surface drawn over another application fades instead of vanishing between two frames. Its picture is a blank card by construction (an exit ends at opacity zero), which is the point: `smoke.mjs` drives every stage with `--no-png` and what it takes from this one is `--motion`, which asks which end of the motion the slow part belongs to. `.widget-leaving` had been visited by none of the eight checks on any of the 104 stagings, and shipped for a round wearing the *entering* curve — a blink, then 88 ms of a fully transparent always-on-top window over the rep's call |
+| `widget-entree` | **the pill arriving** (DEC-50) — the other end of the one motion a rep watches, and the end nobody had looked at: measured on the real window the panel had `transitionDuration: 0s`, `animationName: none` and `transform-origin` at the CSS initial centre whichever way it stacked, so it appeared between two frames over the face of the person on the call. Four assertions, three of which only a stage can make: the `widget:resize` that sized the window was taken with **nothing animating and nothing transformed** (recorded at the instant of the call, not read back afterwards — `getBoundingClientRect` includes transforms, and the first draft of this feature sent `pillHeight: 35` for a 38 px card); the reported pill matches the resting one; the curve that reached the element **exceeds 1 somewhere in its span**; and the panel's origin is the edge **on the pill's side**, both ways up |
 | `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
 | `widget-refus` | **a refused mark, on the pill, with no panel open.** `meeting:mark` refuses whenever the meeting is not `recording` — `EndOfMeetingWatch` can make that true with the pill still floating over the call — and the sentence went into an `sr-only` paragraph measuring 1×1 with `clip: rect(0,0,0,0)`, on a window with no `role="alert"` in it, while the counter correctly did not move because nothing had been written. The stage measures the box, not the picture, and asserts the counter stayed put |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
-told which renderer it is by `?window=widget` (`src/main.tsx`). The four widget stages are
-photographed over the app's own canvas rather than over a video call — the eight checks measure
+told which renderer it is by `?window=widget` (`src/main.tsx`). The six widget stages are
+photographed over the app’s own canvas rather than over a video call — the eight checks measure
 the pill against paper, and the contrast a rep actually sees is against whatever Teams is
 painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
 the harness page has five hundred pixels of paper around the pill, so the shadow lands

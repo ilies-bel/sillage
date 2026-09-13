@@ -207,6 +207,124 @@
   }
 
   /*
+   * **The widget arriving, which is the other half of the one motion a rep
+   * watches** (DEC-50).
+   *
+   * The exit above was measured, argued and fixed twice. The *entrance* was
+   * never decided at all: measured on the real window, the 340×205 panel had
+   * `transitionDuration: 0s`, `animationName: none` and a `transform-origin` at
+   * the CSS initial centre regardless of which way it stacks. It appeared
+   * between two frames over another application's video call, at the instant the
+   * rep presses *Enregistrer*.
+   *
+   * DEC-50 is narrow and every clause of it is a mechanism here.
+   *
+   * **`scale` and opacity, no translate.** §6's « 2–4px translate only » still
+   * governs every row and pane in the product; what DEC-50 carves out is this
+   * card, and it carves out `scale` specifically because that is the only
+   * property an overshoot is visible on — `--ease-overshoot`'s peak on a 3px
+   * translate is 0.15px. Adding the exit's 3px translate on top would be a
+   * second thing to keep consistent for no measured gain.
+   *
+   * **One `@keyframes`, run twice, and deliberately not a transition.** A
+   * transition from a resting state would put the *whole* motion behind an
+   * `opacity: 0` style rule, and `shot.mjs --motion` reads an `opacity: 0`
+   * selector as a **departure** — so the entrance would join the direction rule
+   * as a blink on an arrival curve. A keyframes whose progression ends *less*
+   * transparent than it starts reads as the arrival it is, by the same census,
+   * with no exemption asked for.
+   *
+   * **Two states, and the first one is not the start of the motion — which took
+   * a measurement to learn.** The pill may not be *drawn* before the main
+   * process has placed the window, and it may not carry a transform while the
+   * measurement is being taken, because `getBoundingClientRect` includes
+   * transforms. The first version of this collapsed the two into one paused
+   * animation with `both` fill, on the reasoning that a paused animation holds
+   * its own `from` frame and « not yet » and « the start of the motion » are
+   * therefore the same state. They are not, and the difference is the whole
+   * defect: `from` carries `scale: 0.92`, so the held frame is **transformed**,
+   * and the first `widget:resize` went out reporting
+   * `pillTop: 22, pillHeight: 35` against a resting 20 and 38 — measured on the
+   * shipped renderer, DEC-50's fourth bound broken by the construction written
+   * to keep it. So `.widget-arriving` declares transparency and **nothing else**:
+   * no scale, no duration, no transition. It is measurable because it has no
+   * geometry of its own, and it is invisible to `--motion` because an element
+   * with no live duration is never judged — which is also why nothing may give
+   * the pill card a `transition`, and why `widget-entree` asserts the pill's
+   * `animationDuration` and `transitionDuration` are both zero before the
+   * handshake answers rather than leaving that in this comment.
+   *
+   * Under `prefers-reduced-motion` the durations are `0ms`, so `.widget-arrived`
+   * lands on the `to` frame in the same paint the class arrives in: the rep who
+   * asked for less motion gets the pill at full opacity and scale 1 the instant
+   * the window is placed, and every intermediate value is skipped rather than
+   * rushed. Measured: zero animated frames, widest sample 240.28 — the resting
+   * width exactly.
+   *
+   * **The origin follows `above`, from the pill.** The panel grows out of the
+   * edge the pill is on, which is the whole of DEC-50's « origin-aware from the
+   * pill rather than from the card's centre »: `Overlay.resize` answers `above`
+   * and the renderer needs it before it lays the panel out, so it arrives as a
+   * reply and is written here as an attribute rather than an inline style. The
+   * *pill* keeps the initial centre and says so by not restating it — the pill
+   * is its own anchor, `placeAroundPill` holds its centre-x, and a
+   * `transform-origin: 50% 50%` here would be a declaration that changes
+   * nothing.
+   *
+   * **The exit is untouched.** `.widget-leaving` above is a transition whose
+   * duration the renderer reads back and sends to the main process
+   * (`widget:left`); a `scale` on the way out would be a new negotiation with
+   * `Overlay.dismiss()`, not a flourish. `widget-sortie` is the stage that holds
+   * that, and `widget-entree` is this one's.
+   *
+   * `will-change` is absent for the reason it is absent above: this window is
+   * transparent, always on top, and composited over a video call that wants the
+   * GPU more than 150ms of polish does.
+   */
+  @keyframes widget-arrive {
+    from {
+      opacity: 0;
+      /*
+       * 0.92 and not 0.8: the travel is what the overshoot is a fraction of, so
+       * it sets the amplitude — 1.54px on the pill, 2.18px on the panel, at this
+       * curve's 1.0800 peak. It is also 19px of pill width and 27px of panel
+       * width of growth, which at 150ms is a card settling in; measured at 0.85
+       * it is a card unfolding, which is a different and louder claim than
+       * DEC-50 makes.
+       */
+      scale: 0.92;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+
+  /*
+   * Laid out, not drawn. Transparency and nothing else — see the paragraph on the
+   * two states above: a `scale` here is the clipped first frame, and a duration
+   * here is a departure as far as `--motion` is concerned.
+   */
+  .widget-arriving {
+    opacity: 0;
+  }
+
+  /* The window is on screen, at a size measured off this box untransformed. */
+  .widget-arrived {
+    animation: widget-arrive var(--motion) var(--ease-overshoot) both;
+  }
+
+  .widget-panel-arrive {
+    animation: widget-arrive var(--motion) var(--ease-overshoot) both;
+    /* Stacked below the pill: it grows downward out of the control just pressed. */
+    transform-origin: 50% 0;
+  }
+
+  .widget-panel-arrive[data-above='true'] {
+    transform-origin: 50% 100%;
+  }
+
+  /*
    * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
    * muted label. Used by every pane header, which is why it is a component
    * rather than eight copies of the same six utilities.

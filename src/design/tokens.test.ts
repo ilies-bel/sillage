@@ -275,27 +275,97 @@ describe("the rules VISION.md §6 states in prose", () => {
     return peak;
   };
 
-  test.each(easings)("%s does not overshoot — VISION.md §6 says nothing bounces", (name) => {
+  /**
+   * The one curve DEC-50 licenses to go past its endpoint and come back.
+   *
+   * Named here rather than discovered, and that is the point: « which curves may
+   * bounce » is a decision, so it is written down once and every *other* curve in
+   * `:root` is held to the opposite. A second overshoot appearing in the token
+   * file fails the test below until somebody amends this line, which is the
+   * `check-platform.mjs` shape — an allowance is a declaration, never an omission.
+   */
+  const OVERSHOOT = "--ease-overshoot";
+
+  test(`${OVERSHOOT} is declared, because a rule that cannot be broken is not a rule`, () => {
     /*
-     * **The shape-pin US-3 asks for, written in the negative, because the
-     * arithmetic says an overshoot here would draw nothing.**
-     *
-     * The competitor ships three overshoot curves and they are the one thing
-     * this vocabulary visibly lacks. Measured, their peaks are 1.0125, 1.0024
-     * and 1.0978 — and VISION.md §6 allows this product « opacity and 2–4px
-     * translate only », so on the largest translate we may use those peaks are
-     * worth 0.05px, 0.01px and 0.39px. Sub-pixel. An overshoot that can be seen
-     * has to ride a `scale` (the same curve is 33px on the widget panel's 340px
-     * card), and `scale` is the other half of the sentence §6 rules out.
-     *
-     * So this assertion is not a preference: it is the two §6 clauses that would
-     * both have to move before an overshoot curve could be anything but a dead
-     * declaration, stated where a future round will meet them. Declaring one and
-     * pinning « progress exceeds 1 somewhere in its span » would satisfy the
-     * acceptance line and ship a token nothing draws with, which is the fourth
-     * shape on `CLAUDE.md`'s list and the thing the acceptance line exists for.
+     * The allowance has to name a token that exists. Deleting the overshoot and
+     * leaving this list behind would turn the assertion below into a statement
+     * about nothing — an allowance whose subject has gone, which is exactly the
+     * rot `check-platform.mjs` refuses.
      */
-    expect(peakProgress(bezier(rootTokens.get(name) ?? "")!), name).toBeLessThanOrEqual(1.0001);
+    expect(easings, `${OVERSHOOT} must be declared in :root`).toContain(OVERSHOOT);
+  });
+
+  test.each(easings.filter((name) => name !== OVERSHOOT))(
+    "%s does not overshoot — VISION.md §6 says nothing bounces",
+    (name) => {
+      /*
+       * **§6's clause, still enforced everywhere it still means what it said.**
+       *
+       * DEC-50 moved « nothing bounces » for exactly one surface — the widget's
+       * arrival, drawn over another application's video call once or twice a day —
+       * and for exactly one carrier, `scale`. Every other curve in this file is
+       * spent on a row, a pane or a hover tint, where the vocabulary is « opacity
+       * and 2–4px translate only » and an overshoot is worth 0.01px to 0.39px,
+       * measured. A bounce on those is not a judgement anyone would make; it is a
+       * curve that drifted.
+       */
+      expect(peakProgress(bezier(rootTokens.get(name) ?? "")!), name).toBeLessThanOrEqual(1.0001);
+    },
+  );
+
+  test(`${OVERSHOOT} exceeds 1 somewhere in its span, and comes back`, () => {
+    /*
+     * **DEC-50's first bound, and it is a shape rather than a string** — the
+     * `--ease-in` lesson, applied to the token declared in the same round it was
+     * learned in. That curve was pinned by nothing but its name, and redefining it
+     * to `cubic-bezier(0.22, 1, 0.36, 0.99)` restored the blink it exists to end
+     * while every check in the repo stayed green, because `shot.mjs --motion`
+     * builds its allowed set from `:root` and therefore honours whatever is
+     * declared. The same hole is open here in the other direction: respell this
+     * token as an ordinary ease-out and the arrival silently stops being an
+     * arrival — 1.54px of settle on the pill and 2.18px on the panel become zero,
+     * on the one surface the decision was taken for, with nothing anywhere to say
+     * so.
+     *
+     * Measured on the shipped renderer: peak 1.0800, above 1 from 39ms to 145ms of
+     * the 150, widest painted pill 241.75px against a resting 240.28.
+     *
+     * **Bounded at the other end too.** DEC-50 says « may overshoot once,
+     * bounded ». 1.5 was chosen against `y1` swept from 1.2 to 1.8 and
+     * photographed: 1.2 and 1.3 are worth 0.24px and 0.57px on the pill, which is
+     * the sub-pixel territory this whole decision exists to escape, and 1.8 is
+     * 3.4px, which over a client's face reads as a bounce rather than a settle.
+     * The ceiling is deliberately above the shipped value and well under it — this
+     * is the boundary of « bounded », not a second copy of the choice.
+     */
+    const curve = bezier(rootTokens.get(OVERSHOOT) ?? "");
+    expect(curve, `${OVERSHOOT} must be a cubic-bezier`).not.toBeNull();
+    const peak = peakProgress(curve!);
+    expect(peak, "an overshoot that never exceeds 1 is not an overshoot").toBeGreaterThan(1.001);
+    expect(peak, "bounded: past 1.15 a 340px card moves 5px and it reads as a bounce").toBeLessThan(
+      1.15,
+    );
+    // It comes back: a curve that *ends* past its endpoint would leave the card
+    // permanently larger than the box the main process sized the window to.
+    expect(curve![3], `${OVERSHOOT} must land on its endpoint`).toBe(1);
+  });
+
+  test(`${OVERSHOOT} is --ease-out with one control point lifted`, () => {
+    /*
+     * The same property `--ease-in` is held to, for the same reason: there is one
+     * piece of taste in this file and every other curve is a derivation of it, so
+     * retuning `--ease-out` retunes the family rather than opening a gap between
+     * three independent opinions. The lift is `y1`; the abscissae are the taste.
+     */
+    const out = bezier(rootTokens.get("--ease-out") ?? "")!;
+    const over = bezier(rootTokens.get(OVERSHOOT) ?? "")!;
+    expect([over[0], over[2], over[3]], "same shape, one control point lifted past 1").toEqual([
+      out[0],
+      out[2],
+      out[3],
+    ]);
+    expect(over[1], "and the lift is what makes it overshoot").toBeGreaterThan(out[1]);
   });
 
   test("provenance aliases point at the two tokens DEC-5 names", () => {

@@ -310,7 +310,7 @@ export function Widget() {
       gone={gone}
       settled={state.state.status !== 'loading'}
     >
-      {(above) => (
+      {(above, placed) => (
         <>
           <Pill
             title={meeting?.clientName ?? (meeting?.title || null)}
@@ -319,6 +319,7 @@ export function Widget() {
             marks={marks.length}
             open={open}
             above={above}
+            placed={placed}
             onToggle={() => setOpen((was) => !was)}
             onMark={() => void mark(null, '')}
           />
@@ -339,6 +340,7 @@ export function Widget() {
           {open && meetingId !== null ? (
             <Panel
               meetingId={meetingId}
+              above={above}
               heading={meeting?.clientName ?? meeting?.title ?? ''}
               turns={turns}
               marks={marks}
@@ -510,12 +512,56 @@ interface FrameProps {
    * the one race where it does not. See `MEASURE_DEADLINE_MS`.
    */
   settled: boolean
-  children: (above: boolean) => React.ReactNode
+  /**
+   * `above` — which way the panel stacks — and `placed`, whether the main process
+   * has put this window on screen at a size it measured. See `reveal` below: the
+   * second is what releases the arrival (DEC-50), and the pill's own class is the
+   * only thing that reads it.
+   */
+  children: (above: boolean, placed: boolean) => React.ReactNode
 }
 
 function Frame({ open, leaving, gone, settled, children }: FrameProps) {
   const box = useRef<HTMLDivElement>(null)
   const [above, setAbove] = useState(false)
+
+  /**
+   * **The window is on screen, which is the one cue the arrival may start on**
+   * (DEC-50, `.widget-arrive` in `index.css`).
+   *
+   * The pill is held at `scale(0.92)` and `opacity: 0` by a *paused* animation
+   * until this flips, and the reason is arithmetic rather than taste:
+   * `getBoundingClientRect` **includes transforms**, so a pill that is mid-scale
+   * when `send()` below reads it reports a box 8% small — and the main process
+   * sizes a frameless always-on-top window to exactly that number. That is the
+   * clipped first frame `MEASURE_DEADLINE_MS`, `FIRST_FRAME_MS` and
+   * `APPEARANCE_MS` exist to end, reintroduced by the polish that was supposed to
+   * follow them. The invariant that closes it is one sentence: **the pill is
+   * measurable exactly while it is not moving**, and `paused` is both halves of
+   * that at once.
+   *
+   * **DEC-50 names `widget:measuring` and that is the wrong channel, measured.**
+   * That message is the renderer stating its own *deadline*, sent from a layout
+   * effect with no dependencies — one IPC hop from mount, before anything has
+   * been measured at all. Gating on its reply releases the animation while the
+   * font wait and the `widget:state` wait are both still outstanding, so the
+   * measurement the main process is holding the window off screen for is taken
+   * off a scaling pill: exactly the defect the bound was written to prevent. On
+   * the harness fixture that gap is ~150ms of a 150ms animation. So the gate is
+   * `widget:resize` — the message that *carries* the measurement, and whose reply
+   * `Overlay.resize` only sends after `setBounds` and `showInactive`. It is
+   * strictly later and it is the earliest instant this side can know the window
+   * is visible; starting sooner would show a fully drawn pill for an IPC hop and
+   * then snap it back to 92% to grow again, which is a flinch rather than an
+   * arrival.
+   *
+   * **Any settlement, including a refusal.** `ok: false` is « we did not place
+   * you » and normally means the meeting ended under us — but a pill that is
+   * never painted is worse than one painted early (DEC-26), and this window has
+   * no taskbar entry to come back from. Same reason the two paths out of the
+   * measurement effect that cannot measure at all release it before returning.
+   */
+  const [placed, setPlaced] = useState(false)
 
   /*
    * **The placement the renderer did not ask for.**
@@ -645,8 +691,35 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
 
   useLayoutEffect(() => {
     const element = box.current
-    if (!element || typeof ResizeObserver === 'undefined') return
+    /*
+     * Nothing can be measured here, so nothing is going to release the arrival —
+     * and an unreleased arrival is an invisible pill (DEC-26). This is the same
+     * « every path out ends in a `send()` » contract `speak()` below keeps, one
+     * level up: the two environments that reach it are a frame with no box and a
+     * renderer with no `ResizeObserver`, which is jsdom.
+     */
+    if (!element || typeof ResizeObserver === 'undefined') {
+      setPlaced(true)
+      return
+    }
     if (armed.current === 0) armed.current = Date.now()
+    /**
+     * Is the pill in the middle of its own arrival?
+     *
+     * The one question that keeps « the pill is measurable exactly while it is not
+     * moving » true. A *paused* animation — the pill before the window is placed —
+     * answers `paused`, not `running`, so the first measurement goes out normally;
+     * and under `prefers-reduced-motion` the duration is `0ms` and the animation is
+     * `finished` before it is ever played, so this is never true and no branch is
+     * needed for that rep.
+     *
+     * `getAnimations` guarded because jsdom does not implement it: an environment
+     * that cannot say answers « not moving », which is the permissive direction and
+     * the one where a measurement is better than none.
+     */
+    const moving = (el: Element): boolean =>
+      typeof el.getAnimations === 'function' &&
+      el.getAnimations().some((animation) => animation.playState === 'running')
     const send = (): void => {
       /*
        * **And a leaving window asks for nothing more.**
@@ -663,6 +736,21 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
       // observer fires on the initial observe too, so the guards have to be here and
       // not only on the first call.
       if (!legible.current || !drawable) return
+      const pill = element.querySelector('[data-pill]')
+      /*
+       * **And nothing is reported of a pill that is scaling** (DEC-50).
+       *
+       * `getBoundingClientRect` includes transforms, so a rect read here while the
+       * arrival is playing reports the pill 8% short — 35px on a 38px card — and
+       * `Overlay.resize` sizes the window to it and holds *that* as `pillTop` and
+       * `pillHeight` for every later placement. The measurement is not lost, it is
+       * deferred: `animationend` below asks again, and the key then decides whether
+       * anything has actually changed, so an arrival with no size change beside it
+       * is silent rather than byte-identical. See `placed` for why the two can
+       * never overlap on the *first* measurement, which is the one the window is
+       * held off screen for.
+       */
+      if (pill && moving(pill)) return
       const frame = element.getBoundingClientRect()
       /*
        * The pill, found in the DOM rather than held in a ref.
@@ -673,7 +761,7 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
        * `data-` attribute on the element that actually paints cannot be wrong
        * in that way.
        */
-      const anchor = element.querySelector('[data-pill]')?.getBoundingClientRect()
+      const anchor = pill?.getBoundingClientRect()
       const width = Math.ceil(frame.width)
       const height = Math.ceil(frame.height)
       // Where the pill is inside the frame, which is what lets the main process
@@ -695,7 +783,12 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
       const key = `${width}×${height}×${pillTop}`
       // The observer fires on every sub-pixel change; the window may only be
       // moved for a real one, or a resize animates against itself.
-      if (width === 0 || height === 0 || key === last.current) return
+      if (width === 0 || height === 0 || key === last.current) {
+        // A frame with no box will never produce a measurement, so nothing here
+        // would ever release the arrival — see `placed`. Fail open.
+        if (width === 0 || height === 0) setPlaced(true)
+        return
+      }
       last.current = key
       void invoke('widget:resize', {
         width,
@@ -717,9 +810,27 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
           if (placement.ok) setAbove(placement.above)
         })
         .catch(() => undefined)
+        /*
+         * The measurement has been answered, whatever the answer was: the window
+         * has been placed at this size and shown, or there is no window. Either way
+         * the pill may now be drawn and may now move — see `placed`.
+         */
+        .finally(() => setPlaced(true))
     }
     const observer = new ResizeObserver(send)
     observer.observe(element)
+
+    /*
+     * **The deferred measurement, asked again the instant the pill stops moving.**
+     *
+     * `animationend` and not a timer: the duration lives in `--motion`, it is `0ms`
+     * under `prefers-reduced-motion`, and a constant here would be the second copy
+     * of a number `tokens.css` owns — which is the mistake `widget:left` exists to
+     * avoid on the other end of the same window. It bubbles, so one listener on the
+     * frame covers the pill's arrival and the panel's; the panel's costs a rect read
+     * and the key then finds nothing to say.
+     */
+    element.addEventListener('animationend', send)
 
     /*
      * **Speak once the type is settled, and always speak.** Both halves matter: the
@@ -794,6 +905,7 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
 
     return () => {
       if (deadline !== null) clearTimeout(deadline)
+      element.removeEventListener('animationend', send)
       observer.disconnect()
     }
     /*
@@ -908,7 +1020,7 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
         style={{ padding: `${HALO}px` }}
         className={`flex w-max ${above && open ? 'flex-col-reverse' : 'flex-col'}`}
       >
-        {children(above)}
+        {children(above, placed)}
       </div>
     </div>
   )
@@ -986,6 +1098,13 @@ interface PillProps {
   marks: number
   open: boolean
   above: boolean
+  /**
+   * Whether the main process has placed this window and shown it — see `placed` in
+   * `Frame`, which is the only thing that decides it. Until then the pill is
+   * *laid out* and not *drawn*, which is what makes the first measurement a
+   * measurement of an untransformed box (DEC-50).
+   */
+  placed: boolean
   onToggle: () => void
   onMark: () => void
 }
@@ -1008,6 +1127,7 @@ function Pill({
   marks,
   open,
   above,
+  placed,
   onToggle,
   onMark,
 }: PillProps) {
@@ -1033,7 +1153,26 @@ function Pill({
         the centre does not move, so neither does anything measured from it.
         `widget-ouvert` measures the chevron across the press.
       */
-      className="drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-2 self-center rounded-lg border py-1.5 pl-2.5 pr-1.5"
+      /*
+        **The arrival** (DEC-50, `.widget-arriving` / `.widget-arrived` in
+        `index.css`). Two states and never both: until the window has been placed
+        this card is laid out and transparent — *untransformed*, which is what
+        makes the size the main process is waiting for a measurement of the real
+        pill — and `placed` swaps it for the animation. `placed` is the reply to
+        the `widget:resize` that carried that measurement, so the measurement and
+        the transform cannot overlap. That is not a nicety:
+        `getBoundingClientRect` includes transforms, and the first draft of this
+        held the pill at `scale(0.92)` before the swap and reported
+        `pillHeight: 35` for a 38px card.
+
+        No `transform-origin` here on purpose. The pill is its own anchor —
+        `placeAroundPill` holds its centre-x — so the CSS initial centre is
+        already right, and restating it would be a declaration that changes
+        nothing. The *panel* is the one that has to follow `above`.
+      */
+      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-2 self-center rounded-lg border py-1.5 pl-2.5 pr-1.5 ${
+        placed ? 'widget-arrived' : 'widget-arriving'
+      }`}
     >
       {/*
         Recording, said the way the rest of the product says it: orange, which
@@ -1128,6 +1267,16 @@ function Elapsed({ since }: { since: number | null }) {
 
 interface PanelProps {
   meetingId: string
+  /**
+   * Which way this panel stacks, answered by `Overlay.resize` because only the
+   * main process knows which half of which display the pill is in.
+   *
+   * It decides the paint order in `Frame` and, here, the `transform-origin` the
+   * opening grows from: DEC-50's « origin-aware from the pill rather than from the
+   * card's centre ». Measured on the real window before it was: `transform-origin:
+   * 170px 102.594px` — dead centre, the CSS initial, whichever way it stacked.
+   */
+  above: boolean
   /** The client, else the objet, else nothing — never an invented name. */
   heading: string
   turns: readonly TranscriptSegment[]
@@ -1141,6 +1290,7 @@ interface PanelProps {
 
 function Panel({
   meetingId,
+  above,
   heading,
   turns,
   marks,
@@ -1209,7 +1359,23 @@ function Panel({
   }, [rows.length])
 
   return (
-    <div data-card className="bg-card border-card shadow-overlay my-1.5 w-[340px] rounded-lg border">
+    <div
+      data-card
+      /*
+        **The opening** (DEC-50). Mounted by a press, so the animation runs from
+        the mount and needs no gate — and it needs none for the measurement
+        either: a transform on this card changes neither the frame's border box
+        (a descendant's transform is not layout) nor the pill's rect, so
+        `widget:resize` reads the same numbers whether this is scaling or at rest.
+        The pill's arrival is the one that has to be held, and it is.
+
+        `data-above` rather than an inline `transform-origin`: the value is a
+        judgement about which edge the panel belongs to and it lives in the
+        stylesheet with the reasoning, not spread over two files as a string.
+      */
+      data-above={above ? 'true' : 'false'}
+      className="bg-card border-card shadow-overlay widget-panel-arrive my-1.5 w-[340px] rounded-lg border"
+    >
       {/*
         Which call this is.
 
