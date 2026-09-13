@@ -195,6 +195,25 @@ beforeEach(() => {
     }))
     // Healthy by default, so the existing cases render no connector warnings.
     .when('health:snapshot', () => snapshot({}))
+    /*
+      **The recipe the document came out of** (DEC-43), which the gate reads from
+      the one channel that answers it.
+
+      In `beforeEach` and not only in the recipe tests on purpose: the chip is on
+      every gate, so every case in this file should have it. A fixture that only
+      supplies it where it is being asserted is a fixture that cannot exercise the
+      screen — and the read failing has to leave the gate exactly as it was
+      (DEC-26), which is what the last case in this file drives.
+    */
+    .when('meeting:get', () => ({
+      meeting,
+      segments: [],
+      signals: [],
+      outbox: [],
+      document: null,
+      compteRendu: panel().edits.compteRendu,
+      recipe: 'besoin-commercial' as const,
+    }))
 })
 
 afterEach(() => {
@@ -1248,5 +1267,304 @@ describe('the bullets are checkable, the way the fields are (DEC-21)', () => {
     await screen.findByText('Prêt à envoyer')
     expect(screen.queryByRole('button', { name: /ranger le bureau/ })).toBeNull()
     expect(screen.getByText(/ranger le bureau/)).toBeTruthy()
+  })
+})
+
+/**
+ * **« ce n’est pas le bon modèle de compte-rendu »** (DEC-43, US-8).
+ *
+ * The recipe was decided before the call and then invisible: measured on the
+ * shipped gate at 1280×800 and at 960×600, the words « Prise de besoin »,
+ * « Compte-rendu libre » and « Modèle » appeared nowhere on the screen and none
+ * of its forty-two controls could change it — so a rep who recorded a discovery
+ * call under the ESN trame had to re-record to get the other shape.
+ *
+ * These hold the three things that decide whether the picker is right, and the
+ * one thing jsdom cannot see is named where it is missing rather than dropped:
+ * every box measures zero here, so the arming guard fails open by design and
+ * « *Valider* is withheld until the new document has been shown » is driven
+ * against real layout instead, at both smoke sizes.
+ */
+describe('the recipe is on the document, and changeable (DEC-43)', () => {
+  /** Open the picker and hand back its rewrite control for the other recipe. */
+  const openPicker = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /^Modèle :/ }))
+    return screen.findByRole('button', { name: /^Réécrire avec/ })
+  }
+
+  test('the gate names the recipe the meeting is set to produce', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(
+      await screen.findByRole('button', { name: 'Modèle : Prise de besoin commercial' }),
+    ).toBeTruthy()
+  })
+
+  test('the free recipe names itself, and the picker offers the other one', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:get', () => ({
+        meeting,
+        segments: [],
+        signals: [],
+        outbox: [],
+        document: null,
+        compteRendu: panel().edits.compteRendu,
+        recipe: 'libre' as const,
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })).toBeTruthy()
+    // The declared set minus the current one, and nothing a rep typed (DEC-43).
+    const offered = await openPicker()
+    expect(offered.textContent).toBe('Réécrire avec « Prise de besoin commercial »')
+    expect(
+      screen.queryByRole('button', { name: /Réécrire avec « Compte-rendu libre »/ }),
+    ).toBeNull()
+  })
+
+  /*
+   * **The retry path, and only it.**
+   *
+   * `meeting:recipe` records the choice and fires `runEnhancement`, which is
+   * `Orchestrator.enhance` — whose docblock states the property this acceptance
+   * line exists for: `#enhance` gathers the transcript, the context and the rep's
+   * notes the same way whichever way the run is reached, so a re-extraction can
+   * never analyse less material than the attempt it replaces. Dispatching
+   * `extract` over `session:command` would be a second way in, and that channel's
+   * own docblock says a renderer using it moves the meeting to `extracting` with
+   * no run behind it.
+   */
+  test('the rewrite goes through meeting:recipe and through nothing else', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: true,
+        state: 'extracting' as const,
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    const recipeCalls = bridge.calls.filter((c) => c.channel === 'meeting:recipe')
+    expect(recipeCalls).toHaveLength(1)
+    expect(recipeCalls[0]?.payload).toEqual({ meetingId: 'm1', recipe: 'libre' })
+    expect(bridge.calls.some((c) => c.channel === 'session:command')).toBe(false)
+    expect(bridge.calls.some((c) => c.channel === 'enhancement:retry')).toBe(false)
+  })
+
+  test('what happens to the rep’s corrections is on screen, counted, before the press', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m-compte" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Nothing touched: the sentence promises nothing about corrections.
+    await openPicker()
+    expect(
+      screen.getByText(/Réécrire remplace le compte-rendu, les champs et le brouillon de/),
+    ).toBeTruthy()
+
+    // One correction, named in the singular.
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'le TJM a été accepté' },
+    })
+    expect(screen.getByText(/votre correction sur cet écran sera perdue/)).toBeTruthy()
+
+    // Three, counted rather than described.
+    fireEvent.change(document.getElementById('field-besoin') as HTMLTextAreaElement, {
+      target: { value: 'trois profils' },
+    })
+    fireEvent.change(screen.getByLabelText('Objet du brouillon'), {
+      target: { value: 'Suite à notre point' },
+    })
+    expect(screen.getByText(/vos 3 corrections sur cet écran seront perdues/)).toBeTruthy()
+
+    // And what is *not* lost is named too — the notes are the rep's (DEC-5) and
+    // the transcript is the record (DEC-21).
+    expect(screen.getByText(/Vos notes et la transcription ne changent pas/)).toBeTruthy()
+  })
+
+  /*
+   * **And the sentence is true.**
+   *
+   * `PENDING_EDITS` is per meeting and lives as long as the window, so a draft
+   * that outlived the document it was made against would come back on the next
+   * mount — over a compte-rendu it does not belong to. Driven the way the product
+   * does it: the rewrite starts, and the panel that comes back on
+   * `session:changed` is the new document.
+   */
+  test('the corrections named are the corrections dropped, and the new document is drawn', async () => {
+    let rewritten = false
+    bridge
+      .when('review:get', () =>
+        rewritten
+          ? openGate({
+              edits: {
+                ...panel().edits,
+                compteRendu: '# Compte-rendu libre — Acme Industries\n\nUn autre plan.\n',
+                objections: '',
+                besoin: '',
+              },
+              fields: panel().fields.slice(0, 2),
+            })
+          : openGate(),
+      )
+      .when('meeting:recipe', (payload) => {
+        rewritten = true
+        return { recipe: payload.recipe, regenerating: true, state: 'extracting' as const }
+      })
+    render(<Review meetingId="m-libre" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'MA CORRECTION' },
+    })
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    // The broadcast the new extraction really arrives on.
+    await act(async () => {
+      bridge.emit('session:changed', { meetingId: 'm-libre', state: 'awaiting_confirmation' })
+    })
+    await screen.findByText('Prêt à envoyer')
+
+    /*
+     * The document *Valider* would ship is the new one, not the one the rewrite
+     * replaced — which is what the shipped gate did at both smoke sizes before
+     * this existed: the rail dropped from eleven rows to two and the document
+     * stayed at the heading of the compte-rendu that had just been replaced.
+     */
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('Compte-rendu') as HTMLTextAreaElement).value).toBe(
+        '# Compte-rendu libre — Acme Industries\n\nUn autre plan.\n',
+      ),
+    )
+    // The row the correction was in is gone with the recipe that asked for it.
+    expect(document.getElementById('field-objections')).toBeNull()
+
+    // And the draft is dropped rather than held: a fresh mount gets the pre-fill.
+    cleanup()
+    render(<Review meetingId="m-libre" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.queryByDisplayValue('MA CORRECTION')).toBeNull()
+  })
+
+  /*
+   * The gate closes under the rep while the run goes — `extract` is legal from
+   * `awaiting_confirmation` and the machine moves — so the one screen they were
+   * confirming on disappears. `STATE_REASON.extracting` is « Analyse en cours… »,
+   * which is the right bland sentence for a meeting nobody touched and no answer
+   * at all to « I pressed *Réécrire* ».
+   */
+  test('the gate closing under the rep says which press closed it', async () => {
+    let rewritten = false
+    bridge
+      .when('review:get', () =>
+        rewritten
+          ? { open: false as const, state: 'extracting' as const, reason: 'Analyse en cours…' }
+          : openGate(),
+      )
+      .when('meeting:recipe', (payload) => {
+        rewritten = true
+        return { recipe: payload.recipe, regenerating: true, state: 'extracting' as const }
+      })
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    await act(async () => {
+      bridge.emit('session:changed', { meetingId: 'm1', state: 'extracting' })
+    })
+
+    expect(
+      await screen.findByText(
+        /Le compte-rendu est en cours de réécriture avec « Compte-rendu libre »/,
+      ),
+    ).toBeTruthy()
+  })
+
+  /*
+   * `regenerating: false` means the recorded choice already matched the stored
+   * document's, so nothing is being replaced — and nothing of the rep's may be
+   * thrown away for a run that is not happening.
+   */
+  test('a choice that replaces nothing keeps what the rep typed', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: false,
+        state: 'awaiting_confirmation' as const,
+      }))
+    render(<Review meetingId="m-garde" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'gardée' },
+    })
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      'gardée',
+    )
+    // And the chip has moved to what was recorded.
+    expect(await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })).toBeTruthy()
+  })
+
+  /*
+   * DEC-26, and the reason this read is not allowed to be load-bearing: a picker
+   * is worth less than the one confirmation in the product, so a channel that
+   * refuses costs the chip and nothing else.
+   */
+  test('a recipe the app could not read costs the chip and not the gate', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:get', () => {
+        throw new Error('réunion inconnue: m1')
+      })
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.queryByRole('button', { name: /^Modèle/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+  })
+
+  /*
+   * One control, one run — the rule `RecipePicker` carries on the session header
+   * for the same reason: `meeting:recipe` would happily record a second choice
+   * mid-run, and the run already reading the first would finish and store a
+   * document whose recipe is not the one the chip shows.
+   */
+  test('a rewrite in flight refuses a second press', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: true,
+        state: 'extracting' as const,
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    const again = screen.getByRole('button', { name: 'Réécriture…' })
+    expect(again.hasAttribute('disabled')).toBe(true)
+    await act(async () => {
+      again.click()
+    })
+    expect(bridge.calls.filter((c) => c.channel === 'meeting:recipe')).toHaveLength(1)
   })
 })
