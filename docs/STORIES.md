@@ -1557,3 +1557,39 @@ agent by message**
 sites. US-25 deleted the session one and pinned the gate's; the third draws the typesetting
 manual over a **past** record in *Historique*, which is as read-only as a surface gets —
 nothing there can be corrected and nothing there ships to VerySwing.
+
+## US-33 — the other notification has the same stale id, one caller over
+
+**Lane** `session` · `electron/app/main.ts` (`announceArmed`), `scripts/e2e.mjs` ·
+**not yet assigned**
+
+Found by the agent that fixed R33-3, in the neighbouring caller, and correctly left alone
+because the arming path was flagged sensitive. Verified on the tree: `announceArmed` closes
+over `meetingId` and calls `focusMainWindow(id, broadcast)` at the click with no re-check —
+byte-for-byte the shape R33-3 just replaced with `clickTarget()` in `PowerWatch`.
+
+**Why it is not already the same defect, and why it still is one.** Arming is refused beside
+a live recording (rounds 29 and 30 closed that), so the *raise* is safe. What is not refused
+is the rep starting an **unrelated** meeting after the notice is up: `armed` is not
+`recording`, so `dispatch`'s one-recording-at-a-time guard does not stop *Démarrer une
+réunion*. 14:55 the calendar arms the 15:00 invite and the OS says so; 14:56 the rep takes an
+unscheduled call instead; 14:58 they clear their notification centre and are thrown off the
+live recording onto the armed meeting's screen.
+
+DEC-46's whole weight is that these two notifications are the only things in the product that
+navigate without a press inside the window, and that this is rare and always welcome. One of
+the two now re-asks at the click; the other does not.
+
+**The second half, and it is the reason to do both together:** there is **no e2e coverage of
+either notification's click**. R33-3's guard and `focusMainWindow`'s `null` branch are held by
+a unit test and a source read, and its own fourth revert check is the demonstration of why
+that is thin — spelling the broadcast unconditionally
+(`broadcast('session:open', { meetingId: meetingId ?? '' })`) leaves **every test in
+`powerWatch.test.ts` green** while the renderer routes on the navigation that was withheld.
+`tsc` cannot hold that either. A step that seeds a suspend-interrupted meeting, starts a
+second recording, fires the click and asserts the route did not move is the real measurement.
+
+**Acceptance** — `clickTarget`'s shape in `announceArmed`, one predicate shared by both
+notifications rather than two that can drift, and the e2e step above. The refusal keeps
+DEC-26: a click that does nothing is not a dead control here, because the notice is a
+statement and not an offer — but say what the sentence should be if it names a control at all.
