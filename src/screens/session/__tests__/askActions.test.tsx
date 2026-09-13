@@ -25,7 +25,7 @@
  * `AskPanel` an action would be testing the rendering of a conclusion somebody
  * else reached.
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { AskAnswer } from '../../../../electron/core/contracts/ask.ts'
 import type { Meeting } from '../../../../electron/core/contracts/meeting.ts'
@@ -91,6 +91,37 @@ const open = (options: { entra?: boolean; over?: Partial<Meeting> } = {}) => {
 
 const chip = () => screen.queryByRole('button', { name: FOLLOW_UP.label })
 
+/**
+ * Wait for the read the chip actually depends on, never for the document.
+ *
+ * `meeting:get` and `auth:state` are two independent round trips: the document
+ * text is the first and the chip is a function of the second. Every test below
+ * awaited the document and then asserted synchronously, which is a race — and
+ * one the suite lost three times in an afternoon, twice inside a worktree
+ * agent's full run and once on the main checkout, and **only** under a full
+ * parallel run, which is the shape that makes a flake read as noise. A test
+ * that sometimes measures nothing is worse than no test: it trains everyone
+ * who sees it red to run it again.
+ *
+ * What it costs is the two assertions that the chip **is** there. The three
+ * that assert absence were suspected of being vacuous — « not there » is also
+ * true before `auth:state` is answered — and they are **not**: measured with
+ * two separate mutations (the rule deleted outright, and the rule offering the
+ * chip as soon as the answer is known whatever it says), the old spelling and
+ * this one go red identically, 5 and 6 failures respectively. Any mutation
+ * that offers the chip offers it on the first render, before either read
+ * lands, so the negatives see it. Recorded because it was worth an hour and
+ * the next reader should not re-derive it.
+ */
+const authSettled = async () => {
+  await waitFor(() => {
+    expect(bridge.calls.some((call) => call.channel === 'auth:state')).toBe(true)
+  })
+  // The responder is synchronous; this is the flush that lets its resolution
+  // reach the component's state before anything is asserted.
+  await act(async () => {})
+}
+
 beforeEach(() => {
   bridge = fakeBridge()
   uninstall = installBridge(bridge)
@@ -138,7 +169,7 @@ describe('the rule, on its own', () => {
 describe('on the note, through the shipped screen', () => {
   test('the note carries one suggested action, beside the questions', async () => {
     open()
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     expect(chip()).toBeTruthy()
     // And it has not replaced what the panel already offered.
@@ -147,7 +178,7 @@ describe('on the note, through the shipped screen', () => {
 
   test('the demo build has no Entra, so it has no follow-up chip (DEC-26, DEC-28)', async () => {
     open({ entra: false })
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     expect(chip()).toBeNull()
     // Everything *Demander* was, it stays.
@@ -157,14 +188,14 @@ describe('on the note, through the shipped screen', () => {
 
   test('an unscheduled call has no attendees, so it has no follow-up chip', async () => {
     open({ over: { eventId: null } })
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     expect(chip()).toBeNull()
   })
 
   test('signing out takes the offer away without reopening the meeting', async () => {
     open()
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
     expect(chip()).toBeTruthy()
 
     act(() => {
@@ -197,7 +228,7 @@ describe('pressing it is a read, like everything else here', () => {
   test('it asks the declared question and shows it above the answer', async () => {
     bridge.when('meeting:ask', () => answer())
     open()
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: FOLLOW_UP.label }))
@@ -217,7 +248,7 @@ describe('pressing it is a read, like everything else here', () => {
   test('it writes nothing, stores nothing and confirms nothing (DEC-25, DEC-4)', async () => {
     bridge.when('meeting:ask', () => answer())
     open()
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     const before = bridge.calls.length
     await act(async () => {
@@ -234,7 +265,7 @@ describe('pressing it is a read, like everything else here', () => {
   test('asked once, it is spent — the same engagements twice is not an answer', async () => {
     bridge.when('meeting:ask', () => answer())
     open()
-    await screen.findByText(/Cadrage du renfort data/)
+    await authSettled()
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: FOLLOW_UP.label }))
