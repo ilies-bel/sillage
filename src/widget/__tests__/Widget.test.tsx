@@ -21,7 +21,7 @@ import type { TranscriptSegment } from '../../../electron/core/contracts/transcr
 import type { MomentMark } from '../../../electron/core/contracts/marks.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Widget } from '../Widget.tsx'
-import { MENTION_LABEL, MENTION_NOTE } from '../mention.ts'
+import { MENTION_LABEL, MENTION_NOT_LOGGED, MENTION_NOTE } from '../mention.ts'
 /*
  * The sentence comes down `widget:state` now (US-19), so the test asserts against the
  * **contract's** default rather than against a constant in the file under test — and a
@@ -668,31 +668,66 @@ function assertShell(node: Element | null): asserts node is Element {
  * paths that release the arrival at once — correct behaviour (DEC-26), and enough
  * to make this test pass without ever reaching the gate it is about.
  */
+/**
+ * The boxes are **content-dependent**, and that is the one property this fixture
+ * has to model rather than flatten.
+ *
+ * It answered a constant 240×78 for every element, which is enough for « was the
+ * arrival released » and structurally blind to « how many times was the window
+ * sized »: the key `Widget` dedupes on is `width×height×pillTop`, so a fixture
+ * that answers one width can only ever produce one measurement, whatever the pill
+ * is drawing. A count appearing beside the mark button is a *wider pill* — measured
+ * in Chromium on the shipped renderer, 308 → 313 — so the stub width follows the
+ * element's own text, which makes the digit cost a pixel here as it costs five
+ * there. jsdom lays nothing out; this is the smallest fixture that can be wrong.
+ *
+ * The `ResizeObserver` is flushable for the same reason. jsdom never calls one, so
+ * a stage's « the content grew and the observer noticed » has to be asked for
+ * explicitly: `frame()` below is one browser frame.
+ */
+const observers: Array<() => void> = []
 const measurable = (): (() => void) => {
-  const rect = {
-    width: 240,
-    height: 78,
-    top: 0,
-    left: 0,
-    right: 240,
-    bottom: 78,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  } as DOMRect
   const realRect = Element.prototype.getBoundingClientRect
-  Element.prototype.getBoundingClientRect = function box() {
-    return rect
+  Element.prototype.getBoundingClientRect = function box(this: Element) {
+    const width = 240 + (this.textContent?.length ?? 0)
+    return {
+      width,
+      height: 78,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: 78,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect
   }
   const realObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver
   ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+    notify: () => void
+    constructor(notify: () => void) {
+      this.notify = notify
+      observers.push(notify)
+    }
     observe(): void {}
-    disconnect(): void {}
+    disconnect(): void {
+      const at = observers.indexOf(this.notify)
+      if (at >= 0) observers.splice(at, 1)
+    }
   }
   return () => {
     Element.prototype.getBoundingClientRect = realRect
     ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = realObserver
+    observers.length = 0
   }
+}
+
+/** One browser frame: whatever the last commit changed, the observer sees. */
+const frame = async (): Promise<void> => {
+  await act(async () => {
+    for (const notify of [...observers]) notify()
+    await Promise.resolve()
+  })
 }
 
 const pillCard = (): Element => {
@@ -1245,4 +1280,346 @@ test('la mention n’est pas dessinée avant que l’état n’arrive', async ()
     await Promise.resolve()
   })
   expect(screen.getByRole('button', { name: MENTION_LABEL })).toBeTruthy()
+})
+
+/* ------------------------------------------------------------------------- *
+ * R33-2 — the precedence between the two cards, asked of the writer.
+ *
+ * The render carried it correctly and the writer undid it: `announce()` opened
+ * with `setSaid(null)`, so the guard could never fire for a refusal that existed
+ * before the press. Measured on the shipped renderer at 1280×800 and 960×600,
+ * two controls 32 px apart:
+ *
+ *   après « Marquer » (refusé)      refus visible : oui   carte phrase : non
+ *   après « Prévenir le client »    refus visible : NON   carte phrase : oui
+ *
+ * What is asserted here is the *state*, which is where the fix is: one card, one
+ * union, the precedence applied at the write. jsdom cannot measure the boxes —
+ * `widget-refus` does that on real layout, and the mention card is measured by
+ * nothing until US-20 adds its stage.
+ * ------------------------------------------------------------------------- */
+
+test('un refus que le commercial n’a pas écarté survit à la commande voisine', async () => {
+  const clipboard = withClipboard()
+  const reached: unknown[] = []
+  bridge.when('meeting:mark', (payload) => {
+    reached.push(payload)
+    throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+  })
+  try {
+    render(<Widget />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+    const refusal = await screen.findByRole('alert')
+    expect(refusal.textContent).toContain('Aucun enregistrement en cours')
+
+    fireEvent.click(mentionControl())
+    await waitFor(() => expect(reached.length).toBe(2))
+
+    /*
+     * The refusal is still the card, and the mention drew none. The moment the rep
+     * marked is not in the record and the only thing that said so is still on
+     * screen — which is the whole of this finding.
+     */
+    expect(screen.getByRole('alert').textContent).toContain('Aucun enregistrement en cours')
+    expect(screen.queryByRole('status')).toBeNull()
+
+    /*
+     * And it yields rather than losing: the sentence went to the clipboard, the log
+     * write was made, and the card is one press away once the refusal is dismissed.
+     * A control that swallowed the press entirely would be the dead control DEC-26
+     * forbids.
+     */
+    expect(clipboard.written).toEqual([MENTION_SENTENCE_DEFAULT])
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('la phrase revient dès que le refus est écarté, sans réécrire au journal', async () => {
+  const clipboard = withClipboard()
+  const reached: unknown[] = []
+  let refuse = true
+  bridge.when('meeting:mark', (payload) => {
+    reached.push(payload)
+    if (refuse) throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null }
+  })
+  try {
+    render(<Widget />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+    await screen.findByRole('alert')
+    refuse = false
+    fireEvent.click(mentionControl())
+    await waitFor(() => expect(reached.length).toBe(2))
+    expect(screen.queryByRole('status')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    fireEvent.click(mentionControl())
+    const notice = await screen.findByRole('status')
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
+    /*
+     * Two presses, one sentence, one row: the yield did not cost the write and the
+     * second press did not repeat it. The card says the log has it, because it does.
+     */
+    expect(reached.length).toBe(2)
+    await waitFor(() => expect(notice.textContent).not.toContain('Non inscrit'))
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **Two presses, one sentence, one row.**
+ *
+ * Measured on the shipped renderer at both smoke sizes, counted off the pill's own
+ * counter, which is the receipt for a write that landed: « départ 2 · après 1
+ * pression 3 · après 2 **4** ». `meeting:mark` has no idempotency key, the row is
+ * read back at the gate in a list of the rep's own notes, and the press is a 24-pixel
+ * control over a client's face.
+ */
+test('une phrase déjà inscrite au journal n’y est pas inscrite deux fois', async () => {
+  const clipboard = withClipboard()
+  const reached: string[] = []
+  bridge.when('meeting:mark', (payload) => {
+    reached.push(String(payload.note))
+    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null }
+  })
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    const notice = await screen.findByRole('status')
+    await waitFor(() => expect(reached.length).toBe(1))
+
+    fireEvent.click(mentionControl())
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(reached).toEqual([MENTION_NOTE(true)])
+    // The sentence is still on screen, and it still says the log has it.
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
+    expect(notice.textContent).not.toContain('Non inscrit')
+
+    /*
+     * Dismissing ends the act. A press after it is a new telling — a second person
+     * joining the call at minute 40 — and it is written down.
+     */
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
+    fireEvent.click(mentionControl())
+    await waitFor(() => expect(reached.length).toBe(2))
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **The round's own sequence: the second press lands while the first write is on
+ * the wire.**
+ *
+ * Two rows for one sentence, and the first press's refusal reported nowhere,
+ * because press 2's card replaced press 1's and a press *token* could then only say
+ * « not mine » and drop the answer. The card is identified by its sentence now, so
+ * the one write's answer is the one card's answer.
+ */
+test('une seconde pression pendant l’écriture n’écrit rien et hérite de la réponse', async () => {
+  const clipboard = withClipboard()
+  const reached: string[] = []
+  let refuse: ((error: Error) => void) | null = null
+  bridge.when('meeting:mark', (payload) => {
+    reached.push(String(payload.note))
+    return new Promise((_resolve, reject) => {
+      refuse = reject
+    }) as never
+  })
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    const notice = await screen.findByRole('status')
+    await waitFor(() => expect(reached.length).toBe(1))
+
+    fireEvent.click(mentionControl())
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(reached.length).toBe(1)
+
+    await act(async () => {
+      refuse?.(new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // The refusal is reported, on the card that is on screen.
+    expect(notice.textContent).toContain(MENTION_NOT_LOGGED)
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/**
+ * **A mark that worked is still announced and still draws nothing**, and it no
+ * longer takes a sentence off the screen with it.
+ *
+ * The other half of « one card, one state »: a success rides the polite region, so a
+ * rep who is halfway through reading the sentence to a client keeps it. What a
+ * success *does* spend is a refusal from the same control — same gesture, same rep,
+ * looking at the card.
+ */
+test('une marque réussie annonce, n’écarte pas la phrase, et solde le refus', async () => {
+  const clipboard = withClipboard()
+  let refuse = true
+  bridge.when('meeting:mark', (payload) => {
+    if (refuse) throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+    return { id: 'mk1', at: STARTED, note: String(payload.note), segmentId: null }
+  })
+  try {
+    render(<Widget />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+    await screen.findByRole('alert')
+
+    refuse = false
+    fireEvent.click(mentionControl())
+    // Refused mark still on screen, so the mention yields.
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
+    fireEvent.click(mentionControl())
+    const notice = await screen.findByRole('status')
+
+    // A mark that works: announced, and the sentence stays.
+    fireEvent.click(screen.getByRole('button', { name: /^Marquer ce moment/ }))
+    await waitFor(() => expect(screen.getByText('Moment marqué.')).toBeTruthy())
+    expect(notice.textContent).toContain(MENTION_SENTENCE_DEFAULT)
+    expect(screen.queryByRole('alert')).toBeNull()
+  } finally {
+    clipboard.restore()
+  }
+})
+
+/* ------------------------------------------------------------------------- *
+ * R33-5 — the window is sized once, off a pill that is already complete.
+ *
+ * `loadedMarks` was applied in a `useEffect`, which runs *after* `Frame`'s
+ * measurement `useLayoutEffect` in the same commit — child effects before parent
+ * effects — so the pill the main process sized the window to carried a mark button
+ * with no count. Measured on the shipped renderer, both smoke sizes:
+ *
+ *   demandes widget:resize : 2
+ *     +297 ms  308×78  compteur «  »
+ *     +460 ms  313×78  compteur « 2 »
+ *
+ * Five pixels is 2.5 of window x — `placeAroundPill` holds the pill's *centre* —
+ * over the face of the person on the call, at the instant the rep presses
+ * *Enregistrer*. With `marks=0` there was exactly one ask, so « 3 asks → 1 » held
+ * only for a meeting with none, which the crash-recovered and rehydrated cases are
+ * not.
+ *
+ * `widget-entree` reads `window.__entree[0]` and never `__entree.length`: an
+ * assertion about the first ask cannot tell one ask from two. The **count** is
+ * asserted here, with what the pill was drawing when each ask went out; the pixel
+ * widths stay a browser measurement, and remain outside every gate until US-20.
+ * ------------------------------------------------------------------------- */
+
+/** Every `widget:resize`, with what the pill was drawing at the moment it left. */
+const watchAsks = (): Array<{ size: string; counter: string }> => {
+  const asks: Array<{ size: string; counter: string }> = []
+  bridge.when('widget:resize', (payload) => {
+    asks.push({
+      size: `${payload.width}×${payload.height}`,
+      counter:
+        document.querySelector('[data-pill] [aria-label^="Marquer"]')?.textContent?.trim() ?? '',
+    })
+    return { ok: true as const, above: false }
+  })
+  return asks
+}
+
+test('une réunion qui porte déjà des marques ne fait mesurer la fenêtre qu’une fois', async () => {
+  const restore = measurable()
+  try {
+    const asks = watchAsks()
+    bridge.when('widget:state', () =>
+      recording([
+        { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null },
+        { id: 'mk2', at: STARTED + 2_000, note: 'plafond achats', segmentId: null },
+      ]),
+    )
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // The observer gets its look at whatever the commit changed.
+    await frame()
+
+    expect(asks.length).toBe(1)
+    // And the one measurement was taken off a pill that already carried the count.
+    expect(asks[0]?.counter).toBe('2')
+    // The list the panel draws is the same one, so nothing was traded for the pixel.
+    expect(screen.getByRole('button', { name: 'Marquer ce moment (2 déjà marqués)' })).toBeTruthy()
+  } finally {
+    restore()
+  }
+})
+
+/**
+ * The control: a meeting with no marks. One ask either way, which is what makes the
+ * test above a statement about the *count* and not about the fixture.
+ */
+test('une réunion sans marque ne fait pas mesurer la fenêtre davantage', async () => {
+  const restore = measurable()
+  try {
+    const asks = watchAsks()
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await frame()
+    expect(asks.length).toBe(1)
+    expect(asks[0]?.counter).toBe('')
+  } finally {
+    restore()
+  }
+})
+
+/**
+ * **A second recording in one window gets its own marks**, which is the other half
+ * of keying the seed on the meeting rather than on « the list is empty ».
+ *
+ * The old guard was `was.length === 0`, so a window that had already collected one
+ * call's marks kept them over the next call — a count on the pill and rows in the
+ * panel belonging to a conversation that had ended. `session:changed` is the
+ * broadcast that carries exactly that transition.
+ */
+test('un second enregistrement dans la même fenêtre porte ses propres marques', async () => {
+  bridge.when('widget:state', () =>
+    recording([{ id: 'mk1', at: STARTED + 1_000, note: 'premier appel', segmentId: null }]),
+  )
+  render(<Widget />)
+  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()
+
+  bridge.when('widget:state', () => ({
+    mentionSentence: MENTION_SENTENCE_DEFAULT,
+    meeting: {
+      meetingId: 'm2',
+      title: 'Sodexial — comité de staffing',
+      clientName: 'Sodexial',
+      startedAt: STARTED + 3_600_000,
+      marks: [],
+    },
+  }))
+  await act(async () => {
+    bridge.emit('session:changed', { meetingId: 'm2', state: 'recording' })
+    await Promise.resolve()
+  })
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Marquer ce moment' })).toBeTruthy(),
+  )
+  await openPanel()
+  expect(screen.queryByText('premier appel')).toBeNull()
 })

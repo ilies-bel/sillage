@@ -137,6 +137,43 @@ const copyText = async (text: string): Promise<boolean> => {
   }
 }
 
+/**
+ * **What the one card over the call is showing** — a refusal, or the sentence.
+ *
+ * A union and not two states, because « a refusal the rep has not dismissed
+ * outranks a mention card » has to be true by construction: two independent
+ * states drawn from one slot put the precedence in the JSX, and the writer sixty
+ * lines above then deleted the refusal before the guard could ever read it (see
+ * `card` in `Widget`). One state means exactly one of these can be on screen, and
+ * the only place a precedence can be *applied* is where the state is written.
+ *
+ * A string-literal discriminant and never an `enum`: Node's type stripping is
+ * strip-only, so an `enum` has runtime meaning and would not survive it.
+ */
+type WidgetCard =
+  /**
+   * A write the rep believes happened and did not — a mark `meeting:mark`
+   * refused, or a mark it would not take back.
+   */
+  | { kind: 'refus'; text: string }
+  /**
+   * The sentence the rep just took, and what became of it (US-11). Three facts,
+   * because each leads to a different next move: the sentence itself, so it can be
+   * read out; whether the clipboard took it, because « collez-la » and
+   * « lisez-la » are different instructions; and whether the log took it, because
+   * « did I tell them » is answered from the log and a write that failed silently
+   * would leave the rep believing it was answered.
+   *
+   * `sentence` is the sentence **as it was when the press happened**, not as it is
+   * now: this window re-reads `widget:state` whenever `session:changed` fires, so a
+   * card bound to the live value would rewrite itself out from under a rep who is
+   * in the middle of reading it aloud. A card is a record of a press; the field in
+   * Réglages is a setting. `logged: null` is « the write is on the wire » — the card
+   * is drawn on the copy, before the log answers, because the sentence is the
+   * urgent half and must not wait on SQLite behind a preload hop.
+   */
+  | { kind: 'mention'; sentence: string; copied: boolean; logged: boolean | null }
+
 export function Widget() {
   const state = useInvoke('widget:state', {})
   /*
@@ -229,67 +266,111 @@ export function Widget() {
   const [turns, setTurns] = useState<TranscriptSegment[]>([])
   const [marks, setMarks] = useState<MomentMark[]>([])
   /**
-   * What just happened, and **whether it was a refusal** — which is the whole of
-   * the difference between this being announced and being drawn.
+   * **The one card this window draws over the call, and the reason there is one
+   * state for it rather than two.**
    *
-   * A mark that worked has a receipt already: the counter on the pill moves, which
-   * is what that counter is for, and « Moment marqué. » painted over a client's
-   * face would be a second one. A mark that was *refused* had nothing — the
-   * sentence went into an `sr-only` paragraph, measured 1×1 with
-   * `clip: rect(0,0,0,0)` and no `role`, and the counter correctly did not move.
-   * So the rep pressed, saw nothing change, and had every reason to believe the
-   * moment was marked. `meeting:mark` refuses whenever the meeting is not
-   * `recording`, which `EndOfMeetingWatch` can make true with the pill still up,
-   * and on any store failure.
+   * There were two — a refusal and a mention — drawn from one slot by a `&&` in
+   * the JSX, under a comment stating the precedence correctly: « a refusal
+   * outranks it … the mention is one press away from being asked for again, so
+   * it is the half that yields ». The render implemented that faithfully and the
+   * *writer* undid it: `announce()` opened with `setSaid(null)`, so the guard
+   * could never fire for a refusal that existed before the press, because the
+   * press deleted it first. Measured on the shipped renderer at 1280×800 and
+   * 960×600 — « refus visible : oui » before a press on a control 32 px away,
+   * « refus visible : NON » after it. A rep marks a moment at minute 40, the
+   * write is refused, the card says so, and their next press on a *different*
+   * button deletes the only thing that said the moment they were marking is not
+   * in the record. Verbatim the harm `Refus` was added to end.
    *
-   * One live region either way and never two: a visible `role="alert"` is
-   * announced, so the polite paragraph draws only what the alert does not.
+   * So the two are one discriminated union in one state: two cards cannot
+   * coexist by construction rather than by two components agreeing, and the
+   * precedence lives where it can actually be applied — at the write, in
+   * `announce`, which yields. `setSaid(null)`'s own job survives it: a refusal
+   * *is* replaced by whatever the next press on that control produces, because
+   * that is the same gesture with the rep looking at it; what it may not do is
+   * evaporate under a press that has nothing to do with it.
+   *
+   * A mark that *worked* is not a card at all — the receipt is the counter on the
+   * pill moving, and « Moment marqué. » painted over a client's face would be a
+   * second one — so it rides `announced` below and never this slot. Which is also
+   * why a successful mark does not remove a mention card the rep may be halfway
+   * through reading aloud.
    */
-  const [said, setSaid] = useState<{ text: string; problem: boolean } | null>(null)
+  const [card, setCard] = useState<WidgetCard | null>(null)
 
   /**
-   * **The sentence the rep just took, and what became of it** (US-11).
+   * What worked, for a screen reader and for nobody else.
    *
-   * Three facts, and the card draws all three because each leads to a different
-   * next move: the sentence itself, so it can be read out; whether the clipboard
-   * took it, because « collez-la » and « lisez-la » are different instructions;
-   * and whether the log took it, because « did I tell them » is answered from the
-   * log and a write that failed silently would leave the rep believing it was
-   * answered.
-   *
-   * `logged: null` is « the write is on the wire ». The card is drawn on the copy,
-   * before the log answers, deliberately: the sentence is the urgent half and it
-   * must not wait on SQLite behind a preload hop while the rep is mid-sentence.
+   * `meeting:mark` refuses whenever the meeting is not `recording`, which
+   * `EndOfMeetingWatch` can make true with the pill still up, and on any store
+   * failure — so a refusal is drawn (see `card`). A success is announced politely
+   * and drawn nowhere: one live region either way and never two, because
+   * `role="alert"` is itself a live region and announcing both would read the same
+   * event twice to the one rep who cannot see either of them.
    */
-  const [mention, setMention] = useState<{
-    /**
-     * The sentence **as it was when the press happened**, not as it is now. This
-     * window re-reads `widget:state` whenever `session:changed` fires, so a card
-     * bound to the live value would rewrite itself out from under a rep who is in
-     * the middle of reading it aloud to a client. A card is a record of a press; the
-     * field in Réglages is a setting.
-     */
-    sentence: string
-    copied: boolean
-    logged: boolean | null
-  } | null>(null)
+  const [announced, setAnnounced] = useState('')
 
   /**
-   * Which press the card on screen belongs to.
+   * **The sentence this window has already handed to this meeting's log** (US-11),
+   * and whether that write has landed.
    *
-   * The log's answer lands after the card is drawn, and a rep who dismissed the
-   * card in between would otherwise have it **reappear** — a card that comes back
-   * over a client's face on its own is the one thing DEC-14 forbids of this
-   * window. Dismissing bumps the token, so a late answer has nothing to write to.
+   * Two presses of the mention control for one sentence wrote **two** rows into
+   * the meeting's event log — measured on the shipped renderer at both smoke
+   * sizes, « écritures meeting:mark : 2 » — and reported the first press's refusal
+   * nowhere, because press 2's card replaced press 1's and the token guard then
+   * discarded press 1's answer. `meeting:mark` has no idempotency key and the row
+   * is read back at the gate in a list of the rep's own notes, so the duplicate is
+   * theirs to find and take back (DEC-27).
+   *
+   * The rule is one sentence: **the log write belongs to the act, not to the
+   * press.** While this window is holding a sentence it has already recorded — or
+   * is still recording — a further press re-copies it and records nothing; a press
+   * whose write was *refused* clears the entry, so the next one is a retry and the
+   * log ends with one row rather than none. Dismissing the card ends the act, and
+   * a change of meeting clears it with everything else.
+   *
+   * `landed: false` is « on the wire », which is why the card can say `logged: null`
+   * for a repeat press and still be answered: the answer updates whatever mention
+   * card is on screen for that sentence, and there is only ever one.
    */
-  const pressed = useRef(0)
+  const handed = useRef<{ sentence: string; landed: boolean } | null>(null)
 
-  // The marks the meeting already had when this window opened — a widget that
-  // is created mid-call after a crash, or a second recording in one window.
+  /**
+   * **The marks the meeting already had, applied during the render that gets
+   * measured** (R33-5).
+   *
+   * It was a `useEffect`, which runs *after* `Frame`'s measurement
+   * `useLayoutEffect` in the same commit — child effects before parent effects —
+   * so the pill the main process sized the window to carried a mark button with no
+   * count on it. Measured on the shipped renderer at 1280×800 and at 960×600:
+   * `308×78` revealed, `313×78` a hundred and sixty milliseconds later, which is
+   * 2.5 px of sideways drift over the face of the person on the call, because
+   * `placeAroundPill` holds the pill's *centre*. With no marks there was exactly
+   * one ask, so CLAUDE.md's « 3 asks → 1, at the right size » was true only of a
+   * meeting that had none — which the crash-recovered and rehydrated cases are not.
+   *
+   * A render-phase update and not a layout effect, because a layout effect *here*
+   * is still the parent's and still runs after the child's: the only place the
+   * count can be in the DOM before `Frame` measures it is the same commit. React
+   * re-runs this component before the browser sees anything, so this costs one
+   * render and no frame — and it waits on nothing, so the entrance handshake is
+   * untouched (DEC-26: a widget that does not appear is worse than one that
+   * appears wrong).
+   *
+   * Keyed on the **meeting** rather than on « the list is empty »: the seed is the
+   * one fact about a change of meeting this window has, so a second recording in
+   * one window gets its own marks instead of keeping the first call's, and
+   * `handed` is cleared with them. A later `widget:state` for the same meeting
+   * does not re-seed — the broadcast is the only thing that changes the list after
+   * that, which is the rule stated on `moment:marked` below.
+   */
+  const seeded = useRef<string | null>(null)
   const loadedMarks = meeting?.marks
-  useEffect(() => {
-    if (loadedMarks) setMarks((was) => (was.length === 0 ? [...loadedMarks] : was))
-  }, [loadedMarks])
+  if (meetingId !== null && loadedMarks !== undefined && seeded.current !== meetingId) {
+    seeded.current = meetingId
+    handed.current = null
+    if (loadedMarks.length > 0 || marks.length > 0) setMarks([...loadedMarks])
+  }
 
   /*
    * And nothing is *asked* either. `session:changed` is the broadcast that
@@ -379,11 +460,19 @@ export function Widget() {
       if (meetingId === null) return
       try {
         await invoke('meeting:mark', { meetingId, note: text, segmentId })
-        setSaid({ text: text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`, problem: false })
+        setAnnounced(text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`)
+        /*
+         * A refusal *is* spent by a press on the control it refused: same gesture,
+         * same rep, looking at the card. What it is not spent by is a press on
+         * something else — see `card`, and the mention's yield below. A mention card
+         * is deliberately untouched here: it holds a sentence the rep may be halfway
+         * through reading to a client.
+         */
+        setCard((was) => (was?.kind === 'refus' ? null : was))
       } catch (error) {
-        setSaid({
+        setCard({
+          kind: 'refus',
           text: error instanceof Error ? error.message : 'Impossible de marquer ce moment.',
-          problem: true,
         })
       }
     },
@@ -419,9 +508,15 @@ export function Widget() {
    * is the second receipt the press gets. If a dedicated event is ever declared,
    * this call is the one line that changes.
    *
-   * **`said` is cleared and never written.** A success there would announce
+   * **Nothing is announced politely.** A success in `announced` would read
    * « Moment marqué » to a screen reader for a press that was not a mark, and the
    * card below is already a live region: two would read the same event twice.
+   *
+   * **And it yields, in both directions.** A refusal the rep has not dismissed
+   * keeps the one card slot — `card`'s docblock has the measurement — and the log
+   * write happens at most once per sentence handed over, which `handed` states.
+   * What the press always does is copy: that is the half a refused mark has no
+   * opinion about.
    */
   const announce = useCallback(async () => {
     /*
@@ -432,9 +527,14 @@ export function Widget() {
      * blank card, and that is the one failure this surface must not have.
      */
     if (meetingId === null || sentence === null || gone.current) return
-    const token = pressed.current + 1
-    pressed.current = token
     const copied = await copyText(sentence)
+    /*
+     * Read *after* the await, because the press that matters most for this is the
+     * one that happens while the clipboard is still deciding — a rep double-pressing
+     * a 24-pixel control over a client's face.
+     */
+    const prior = handed.current
+    const already = prior !== null && prior.sentence === sentence
     /*
      * **A window that has been told to go away stops taking state**, and this is
      * the one path in this component that crosses an `await` before its first
@@ -449,22 +549,62 @@ export function Widget() {
      * drawing is dropped.
      */
     if (gone.current) {
-      void invoke('meeting:mark', { meetingId, note: MENTION_NOTE(copied), segmentId: null }).catch(
-        () => undefined,
-      )
+      if (!already) {
+        handed.current = { sentence, landed: false }
+        void invoke('meeting:mark', {
+          meetingId,
+          note: MENTION_NOTE(copied),
+          segmentId: null,
+        }).catch(() => undefined)
+      }
       return
     }
-    setSaid(null)
-    setMention({ sentence, copied, logged: null })
+    /*
+     * **The yield, and it is one line because there is one state.** A refusal the
+     * rep has not dismissed keeps the slot; this press has still copied the
+     * sentence, and it is one press away from being asked for again.
+     */
+    setCard((was) =>
+      was?.kind === 'refus'
+        ? was
+        : {
+            kind: 'mention',
+            sentence,
+            copied,
+            logged: already && prior.landed ? true : null,
+          },
+    )
+    // Already recorded, or still being recorded: the act is one act. See `handed`.
+    if (already) return
+    handed.current = { sentence, landed: false }
+    /*
+     * **The answer updates the card on screen for this sentence, and never mints
+     * one.** That is what keeps a dismissed card from coming back on its own — a
+     * card that returns over a client's face with nobody having pressed anything is
+     * the one thing DEC-14 forbids of this window — and it is what lets a second
+     * press inherit the first write's answer, which is the whole of the fix for the
+     * duplicate row. It replaced a press token, which could only say « not mine »
+     * and therefore threw the refusal away.
+     */
+    const answer = (logged: boolean): void => {
+      if (gone.current) return
+      setCard((was) =>
+        was?.kind === 'mention' && was.sentence === sentence ? { ...was, logged } : was,
+      )
+    }
     try {
       await invoke('meeting:mark', {
         meetingId,
         note: MENTION_NOTE(copied),
         segmentId: null,
       })
-      if (pressed.current === token && !gone.current) setMention({ sentence, copied, logged: true })
+      if (handed.current?.sentence === sentence) handed.current = { sentence, landed: true }
+      answer(true)
     } catch {
-      if (pressed.current === token && !gone.current) setMention({ sentence, copied, logged: false })
+      // Nothing landed, so the act is not spent: the next press is a retry and the
+      // log ends with one row rather than none.
+      if (handed.current?.sentence === sentence) handed.current = null
+      answer(false)
     }
   }, [meetingId, sentence])
 
@@ -472,8 +612,11 @@ export function Widget() {
     (markId: string) => {
       if (meetingId === null) return
       void invoke('meeting:forget', { meetingId, markId })
-        .then(() => setSaid({ text: 'Moment retiré.', problem: false }))
-        .catch(() => setSaid({ text: 'Impossible de retirer ce moment.', problem: true }))
+        .then(() => {
+          setAnnounced('Moment retiré.')
+          setCard((was) => (was?.kind === 'refus' ? null : was))
+        })
+        .catch(() => setCard({ kind: 'refus', text: 'Impossible de retirer ce moment.' }))
     },
     [meetingId],
   )
@@ -500,7 +643,7 @@ export function Widget() {
             onMention={() => void announce()}
           />
           {/*
-            A refusal, where the press was.
+            The one card, where the press was.
 
             Between the pill and the panel in the DOM, which puts it against the
             pill whichever way the card stacks — `flex-col-reverse` reverses the
@@ -509,31 +652,31 @@ export function Widget() {
             Never *inside* the panel: the press it answers is most often the one
             on the pill, with no panel open at all, which is the case that had
             nowhere to appear.
-          */}
-          {said?.problem === true ? (
-            <Refus text={said.text} onDismiss={() => setSaid(null)} />
-          ) : null}
-          {/*
-            The sentence, in the same slot and never beside the refusal.
 
             Two cards stacked over a video call is twice the window for one press,
             and the two can genuinely coincide: a mark refused at minute 40 and a
-            mention pressed at minute 41. A refusal outranks it — it is the case
-            where the rep believes something was written and it was not — and the
-            mention is one press away from being asked for again, so it is the
-            half that yields.
+            mention pressed at minute 41. That is a `switch` on one state now and
+            not a conjunction of two — the precedence between them is applied where
+            they are *written*, because a render can only ever read what the writer
+            left it. See `card`, which carries the measurement.
           */}
-          {said?.problem !== true && mention !== null ? (
+          {card === null ? null : card.kind === 'refus' ? (
+            <Refus text={card.text} onDismiss={() => setCard(null)} />
+          ) : (
             <Mention
-              sentence={mention.sentence}
-              copied={mention.copied}
-              logged={mention.logged}
+              sentence={card.sentence}
+              copied={card.copied}
+              logged={card.logged}
+              /*
+                Dismissing ends the act as well as the card: the next press on the
+                control is a new telling and writes its own row. See `handed`.
+              */
               onDismiss={() => {
-                pressed.current += 1
-                setMention(null)
+                handed.current = null
+                setCard(null)
               }}
             />
-          ) : null}
+          )}
           {open && meetingId !== null ? (
             <Panel
               meetingId={meetingId}
@@ -562,7 +705,7 @@ export function Widget() {
             the same sentence twice to the one rep who cannot see either of them.
           */}
           <p aria-live="polite" className="sr-only">
-            {said?.problem === false ? said.text : ''}
+            {announced}
           </p>
         </>
       )}
@@ -1256,8 +1399,12 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
  * Dismissed rather than timed out. A message that removes itself after four
  * seconds is the `sr-only` paragraph again for a rep who was looking at the
  * client: the whole failure here is a rep not looking at this window at the
- * moment it had something to say. It is also replaced by whatever the next press
- * produces, so it can never stack.
+ * moment it had something to say. It cannot stack either, because there is one
+ * card state and not two (`WidgetCard`) — and « replaced by whatever the next
+ * press produces » is narrower than it sounds and had to be: a press on the
+ * control this refused replaces it, and a press on the one 32 px away does not.
+ * That sentence used to be the whole rule, and the mention control read it
+ * literally and deleted a refusal that had nothing to do with it.
  */
 function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
   return (
@@ -1311,7 +1458,10 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
  *  · **Dismissed, never timed out.** The whole failure mode on this window is a
  *    rep not looking at it at the moment it had something to say, and a sentence
  *    they are about to read aloud is the last thing to remove on a four-second
- *    timer. It is replaced by the next press rather than stacked.
+ *    timer. It is replaced by the next press rather than stacked — and it **yields**
+ *    to a refusal the rep has not dismissed, which is `WidgetCard`'s whole reason
+ *    for being one state: a mark that was refused is a write the rep believes
+ *    happened, and this sentence is one press away from being asked for again.
  *  · **It states the clipboard and the log separately, and claims nothing about
  *    the client.** There is no « le client a été informé » on this card and no
  *    string anywhere that could become one: the product knows what it handed over
