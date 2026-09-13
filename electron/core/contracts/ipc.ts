@@ -19,7 +19,6 @@ import {
 import { TranscriptSegmentSchema, TranscriptViewSchema } from './transcript.ts'
 import { MARK_NOTE_MAX, MomentMarkSchema } from './marks.ts'
 import { SignalSchema } from './signals.ts'
-import { OutboxEntrySchema } from './push.ts'
 import { ConnectorHealthSchema, ConnectorIdSchema, HealthSnapshotSchema } from './health.ts'
 import { DiagEventSchema, ExportModeSchema } from './diagnostics.ts'
 import { AuthStateSchema } from './identity.ts'
@@ -225,7 +224,6 @@ export const invokeChannels = {
       meeting: MeetingSchema,
       segments: z.array(TranscriptSegmentSchema),
       signals: z.array(SignalSchema),
-      outbox: z.array(OutboxEntrySchema),
       /** The last persisted ProseMirror doc. `null` before the rep types. */
       document: z.unknown().nullable(),
       /**

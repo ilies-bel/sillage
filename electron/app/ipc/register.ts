@@ -682,7 +682,6 @@ export const handlers: Handlers = {
       meeting,
       segments: store.projections.segments(meetingId),
       signals: store.projections.signals(meetingId),
-      outbox: store.projections.outboxFor(meetingId),
       document: store.projections.document(meetingId)?.doc ?? null,
       // Null until the extraction has stored one, which is what the session
       // screen keys the compte-rendu pane on — no separate "is it ready" flag to

@@ -119,21 +119,6 @@ const UNREAD = [
    * would cost, because that is the difference between a declaration and an excuse.
    */
   {
-    subject: 'meeting:get.outbox',
-    why:
-      'Les lignes d’envoi de la réunion, dans la réponse qui sert l’écran de ' +
-      'session : ce canal rend l’agrégat entier (réunion, segments, signaux, ' +
-      'document, compte-rendu, recette) et cette moitié-là n’a jamais eu de ' +
-      'surface. Ce que devient un envoi se lit dans Historique, sur ' +
-      '`history:record.intents`, que le rendu lit bien ; le redessiner sur ' +
-      'l’écran de session serait un deuxième endroit où l’état d’un envoi est ' +
-      'dit, et personne n’a pris cette décision. **C’est un candidat à la ' +
-      'suppression plutôt qu’au câblage** : il part de ' +
-      '`electron/app/ipc/register.ts` (`outbox: store.projections.outboxFor(…)`) ' +
-      'et du contrat, deux lignes, dans deux fichiers qui ne sont pas ceux de ce ' +
-      'contrôle.',
-  },
-  {
     subject: 'DiagEventSchema.module',
     why:
       '`diagnostics:recent` rend la ligne de journal entière (DEC-27) : ces ' +
