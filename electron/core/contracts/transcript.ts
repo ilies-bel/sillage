@@ -218,3 +218,20 @@ export const locateSegments = (
   }
   return []
 }
+
+/**
+ * The language this product transcribes in, BCP-47, and the only declaration of
+ * it (`recordingOptionsFor` asks the registry for exactly this).
+ *
+ * Not a setting and not a preference: every row in `STT_PROVIDERS` declares
+ * `fr-FR`, so there is nothing here for a rep to choose between and a control
+ * offering the choice would be the dead control DEC-26 forbids. It is a
+ * constant so that the header's « FR » chip and the engine the meeting actually
+ * runs on cannot disagree — which, as two string literals in two files, they
+ * silently could.
+ */
+export const TRANSCRIPTION_LANGUAGE = 'fr-FR'
+
+/** The two letters a header chip shows for a BCP-47 tag. « fr-FR » → « FR ». */
+export const languageChip = (tag: string): string =>
+  (tag.split('-')[0] ?? tag).toUpperCase()

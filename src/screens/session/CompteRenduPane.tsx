@@ -105,21 +105,17 @@ export function CompteRenduPane({
       </ReadingColumn>
 
       {/*
-        The way out, stated once. The rep reading this pane is one step from the
-        gate, and the gate is where the editable copy lives — saying so here is
-        cheaper than letting them discover that this text cannot be corrected.
+        **And no note under it.**
 
-        `border-t` and not just a margin. This line is pinned under a scroller,
-        and with only `mt-2` between them the document's last visible line was
-        clipped hard against it: at the app's minimum window the compte-rendu
-        ended mid-sentence one line above « Lecture seule », and the two read as
-        one run of text — the caption looked like the document's closing line
-        rather than a note about it. A rule is what says the scroll ended and
-        something else began.
+        « Lecture seule — corrigez-le à l'étape « Relire et valider ». » sat
+        pinned under the document on its own rule, which is a sentence about the
+        *next* screen taking a line of the column on this one. The pane is prose
+        with no cursor in it and takes no keystrokes, which is the whole of what
+        « lecture seule » was telling the rep; and the way to the gate is the one
+        filled button in this screen's header, saying « Relire et valider » in
+        the words this note was quoting. The promise is not dropped, it is made
+        by the control rather than by a caption above it.
       */}
-      <div className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
-        <p>Lecture seule — corrigez-le à l’étape « Relire et valider ».</p>
-      </div>
 
       {/*
         *Demander*, pinned under the document — which is where a general-purpose

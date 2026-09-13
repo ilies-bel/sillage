@@ -15,16 +15,18 @@
  * makes it. The third column exists only once there is a compte-rendu; during
  * the call this screen is exactly the two it has always been.
  *
- * **The live transcript pane is gone**, and its job was split rather than
- * dropped. It carried two: *proof of life* — "is this thing hearing me" — and
+ * **The live transcript is behind the column's own switch**, and its job is
+ * split rather than carried alone. It carried two: *proof of life* — "is this thing hearing me" — and
  * *evidence* — "where did that claim come from". It did the first badly, being
  * seconds late and empty through every pause, and it did the second at the
  * wrong time: nobody audits a citation while the client is talking. So proof of
- * life is now the header's level meter, which is instant and answers the
- * question during a silence too, and the evidence stays where an audit actually
- * happens — the transcript is still captured, still stored, and still backs
- * DEC-21's span check at the review gate. Nothing about the transcript changed
- * except that it stopped competing with the notepad for the rep's eyes.
+ * life is the header's level meter, which is instant and answers the question
+ * during a silence too (DEC-38), and the audit stays at the gate, where the
+ * stored record backs DEC-21's span check. What is left over is the third job,
+ * « what did they just say », which the transcript is genuinely good at and
+ * which nothing on this screen answered — so the right column offers it under a
+ * segmented control, opt-in, defaulted to the slate, and the rep decides
+ * whether it is worth the glance. See `LiveAside.tsx`.
  *
  * The load-bearing rule on this screen: **the AI never writes into the
  * document during the call.** Signals arrive over broadcasts and land in the
@@ -43,8 +45,9 @@ import { EnhancementNotice } from './session/EnhancementNotice.tsx'
 import { LevelMeter } from './session/LevelMeter.tsx'
 import { MeetingTitle } from './session/MeetingTitle.tsx'
 import { RecipePicker, RecipeSwitchNotice, useRecipeChoice } from './session/RecipePicker.tsx'
-import { SignalRail } from './session/SignalRail.tsx'
+import { LiveAside } from './session/LiveAside.tsx'
 import { DEFAULT_RECIPE, type RecipeId } from '../../electron/core/contracts/recipes.ts'
+import { LanguagePill } from './session/LanguagePill.tsx'
 import { Button, StateDot } from '../ui/index.ts'
 
 interface SessionProps {
@@ -230,14 +233,21 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           React reports as a hydration error and the browser renders as a pill
           with its own contents sitting outside it.
         */}
+        {/*
+          **And no word on it.** The pill said « ENREGISTREMENT » in 10px caps
+          beside a running clock and a moving meter — three statements of the
+          same fact, of which the word is the only one that never changes. What
+          is left is the dot, the clock and the instrument, and the dot is not
+          alone: `Elapsed` hands `StateDot` the elapsed time as its label, so
+          the coloured dot still has a legible word beside it (VISION.md §6) and
+          that word is the one carrying information.
+        */}
         {recording ? (
-          <div className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-2 py-1">
-            <StateDot
-              tone="armed"
-              label="Enregistrement"
-              labelClassName="pill-word"
-              className="text-label font-semibold uppercase tracking-wider"
-            />
+          <div
+            role="status"
+            aria-label="Enregistrement en cours"
+            className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-2 py-1"
+          >
             <Elapsed since={initial.meeting.startedAt} />
             <LevelMeter meetingId={meetingId} />
           </div>
@@ -261,6 +271,20 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           still change their mind on the call, which is when they find out.
         */}
         <RecipePicker choice={choice} state={current} />
+
+        {/*
+          What the app transcribes in, stated rather than chosen.
+
+          `TRANSCRIPTION_LANGUAGE` is the single place this product declares it
+          — `recordingOptionsFor` asks the registry for that exact tag — and
+          there is no setting behind this chip because there is no setting: v1
+          transcribes French, every row in `STT_PROVIDERS` declares `fr-FR`, and
+          a control offering a choice the engines do not have would be the dead
+          control DEC-26 forbids. So it is display only, and it is here because
+          a rep on a call with an English-speaking client needs to find out from
+          the header rather than from the compte-rendu.
+        */}
+        <LanguagePill />
 
         {/*
           One button, and which one depends on the machine — not on a local
@@ -438,11 +462,19 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           document and 211 of rail leave the notepad 389, above its 380 floor.
         */}
         {showRail ? (
-          <aside className="border-subtle bg-card-soft w-[22%] min-w-[210px] max-w-[300px] shrink-0 border-l">
-            <SignalRail
+          <aside className="border-subtle bg-card-soft w-[22%] min-w-[240px] max-w-[300px] shrink-0 border-l">
+            {/*
+              Two views of the same call, and the rep picks (`LiveAside`). The
+              slate is the default and the transcript is opt-in — DEC-38's
+              clause is about a transcript drawn *to prove the tool works*, and
+              proof of life is still the meter in the header.
+            */}
+            <LiveAside
+              meetingId={meetingId}
               onHide={() => setShowRail(false)}
               signals={allSignals}
               recipe={recipe ?? DEFAULT_RECIPE}
+              recording={recording}
             />
           </aside>
         ) : null}
@@ -475,10 +507,19 @@ function Elapsed({ since }: { since: number | null }) {
 
   if (since === null) return null
 
+  /*
+   * The dot rides with it. `StateDot` refuses to render a bare coloured dot —
+   * a state is never colour alone — and the clock is the right label for it:
+   * visible, legible at `--text-strong`, and the one thing in the pill that
+   * answers « is it still running » rather than merely repeating that it is.
+   */
   return (
-    <span className="text-strong tabular-nums text-ui" aria-label="Durée d’enregistrement">
-      {formatElapsed(now - since)}
-    </span>
+    <StateDot
+      tone="armed"
+      label={formatElapsed(now - since)}
+      labelClassName="text-strong tabular-nums"
+      className="text-ui"
+    />
   )
 }
 

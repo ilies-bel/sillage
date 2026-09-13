@@ -34,33 +34,26 @@
  *  - **Read-only.** Nothing here is clickable during the call and nothing here
  *    writes to the document (DEC-5). The rail is a side surface.
  *
+ * ## No header of its own
+ *
+ * It had one, carrying a « 4/7 » count and the *Masquer* verb. The count is
+ * gone from the product — a ratio beside the list it counts is arithmetic the
+ * rep has to redo, and the list says the same thing more slowly and more
+ * exactly — and *Masquer* moved up to `LiveAside`, which is the one header this
+ * column has now that the same slot can also hold a transcript.
+ *
  * A slot stays empty for as long as nobody says the thing. A meeting where no
  * price comes up shows « TJM — » to the end, and filling it would be the exact
  * failure DEC-21 exists to prevent.
  */
 import type { Signal, SignalKind } from '../../../electron/core/contracts/signals.ts'
 import { DEFAULT_RECIPE, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
-import { Button, ReadingColumn } from '../../ui/index.ts'
+import { ReadingColumn } from '../../ui/index.ts'
 
 interface SignalRailProps {
   signals: Signal[]
   /** Which compte-rendu the meeting is set to produce — it owns the slate. */
   recipe?: RecipeId
-  /**
-   * Put the side panes away, from the rail's own header.
-   *
-   * The control used to live in the session header as a word — « SIGNAUX »,
-   * then « PANNEAU », then « VOLETS » — an all-caps chip with no verb, in the
-   * position Granola puts *Share*, and the only control in the app whose effect
-   * could not be guessed from its face. A verb inside the thing it closes needs
-   * no guessing, and it gives the header back seventy pixels at the one moment
-   * the header does not have them: during a recording, where the meeting's own
-   * title was truncating to « Néovia Santé — cadrage renf… ».
-   *
-   * Getting them *back* is the session header's job — with the panes away there
-   * is a whole notepad's width to say « Afficher les volets » in.
-   */
-  onHide?: () => void
 }
 
 /** French, short, and stable — the label is a category, not a sentence. */
@@ -75,7 +68,7 @@ const KIND_LABEL: Record<SignalKind, string> = {
   autre: 'Autre',
 }
 
-export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalRailProps) {
+export function SignalRail({ signals, recipe = DEFAULT_RECIPE }: SignalRailProps) {
   const ordered = [...signals].sort((a, b) => a.seq - b.seq)
   const byKind = new Map<SignalKind, Signal[]>()
   for (const signal of ordered) {
@@ -102,62 +95,9 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
    * that rail is.
    */
   const extra = [...byKind.keys()].filter((kind) => !slots.includes(kind))
-  const covered = slots.filter((kind) => byKind.has(kind)).length
-  /*
-   * Rows, not signals.
-   *
-   * With no slate this counted `ordered.length` — every signal heard — while the
-   * list below draws one row per *kind*, so a free-recipe rail said « 8 » over
-   * seven visible rows because one of them held two lines. A number beside a
-   * list that does not count the list is a number a rep has to solve, and the
-   * arithmetic is invisible: nothing on screen says which row held two.
-   */
-  const heard = slots.length + extra.length
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
-      {/*
-        **No caption.** It read « SIGNAUX » over seven boxes each carrying its own
-        label — « TJM », « Profil », « Démarrage » — on the screen a rep has open
-        while a client is talking. A rail of labelled slots names itself; see the
-        rule in `ui/SectionHeader.tsx`. What is left in the header is the one
-        thing that changes as the call runs: the count.
-
-        It gave back **no pixels**, measured at both smoke sizes: it shared this
-        baseline row with « Masquer », which is 24 px tall by WCAG 2.2, so the
-        header is exactly as tall without it and the slate starts where it
-        started. What it took was the first thing the eye landed on in the
-        column, which no measured check reports.
-      */}
-      <header className="flex items-baseline justify-between gap-inline px-4 pb-2 pt-4">
-        {/*
-          A count, not a score. With a slate it answers "how much of it has come
-          up" at a glance, which is the question the list below answers slowly.
-          With no slate there is no denominator that would mean anything — a
-          « 4/7 » against a document with no fields is a score against a target
-          nobody set — so it counts what has been heard instead. `tabular-nums`
-          either way, so it does not jitter as it changes.
-        */}
-        <span
-          className="text-muted shrink-0 tabular-nums text-label"
-          /*
-            The ratio is read aloud as « quatre sur sept » and means nothing
-            without the list, so it stays hidden from the accessibility tree and
-            the rows carry the information. The bare count is not a ratio and is
-            worth a sentence.
-          */
-          aria-hidden={slots.length > 0 || undefined}
-          aria-label={slots.length > 0 ? undefined : `${heard} sujet${heard > 1 ? 's' : ''} relevé${heard > 1 ? 's' : ''}`}
-        >
-          {slots.length > 0 ? `${covered}/${slots.length}` : heard}
-        </span>
-        {onHide ? (
-          <Button variant="text" className="shrink-0" onClick={onHide}>
-            Masquer
-          </Button>
-        ) : null}
-      </header>
-
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* `.slate` declares the container the rows measure themselves against;
           see `index.css`. Below 250px they stack rather than shrink the value. */}
       {/*
@@ -230,7 +170,7 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE, onHide }: SignalR
           192 → 159 px once a compte-rendu is beside it.
         */}
       </ReadingColumn>
-    </section>
+    </div>
   )
 }
 

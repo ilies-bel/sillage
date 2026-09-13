@@ -76,6 +76,7 @@
  * and not a guess until somebody decides otherwise.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { EyeOff } from 'lucide-react'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { speakerLabel } from '../../electron/core/contracts/transcript.ts'
 import {
@@ -688,6 +689,7 @@ export function Widget() {
               onMark={mark}
               onForget={forget}
               onClose={() => setOpen(false)}
+              onAnnounce={setAnnounced}
             />
           ) : null}
           {/*
@@ -1750,6 +1752,11 @@ interface PanelProps {
   onMark: (segmentId: string | null, note: string) => void
   onForget: (markId: string) => void
   onClose: () => void
+  /**
+   * Into the window's own `aria-live` region — the panel has none of its own,
+   * and a second one on a card this small would read every sentence twice.
+   */
+  onAnnounce: (sentence: string) => void
 }
 
 function Panel({
@@ -1762,6 +1769,7 @@ function Panel({
   onMark,
   onForget,
   onClose,
+  onAnnounce,
 }: PanelProps) {
   const [note, setNote] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
@@ -1856,10 +1864,30 @@ function Panel({
         print, and inventing one from the calendar would be the app naming a
         meeting the rep has not named.
       */}
-      <div className="border-subtle flex items-baseline gap-2 border-b px-3 py-1.5">
-        <h1 className="text-strong min-w-0 flex-1 truncate font-sans text-ui font-semibold">
-          {heading.trim() === '' ? 'Réunion en cours' : heading}
-        </h1>
+      {/*
+        **And under it, the one fact that makes the line above defensible.**
+
+        The heading is the client's name, floating over a video call the rep may
+        well be sharing. It is here only because the window carries
+        `setContentProtection(true)` — it is excluded from the screen capture —
+        and that guarantee was documented in this file and stated nowhere a rep
+        could read it. A rep who does not know it will not put the panel up
+        during a share, which is every moment the panel is worth having.
+
+        11px, muted, and `aria-hidden` on the glyph: it is a caption on a title,
+        not a control, and it is the same sentence in all three open states
+        because it is the same guarantee.
+      */}
+      <div className="border-subtle border-b px-3 py-1.5">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-strong min-w-0 flex-1 truncate font-sans text-ui font-semibold">
+            {heading.trim() === '' ? 'Réunion en cours' : heading}
+          </h1>
+        </div>
+        <p className="text-muted mt-0.5 flex items-center gap-tight text-[11px] leading-tight">
+          <EyeOff aria-hidden size={11} strokeWidth={2} className="shrink-0" />
+          Invisible en partage d’écran
+        </p>
       </div>
 
       {trouble === null ? null : (
@@ -1958,13 +1986,44 @@ function Panel({
         {confirmEnd ? (
           <span />
         ) : (
-          <Button
-            variant="nav"
-            className="no-drag px-1"
-            onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
-          >
-            Ouvrir Sillage
-          </Button>
+          <span className="flex items-center gap-3">
+            <Button
+              variant="nav"
+              className="no-drag px-1"
+              onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
+            >
+              Ouvrir Sillage
+            </Button>
+
+            {/*
+              **UNWIRED — *Pause* stops nothing today, and says so rather than
+              pretending.**
+
+              `SessionCommandSchema` declares `arm · disarm · start · end ·
+              abort · extract · extractionSucceeded · extractionFailed ·
+              confirm · pushSettled` and no pause. Pausing a recording is a
+              state the machine does not have, and inventing one here would mean
+              a renderer flag that the orchestrator, the capture module and the
+              crash sweep all disagree with — a widget saying « en pause » over
+              a call that is still being written to disk is worse than no
+              control at all.
+
+              What it costs to leave it drawn: one control in the footer that
+              reports a refusal instead of acting. What it would cost to wire
+              it: a new state in `MeetingState`, a transition table entry, a
+              capture verb, and a decision about what a paused recording does to
+              the extraction — none of which is this change. So the press says
+              the one true sentence and the announcement is read by the same
+              live region every other refusal on this card uses.
+            */}
+            <Button
+              variant="text"
+              className="no-drag px-1"
+              onClick={() => onAnnounce('La pause n’est pas encore disponible.')}
+            >
+              Pause
+            </Button>
+          </span>
         )}
 
         {/*

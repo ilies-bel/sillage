@@ -390,6 +390,34 @@ test('the way back into the app raises the main window on this meeting', async (
   expect(asked).toEqual([{ meetingId: 'm1' }])
 })
 
+test('the panel says why the client’s name may be drawn over a shared screen', async () => {
+  // `setContentProtection(true)` is what makes a heading here defensible, and
+  // it was documented in the source and stated nowhere a rep could read it. A
+  // rep who does not know it will not open the panel during a share, which is
+  // every moment the panel is worth having.
+  render(<Widget />)
+  await openPanel()
+
+  expect(screen.getByText('Invisible en partage d’écran')).toBeTruthy()
+})
+
+test('Pause is drawn and refuses, because the machine has no pause (UNWIRED)', async () => {
+  // `SessionCommandSchema` declares no pause verb. A renderer flag would be a
+  // widget saying « en pause » over a call still being written to disk, so the
+  // press says the one true sentence instead and no command is sent.
+  const sent: unknown[] = []
+  bridge.when('session:command', (payload) => {
+    sent.push(payload)
+    return { ok: true as const, state: 'recording' as const }
+  })
+  render(<Widget />)
+  await openPanel()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+  expect(sent).toEqual([])
+  expect(screen.getByText('La pause n’est pas encore disponible.')).toBeTruthy()
+})
+
 test('with nothing recording it says so and offers no controls', async () => {
   bridge.when('widget:state', () => ({ meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }))
   render(<Widget />)

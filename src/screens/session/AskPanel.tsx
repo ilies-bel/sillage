@@ -47,6 +47,7 @@ import type { AskAnswer } from '../../../electron/core/contracts/ask.ts'
 import { speakerLabel } from '../../../electron/core/contracts/transcript.ts'
 import { invoke } from '../../app/bridge.ts'
 import { formatOffset } from '../../app/format.ts'
+import { Mail } from 'lucide-react'
 import { Button, Chip, ReadingColumn, unavailable } from '../../ui/index.ts'
 import { ASK_QUESTIONS, type AskAction } from './askActions.ts'
 
@@ -228,7 +229,16 @@ export function AskPanel({
       */}
       {offered !== null && failure === null && !busy ? (
         <div className="ask-action mt-2 shrink-0">
-          <Chip onClick={() => void ask(offered.question)}>{offered.label}</Chip>
+          {/*
+            The glyph names the artefact the label does not: a relance is a
+            mail, and the chip sits in a row of questions that are not. It is
+            `aria-hidden` — the accessible name stays the words, because
+            « enveloppe Rédiger la relance » is not a thing anybody says.
+          */}
+          <Chip onClick={() => void ask(offered.question)} className="gap-tight">
+            <Mail aria-hidden size={12} strokeWidth={2} />
+            {offered.label}
+          </Chip>
         </div>
       ) : null}
 

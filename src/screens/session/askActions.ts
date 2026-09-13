@@ -75,7 +75,10 @@ export const ASK_QUESTIONS: readonly string[] = [
 /**
  * The suggested action on a note.
  *
- * The label names the work; the question is what the model is actually asked,
+ * The label is the verb (« Rédiger la relance »), because a chip on a finished
+ * call is read as the next thing to do and « Préparer le mail de suivi » named
+ * a folder rather than an act. What it is wired to does not change: the
+ * question is what the model is actually asked,
  * and it is a question about the recording rather than a request for a draft —
  * `ASK_INSTRUCTIONS` rule 1 refuses advice and general knowledge outright, so a
  * chip that asked for an email to be written would reliably come back « la
@@ -84,7 +87,7 @@ export const ASK_QUESTIONS: readonly string[] = [
  */
 export const FOLLOW_UP: AskAction = {
   id: 'mail-suivi',
-  label: 'Préparer le mail de suivi',
+  label: 'Rédiger la relance',
   question: 'Quels engagements ont été pris pendant cet appel, par qui et pour quand ?',
 }
 

@@ -568,8 +568,20 @@
     container-type: inline-size;
   }
 
+  /*
+   * Below 1080px the header keeps its instruments and drops its legends.
+   *
+   * `.pill-word` — « ENREGISTREMENT » beside the clock — is gone from the
+   * product entirely, so the selector went with it. What is left is the meter's
+   * channel key and `.header-legend`, which is the « FR » chip: both are labels
+   * on something that is still drawn, and at the app's own minimum window
+   * (960px, `main.ts`) their 50px was the meeting's own title truncating —
+   * measured at 25px of « Néovia Santé — cadrage renfort da… » hidden inside
+   * `MeetingTitle`'s own box, which is the one thing in this header a rep
+   * cannot do without.
+   */
   @container (max-width: 1080px) {
-    .session-header .pill-word,
+    .session-header .header-legend,
     .session-header .meter-key {
       display: none;
     }

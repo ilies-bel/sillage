@@ -116,6 +116,7 @@ import type { BootState, BootStep } from '../core/contracts/boot.ts'
 import type { ProviderSection } from '../core/contracts/settings.ts'
 import type { ConnectorHealth } from '../core/contracts/health.ts'
 import type { DiagEnvironment, DiagRecorder } from '../core/contracts/diagnostics.ts'
+import { TRANSCRIPTION_LANGUAGE } from '../core/contracts/transcript.ts'
 import type { Meeting, MeetingContext } from '../core/contracts/meeting.ts'
 import type { EnhancementStatus } from '../core/contracts/extraction.ts'
 
@@ -2023,7 +2024,7 @@ const boot = async (): Promise<void> => {
     )
     const selection = selectProvider({
       configured,
-      language: 'fr-FR',
+      language: TRANSCRIPTION_LANGUAGE,
       offlineOnly: offline,
       preferCloud: preferCloudStt(),
     })
@@ -2104,7 +2105,7 @@ const boot = async (): Promise<void> => {
         providerId,
         ...(fallback ? { fallbackProviderId: fallback } : {}),
         apiKey: credential.apiKey,
-        language: 'fr-FR',
+        language: TRANSCRIPTION_LANGUAGE,
         ...(credential.region ? { region: credential.region } : {}),
         ...(model ? { model } : {}),
         ...(boost.terms.length > 0 ? { boostTerms: boost.terms } : {}),
