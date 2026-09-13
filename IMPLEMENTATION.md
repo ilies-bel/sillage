@@ -7,7 +7,18 @@ The ordered task list. Read [CLAUDE.md](./CLAUDE.md) first for the rules,
 VerySwing records and an Outlook draft. Every step below is built to demo depth. Anything
 marked *deferred* is designed for but not built yet.
 
-Mark steps done by ticking them here. This file is the progress record.
+Mark steps done by ticking them here. This file is the progress record — **of the ten
+steps**, and of nothing else. Everything since round 23 lives in
+[docs/STORIES.md](./docs/STORIES.md): the stories, the adversarial rounds, the lane table and
+the eight recurring defect shapes. Two backlogs is one too many, so a step that is complete is
+ticked *with how it was verified*, and work that is not a step is a story there rather than a
+new row here.
+
+**And a tick is not evidence.** Step 10 carried « None of it is in the code yet » over seven
+shipped features, on the file CLAUDE.md tells a new reader to start with — the same failure as
+the harness README's « known fixture debt », which spent three rounds disarming reviewers
+against judgements that had become sound. `check:french` reads this file for apostrophes, not
+for claims. Measure before trusting a sentence here.
 
 ---
 
@@ -884,11 +895,40 @@ Neither of these is in the step list and both are needed for VISION.md §8.1.
 
 ---
 
-## Step 10 — The redesign (DEC-30, DEC-31, DEC-32)
+## Step 10 — The redesign (DEC-30, DEC-31, DEC-32) — **all seven shipped**
 
-The design is settled in `../design/untitled.pen` and the palette and screens are written into
-VISION.md §6. **None of it is in the code yet.** This step is the port, and it is larger than a
-restyle because two of the three decisions add surface area rather than repaint it.
+**Read this paragraph before the table.** For as long as step 10 existed the sentence under
+its heading was « The design is settled in `../design/untitled.pen` … **None of it is in the
+code yet** », and CLAUDE.md points at this file as « the ordered task list. **Start here.** »
+All seven items had shipped. So the first thing a new reader of this repo was told is that
+seven features they can see on screen do not exist — which is the `scripts/harness/README.md`
+defect this project has already recorded once: three rounds spent describing debt that had
+been fixed, « disarming the next reviewer against judgements that had become sound ».
+
+Verified item by item on the tree, not read off a tick:
+
+| # | Verified how |
+|---|---|
+| 10a | `tokens.css` is the brand ramp, and every colour that holds text carries its measured ratio in a comment beside it — `#4dc2fb` is `2.01:1 on #ffffff — large fills ONLY, never text`, which is the line the ramp exists for. `tokens.test.ts` is the drift check the step predicted would fail on landing. |
+| 10b | `src/screens/Splash.tsx`, 168 lines, three lines fed from `BOOT_STEPS` rather than retyped, and the progress bar renders only for `downloading` — which nothing emits, stated in the file rather than faked with a timer. |
+| 10c | `'repli sur la transcription locale'` is gone. The two remaining `dégradé` strings in `modules/transcribe/index.ts` are per-channel (« transcription du micro dégradée ») and are not about local being a downgrade; Réglages' own occurrence is the comment forbidding it. |
+| 10d | `Agenda.tsx` declares `View = 'jour' \| 'semaine' \| 'mois' \| 'liste'`, day selection, and a past-meeting list. `DayPane`'s empty state is keyed correctly on each half of the day — the defect that took to fix, recorded in CLAUDE.md. |
+| 10e | Search plus `HistoryFilter`, running in the main process, with the chips in a `.filter-scroller`; the `Historique` nav link is gone from `Agenda.tsx` and Réglages. |
+| 10f | `HealthStrip.tsx` is not on disk. The header control reads `capture`, `transcribe` and `llm` only, and `check:reasons` counts 49 composed health states across the rest. |
+| 10g | Two panes. `Reglages.test.tsx`'s first describe block is « two panes: the section list left, its content right (VISION.md §6) », and `SECTIONS` is the rail. |
+
+What was true when the step was written and is worth keeping, because it is the only part the
+table above does not cover: two of the three decisions **added surface area** rather than
+repainting it, which is why 10d and 10e were the large pieces and why the calendar and the
+search have needed six rounds of defect work between them since.
+
+The work the step list does not reach any more is in `docs/STORIES.md`, which is where every
+story and every adversarial finding since round 23 lives. **Two backlogs is one too many**: if
+a step here is complete, tick it and say how it was verified; if it is not, it is a story
+there, not a table row here.
+
+<details>
+<summary>The original table, kept because it is the record of what was planned</summary>
 
 | # | Work | Settles |
 |---|---|---|
@@ -902,6 +942,8 @@ restyle because two of the three decisions add surface area rather than repaint 
 
 The CI check that matters here: a grep for *dégradé* near the transcription strings, and the
 existing `tokens.test.ts` drift check — which will fail the moment 10a lands and is the point.
+
+</details>
 
 ## Known open items
 
