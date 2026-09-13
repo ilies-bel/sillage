@@ -402,10 +402,29 @@ export function Widget() {
    * card below is already a live region: two would read the same event twice.
    */
   const announce = useCallback(async () => {
-    if (meetingId === null) return
+    if (meetingId === null || gone.current) return
     const token = pressed.current + 1
     pressed.current = token
     const copied = await copyText(MENTION_SENTENCE)
+    /*
+     * **A window that has been told to go away stops taking state**, and this is
+     * the one path in this component that crosses an `await` before its first
+     * write. `copyText` is an async permission check on the clipboard, so
+     * « press the pill's control, press *Terminer* » — or the meeting ending under
+     * the rep, which is what `EndOfMeetingWatch` does — can land `widget:leave`
+     * in between. Drawing the card then is a 145-pixel box arriving *during* the
+     * fade, which grows the frame and asks for a `widget:resize` that `Overlay`
+     * refuses: the ~20 px slide measured in
+     * `scratch/r26-e2e-widget-last-frame.cjs`, reintroduced by a new card.
+     * The write to the log is still worth making — it happened — so only the
+     * drawing is dropped.
+     */
+    if (gone.current) {
+      void invoke('meeting:mark', { meetingId, note: MENTION_NOTE(copied), segmentId: null }).catch(
+        () => undefined,
+      )
+      return
+    }
     setSaid(null)
     setMention({ copied, logged: null })
     try {
@@ -414,9 +433,9 @@ export function Widget() {
         note: MENTION_NOTE(copied),
         segmentId: null,
       })
-      if (pressed.current === token) setMention({ copied, logged: true })
+      if (pressed.current === token && !gone.current) setMention({ copied, logged: true })
     } catch {
-      if (pressed.current === token) setMention({ copied, logged: false })
+      if (pressed.current === token && !gone.current) setMention({ copied, logged: false })
     }
   }, [meetingId])
 

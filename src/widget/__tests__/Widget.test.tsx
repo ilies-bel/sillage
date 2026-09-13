@@ -1077,6 +1077,61 @@ test('ne rien presser n’empêche rien, et une mention qui échoue n’empêche
 })
 
 /**
+ * **A window on its way out draws no new card, and still writes the log.**
+ *
+ * The one path in this feature that crosses an `await` before its first paint:
+ * `copyText` is an async permission check on the clipboard, so « press the
+ * control, press *Terminer* » — or the meeting ending under the rep, which
+ * `EndOfMeetingWatch` does — lands `widget:leave` in between. A 145-pixel card
+ * arriving *during* the 150 ms fade grows the frame and asks for a `widget:resize`
+ * that `Overlay` answers `{ ok: false }`, which is the ~20 px slide measured in
+ * `scratch/r26-e2e-widget-last-frame.cjs`. The rule this window already states is
+ * « a window that has been told to go away stops taking state ».
+ *
+ * The write is still made, because it happened, and the log is where « did I tell
+ * them » is answered. Only the drawing is dropped.
+ */
+test('une fenêtre qui s’en va ne dessine pas de nouvelle carte, et écrit quand même', async () => {
+  const marks: unknown[] = []
+  bridge.when('meeting:mark', (payload) => {
+    marks.push(payload)
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+  })
+  let release: (() => void) | null = null
+  const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    },
+  })
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+
+    // The recording ends while the clipboard is still deciding.
+    act(() => {
+      bridge.emit('widget:leave', {})
+    })
+    await act(async () => {
+      release?.()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByRole('status')).toBeNull()
+    await waitFor(() => expect(marks.length).toBe(1))
+  } finally {
+    if (previous) Object.defineProperty(navigator, 'clipboard', previous)
+    else delete (navigator as { clipboard?: unknown }).clipboard
+  }
+})
+
+/**
  * **The control arrives with the real pill, never with the placeholder.**
  *
  * `MEASURE_DEADLINE_MS` holds the window off screen until `widget:state` has
@@ -1087,8 +1142,14 @@ test('ne rien presser n’empêche rien, et une mention qui échoue n’empêche
  * story. It is drawn on exactly the condition the mark button is.
  */
 test('la mention n’est pas dessinée avant que l’état n’arrive', async () => {
-  let settle: ((value: unknown) => void) | null = null
-  bridge.when('widget:state', () => new Promise((resolve) => (settle = resolve)))
+  let settle: ((value: ReturnType<typeof recording>) => void) | null = null
+  bridge.when(
+    'widget:state',
+    () =>
+      new Promise<ReturnType<typeof recording>>((resolve) => {
+        settle = resolve
+      }),
+  )
   render(<Widget />)
 
   expect(await screen.findByText('Aucun enregistrement')).toBeTruthy()
