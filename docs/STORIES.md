@@ -1289,3 +1289,58 @@ call site rather than to the file.
 it is a visible string drawn twice on one screen, which is exactly what that check measures.
 If `--echo` does not report it on the `reglages` stage, the check is wrong before the screen
 is: fix the check first.
+
+## US-29 — what happened last time, before the call rather than after it
+
+**Lane** `ui-agenda` (after US-22/US-26 land) · **not yet assigned** · **and a row my own
+parity table missed**
+
+The direction was « priority on what feature should be visible directly ». This is the
+answer, and probing Granola again is what surfaced it: their product is organised as
+**avant / pendant / après**, and the *avant* is a **Brief** — who is on the call, and what
+was said last time. Our table has eighteen rows and none of them is this. We have the
+« pendant » (the widget, the meter, the detector) and the « après » (the gate, the CRM, the
+draft). Before the call we show a time, an objet and two names.
+
+For a rep at an ESN the question before picking up is not « who is this ». It is **what did I
+promise last time, and did it happen**. That is the one thing they will be asked in the first
+thirty seconds, and it is the thing this product already knows better than Granola can:
+
+- `HistoryRecord.fields` — each with its cited span and a measured confidence (DEC-21)
+- `HistoryRecord.intents` — **what became of each**: the VerySwing task, its remote id, the
+  Outlook draft, and whether the push settled
+- `HistoryRecord.marks` — what the rep themselves flagged during the call
+- `meetingAnchor` — when it was
+
+So the line under a calendar row for a client already met reads from the record, not from a
+model: « 09/09 — 3 CV avec TJM avant vendredi · tâche VerySwing créée ». Granola's brief is
+prior discussion context; ours can say **whether the promise was kept**, because we are the
+thing that made it.
+
+**Four rules, and each is a decision rather than an implementation detail.**
+
+1. **The brief is made of what the rep confirmed, never of what the model proposed.** Only a
+   meeting that reached the gate and was validated contributes a sentence: at that point the
+   text is the rep's own, because DEC-4's one confirmation is exactly where it stopped being
+   the model's. A call that never reached the gate contributes its date and its marks and
+   nothing else. This is what keeps DEC-21 intact — there is no `⚠ faible` on the agenda,
+   because nothing unverified is drawn there, and a confidence mark on a row where the rep
+   cannot follow a citation would be a claim with no way to check it.
+2. **Deterministic halves stay deterministic** (DEC-7). The date, the intent states and the
+   client's name come from the store. Nothing here calls an LLM, and no new extraction runs.
+3. **It writes nothing and confirms nothing** (DEC-25) — a read over the log, like
+   *Historique* and like *Demander*.
+4. **Absent, not empty.** A first call with a new client has no brief and draws no box. An
+   « aucun historique » caption on nine rows out of ten is the noise round 34 exists to
+   remove, and it would be the first thing to reintroduce it.
+
+**Acceptance** — driven, both sizes: a row for a client with a validated past call carries
+one line; a row for a new client is pixel-identical to today; the line never wraps past the
+`.measure` ceiling; and `--echo` stays green, because the brief must not restate the objet
+that is already on the row (`meetingHeading` already strips the client's name for exactly
+that reason, one rule up). The fixture has to grow a second call for one of its accounts —
+`bridge-stub.mjs` stages five clients and the harness fixture test will hold the new record
+to the same clock and density rules as the rest.
+
+**Out of scope** — anything cross-meeting that needs a server (US-5, US-9). This is one
+account's own history on this machine, which is why it can ship.
