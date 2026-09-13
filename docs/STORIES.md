@@ -55,7 +55,8 @@ construction. **Two agents never hold the same lane at the same time.**
 | `extract` | `electron/modules/extract/`, recipe prompts |
 | `crm-mail` | `electron/modules/crm/`, `electron/modules/mail/` |
 | `ui-review` | `src/screens/Review.tsx`, `src/screens/review/` |
-| `ui-session` | `src/screens/Session.tsx`, `src/screens/session/`, `src/widget/` |
+| `ui-session` | `src/screens/Session.tsx`, `src/screens/session/` |
+| `widget` | `src/widget/` — split out of `ui-session` once two parity stories wanted it at once |
 | `ui-history` | `src/screens/Historique.tsx`, `src/screens/search/` |
 | `ui-onboarding` | `src/screens/Onboarding.tsx`, `src/screens/Splash.tsx` |
 | `motion` | `src/design/*.css`, `tailwind.config.js`, `src/ui/` |
