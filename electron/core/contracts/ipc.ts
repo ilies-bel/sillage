@@ -20,6 +20,7 @@ import { TranscriptSegmentSchema, TranscriptViewSchema } from './transcript.ts'
 import { MARK_NOTE_MAX, MomentMarkSchema } from './marks.ts'
 import { SignalSchema } from './signals.ts'
 import { ConnectorHealthSchema, ConnectorIdSchema, HealthSnapshotSchema } from './health.ts'
+import { CapturePermissionSchema } from './permissions.ts'
 import { DiagEventSchema, ExportModeSchema } from './diagnostics.ts'
 import { AuthStateSchema } from './identity.ts'
 import { CalendarEventSchema } from './calendar.ts'
@@ -342,6 +343,31 @@ export const invokeChannels = {
   'health:retry': {
     request: z.object({ connector: ConnectorIdSchema }),
     response: ConnectorHealthSchema,
+  },
+  /**
+   * Where consent stands, platform-neutral (`core/contracts/permissions.ts`).
+   *
+   * Read on demand rather than broadcast: a rep grants a permission in another
+   * window and comes straight back, so the row re-asks when it is shown and
+   * after the pane has been opened. The renderer reads `state`,
+   * `channel` and `canOpenSettings` and branches on nothing else — it must
+   * never learn which platform it is on.
+   */
+  'capture:permission': {
+    request: z.object({}),
+    response: CapturePermissionSchema,
+  },
+  /**
+   * The one remedy for a refusal: the OS's own privacy pane.
+   *
+   * Never a second prompt — the OS silently returns the old answer, so asking
+   * again is the dead control DEC-26 forbids. `opened: false` is the honest
+   * answer on a host with no such pane, and it is reported rather than
+   * swallowed.
+   */
+  'capture:permission:open': {
+    request: z.object({}),
+    response: z.object({ opened: z.boolean() }),
   },
   /**
    * The dry run (`core/contracts/essai.ts`): open both channels for a fixed

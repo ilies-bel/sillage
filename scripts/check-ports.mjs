@@ -217,6 +217,14 @@ const HOMES = new Map([
   // `SecretVault`'s two implementations (`keychainVault`, `memoryVault`) live in
   // `modules/identity/vault.ts`, where the keytar I/O is.
   ['SecretVault', 'electron/modules/identity/'],
+  /*
+   * Consent. Implemented in `electron/app/main.ts` and not in a module: the two
+   * verbs are the app's own relationship with the OS — a status read and a
+   * privacy pane — and `modules/capture/` opens devices without owning consent.
+   * `main.ts` is also the one file allowed to know that a pane is a URL and
+   * which URL, which is what keeps the renderer free of a platform branch.
+   */
+  ['CapturePermissionPort', 'electron/app/main.ts'],
   // The renderer bridge. `preload.ts` is the implementation; `src/app/bridge.ts`
   // is the caller. Its *channels* are checked by `check-surfaces.mjs`; what is
   // checked here is only that the two verbs carrying them are reached.

@@ -2292,3 +2292,50 @@ test('a row names its client once in its excerpt too', async () => {
   assert.equal(await excerptFor('Sodexial'), 'Sodexial comité de staffing hebdomadaire')
   cleanup()
 })
+
+/**
+ * **Consent, and the two ways this channel can be absent.**
+ *
+ * The port is implemented in `main.ts`, which is the one file allowed to know
+ * that a privacy pane is a URL. A test — and an older build, and a host where
+ * nothing can be asked — has none, and the channel must then refuse with a
+ * sentence rather than throw something Electron composed: the onboarding row
+ * falls back to the health sentence it already had (DEC-26), which it cannot do
+ * if the renderer is handed « Error invoking remote method ».
+ */
+test('capture permission refuses in a stated sentence when nothing can answer', async () => {
+  const { ipc, cleanup } = open()
+
+  await assert.rejects(ipc.invoke('capture:permission', {}), /autorisations d’enregistrement/)
+  await assert.rejects(ipc.invoke('capture:permission:open', {}), /réglages de confidentialité/)
+
+  cleanup()
+})
+
+test('consent is read through the port, and the pane reports whether it opened', async () => {
+  const { deps, cleanup } = open()
+  let opened = 0
+  deps.capturePermission = {
+    read: () => ({
+      state: 'denied',
+      channel: 'screen',
+      reason: 'l’audio système n’est pas autorisé.',
+      canOpenSettings: true,
+    }),
+    openSettings: async () => {
+      opened += 1
+      return false
+    },
+  }
+  // Registered again, over the same deps, now that the port is there.
+  const ipc = new FakeIpcMain()
+  registerIpc(ipc, deps)
+
+  assert.equal((await ipc.invoke('capture:permission', {})).state, 'denied')
+  // `false` is reported rather than swallowed: a button that appears to do
+  // nothing teaches a rep that the screen is broken.
+  assert.deepEqual(await ipc.invoke('capture:permission:open', {}), { opened: false })
+  assert.equal(opened, 1)
+
+  cleanup()
+})

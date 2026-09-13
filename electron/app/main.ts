@@ -30,9 +30,11 @@ import { CaptureSession } from '../modules/capture/index.ts'
 import {
   actionFor,
   capturePermissionHealth,
+  capturePermissionView,
   type AccessStatus,
   type CaptureAccess,
 } from '../core/domain/capturePermission.ts'
+import type { CapturePermission } from '../core/contracts/permissions.ts'
 import {
   ESSAI_LAST_KEY,
   ESSAI_MEETING_ID,
@@ -772,6 +774,44 @@ const requestCaptureAccess = async (): Promise<void> => {
     const pane = privacyPane().screen
     if (pane) await shell.openExternal(pane).catch(() => undefined)
   }
+}
+
+/**
+ * ── consent, as the onboarding row draws it ─────────────────────────────────
+ *
+ * The same statuses `capturePermissionHealth` reads, in the platform-neutral
+ * shape `core/contracts/permissions.ts` declares — so the renderer can tell a
+ * refusal from a permission nobody has answered without learning what host it
+ * is running on.
+ *
+ * **`canOpenSettings` is a capability, not a platform test.** It is « is there
+ * a pane URL for the channel that is missing », which is empty on a host with
+ * no such pane, and the row then draws no button rather than one that opens
+ * nothing. The pane *choice* stays here too: the renderer says « open the
+ * settings », never which of the two.
+ */
+const capturePermissionNow = (): CapturePermission => {
+  const access = captureAccess()
+  const panes = privacyPane()
+  const missingScreen = actionFor(access.screen) !== 'nothing'
+  const pane = missingScreen ? panes.screen : panes.microphone
+  return capturePermissionView(access, pane !== '', Date.now())
+}
+
+/**
+ * The pane for whichever channel is missing — screen first, because on the host
+ * that has one it is the permission people refuse and the one whose absence
+ * costs the far end of the call.
+ */
+const openCapturePane = async (): Promise<boolean> => {
+  const access = captureAccess()
+  const panes = privacyPane()
+  const pane = actionFor(access.screen) !== 'nothing' ? panes.screen : panes.microphone
+  if (!pane) return false
+  return shell
+    .openExternal(pane)
+    .then(() => true)
+    .catch(() => false)
 }
 
 /**
@@ -2469,6 +2509,9 @@ const boot = async (): Promise<void> => {
     // question, not the next launch (DEC-34).
     llm,
     essai: runEssai,
+    // Consent, measured on demand. `main.ts` is the only file that knows a
+    // privacy pane is a URL, and it hands the renderer a capability instead.
+    capturePermission: { read: capturePermissionNow, openSettings: openCapturePane },
     capabilities: () => ({ report: probe, reason: probeReason }),
     // Read lazily: `boot:changed` and this channel must never disagree, and a
     // value captured here would freeze the state at registration time.

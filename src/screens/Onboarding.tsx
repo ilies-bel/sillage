@@ -40,6 +40,10 @@
  */
 import { useCallback, useState } from 'react'
 import type { ConnectorHealth, ConnectorId, HealthSnapshot } from '../../electron/core/contracts/health.ts'
+import type {
+  CapturePermission,
+  CapturePermissionState,
+} from '../../electron/core/contracts/permissions.ts'
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
@@ -105,6 +109,42 @@ const STATE_WORD: Record<ConnectorHealth['state'], string> = {
   ok: 'prêt',
   degraded: 'à vérifier',
   down: 'indisponible',
+}
+
+/**
+ * **The capture row says where consent stands, and it never says which
+ * platform it is on.**
+ *
+ * `capture:permission` answers four words about consent plus `canOpenSettings`,
+ * and those two are the whole of what this screen branches on. The five rows a
+ * rep can actually meet fall out of them: « à autoriser » and « refusé » and
+ * « prêt » on a host with the two prompts, « micro bloqué » and « prêt » on one
+ * where only the microphone can be switched off. Nothing here counts hosts —
+ * `src/` may not know what it is running on, and the one time a renderer did,
+ * the notepad shipped an eight-binding mac-first keymap on the platform HR-2
+ * calls primary.
+ */
+const CONSENT_TONE: Record<CapturePermissionState, StateDotProps['tone']> = {
+  ready: 'ok',
+  'to-grant': 'warn',
+  denied: 'down',
+  blocked: 'down',
+}
+
+/**
+ * `denied` on the microphone alone gets its own word.
+ *
+ * « refusé » is right for a TCC prompt somebody answered no to and wrong for a
+ * machine-wide switch nobody associates with this app — and that switch is the
+ * whole of what can be missing on the primary platform. The word a rep can act
+ * on is the one naming the thing that is off.
+ */
+const consentWord = (consent: CapturePermission): string => {
+  if (consent.state === 'denied' && consent.channel === 'microphone') return 'micro bloqué'
+  if (consent.state === 'denied') return 'refusé'
+  if (consent.state === 'to-grant') return 'à autoriser'
+  if (consent.state === 'blocked') return 'bloqué'
+  return 'prêt'
 }
 
 export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: OnboardingProps) {
@@ -217,7 +257,21 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         </ReadingColumn>
       </main>
 
-      <footer className="border-subtle bg-card shrink-0 border-t px-gutter py-row">
+      {/*
+        **The footer is gone, and what stood on it is not.**
+
+        It was a ruled, card-coloured bar across the bottom of the window — the
+        furniture of a wizard, on the one screen whose whole argument is that it
+        is short, and the heaviest thing on a first-run screen was the chrome
+        around the button rather than the button. The three controls stay
+        exactly where they were and keep their own axis; what left is the rule
+        and the second background.
+
+        It stays **outside** the reading column on purpose. *Continuer* is never
+        withheld (DEC-26), and a *Continuer* that has scrolled below the fold is
+        withheld in the only sense a rep can measure.
+      */}
+      <nav aria-label="Progression" className="shrink-0 px-gutter pb-block pt-row">
         <div className="measure mx-auto flex items-center gap-inline">
           {/*
             Three dots, not « étape 2 sur 3 ». The count is worth knowing and the
@@ -283,7 +337,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
             {index === ORDER.length - 1 ? 'Terminer' : 'Continuer'}
           </Button>
         </div>
-      </footer>
+      </nav>
     </div>
   )
 }
@@ -350,6 +404,52 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
   const [busy, setBusy] = useState<ConnectorId | null>(null)
 
   /*
+   * Consent, read apart from health and on purpose.
+   *
+   * `health.capture` is one sentence and one tone, which is the right shape for
+   * the status strip (DEC-32) and cannot say whether a permission was *refused*
+   * or simply never asked — and those two lead a rep to different places. The
+   * channel answers it in platform-neutral words, so this screen draws the
+   * difference without ever learning what host it is on.
+   *
+   * A refusal to answer is not an error on screen: an older main process, or a
+   * host where nothing can be asked, leaves `consent` null and the row falls
+   * back to the health sentence and the retry it already had (DEC-26).
+   */
+  const permission = useInvoke('capture:permission', {})
+  const consent: CapturePermission | null =
+    permission.state.status === 'ready' ? permission.state.value : null
+  const [opening, setOpening] = useState(false)
+  /*
+   * A pane that would not open is said out loud.
+   *
+   * `canOpenSettings` says the host has a URL, which is measured before the
+   * press; whether the OS actually took it is only known after. A button that
+   * appears to do nothing teaches a rep that the screen is broken, so the one
+   * thing it can still tell them is that the door did not open and where to go
+   * by hand.
+   */
+  const [paneRefused, setPaneRefused] = useState(false)
+
+  /*
+   * The pane is opened, then consent is re-read. A rep grants it in the window
+   * that just came up and comes straight back, and a row still saying « refusé »
+   * over a permission they have just given is a screen calling them a liar.
+   */
+  const openSettings = async () => {
+    setOpening(true)
+    try {
+      const { opened } = await invoke('capture:permission:open', {})
+      setPaneRefused(!opened)
+    } catch {
+      setPaneRefused(true)
+    } finally {
+      setOpening(false)
+      permission.reload()
+    }
+  }
+
+  /*
    * `health:snapshot` is a record keyed by connector, not a list of rows —
    * Réglages builds *its* rows out of the settings snapshot, which also carries
    * labels this screen does not want (« Audio » is what the app calls it once
@@ -391,6 +491,13 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
         {REQUIRED_CONNECTORS.map((id) => {
           const row: ConnectorHealth | null = snapshot?.[id] ?? null
           const state = row?.state ?? 'down'
+          /*
+            The capture row is the only one whose fault is a *consent*, and the
+            only one whose remedy is a pane rather than a retry. When the channel
+            has answered, it is what this row says; when it has not, the row is
+            exactly what it was.
+          */
+          const permissionRow = id === 'capture' ? consent : null
           return (
             <li key={id} className="border-subtle border-t pt-row first:border-t-0 first:pt-0">
               <div className="flex items-baseline gap-inline">
@@ -404,14 +511,55 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                 */}
                 <span className="shrink-0">
                   <StateDot
-                    tone={row ? TONE[state] : 'pending'}
-                    label={row ? STATE_WORD[state] : 'vérification…'}
+                    tone={
+                      permissionRow
+                        ? CONSENT_TONE[permissionRow.state]
+                        : row
+                          ? TONE[state]
+                          : 'pending'
+                    }
+                    label={
+                      permissionRow
+                        ? consentWord(permissionRow)
+                        : row
+                          ? STATE_WORD[state]
+                          : 'vérification…'
+                    }
                   />
                 </span>
               </div>
               <p className="text-muted measure mt-1 text-ui leading-relaxed">{NEEDS[id].why}</p>
 
-              {row && row.state !== 'ok' ? (
+              {/*
+                Consent, when the channel answered: the sentence names the
+                refusal and the one control opens the pane that lifts it. Never
+                a prompt — the OS silently returns the old answer to a second
+                ask, so *Autoriser* on a refusal is the control DEC-26 forbids —
+                and never a button on a managed device, where `canOpenSettings`
+                is false and the sentence is the whole of what can be said.
+              */}
+              {permissionRow && permissionRow.state !== 'ready' ? (
+                <div className="mt-2 flex items-baseline gap-inline">
+                  <p className="text-warn measure min-w-0 flex-1 text-ui">{permissionRow.reason}</p>
+                  {permissionRow.canOpenSettings ? (
+                    <Button
+                      className="shrink-0"
+                      onClick={() => void openSettings()}
+                      {...unavailable(opening, 'Ouverture…')}
+                    >
+                      {opening ? 'Ouverture…' : 'Ouvrir les réglages'}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {permissionRow && paneRefused ? (
+                <p className="text-muted measure mt-1 text-ui leading-relaxed">
+                  Les réglages de confidentialité ne se sont pas ouverts. Ouvrez-les vous-même :
+                  l’autorisation de Sillage s’y trouve avec celles des autres applications.
+                </p>
+              ) : null}
+
+              {!permissionRow && row && row.state !== 'ok' ? (
                 <div className="mt-2 flex items-baseline gap-inline">
                   <p className="text-warn min-w-0 flex-1 text-ui">{row.reason}</p>
                   {/*

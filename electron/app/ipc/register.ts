@@ -33,6 +33,7 @@ import type { BootState } from '../../core/contracts/boot.ts'
 import { isRefusal, refuse } from '../../core/contracts/refusal.ts'
 import { resolveMentionSentence } from '../../core/contracts/mention.ts'
 import type { EssaiResult } from '../../core/contracts/essai.ts'
+import type { CapturePermissionPort } from '../../core/contracts/permissions.ts'
 import type { EnhancementStatus } from '../../core/contracts/extraction.ts'
 import {
   INTENT_LABEL,
@@ -225,6 +226,16 @@ export interface IpcDeps {
    * audio devices and broadcasts, and both are wiring.
    */
   essai?: (() => Promise<EssaiResult>) | null
+  /**
+   * Where consent stands, and the pane that fixes a refusal
+   * (`core/contracts/permissions.ts`). Implemented in `main.ts`, which is the
+   * one file allowed to know that a privacy pane is a URL and which URL.
+   *
+   * Absent in a test and on any host where the app cannot ask: the channels
+   * then refuse with a stated reason, and the row falls back to the health
+   * sentence it already had (DEC-26).
+   */
+  capturePermission?: CapturePermissionPort | null
   /**
    * The DEC-24 capability diff, or why there is none. Read lazily so a probe
    * that is still in flight at boot shows as "en cours" rather than as absent.
@@ -766,6 +777,24 @@ export const handlers: Handlers = {
    * implementation wired — a renderer that gets an unexplained rejection draws
    * « une erreur est survenue » and the rep learns nothing (DEC-26).
    */
+  /*
+   * Consent, measured now. A rep grants a permission in another window and
+   * comes straight back, so nothing here is cached.
+   */
+  'capture:permission': (_request, { capturePermission }) => {
+    if (!capturePermission) {
+      throw refuse('Les autorisations d’enregistrement ne sont pas lisibles dans cette configuration.')
+    }
+    return capturePermission.read()
+  },
+
+  'capture:permission:open': async (_request, { capturePermission }) => {
+    if (!capturePermission) {
+      throw refuse('Les réglages de confidentialité ne sont pas accessibles depuis cette configuration.')
+    }
+    return { opened: await capturePermission.openSettings() }
+  },
+
   'capture:essai': async (_request, { essai }) => {
     if (!essai) {
       throw refuse('L’essai audio n’est pas disponible dans cette configuration.')

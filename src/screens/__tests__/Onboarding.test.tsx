@@ -22,6 +22,7 @@ import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { HealthSnapshot } from '../../../electron/core/contracts/health.ts'
+import type { CapturePermission } from '../../../electron/core/contracts/permissions.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Onboarding } from '../Onboarding.tsx'
 
@@ -624,5 +625,130 @@ describe('the promise the rail stopped repeating', () => {
     expect(said).toMatch(/À droite/)
     expect(said).toMatch(/profil, TJM, durée, objections/)
     expect(said).toMatch(/sans rien écrire chez vous/)
+  })
+})
+
+/**
+ * **Step 2's capture row, and the five states a rep can actually meet.**
+ *
+ * Three on a host with both prompts — never answered, refused, granted — and two
+ * on the primary platform, where the only thing that can be off is a
+ * machine-wide microphone switch and there is no screen-recording permission at
+ * all (HR-2).
+ *
+ * What every one of these holds is the same property: **the renderer branches
+ * on consent, never on a platform.** `capture:permission` answers four words and
+ * a capability, and nothing in `Onboarding.tsx` asks what host it is on — the
+ * one time a renderer in this repo did, the notepad shipped an eight-binding
+ * mac-first keymap on the platform HR-2 calls primary, and it happened to be
+ * correct on Windows, which is the point: the gate is « is this branch
+ * declared », and a renderer branch is undeclarable.
+ *
+ * And the remedy is the **pane**, never a second prompt. The OS silently
+ * returns the old answer to an ask it has already had, so *Autoriser* on a
+ * refusal is a button that can never do anything — for ever, with nothing on
+ * screen saying why.
+ */
+const consent = (over: Partial<CapturePermission> = {}): CapturePermission => ({
+  state: 'denied',
+  channel: 'screen',
+  reason: 'Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.',
+  canOpenSettings: true,
+  ...over,
+})
+
+/** The capture row, found by the thing only it says. */
+const captureRow = () =>
+  screen.getByText(/il écoute ce que votre machine joue/).closest('li') as HTMLElement
+
+describe('the capture row draws consent, and never a platform', () => {
+  test('a permission nobody has answered is « à autoriser », with the pane', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
+  })
+
+  test('a refusal names itself, and its one control opens the pane', async () => {
+    bridge.when('capture:permission', () => consent())
+    bridge.when('capture:permission:open', () => ({ opened: true }))
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('refusé')).toBeTruthy())
+    // The sentence the main process composed, not a rewrite of it.
+    expect(screen.getByText(/réautorisez Sillage dans les réglages de confidentialité/)).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ouvrir les réglages' }))
+    })
+
+    // The pane, and never `health:retry`: asking a second time is the control
+    // that can never do anything, because the OS has stopped prompting.
+    expect(bridge.calls.some((call) => call.channel === 'capture:permission:open')).toBe(true)
+  })
+
+  test('a granted machine says « prêt » and offers nothing', async () => {
+    bridge.when('capture:permission', () =>
+      consent({ state: 'ready', channel: null, reason: null, canOpenSettings: false }),
+    )
+    open(HEALTHY)
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getAllByText('prêt')).toHaveLength(3))
+    expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
+  })
+
+  test('the microphone switch gets the word that names it', async () => {
+    /*
+      The primary platform's only refusable permission, and « refusé » is the
+      wrong word for it: nobody answered a prompt, a machine-wide switch is off
+      and is not associated with this app. The word a rep can act on is the one
+      naming the thing that is off.
+    */
+    bridge.when('capture:permission', () =>
+      consent({
+        state: 'denied',
+        channel: 'microphone',
+        reason: 'le micro n’est pas autorisé — vous ne serez pas enregistré, seul le client le sera.',
+      }),
+    )
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('micro bloqué')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
+  })
+
+  test('a managed device is told, and offered no button at all', async () => {
+    // Neither asking nor visiting a pane changes a profile. A control here would
+    // be the dead one DEC-26 forbids, and the sentence is the whole remedy.
+    bridge.when('capture:permission', () =>
+      consent({
+        state: 'blocked',
+        channel: 'both',
+        reason: 'Cet ordinateur est géré et l’autorisation est bloquée par votre service informatique.',
+        canOpenSettings: false,
+      }),
+    )
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('bloqué')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
+    expect(screen.getByText(/votre service informatique/)).toBeTruthy()
+  })
+
+  test('a main process that cannot answer leaves the row as it was', async () => {
+    // No `capture:permission` responder: the channel rejects, exactly as it does
+    // against a build that does not have it. The row keeps the health sentence
+    // and the retry it already had rather than drawing an error (DEC-26).
+    open()
+    await toBesoins()
+
+    expect(screen.getByText(/l’audio système n’est pas autorisé/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Autoriser' })).toBeTruthy()
   })
 })

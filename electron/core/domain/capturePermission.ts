@@ -49,6 +49,7 @@
  * Electron and no TCC database.
  */
 import type { ConnectorHealth } from '../contracts/health.ts'
+import type { CaptureChannel, CapturePermission } from '../contracts/permissions.ts'
 
 /**
  * What `systemPreferences.getMediaAccessStatus` answers, plus the case where
@@ -159,4 +160,60 @@ export const actionFor = (status: AccessStatus): PermissionAction => {
   if (canPrompt(status)) return 'ask'
   if (status === 'restricted') return 'nothing'
   return 'open'
+}
+
+/**
+ * **The same measurement, as the row draws it.**
+ *
+ * `capturePermissionHealth` above answers the general status (DEC-32) and its
+ * `retryable` means « can a button change anything ». The onboarding row asks
+ * something narrower — refused, or never asked? and is there a pane on this
+ * host? — and the only place those two were known was `main.ts`. A renderer
+ * that had to work them out would have to work out which platform it is on,
+ * which is the one branch `src/` may never contain.
+ *
+ * So it is derived here, from the same statuses, and the sentence is the same
+ * sentence: `reason` is `capturePermissionHealth`'s, word for word, so the row
+ * and the status strip cannot come to disagree about what was refused.
+ *
+ * `canOpenSettings` is supplied by the caller because only `main.ts` knows
+ * whether this host has a URL for the pane — and it is a **capability** there,
+ * measured as « is the URL non-empty », never as a platform test.
+ */
+export const capturePermissionView = (
+  access: CaptureAccess,
+  canOpenSettings: boolean,
+  now: number,
+): CapturePermission => {
+  const health = capturePermissionHealth(access, now)
+  if (!health) return { state: 'ready', channel: null, reason: null, canOpenSettings: false }
+
+  const mic = usable(access.microphone)
+  const screen = usable(access.screen)
+  const channel: CaptureChannel = !mic && !screen ? 'both' : mic ? 'screen' : 'microphone'
+  // `capturePermissionHealth` returns `null` rather than `ok`, so a non-null
+  // health always carries its sentence; the narrowing has to be written out.
+  const reason = health.state === 'ok' ? null : health.reason
+
+  const missing: AccessStatus[] = []
+  if (!mic) missing.push(access.microphone)
+  if (!screen) missing.push(access.screen)
+
+  /*
+   * A managed device first: it is the one state where *both* remedies are
+   * theatre, so it must not be reported as something a pane could fix.
+   */
+  if (missing.every((status) => status === 'restricted')) {
+    return { state: 'blocked', channel, reason, canOpenSettings: false }
+  }
+
+  /*
+   * Never answered is « à autoriser »; answered with a no is « refusé ». The OS
+   * silently returns the old answer to a second ask, which is why the two are
+   * not the same row and why neither of them offers a prompt: the pane is the
+   * remedy that works in both, and offering *Autoriser* on a refusal is the
+   * dead control DEC-26 forbids.
+   */
+  const state = missing.some(canPrompt) ? 'to-grant' : 'denied'
+  return { state, channel, reason, canOpenSettings }
 }

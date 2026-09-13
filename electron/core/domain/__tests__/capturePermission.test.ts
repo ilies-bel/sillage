@@ -13,6 +13,7 @@ import test from 'node:test'
 import {
   actionFor,
   capturePermissionHealth,
+  capturePermissionView,
   canPrompt,
   type CaptureAccess,
 } from '../capturePermission.ts'
@@ -106,4 +107,67 @@ test('one restricted channel beside one askable channel still offers the retry',
   // is the askable one's, because that is the half a press can change.
   assert.equal(health.retryable, true)
   assert.equal(health.state, 'down')
+})
+
+/**
+ * **The row the onboarding draws, and the five states a rep can meet.**
+ *
+ * The point of this shape is what it does *not* carry: no platform, no URL, no
+ * « is this a Mac ». `state` is a word about consent and `canOpenSettings` is a
+ * capability the caller measured, so the renderer can draw a refusal apart from
+ * a permission nobody has answered without containing the one branch `src/` may
+ * never contain.
+ */
+test('a host with nothing missing is ready, and offers nothing', () => {
+  const view = capturePermissionView(access(), true, NOW)
+  assert.equal(view.state, 'ready')
+  assert.equal(view.channel, null)
+  assert.equal(view.reason, null)
+  // Nothing to fix is nothing to open: a pane offered on a healthy row is a
+  // control that can only confuse.
+  assert.equal(view.canOpenSettings, false)
+})
+
+test('a permission nobody has answered is « à autoriser », not a refusal', () => {
+  const view = capturePermissionView(access({ screen: 'not-determined' }), true, NOW)
+  assert.equal(view.state, 'to-grant')
+  assert.equal(view.channel, 'screen')
+  assert.equal(view.canOpenSettings, true)
+})
+
+test('a refusal is a refusal, and it names the side that goes missing', () => {
+  const both = capturePermissionView(access({ microphone: 'denied', screen: 'denied' }), true, NOW)
+  assert.equal(both.state, 'denied')
+  assert.equal(both.channel, 'both')
+
+  // The primary platform's only refusable one (HR-2): a machine-wide microphone
+  // switch, with no screen-recording permission to grant at all.
+  const windows = capturePermissionView(access({ microphone: 'denied' }), true, NOW)
+  assert.equal(windows.state, 'denied')
+  assert.equal(windows.channel, 'microphone')
+})
+
+test('the sentence is the health row’s own, word for word', () => {
+  const health = capturePermissionHealth(access({ screen: 'denied' }), NOW)
+  assert.ok(health && health.state !== 'ok')
+  const view = capturePermissionView(access({ screen: 'denied' }), true, NOW)
+  // Two surfaces, one sentence. A second wording is a second place where « what
+  // was refused » is decided, and the day they disagree the rep reads the wrong one.
+  assert.equal(view.reason, health.reason)
+})
+
+test('a managed device is blocked, and is offered no pane', () => {
+  // Neither asking nor visiting the pane changes a profile, so a button there
+  // would be theatre — the dead control DEC-26 forbids.
+  const view = capturePermissionView(access({ microphone: 'restricted', screen: 'restricted' }), true, NOW)
+  assert.equal(view.state, 'blocked')
+  assert.equal(view.canOpenSettings, false)
+})
+
+test('a host with no pane to open says so, and it is never a platform test', () => {
+  // `canOpenSettings` comes from the caller having measured a URL. False here
+  // means the row draws its sentence and no button, wherever it is running.
+  const view = capturePermissionView(access({ microphone: 'denied' }), false, NOW)
+  assert.equal(view.state, 'denied')
+  assert.equal(view.canOpenSettings, false)
 })

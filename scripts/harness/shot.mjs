@@ -763,6 +763,55 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **The capture row's other states, which no stage could reach.**
+   *
+   * Step 2 is one row with five states and the harness photographed one of them
+   * — a permission nobody had answered — so « refusé », the machine-wide
+   * microphone switch and the managed device were drawn by code nothing had
+   * ever looked at. They are the states a rep meets *after* something went
+   * wrong, which is when a screen has to be right.
+   *
+   * Each waits on the word the row says, not on a button: the managed device is
+   * the state whose whole point is that there is **no** button, and a stage that
+   * waited for one would hang on the row it exists to photograph.
+   */
+  'onboarding-refus': {
+    scenario: 'onboarding-refuse',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByRole('heading', { name: 'Ce dont Sillage a besoin' }).waitFor()
+      await page.getByText('refusé', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Ouvrir les réglages' }).waitFor()
+    },
+  },
+
+  'onboarding-micro': {
+    scenario: 'onboarding-micro',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByText('micro bloqué', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Ouvrir les réglages' }).waitFor()
+    },
+  },
+
+  'onboarding-gere': {
+    scenario: 'onboarding-gere',
+    async drive(page) {
+      await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+      await page.getByRole('button', { name: 'Continuer' }).click()
+      await page.getByText('bloqué', { exact: true }).waitFor()
+      await page.getByText(/votre service informatique/).waitFor()
+      // The state whose remedy is a sentence. A pane cannot lift a profile, so
+      // offering one would be the dead control DEC-26 forbids.
+      if ((await page.getByRole('button', { name: 'Ouvrir les réglages' }).count()) !== 0) {
+        throw new Error('un appareil géré ne peut pas être réparé par un panneau de réglages')
+      }
+    },
+  },
+
   'onboarding-essai': {
     scenario: 'onboarding',
     async drive(page) {

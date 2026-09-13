@@ -2354,8 +2354,16 @@ export function installAppBridge(config) {
         }
 
   /** The health table this scenario reads — see `healthSnapshot` below. */
+  /*
+    Every first-run scenario is a first run — `onboarding`, and the three that
+    photograph the other states of its capture row. Spelling the family once
+    keeps a new permission stage from silently landing on the calendar's health,
+    which is the shape this stub has been caught in before.
+  */
+  const firstRun = scenario.startsWith('onboarding')
+
   const healthBase = () =>
-    scenario === 'onboarding'
+    firstRun
       ? HEALTH.premierLancement
       : scenario === 'reglages' || scenario === 'historique'
         ? HEALTH.mixed
@@ -2372,6 +2380,55 @@ export function installAppBridge(config) {
     */
     const base = healthBase()
     return entra ? base : { ...base, ...NO_ENTRA_HEALTH }
+  }
+
+  /**
+   * The five capture rows, word for word as `core/domain/capturePermission.ts`
+   * composes them. A fixture that invents a sentence is a picture of a product
+   * that does not exist — this file's own header records that happening to this
+   * very row.
+   */
+  const CAPTURE_PERMISSION = {
+    onboarding: {
+      state: 'to-grant',
+      channel: 'screen',
+      reason:
+        'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Autorisez-le pour que Sillage puisse l’enregistrer.',
+      canOpenSettings: true,
+    },
+    'onboarding-refuse': {
+      state: 'denied',
+      channel: 'screen',
+      reason:
+        'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.',
+      canOpenSettings: true,
+    },
+    /*
+      The primary platform (HR-2): no screen-recording permission to grant at
+      all, and a machine-wide microphone switch that is off.
+    */
+    'onboarding-micro': {
+      state: 'denied',
+      channel: 'microphone',
+      reason:
+        'le micro n’est pas autorisé — vous ne serez pas enregistré, seul le client le sera. Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.',
+      canOpenSettings: true,
+    },
+    /* A managed device: the sentence is the whole remedy, and there is no button. */
+    'onboarding-gere': {
+      state: 'blocked',
+      channel: 'both',
+      reason:
+        'Ni le micro ni l’audio système ne sont autorisés — une réunion ne serait pas enregistrée. Cet ordinateur est géré et l’autorisation est bloquée par votre service informatique.',
+      canOpenSettings: false,
+    },
+    'onboarding-pane-morte': {
+      state: 'denied',
+      channel: 'screen',
+      reason:
+        'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.',
+      canOpenSettings: true,
+    },
   }
 
   const responders = {
@@ -2657,8 +2714,23 @@ export function installAppBridge(config) {
       rep who has been using the app, and an onboarding in front of the calendar
       would make eighteen of the twenty-one screenshots a picture of this one.
     */
-    'onboarding:state': () => ({ seen: scenario !== 'onboarding' }),
+    'onboarding:state': () => ({ seen: !firstRun }),
     'onboarding:seen': () => ({ seen: true }),
+
+    /*
+      Consent, as `core/contracts/permissions.ts` declares it — four words and a
+      capability, and not one of them names a platform. The five rows a rep can
+      meet are four fixtures plus the granted one, and each is the shape
+      `capturePermissionView` really composes for those statuses.
+
+      `onboarding` itself is « à autoriser », which is what a fresh install on a
+      Mac actually is: the screen-recording prompt has not been answered, so one
+      channel is at stake and the pane is the surer route to it.
+    */
+    'capture:permission': () => CAPTURE_PERMISSION[scenario] ?? CAPTURE_PERMISSION.onboarding,
+    // The pane opens. A stage that pressed this and got `false` would be
+    // photographing the failure message, which `onboarding-pane-morte` is for.
+    'capture:permission:open': () => ({ opened: scenario !== 'onboarding-pane-morte' }),
 
     'meeting:ask': (payload) => {
       const question = fold(payload.question || '')
