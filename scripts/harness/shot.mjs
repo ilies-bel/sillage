@@ -54,6 +54,45 @@ const { chromium } = require('playwright')
 const URL_BASE = process.env.SILLAGE_URL ?? 'http://localhost:5180'
 
 /**
+ * **Wait until nothing on the page is moving, then measure.**
+ *
+ * `--contrast` already carries half of this rule and states why:
+ * `getComputedStyle` returns the current *animated* value, which is how the
+ * bundled detector reads a resting 14:1 button as 4.0:1. Geometry has the same
+ * hole one property over and it is worse, because `getBoundingClientRect`
+ * **includes transforms** — a control inside a card that is 97% of the way
+ * through its arrival measures 23.26px, which is a WCAG failure reported against
+ * a 24px control and a 3px « the chevron moved under the pointer » reported
+ * against a chevron that did not move. Both of those are measured: they are what
+ * `widget-ouvert` produced on the first run after DEC-50 put a `scale` on the
+ * pill, and an intermittent failure on a stage that has nothing to do with the
+ * feature is the worst shape a check can have.
+ *
+ * Called in two places and both are needed. Here, before the eight checks, which
+ * covers every stage at once. And **inside** a stage, by name, wherever the stage
+ * itself measures a box — the post-`drive` call cannot help those, because they
+ * have already happened by then.
+ *
+ * Infinite animations are excluded rather than waited for: the motion self-test
+ * injects one deliberately and a spinner would hang this for ever. The wait is
+ * **bounded and silent** — a page that legitimately never settles must still be
+ * measured and reported on, because a harness that refuses to look is the false
+ * green this repo has shipped five times.
+ */
+const settled = (page) =>
+  page
+    .waitForFunction(
+      () =>
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming?.().iterations !== Infinity)
+          .every((a) => a.playState !== 'running'),
+      undefined,
+      { timeout: 2_000 },
+    )
+    .catch(() => undefined)
+
+/**
  * The verb on a day-list row, which is **not** one word.
  *
  * The armed meeting — the call starting now — carries a filled *Enregistrer*;
@@ -1802,6 +1841,187 @@ const SCREENS = {
   },
 
   /*
+   * **The pill arriving — the other end of the one motion a rep watches, and the
+   * end that had never been decided at all** (DEC-50).
+   *
+   * `widget-sortie` beside it exists because the exit was measured and found to be
+   * a blink. The *entrance* was worse and nobody had looked: measured on the real
+   * window, the 340×205 panel had `transitionDuration: 0s`, `animationName: none`
+   * and `transform-origin: 170px 102.594px` — dead centre, the CSS initial,
+   * regardless of which way it stacks. It appeared between two frames over another
+   * application's video call at the instant the rep presses *Enregistrer*.
+   *
+   * Four things are asserted here and every one of them is a bound DEC-50 states.
+   * Three of the four are only reachable from a stage: `--motion` reads
+   * declarations and can never ask what the *main process was told*, and
+   * `tokens.test.ts` reads a file and can never ask what reached an element.
+   *
+   * **The gate is the one worth the most.** `getBoundingClientRect` includes
+   * transforms, so a pill that is scaling when `widget:resize` goes out reports a
+   * box 8% small and the main process sizes a frameless always-on-top window to
+   * it — which is the clipped first frame the whole `MEASURE_DEADLINE_MS` /
+   * `FIRST_FRAME_MS` handshake exists to end, reintroduced by the polish that was
+   * meant to follow it. The first draft of this feature did exactly that and this
+   * stage is what caught it: it held the pill at `scale(0.92)` with a *paused*
+   * animation, and the first `widget:resize` went out with
+   * `pillTop: 22, pillHeight: 35` against a resting 20 and 38.
+   *
+   * So the measurement is recorded **at the instant it is taken**, by wrapping the
+   * bridge before the pill has anything worth measuring — `widget:state` is held
+   * 150ms by `LATENCY`, which is the same window `widget-attente` shoots in — and
+   * not read back afterwards, because after the fact every rect is the resting one
+   * and the stage would be reporting that it looked rather than what it saw.
+   */
+  'widget-entree': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      /*
+       * Installed before the first measurement can happen, which is what makes this
+       * a measurement rather than a hope: the pill paints immediately as the
+       * placeholder and `widget:resize` is not sent until `widget:state` answers.
+       */
+      await page.evaluate(() => {
+        window.__entree = []
+        const real = window.app.invoke
+        window.app.invoke = (channel, payload) => {
+          if (channel === 'widget:resize') {
+            const pill = document.querySelector('[data-pill]')
+            const style = pill ? getComputedStyle(pill) : null
+            const rect = pill?.getBoundingClientRect()
+            window.__entree.push({
+              payload,
+              // What the pill was doing when the number above was read.
+              animation: style?.animationName ?? '?',
+              animationMs: style?.animationDuration ?? '?',
+              transitionMs: style?.transitionDuration ?? '?',
+              // The rect against the *layout* box, which no transform can touch.
+              // Equal means nothing was scaling it.
+              rectW: rect ? +rect.width.toFixed(2) : 0,
+              layoutW: pill?.offsetWidth ?? 0,
+              rectH: rect ? +rect.height.toFixed(2) : 0,
+              layoutH: pill?.offsetHeight ?? 0,
+            })
+          }
+          return real(channel, payload)
+        }
+      })
+
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      // The handshake answered and the arrival was released — see `placed` in
+      // `Widget.tsx`. Waited for rather than assumed, the `widget-sortie` lesson.
+      await page.waitForSelector('[data-pill].widget-arrived', { timeout: 5_000 })
+
+      const first = await page.evaluate(() => window.__entree[0] ?? null)
+      if (!first) throw new Error('aucun widget:resize observé : la mesure n’a pas eu lieu')
+      /*
+       * **Nothing was animating when the window was sized.** Both halves: the pill
+       * carried no live duration at all (so no transition or animation could have
+       * been in flight), and its painted box equalled its layout box (so no
+       * transform of any kind was applied to it).
+       */
+      const live = (value) => Number.parseFloat(value) > 0
+      if (first.animation !== 'none' || live(first.animationMs) || live(first.transitionMs)) {
+        throw new Error(
+          'la pilule portait déjà un mouvement au moment de la mesure : ' +
+            `animation ${first.animation} ${first.animationMs}, transition ${first.transitionMs} — ` +
+            'la fenêtre est dimensionnée sur une boîte transformée (DEC-50)',
+        )
+      }
+      if (
+        Math.abs(first.rectW - first.layoutW) > 0.5 ||
+        Math.abs(first.rectH - first.layoutH) > 0.5
+      ) {
+        throw new Error(
+          `la pilule était transformée au moment de la mesure : peinte ${first.rectW}×${first.rectH}, ` +
+            `disposée ${first.layoutW}×${first.layoutH} (DEC-50)`,
+        )
+      }
+      /*
+       * The resting numbers, read off the **layout** box and not off a rect.
+       *
+       * The first version of this line read `getBoundingClientRect().top` right
+       * after the class landed and got 21 against the 20 that had been sent — the
+       * arrival was still playing, so the assertion was itself measuring a
+       * transformed pill and failed on correct code. `offsetTop` is what a
+       * transform cannot touch, and both elements share an `offsetParent`, so the
+       * difference is exactly the distance the product computes from two rects at
+       * rest.
+       */
+      const resting = await page.evaluate(() => {
+        const pill = document.querySelector('[data-pill]')
+        return { height: pill.offsetHeight, top: pill.offsetTop - pill.parentElement.offsetTop }
+      })
+      if (first.payload.pillHeight !== resting.height || first.payload.pillTop !== resting.top) {
+        throw new Error(
+          `le processus principal a reçu une pilule de ${first.payload.pillHeight}px à ${first.payload.pillTop} ` +
+            `pour une pilule au repos de ${resting.height}px à ${resting.top} — ` +
+            'c’est la première image rognée que la poignée de main existe pour supprimer',
+        )
+      }
+
+      /*
+       * **The overshoot, pinned by its shape at the surface.** `tokens.test.ts`
+       * asserts it of the token; this asserts it of the curve that actually
+       * reached the element, which is the `--ease-in` lesson applied one layer up
+       * — that token was redefined to a near-identical respelling and passed every
+       * check in the repo because nothing asked what the curve did.
+       */
+      const shape = await page.evaluate(() => {
+        const pill = document.querySelector('[data-pill]')
+        const style = getComputedStyle(pill)
+        const match = /^cubic-bezier\(([^)]*)\)$/.exec(style.animationTimingFunction.trim())
+        if (!match) return { curve: style.animationTimingFunction, peak: null, ms: style.animationDuration }
+        const [, y1, , y2] = match[1].split(',').map((n) => Number.parseFloat(n))
+        const Y = (t) => 3 * (1 - t) ** 2 * t * y1 + 3 * (1 - t) * t * t * y2 + t ** 3
+        let peak = 0
+        for (let i = 0; i <= 1000; i += 1) peak = Math.max(peak, Y(i / 1000))
+        return { curve: style.animationTimingFunction, peak, ms: style.animationDuration, name: style.animationName }
+      })
+      if (shape.name === 'none') throw new Error('la pilule posée ne joue aucune animation d’arrivée')
+      if (!(shape.peak > 1.0001)) {
+        throw new Error(
+          `la courbe d’arrivée ne dépasse jamais son point d’arrivée (pic ${shape.peak}) : ` +
+            `${shape.curve} — DEC-50 autorise un dépassement, et sans lui l’arrivée est une simple montée`,
+        )
+      }
+
+      /*
+       * **The origin follows `above`, which is the half of DEC-50 that is about
+       * where the motion comes *from*.** The panel grows out of the edge the pill
+       * is on; `Overlay.resize` answers which, and the harness answers `true` for
+       * the same reason the real placement does at these viewports — the widget's
+       * default position is the bottom of the display.
+       */
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await page.waitForTimeout(220)
+      const panel = await page.evaluate(() => {
+        const card = document.querySelector('.widget-panel-arrive')
+        if (!card) return null
+        return {
+          above: card.getAttribute('data-above'),
+          origin: getComputedStyle(card).transformOrigin,
+          height: Math.round(card.getBoundingClientRect().height),
+        }
+      })
+      if (!panel) throw new Error('le panneau ouvert ne porte pas l’animation d’ouverture')
+      // Stacked above the pill the origin is the panel's own bottom edge, stacked
+      // below it is its top. A centre is what shipped, and it is what DEC-50 names.
+      const wantY = panel.above === 'true' ? panel.height : 0
+      const gotY = Number.parseFloat(panel.origin.split(' ')[1] ?? '')
+      if (!Number.isFinite(gotY) || Math.abs(gotY - wantY) > 1.5) {
+        throw new Error(
+          `le panneau s’ouvre depuis ${panel.origin} alors qu’il est empilé ${
+            panel.above === 'true' ? 'au-dessus' : 'en dessous'
+          } de la pilule : il devrait naître du bord côté pilule (y ≈ ${wantY})`,
+        )
+      }
+    },
+  },
+
+  /*
    * The same window, opened: the live transcript, the rep's own marks in place,
    * the note field and the two ways out. This is the state the widget spends
    * most of a call in once a rep has opened it, and it is the only surface in
@@ -1871,10 +2091,21 @@ const SCREENS = {
        * `drag-region` and delivers no click at all.
        */
       const chevron = page.getByRole('button', { name: /le panneau/ })
+      /*
+       * **Both boxes read at rest**, which stopped being free when DEC-50 put a
+       * `scale` on the pill's arrival: measured on the first run after it, this
+       * `before` came back 23.26×23.26 for a 24×24 chevron — the pill was still
+       * 97% of the way through growing in — and the stage reported the chevron
+       * moving 3px under the pointer when nothing had moved at all. A geometric
+       * invariant across a gesture has to be measured at rest on both sides of it
+       * or the invariant is not what is being measured. See `settled`.
+       */
+      await settled(page)
       const before = await chevron.boundingBox()
       await chevron.click()
       await page.getByPlaceholder('Noter ce moment…').waitFor()
       await page.waitForTimeout(120)
+      await settled(page)
       const after = await chevron.boundingBox()
       const moved = Math.abs((after?.x ?? 0) - (before?.x ?? 0))
       if (moved > 2) {
@@ -1972,6 +2203,11 @@ const SCREENS = {
        * a second click at the same pixel cancels.
        */
       const box = async (name) => {
+        // At rest, always: these three rectangles are compared with each other,
+        // and a transform on the card they sit in moves all three by different
+        // amounts. See `settled` — the same trap cost `widget-ouvert` a false
+        // « the chevron moved 3px » on the first run after DEC-50.
+        await settled(page)
         const rect = await page.getByRole('button', { name, exact: true }).boundingBox()
         if (!rect) throw new Error(`« ${name} » n’est pas à l’écran`)
         return rect
@@ -2140,6 +2376,9 @@ async function main() {
     await browser.close()
     process.exit(1)
   }
+
+  // Nothing below measures a page that is still moving — see `settled`.
+  await settled(page)
 
   /*
    * The scan runs *before* `--expand`, on the layout the window really draws.
@@ -2420,6 +2659,16 @@ async function main() {
          wearing the word that used to be read as « leaving ». */
       #sillage-attack-arrivee {
         transition: opacity var(--motion) var(--ease-out) !important }
+      /* Probe 12, the third that must stay **silent**: DEC-50's arrival, in the
+         shape the product now ships it — a \`from { opacity: 0 }\` keyframes on an
+         overshoot curve. It is the first element in this product whose curve is
+         neither \`--ease-out\` nor \`--ease-in\`, and it starts fully transparent, so
+         it sits on both of the census's tripwires at once. A tightening that made
+         it a « départ à contresens » would be a false positive on the one surface
+         DEC-50 exists for, and a check people work around is gone. */
+      @keyframes sillage-attack-entree { from { opacity: 0; scale: .92 } to { opacity: 1; scale: 1 } }
+      #sillage-attack-entree {
+        animation: sillage-attack-entree var(--motion) var(--ease-overshoot) both !important }
     ` })
     await page.evaluate(() => {
       const root = document.querySelector('#root')
@@ -2457,6 +2706,7 @@ async function main() {
       // `ease-out` is the class, not the token: Tailwind ships it and it is what
       // a component arriving is written with.
       add('sillage-attack-arrivee', 'transition ease-out duration-150')
+      add('sillage-attack-entree')
     })
     await page.waitForTimeout(120)
   }
@@ -2744,6 +2994,22 @@ async function main() {
           'RIEN — une révélation conditionnée par une classe (et non par un pseudo-état) ' +
             'a été signalée comme un départ (faux positif)',
         ],
+        /*
+         * The third silent one, and the newest: DEC-50's arrival as the product
+         * ships it. `from { opacity: 0 }` on `--ease-overshoot` — fully transparent
+         * at one end and on the only curve in `:root` that is neither of the two
+         * this rule was built around. Nothing about it is a finding, in either
+         * direction: not a departure (the progression ends *less* transparent) and
+         * not off-token (the curve is declared). The moment it becomes one, the
+         * rule has acquired a false positive on the one surface the decision exists
+         * for.
+         */
+        [
+          !backwards.some((m) => m.what.includes('sillage-attack-entree')) &&
+            !undeclared.some((m) => m.what.includes('sillage-attack-entree')),
+          'RIEN — une arrivée écrite en @keyframes depuis opacity 0, sur la courbe à ' +
+            'dépassement, a été signalée (faux positif sur la surface même de DEC-50)',
+        ],
       ]
         .filter(([held]) => !held)
         .map(([, what]) => what)
@@ -2756,7 +3022,7 @@ async function main() {
         process.exitCode = 11
       } else {
         console.log(
-          '  auto-test du mouvement: les onze attaques signalées, les deux dernières restées muettes',
+          '  auto-test du mouvement: les douze attaques signalées, les trois dernières restées muettes',
         )
       }
     }

@@ -251,33 +251,50 @@
   --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
 
   /*
-   * **There is no overshoot curve here, and the reason is arithmetic rather
-   * than taste.**
+   * **The one overshoot, licensed by DEC-50, and it draws on exactly two
+   * elements.**
    *
-   * The competitor ships three — `cubic-bezier(.22, 1.2, .36, 1)`,
-   * `(.25, 1.1, .5, 1)` and `(.34, 1.56, .64, 1)` — and overshoot is what makes
-   * something arriving read as alive rather than merely fast. Measured: their
-   * peak progress is 1.0125, 1.0024 and 1.0978. VISION.md §6 gives this product
-   * « opacity and 2–4px translate only », so on the largest translate we are
-   * allowed those peaks are worth
+   * The round before this one refused to declare it, and the refusal was right
+   * at the time: the arithmetic said an overshoot could not be seen. « opacity
+   * and 2–4px translate only » was the whole vocabulary, and on a 3px translate
+   * the competitor's three springs are worth 0.04px, 0.01px and 0.29px —
+   * sub-pixel, measured. A token that draws nothing is the shape `--motion-fast`
+   * was in, and declaring one to satisfy an acceptance line is the thing that
+   * acceptance line exists to prevent.
    *
-   *   (.22, 1.2, .36, 1)    0.04px on 3px · 0.05px on 4px
-   *   (.25, 1.1, .5, 1)     0.01px        · 0.01px
-   *   (.34, 1.56, .64, 1)   0.29px        · 0.39px
+   * DEC-50 moved the clause, narrowly: `scale` is allowed on the widget's
+   * arrival, and on nothing else in the product. That is the surface the
+   * frequency table puts on the « once or twice a day → delight » row, it is
+   * drawn over another application's video, and it had `transitionDuration: 0s`
+   * and `animationName: none` — it popped between two frames over the face of
+   * the person on the call. With a carrier, the overshoot is worth pixels: this
+   * curve's peak is **1.0800**, so from `scale(0.92)` it is **1.54px** on the
+   * pill's 240px card and **2.18px** on the panel's 340px one, and it is above 1
+   * from 39ms to 145ms of the 150. Not a lot. Enough to read as a settle rather
+   * than a stop, which is the whole difference DEC-50 is buying.
    *
-   * — sub-pixel, on every one of them. An overshoot this product can *see* has
-   * to ride a `scale` (the same curve is 33px on the widget panel's 340px card),
-   * and `scale` is the other half of the sentence §6 rules out. So this is not a
-   * token that was forgotten: it is a token that would draw nothing, which is the
-   * shape `--motion-fast` was in until this round. Declaring it and pinning its
-   * shape would have satisfied US-3's acceptance line and shipped a dead
-   * declaration, which is exactly what the acceptance line exists to prevent.
+   * **It is `--ease-out` with `y1` lifted past the endpoint, and that is the
+   * point.** `(0.22, 1, 0.36, 1)` → `(0.22, 1.5, 0.36, 1)`: same control
+   * abscissae, same taste, one nudge past 1 and back. `--ease-in` is the same
+   * curve rotated and this is the same curve overshot, so there is still exactly
+   * **one** piece of taste in this file and two derivations of it — which is the
+   * argument `--ease-in`'s own comment makes and the reason a competitor's
+   * `(.34, 1.56, .64, 1)` was not lifted wholesale. Measured against the three
+   * candidates and against `y1` from 1.2 to 1.8; 1.2 and 1.3 are sub-pixel on
+   * the pill (0.24px, 0.57px) and 1.8 overshoots 3.4px, which on a card over a
+   * video call is a bounce rather than a settle.
    *
-   * If overshoot is wanted, the decision is VISION.md §6's — « Nothing bounces »
-   * and « 2–4px translate only » both have to move, and the surface worth
-   * spending it on is the widget's *arrival* over a call (once or twice a day,
-   * the frequency table's « delight » row), which is `src/widget/Widget.tsx`.
+   * **Pinned by its shape and not its string** (`tokens.test.ts`): « progress
+   * exceeds 1 somewhere in its span », which is the `--ease-in` lesson — that
+   * token was redefined to `cubic-bezier(0.22, 1, 0.36, 0.99)`, restored the
+   * blink exactly, and passed every check in the repo because nothing asked what
+   * the curve *did*. Every other `--ease*` in this file is held to the opposite
+   * assertion, so « nothing bounces » is still enforced everywhere §6 means it.
+   *
+   * Drawn by `.widget-arrive` and `.widget-panel-arrive` in `index.css`, and by
+   * nothing else — grep it before adding a third.
    */
+  --ease-overshoot: cubic-bezier(0.22, 1.5, 0.36, 1);
 
   /*
    * Paper grain, for quiet surfaces only — the splash, an empty transcript pane,
