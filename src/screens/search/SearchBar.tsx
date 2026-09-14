@@ -111,6 +111,21 @@ export interface SearchBarProps {
    * is already on, which is every moment they are relevant and no other.
    */
   chipsAlways?: boolean
+  /**
+   * Whether the two *data* axes — *Intention* and *Client* — are offered.
+   *
+   * `true` on the calendar, where the search is a lookup and the client names
+   * the main process computed are the fastest way into a call a rep half
+   * remembers.
+   *
+   * `false` on *Historique* (V2), where the axes are the reader's own two
+   * questions — how far back, and what state the call is in — and the row of
+   * client names under them turned the one screen built for reading a record
+   * into a facet browser. The names are still reachable there: typing one into
+   * the box beside the chips is the same query, and it is the gesture DEC-25
+   * says the product is entered by.
+   */
+  dataAxes?: boolean
   className?: string
 }
 
@@ -123,6 +138,7 @@ export function SearchBar({
   inputRef,
   onHistorique,
   chipsAlways = true,
+  dataAxes = true,
   className,
 }: SearchBarProps) {
   /*
@@ -183,16 +199,20 @@ export function SearchBar({
             onSelect={(statut) => onFilter({ ...filter, statut })}
           />
 
-          <Rule />
+          {dataAxes ? (
+            <>
+              <Rule />
 
-          <Axis
-            label="Intention"
-            values={INTENTIONS}
-            labels={INTENTION_LABEL}
-            current={filter.intention}
-            neutral={NO_FILTER.intention}
-            onSelect={(intention) => onFilter({ ...filter, intention })}
-          />
+              <Axis
+                label="Intention"
+                values={INTENTIONS}
+                labels={INTENTION_LABEL}
+                current={filter.intention}
+                neutral={NO_FILTER.intention}
+                onSelect={(intention) => onFilter({ ...filter, intention })}
+              />
+            </>
+          ) : null}
 
           {/*
             The client axis, last and inside the same scroller: it is the axis
@@ -201,7 +221,7 @@ export function SearchBar({
             Drawn at all only when the main process offers names — an axis
             holding nothing is a control that does nothing (DEC-26).
           */}
-          {clients.length > 0 ? (
+          {dataAxes && clients.length > 0 ? (
             <>
               <Rule />
               <div role="group" aria-label="Client" className="flex shrink-0 gap-tight">

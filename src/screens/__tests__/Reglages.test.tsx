@@ -271,15 +271,25 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     )
   })
 
-  test('choosing a section swaps the right pane, and nothing overlays anything (HR-10)', async () => {
+  test('choosing a section swaps the right pane, and nothing overlays the pane (HR-10)', async () => {
     const { container } = mount()
     await open('Diagnostics')
 
     expect(screen.getByText(/conservés 90 jours/)).toBeTruthy()
     // The connectors pane is gone, not hidden behind something.
     expect(screen.queryByText('Facultatifs')).toBeNull()
+
+    /*
+      **One dialog, and it is the sheet itself** (V2).
+
+      Réglages is a drawer over the calendar now rather than a screen beside it,
+      so `[role="dialog"]` is no longer proof of a popover — it is the frame. The
+      rule HR-10 is about survives intact and is what is asserted here: the
+      sections rail *swaps* the pane, and nothing inside the sheet overlays
+      anything else. So exactly one dialog, and no second layer of chrome.
+    */
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(container.querySelector('dialog')).toBeNull()
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
   })
 })
@@ -966,7 +976,7 @@ describe('DEC-34: the settings that are not secrets', () => {
     await act(async () => {
       pane().getByRole('button', { name: 'Ajouter une clé' }).click()
     })
-    const field = pane().getByLabelText(/^Modèle/)
+    const field = pane().getByLabelText('Modèle *')
     fireEvent.change(field, { target: { value: 'llama3.1:8b' } })
     await act(async () => {
       within(field.closest('form')!).getByRole('button', { name: 'Enregistrer' }).click()

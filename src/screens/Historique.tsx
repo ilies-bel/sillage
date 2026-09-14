@@ -59,6 +59,8 @@ import { cn } from '../lib/utils.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { AskPanel } from './session/AskPanel.tsx'
 import { useShortcuts } from '../app/shortcuts.ts'
+import { useUpdateReady } from '../app/update.ts'
+import type { SectionId } from './Reglages.tsx'
 import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
 import { formatDayShort, formatOffset, formatTime, meetingHeading } from '../app/format.ts'
 import { interleaveMarks, type MomentMark } from '../../electron/core/contracts/marks.ts'
@@ -66,7 +68,7 @@ import {
   Button,
   CopyButton,
   EmptyState,
-  List,
+  Rail,
   ReadingColumn,
   Row as UiRow,
   RowTitle,
@@ -153,6 +155,14 @@ const scopePhrases = (filter: HistoryFilter): string[] =>
 
 interface HistoriqueProps {
   onBack: () => void
+  /**
+   * Opens Réglages, on a named pane when the caller knows which one.
+   *
+   * The rail is on this screen too, so the two rows that are not destinations —
+   * *Réglages* and « Mise à jour prête » — are reachable from here as well.
+   * Passed in rather than routed here: this screen is a reader and owns no route.
+   */
+  onReglages: (section?: SectionId) => void
   /** What the rep typed on the calendar. Empty when they opened it with an empty box. */
   query?: string
   filter?: HistoryFilter
@@ -160,12 +170,14 @@ interface HistoriqueProps {
 
 export function Historique({
   onBack,
+  onReglages,
   query: initialQuery = '',
   filter: initialFilter = NO_FILTER,
 }: HistoriqueProps) {
   const [query, setQuery] = useState(initialQuery)
   const [filter, setFilter] = useState<HistoryFilter>(initialFilter)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const updateReady = useUpdateReady()
 
   const search = useHistorySearch(query, filter, SEARCH_LIMIT)
   const rows: readonly HistoryRow[] | null = search.result?.rows ?? null
@@ -183,7 +195,32 @@ export function Historique({
   }, [])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full overflow-hidden">
+      {/*
+        The same rail as the calendar's, on the same three destinations (V2).
+
+        *À valider* and *Historique* are both **this** screen: one is the chip
+        the calendar's *En attente de validation* links to and the other is the
+        same reader with nothing on. So the rail sets the filter rather than
+        navigating, which is what makes the current item honest — the two places
+        the rep can be here are two states of one question (DEC-25), and a rail
+        that "navigated" to the screen it is already on would be a control that
+        does nothing.
+      */}
+      <Rail
+        current={filter.statut === 'a-valider' ? 'a-valider' : 'historique'}
+        pending={null}
+        updateReady={updateReady}
+        onPlace={(place) => {
+          if (place === 'aujourdhui') onBack()
+          else if (place === 'a-valider') setFilter({ ...NO_FILTER, statut: 'a-valider' })
+          else setFilter(NO_FILTER)
+        }}
+        onReglages={() => onReglages()}
+        onUpdate={() => onReglages('maj')}
+      />
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <header className="px-gutter pb-4 pt-7">
         <div className="flex items-baseline gap-4">
           <Button variant="nav" onClick={onBack}>
@@ -224,6 +261,12 @@ export function Historique({
           onFilter={setFilter}
           clients={search.result?.clients ?? []}
           inputRef={searchRef}
+          /*
+            **Two axes, not four** (V2). *Période* and *Statut* are the reader's
+            own questions — how far back, and what state the call is in. The two
+            data axes are the calendar's: see `SearchBarProps.dataAxes`.
+          */
+          dataAxes={false}
           className="mt-4"
         />
       </header>
@@ -261,7 +304,16 @@ export function Historique({
               : 'Aucun appel enregistré.'}
           </EmptyState>
         ) : (
-          <List label="Appels enregistrés">
+          /*
+            **Each call is a card of its own** (V2). A divided list said these
+            rows were one block to be read down; they are not — they are the
+            record, and what a rep does here is pick one and open it. The
+            rectangle is the queue row's: an edge stroke, `rounded-sm`, 16px by
+            10px. It is also what makes an *expanded* row legible: a record six
+            hundred pixels tall inside a hairline-divided list reads as the list
+            having come apart.
+          */
+          <ul aria-label="Appels enregistrés" className="flex flex-col gap-2">
             {rows.map((row) => (
               <Row
                 key={row.meeting.id}
@@ -270,7 +322,7 @@ export function Historique({
                 onToggle={() => toggle(row.meeting.id)}
               />
             ))}
-          </List>
+          </ul>
         )}
         {/*
           **The cap, said out loud.**
@@ -320,6 +372,7 @@ export function Historique({
           </p>
         ) : null}
       </main>
+      </div>
     </div>
   )
 }
@@ -362,17 +415,14 @@ function Row({ row, expanded, onToggle }: RowProps) {
   }, [expanded])
 
   return (
-    <li ref={self} className="bg-card scroll-mt-2">
+    <li ref={self} className="bg-card border-card scroll-mt-2 overflow-hidden rounded-sm border">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         className="hover:bg-card-soft w-full text-left transition"
       >
-        <UiRow as="div" density="roomy" align="center" className="bg-transparent">
-          <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-            {formatDayShort(meetingAnchor(meeting))}
-          </span>
+        <UiRow as="div" density="card" align="center" className="bg-transparent">
           <RowTitle {...meetingHeading(meeting)} />
           <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
           {/*
@@ -382,7 +432,16 @@ function Row({ row, expanded, onToggle }: RowProps) {
                 intent, its state, its VerySwing id and its failure sentence, is
                 « Envois » in the expanded record two clicks below.
               */}
-              <IntentSummary intents={row.intents} variant="compact" className="w-48" />
+              <IntentSummary intents={row.intents} variant="compact" className="w-48 truncate" />
+          {/*
+            The date, at the trailing edge (V2). In a schedule the clock is the
+            index and leads; in a record of calls that have already happened it
+            is a detail of the card, and the card is led by the client's name —
+            which is what a rep is scanning for here.
+          */}
+          <span className="text-muted shrink-0 text-right tabular-nums text-ui">
+            {formatDayShort(meetingAnchor(meeting))}
+          </span>
         </UiRow>
       </button>
 

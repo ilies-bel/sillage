@@ -49,13 +49,14 @@ import {
   type DayKey,
 } from '../app/calendar.ts'
 import {
-  formatAgo,
   formatDayLong,
   formatDayMedium,
   formatMonthLong,
   upperFirst,
 } from '../app/format.ts'
-import { Button, Segmented, unavailable, type SegmentedOption } from '../ui/index.ts'
+import { Button, Rail, Segmented, type SegmentedOption } from '../ui/index.ts'
+import type { SectionId } from './Reglages.tsx'
+import { useUpdateReady } from '../app/update.ts'
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
 import { NewMeeting } from './agenda/NewMeeting.tsx'
@@ -100,7 +101,16 @@ interface AgendaProps {
    * would type it twice.
    */
   onHistorique: (query: string, filter: HistoryFilter) => void
-  onReglages: () => void
+  /**
+   * Opens Réglages — on a named pane when the caller knows which one.
+   *
+   * Three callers on this screen now want three different panes: the header
+   * status control lands on *Connecteurs* (DEC-32), the empty day's line lands
+   * on the same one, and the rail's « Mise à jour prête » lands on *Mise à
+   * jour*. Sending all three to the landing section would make the one click
+   * each of them hands over cost a second one.
+   */
+  onReglages: (section?: SectionId) => void
   /** Replays first run, from the empty day. It is seen once and worth seeing twice. */
   onOnboarding: () => void
 }
@@ -108,6 +118,8 @@ interface AgendaProps {
 export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: AgendaProps) {
   const agenda = useInvoke('agenda:snapshot', {})
   const auth = useInvoke('auth:state', {})
+  /* The rail's one conditional row. `phase: 'ready'` only — see `app/update.ts`. */
+  const updateReady = useUpdateReady()
   const [busy, setBusy] = useState(false)
 
   useBroadcast('agenda:changed', agenda.set)
@@ -381,6 +393,21 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
    * dead control DEC-26 forbids. `preload.ts` has already stripped Electron's
    * `Error invoking remote method` prefix, so what surfaces is our sentence.
    */
+  /**
+   * Re-read the calendar, from the one place that asks about it (`agenda:refresh`).
+   *
+   * It was a permanent *Synchronisé il y a 4 min* under the month grid. It is the
+   * empty card's freshness clause now — see `DayPaneProps.onRefresh`.
+   */
+  const refresh = useCallback(async () => {
+    setBusy(true)
+    try {
+      agenda.set(await invoke('agenda:refresh', {}))
+    } finally {
+      setBusy(false)
+    }
+  }, [agenda])
+
   const armNow = useCallback(
     async (eventId: string) => {
       setBusy(true)
@@ -398,17 +425,30 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
     [agenda, meetings, onOpen],
   )
 
-  const refresh = useCallback(async () => {
-    setBusy(true)
-    try {
-      agenda.set(await invoke('agenda:refresh', {}))
-    } finally {
-      setBusy(false)
-    }
-  }, [agenda])
-
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full overflow-hidden">
+      {/*
+        The rail, on every screen a rep can reach outside a call (V2). It holds
+        three destinations and two footer rows and it is the same component on
+        *Historique*, so « where am I » is answered in one place.
+
+        `À valider` is a query and not a screen — it opens *Historique* with the
+        chip the calendar's own section links to (DEC-25), which is the same
+        query asked from two places rather than a second inbox.
+      */}
+      <Rail
+        current="aujourdhui"
+        pending={pending.result?.rows.length ?? null}
+        updateReady={updateReady}
+        onPlace={(place) => {
+          if (place === 'a-valider') onHistorique('', pendingFilter)
+          else if (place === 'historique') onHistorique('', NO_FILTER)
+        }}
+        onReglages={() => onReglages()}
+        onUpdate={() => onReglages('maj')}
+      />
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/*
         Full width, with the border that separates it from the two columns
         below. The screen is a surface, not a page of floating cards.
@@ -466,22 +506,15 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             optional (DEC-26) and an unreachable Graph is not a degradation of
             the app.
           */}
-          <StatusControl onReglages={onReglages} />
+          <StatusControl onReglages={() => onReglages('connecteurs')} />
 
           {/*
-            One word, not a nav bar. HR-10 says one window and no modal chrome,
-            and a permanent sidebar for a screen a rep opens once a week is
-            chrome that is present during every call it is not wanted in.
-
-            *Historique* used to sit here. It does not any more (DEC-25,
-            VISION.md §6): it is not a destination, it is where the search below
-            goes when the rep wants the full record — so it is reached by typing
-            a client's name on the screen they are already on, and the link that
-            opens it carries that query with it.
+            *Réglages* used to be a word in this header. It is in the rail now,
+            at the bottom, with « Mise à jour prête » above it — one place for
+            the two rows that are not destinations, on every screen rather than
+            on this one. A header link and a rail row would be two doors to one
+            pane, and the header is where the screen says what it is *about*.
           */}
-          <Button variant="text" onClick={onReglages}>
-            Réglages
-          </Button>
           {/*
             The header drops *Ajouter au …* exactly when the day pane is
             drawing its own — one scheduling control on screen, and it is the
@@ -539,22 +572,20 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
           />
 
           {/*
-            The calendar's own sync state, beside the calendar. Not in the
-            header: a connector that is optional (DEC-26, DEC-32) states its
-            condition on the control it belongs to, and never as an app-level
-            line.
+            **The sync line is gone, and where it went is the point.**
+
+            « Synchronisé il y a 4 min » sat here permanently, under the grid, on
+            every screenful of every day — an optional connector (DEC-26)
+            reporting itself whether or not anything turned on it, which is the
+            app-level line DEC-32 retired one level up. Read on a day that has
+            calls in it, it answers nothing: the calls are on the screen.
+
+            It is said once now, in the empty day's card, where it is the
+            *answer* — « there is nothing here » is a claim about the calendar,
+            and how old the reading is, is how much that claim is worth. The
+            manual refresh went with it: `agenda:refresh` is still the channel,
+            and nothing on this screen waits on it (DEC-26).
           */}
-          {snapshot && authState?.status === 'signedIn' ? (
-            <div className="mt-2 flex justify-center">
-              <Button
-                variant="text"
-                onClick={() => void refresh()}
-                {...unavailable(busy, 'Synchronisation…')}
-              >
-                {`Synchronisé ${formatAgo(snapshot.syncedAt, now)}`}
-              </Button>
-            </div>
-          ) : null}
         </aside>
 
         {/*
@@ -564,7 +595,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
           what stops the window from ending in bare canvas half way down: below
           the last row there is still a surface, which is what a page is.
         */}
-        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter py-row">
+        <main className="bg-card min-h-0 min-w-0 flex-1 overflow-y-auto px-gutter py-row">
           {/*
             Above the list, and the product's only entry into the past
             (VISION.md §6). It is drawn signed out and on an empty corpus: the
@@ -654,6 +685,15 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
               when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
               unsynced={unsynced}
               /*
+                The calendar's own freshness, said where it answers something:
+                in the empty card, and nowhere else on the screen.
+              */
+              readAt={snapshot?.syncedAt ?? null}
+              now={now}
+              onConnecteurs={() => onReglages('connecteurs')}
+              onRefresh={() => void refresh()}
+              refreshing={busy}
+              /*
                 The header's *Ajouter au …* again, this time where the rep is
                 looking. Same component and therefore the same form, the same
                 validation and the same `onCreated` — a second copy of the
@@ -722,6 +762,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             />
           )}
         </main>
+      </div>
       </div>
     </div>
   )

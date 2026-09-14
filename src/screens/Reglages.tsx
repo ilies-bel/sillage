@@ -227,14 +227,29 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
     [settings],
   )
 
+  /*
+    The two unsettled states are drawn **inside the sheet**, not instead of it.
+
+    Returning a bare `Centered` here painted a full-window panel over the
+    calendar with no veil and no frame — so for the length of one `settings:
+    snapshot` the rep's screen was replaced by the word « Chargement… », and a
+    failed read replaced it permanently with a red sentence and no way back that
+    was not `Échap`. The sheet is the chrome; what is in it is the question.
+  */
   if (settings.state.status === 'loading') {
-    return <Centered>Chargement…</Centered>
+    return (
+      <Sheet onClose={onBack} title="Réglages">
+        <Centered>Chargement…</Centered>
+      </Sheet>
+    )
   }
   if (settings.state.status === 'failed') {
     return (
-      <Centered>
-        <p className="text-danger text-copy">{settings.state.reason}</p>
-      </Centered>
+      <Sheet onClose={onBack} title="Réglages">
+        <Centered>
+          <p className="text-danger text-copy">{settings.state.reason}</p>
+        </Centered>
+      </Sheet>
     )
   }
 
@@ -251,40 +266,18 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
   const broken = snapshot.connectors.filter((row) => row.health.state !== 'ok').length
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-subtle flex items-baseline gap-4 border-b px-gutter pb-4 pt-7">
-        <Button variant="nav" onClick={onBack}>
-          ‹ Calendrier
-        </Button>
-        <h1 className="font-display text-strong text-display leading-none">Réglages</h1>
-      </header>
-
-      {/*
-        Two panes, one window (HR-10). No dialog, no popover, no toast — the
-        rail switches what the right pane holds and nothing overlays anything.
-
-        Both panes carry a surface and run the full height (`5.5 Réglages`). A
-        border alone left the rail and the content on the same white, so the
-        split existed as a hairline and nothing else — and a rail that does not
-        read as a rail is a column of links a rep scrolls past. The content pane
-        is `--bg-card`, the rail one step back on `--bg-card-soft`, which is the
-        same pairing the calendar uses one screen over.
-      */}
-      {/*
-        **The sheet is bounded and centred; the two panes inside it are not.**
-
-        Unbounded, the pane ran the window: at 1280 the content stopped at 857px
-        and left six hundred and sixty pixels of empty `--bg-card` to the right
-        of it, and at 1920 it left thirteen hundred. Centring the *content*
-        inside the pane is the wrong repair and was tried — it opens a
-        two-hundred-pixel gutter between the rail and the first heading, so the
-        pane reads as starting nowhere near the thing that opened it. Bounding
-        the pair keeps the rail against its content, keeps `px-gutter` as the
-        only space between them, and puts the slack where slack belongs: outside
-        the sheet, evenly, where it reads as a margin rather than as a column
-        that ran out.
-      */}
-      <div className="border-subtle mx-auto flex min-h-0 w-full max-w-[62rem] flex-1 border-x">
+    <Sheet
+      onClose={onBack}
+      /*
+        **The pane is named by what it holds, and that name is the sheet's
+        title.** It used to be « Réglages » in the window header with the
+        section's own name repeated as a `pane-label` inside the pane: the same
+        screen said « Réglages » once and « Connecteurs » twice. The sheet's rail
+        is headed « Réglages » — which is what the *sheet* is — and the pane is
+        headed by the section, once.
+      */
+      title={SECTIONS.find((item) => item.id === section)?.label ?? 'Réglages'}
+      nav={
         <SectionNav
           label="Sections des réglages"
           /*
@@ -305,10 +298,10 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
           )}
           current={section}
           onSelect={setSection}
-          className="bg-card-soft border-subtle w-60 overflow-y-auto border-r py-row"
+          className="w-full overflow-y-auto"
         />
-
-        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+      }
+    >
           {/*
             One measure for the whole pane.
             
@@ -460,6 +453,94 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
             <DiagnosticsPanel retentionDays={snapshot.retention.diagnosticsDays} />
           )}
           </div>
+    </Sheet>
+  )
+}
+
+/**
+ * **The one sheet in this product** (V2).
+ *
+ * HR-10 says one window and no modal chrome, and this is the exception the
+ * design makes on purpose: Réglages is not a *place* — it is a drawer the rep
+ * opens over whatever they were doing and closes again. Making it a screen cost
+ * them their position on the calendar every time they went to look at a
+ * connector, which is the trip the header status control exists to make short.
+ *
+ * Three things it owes, and each is a way modals go wrong:
+ *
+ *  · **A way out that is not the keyboard.** The veil closes it and the pane's
+ *    own ✕ closes it. `Échap` closes it too (`app/shortcuts.ts`, installed by
+ *    `App.tsx` for every route that has somewhere to go back to) — but a sheet
+ *    whose only exit is a key is a sheet a rep gets stuck in.
+ *  · **A frame the content cannot burst.** 920×600, and both are ceilings as
+ *    well as sizes: at 960×600 — the minimum `app/main.ts` declares — the sheet
+ *    takes the window less a margin rather than hanging off the bottom edge.
+ *    The pane scrolls inside it; the sheet never does.
+ *  · **Ease-out on the way in.** `animate-rise-in` is `var(--motion)
+ *    var(--ease-out)`, the one curve this product owns for a thing arriving, and
+ *    it collapses to nothing under `prefers-reduced-motion` because `--motion`
+ *    does.
+ */
+function Sheet({
+  title,
+  nav,
+  onClose,
+  children,
+}: {
+  title: string
+  /** The sections column. Absent on the two unsettled states — there is nothing to switch. */
+  nav?: ReactNode
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
+      {/*
+        The veil, and it is a control: pressing outside a sheet closes it, which
+        is the gesture everybody already has. `aria-hidden` because the ✕ in the
+        pane is the same act, named, and two accessible « fermer » targets on one
+        surface is one too many.
+      */}
+      <div className="bg-veil absolute inset-0" aria-hidden onClick={onClose} />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Réglages"
+        className="border-card bg-card animate-rise-in relative flex h-[600px] max-h-full w-[920px] max-w-full overflow-hidden rounded-lg border"
+      >
+        {nav ? (
+          <div className="bg-card-soft border-subtle flex w-[220px] shrink-0 flex-col border-r py-row">
+            <p className="font-display text-strong mb-block px-row text-display leading-none">
+              Réglages
+            </p>
+            {nav}
+          </div>
+        ) : null}
+
+        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+          {/*
+            The pane's own title row. The ✕ is at the right of it, on the
+            baseline of the heading, and it is a `nav` button rather than an
+            icon-only rectangle with a tooltip: it clears 24×24 and it carries a
+            French name.
+          */}
+          <div className="mb-block flex items-baseline gap-4">
+            <h2 className="font-display text-strong min-w-0 flex-1 truncate text-display leading-none">
+              {title}
+            </h2>
+            {/* `min-w-[24px]`, like the calendar's month pager: a glyph this
+                narrow is 9px of target otherwise (WCAG 2.2, 24×24). */}
+            <Button
+              variant="nav"
+              className="min-w-[24px]"
+              aria-label="Fermer les réglages"
+              onClick={onClose}
+            >
+              ✕
+            </Button>
+          </div>
+          {children}
         </main>
       </div>
     </div>
@@ -482,7 +563,6 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
 function Raccourcis() {
   return (
     <section>
-      <SectionHeader>Raccourcis clavier</SectionHeader>
       <Lede>
         Ctrl sur Windows, ⌘ sur Mac — les deux fonctionnent partout. Ils sont ignorés pendant
         que vous écrivez, sauf Échap et Ctrl&nbsp;Entrée.
@@ -963,9 +1043,18 @@ function Providers({
    */
   const [open, setOpen] = useState<string | null>(null)
 
+    /*
+      **The table is named, and its name is no longer drawn twice.**
+
+      `<SectionHeader>{title}</SectionHeader>` stood at the head of this section
+      and the pane it is the whole of is now headed with the same words by the
+      sheet — « Transcription » over « Transcription », « Modèle de langage »
+      over « Modèle de langage ». The heading goes and the name stays, as the
+      section's accessible name: a landmark with no name is a landmark nobody can
+      address, and this screen holds more than one list.
+    */
   return (
-    <section>
-      <SectionHeader>{title}</SectionHeader>
+    <section aria-label={title}>
 
       {intro}
 
@@ -1404,7 +1493,6 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
 
   return (
     <section>
-      <SectionHeader>Connecteurs</SectionHeader>
 
       {/*
         **One line per section, and none before the first control.**
@@ -1719,7 +1807,6 @@ function UpdatePanel() {
   if (status.state.status !== 'ready') {
     return (
       <section>
-        <SectionHeader>Mise à jour</SectionHeader>
         <Lede>
           {status.state.status === 'failed' ? status.state.reason : 'Lecture de l’état…'}
         </Lede>
@@ -1739,7 +1826,6 @@ function UpdatePanel() {
 
   return (
     <section>
-      <SectionHeader>Mise à jour</SectionHeader>
 
       <Lede>
         Version installée&nbsp;: <span className="text-body font-medium">{update.currentVersion}</span>
@@ -1889,7 +1975,6 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
 
   return (
     <section>
-      <SectionHeader>Diagnostics</SectionHeader>
 
       <Lede>
         Les diagnostics sont conservés {retentionDays} jours puis effacés. Le contenu des

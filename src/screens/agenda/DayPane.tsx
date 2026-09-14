@@ -21,9 +21,19 @@
  *    a line in this pane, not a banner over the product.
  */
 import type { ReactNode } from 'react'
-import { formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
+import { formatAgo, formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
-import { Button, EmptyState, List, Row, RowTitle, SectionHeader, StateDot } from '../../ui/index.ts'
+import { cn } from '../../lib/utils.ts'
+import {
+  Button,
+  EmptyState,
+  List,
+  Row,
+  RowTitle,
+  SectionHeader,
+  StateDot,
+  unavailable,
+} from '../../ui/index.ts'
 import { STATE_LABEL, type AgendaEntry } from './entries.ts'
 
 interface DayPaneProps {
@@ -82,6 +92,33 @@ interface DayPaneProps {
    * `null` means no row does, which is an ordinary day.
    */
   emphasis: string | null
+  /**
+   * When the calendar was last read, or `null` when it never has been.
+   *
+   * Drawn **only** in the empty card, and that placement is the whole argument.
+   * It used to be a permanent line under the month grid — an optional connector
+   * (DEC-26) reporting itself on every screenful, which is the app-level banner
+   * DEC-32 retired one level down. On an empty day it stops being chrome and
+   * becomes the answer: « there is nothing here » is a claim about the calendar,
+   * and how old the reading is, is how much the claim is worth.
+   */
+  readAt?: number | null
+  /** The clock `readAt` is measured against — the screen's own, never a new one. */
+  now?: number
+  /** Opens Réglages on *Connecteurs*. The card's one way out of the second half. */
+  onConnecteurs?: () => void
+  /**
+   * Re-read the calendar (`agenda:refresh`).
+   *
+   * On the freshness clause itself, and only in the empty card. That is the one
+   * moment the question is live: a rep looking at an empty day who believes a
+   * meeting is missing is asking « is this answer current », and the sentence
+   * saying how old it is, is the thing to press. As a permanent control under
+   * the month grid it was an optional connector's plumbing on every screenful.
+   */
+  onRefresh?: () => void
+  /** A refresh is on the wire. The clause says so rather than going dead. */
+  refreshing?: boolean
   onOpen: (meetingId: string) => void
   /**
    * Start a scheduled call now, keeping the invite it came from.
@@ -103,6 +140,11 @@ export function DayPane({
   action,
   unsynced = false,
   emphasis,
+  readAt = null,
+  now = Date.now(),
+  onConnecteurs,
+  onRefresh,
+  refreshing = false,
   onOpen,
   onArm,
 }: DayPaneProps) {
@@ -153,10 +195,26 @@ export function DayPane({
         <EmptyState
           action={action}
           reason={unsynced ? undefined : reason || undefined}
+          /*
+            **One line, and it is about the calendar rather than about the app.**
+
+            It replaces « Le calendrier est facultatif — vous pouvez créer une
+            réunion sur n'importe quel jour. », which answered a question the rep
+            had not asked (they are looking at an empty day, not wondering
+            whether Microsoft is mandatory) and said nothing about *why* the day
+            is empty. What is worth knowing on an empty day is how fresh the
+            answer is, and whether there is anything connected to have answered
+            it — and then where to go about the second half.
+          */
           hint={
-            signedOut
-              ? 'Le calendrier est facultatif — vous pouvez créer une réunion sur n’importe quel jour.'
-              : undefined
+            <CalendarLine
+              readAt={readAt}
+              now={now}
+              signedOut={signedOut}
+              onConnecteurs={onConnecteurs}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+            />
           }
         >
           {/*
@@ -181,18 +239,35 @@ export function DayPane({
       {past.length > 0 ? (
         <section className="mt-block">
           <SectionHeader>Passées</SectionHeader>
-          <List>
+          {/*
+            **A past call is a card; a call still ahead is a row.**
+
+            The two halves of this pane are not the same kind of thing and the
+            divided list said they were. Above the divider is a schedule — rows
+            in one block, read down, where the hairline between them is the point.
+            Below it is a record: each card is one call that happened, complete
+            on its own, and what a rep does with it is pick one. Separating them
+            is what makes « Passées » a set of objects rather than the tail of the
+            same list, and it is the shape *En attente de validation* and
+            *Historique* already have one screen over.
+
+            `gap-2` and an edge stroke each, at `px-row py-2.5` — 16px by 10px,
+            the same rectangle the queue rows use, so the three lists on this
+            screen are one family.
+          */}
+          <ul aria-label="Réunions passées" className="flex flex-col gap-2">
             {past.map((entry) => (
               <EntryRow
                 key={entry.key}
                 entry={entry}
                 showDay={showDay}
+                card
                 filled={entry.meetingId !== null && entry.meetingId === emphasis}
                 onOpen={onOpen}
                 onArm={onArm}
               />
             ))}
-          </List>
+          </ul>
           {/*
             The *Ajouter au …* control follows the card that used to carry it.
 
@@ -211,6 +286,14 @@ export function DayPane({
 interface EntryRowProps {
   entry: AgendaEntry
   showDay: boolean
+  /**
+   * Draw the entry as a card of its own rather than as a row of a divided list.
+   *
+   * *Passées* only. The time moves to the trailing edge with it: in a schedule
+   * the clock is the index and belongs first, and in a record of calls that have
+   * already happened it is a detail of the card, which is the far side.
+   */
+  card?: boolean
   /** This is the screen's one filled control — see `DayPaneProps.emphasis`. */
   filled: boolean
   onOpen: (meetingId: string) => void
@@ -218,8 +301,24 @@ interface EntryRowProps {
   onArm: (eventId: string) => void
 }
 
-function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
+function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
+
+  const when = (
+    <span
+      className={cn(
+        'text-muted shrink-0 tabular-nums text-ui',
+        card ? 'text-right' : 'w-28',
+      )}
+    >
+      {showDay ? (
+        <span className="block">{upperFirst(formatDayMedium(noonOf(entry.day)))}</span>
+      ) : null}
+      {entry.end === null || entry.end <= entry.start
+        ? formatTime(entry.start)
+        : formatRange(entry.start, entry.end)}
+    </span>
+  )
 
   return (
     /*
@@ -245,15 +344,15 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
      * under `prefers-reduced-motion` because `--motion` does — no second rule to
      * keep in step, which is what `shot.mjs --motion` checks.
      */
-    <Row density="roomy" align="center" className={entry.armed ? 'animate-rise-in' : undefined}>
-      <span className="text-muted w-28 shrink-0 tabular-nums text-ui">
-        {showDay ? (
-          <span className="block">{upperFirst(formatDayMedium(noonOf(entry.day)))}</span>
-        ) : null}
-        {entry.end === null || entry.end <= entry.start
-          ? formatTime(entry.start)
-          : formatRange(entry.start, entry.end)}
-      </span>
+    <Row
+      density={card ? 'card' : 'roomy'}
+      align="center"
+      className={cn(
+        card && 'border-card rounded-sm border',
+        entry.armed && 'animate-rise-in',
+      )}
+    >
+      {card ? null : when}
 
       <RowTitle title={entry.title} subtitle={entry.subtitle ?? undefined} />
 
@@ -354,6 +453,62 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
           Enregistrer
         </Button>
       ) : null}
+
+      {/* Last on a card, first on a row — see `EntryRowProps.card`. */}
+      {card ? when : null}
     </Row>
+  )
+}
+
+/**
+ * **When the calendar was last read, and whether anything answered it.**
+ *
+ * One line, drawn only in the empty card, and each half appears only when it has
+ * something to say: the reading time when there has been one, « Microsoft non
+ * connecté » only when there is no account. On a rep who is signed in with a
+ * fresh sync it is one short clause, which is all an empty Tuesday needs.
+ *
+ * *Connecteurs ›* is the way out of the second half and is drawn with it — a
+ * sentence naming a condition with no way to act on it is the dead end DEC-26
+ * forbids, and a link to the connector pane on a screen where nothing is wrong
+ * would be chrome. It is `nav`, never a fill: the screen's one filled control is
+ * decided in `Agenda` (US-26) and an empty day is not where it goes.
+ */
+function CalendarLine({
+  readAt,
+  now,
+  signedOut,
+  onConnecteurs,
+  onRefresh,
+  refreshing,
+}: {
+  readAt: number | null
+  now: number
+  signedOut: boolean
+  onConnecteurs?: () => void
+  onRefresh?: () => void
+  refreshing?: boolean
+}) {
+  const read = readAt === null ? null : `Calendrier lu ${formatAgo(readAt, now)}`
+
+  if (read === null && !signedOut) return null
+
+  return (
+    <span className="inline-flex flex-wrap items-baseline justify-center gap-inline">
+      {read === null ? null : onRefresh ? (
+        <Button variant="nav" onClick={onRefresh} {...unavailable(refreshing === true, 'Lecture…')}>
+          {read}
+        </Button>
+      ) : (
+        <span>{read}</span>
+      )}
+      {read !== null && signedOut ? <span aria-hidden>·</span> : null}
+      {signedOut ? <span>Microsoft non connecté</span> : null}
+      {signedOut && onConnecteurs ? (
+        <Button variant="nav" onClick={onConnecteurs}>
+          Connecteurs ›
+        </Button>
+      ) : null}
+    </span>
   )
 }

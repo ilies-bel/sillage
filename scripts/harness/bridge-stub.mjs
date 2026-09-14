@@ -2841,6 +2841,25 @@ export function installAppBridge(config) {
     },
     'history:record': (payload) => recordFor(payload.meetingId),
 
+    /*
+      L'updater, et il est **prêt**.
+
+      C'est l'état que la maquette photographie : la rangée « Mise à jour prête »
+      du rail n'existe que sous `phase: 'ready'` (`src/app/update.ts`), et une
+      mise en scène qui répondait `idle` ne l'aurait jamais dessinée. Le panneau
+      *Mise à jour* de Réglages lit exactement le même canal.
+    */
+    'update:status': () => ({
+      phase: 'ready',
+      currentVersion: '0.9.2',
+      availableVersion: '0.9.3',
+      percent: null,
+      reason: null,
+      checkedAt: now - 9 * MIN,
+      installable: true,
+      blockedReason: null,
+    }),
+
     'settings:snapshot': () => settingsSnapshot(),
     /*
       « Cette machine uniquement » (DEC-37), and the fixture **applies** it.
