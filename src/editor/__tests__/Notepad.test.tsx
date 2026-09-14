@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { EditorState, TextSelection } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 import { Notepad, SAVE_DEBOUNCE_MS } from '../Notepad.tsx'
+import { EditorErrorBoundary } from '../editor-error-boundary.tsx'
 import { schema } from '../note/schema'
 
 interface Saved {
@@ -242,6 +243,180 @@ describe('the placeholder', () => {
       placeholder: 'Vos notes…',
     })
     expect(container.textContent).not.toContain('Vos notes…')
+  })
+})
+
+/**
+ * **The plugins, asked of the shipped view rather than of the module.**
+ *
+ * `buildInputRules` had eight green tests here and no caller: `Notepad`'s plugin
+ * list was `[buildKeymap(), history(), dropCursor(), gapCursor()]`, so in the
+ * product `# ` stayed a hash, `- ` stayed a dash and `'` stayed U+0027. A test of
+ * a function is not a test of a wiring, which is why these drive the live
+ * `EditorView` that `onReady` publishes — the same object the rep's keystrokes
+ * reach — and never `buildInputRules()` directly.
+ *
+ * What they cannot do is measure: jsdom gives every box a height of zero, so the
+ * trailing-click plugin's own rule (« is the pointer below the last block ») can
+ * only be checked for being *installed* here. `scratch/notepad-probe.mjs` drives
+ * it in a real browser at both window sizes, which is where the 26px editable was
+ * found.
+ */
+describe('the shipped plugin list', () => {
+  /** Feeds a character to whatever in the live state handles typed input. */
+  const typeCharacter = (view: EditorView, text: string) =>
+    act(() => {
+      const { from, to } = view.state.selection
+      for (const plugin of view.state.plugins) {
+        const handler = plugin.props.handleTextInput
+        if (!handler) continue
+        const handled = handler.call(plugin, view, from, to, text, () =>
+          view.state.tr.insertText(text, from, to),
+        )
+        if (handled) return
+      }
+      view.dispatch(view.state.tr.insertText(text, from, to))
+    })
+
+  /** Presses a key on the live state, the way `EditorView` does. */
+  const press = (view: EditorView, init: KeyboardEventInit) =>
+    act(() => {
+      for (const plugin of view.state.plugins) {
+        const handler = plugin.props.handleKeyDown
+        if (!handler) continue
+        if (handler.call(plugin, view, new KeyboardEvent('keydown', init))) return
+      }
+    })
+
+  test('« # » and a space make a heading, not a paragraph with a hash in it', () => {
+    const { view } = mount()
+    typeCharacter(view, '#')
+    typeCharacter(view, ' ')
+    expect(view.state.doc.firstChild?.type.name).toBe('heading')
+    expect(view.state.doc.firstChild?.attrs.level).toBe(1)
+  })
+
+  test('« - » and a space make a bullet list', () => {
+    const { view } = mount()
+    typeCharacter(view, '-')
+    typeCharacter(view, ' ')
+    expect(view.state.doc.firstChild?.type.name).toBe('bulletList')
+  })
+
+  test('the apostrophe a rep types is the one everything else stores', () => {
+    // U+2019, like `check:french` enforces in the repo's own prose and like
+    // `terms.fr-esn.ts` spells « appel d’offres ». Typed notes were the one text
+    // in the product written with the straight quote.
+    const { view } = mount()
+    for (const character of "l'appel") typeCharacter(view, character)
+    expect(view.state.doc.textContent).toBe('l’appel')
+  })
+
+  test('Ctrl and ⌘ both make a bullet list, on either platform', () => {
+    // `app/shortcuts.ts`'s rule, held where it costs nothing: no digit
+    // combination collides with a Cocoa text binding, so both are claimed and
+    // nothing in this file asks what host it is running on.
+    for (const modifier of ['ctrlKey', 'metaKey'] as const) {
+      const { view } = mount()
+      typeCharacter(view, 'x')
+      press(view, { key: '8', shiftKey: true, [modifier]: true })
+      expect(view.state.doc.firstChild?.type.name, modifier).toBe('bulletList')
+      cleanup()
+    }
+  })
+
+  test('the same press again is the way back to prose', () => {
+    const { view } = mount()
+    typeCharacter(view, 'x')
+    press(view, { key: '2', shiftKey: true, ctrlKey: true })
+    expect(view.state.doc.firstChild?.type.name).toBe('heading')
+    press(view, { key: '2', shiftKey: true, ctrlKey: true })
+    expect(view.state.doc.firstChild?.type.name).toBe('paragraph')
+  })
+
+  test('Backspace gives back the characters an input rule took', () => {
+    const { view } = mount()
+    typeCharacter(view, '-')
+    typeCharacter(view, ' ')
+    // Asserted on the way through, or the test below passes on an editor where
+    // no rule fired at all — which is exactly the state this whole file was
+    // green against.
+    expect(view.state.doc.firstChild?.type.name).toBe('bulletList')
+    press(view, { key: 'Backspace' })
+    expect(view.state.doc.firstChild?.type.name).toBe('paragraph')
+    expect(view.state.doc.textContent).toBe('- ')
+  })
+
+  test('the trailing-line click handler is installed', () => {
+    const { view } = mount()
+    const installed = view.state.plugins.some((plugin) =>
+      Boolean(plugin.props.handleDOMEvents?.mousedown),
+    )
+    expect(installed, 'the pane below the last line has to take a click').toBe(true)
+  })
+})
+
+/**
+ * **A transaction that throws reaches the boundary, and the notes survive it.**
+ *
+ * `transaction-guard.ts` was ported for this and called by nobody, so the view
+ * applied transactions bare. A throw inside `dispatchTransaction` happens in a
+ * ProseMirror DOM handler — React never sees it, no boundary fires, and
+ * « L'enregistrement continue. » could not be shown for the one failure it was
+ * written for.
+ *
+ * The fixture is a *stale* transaction, which is the real shape of it: one built
+ * against a document the state has since moved past throws `RangeError:
+ * Applying a mismatched transaction` inside `applyTransaction`.
+ */
+describe('a failing transaction', () => {
+  test('hands the crash to the boundary and keeps what the rep had typed', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const views: EditorView[] = []
+    const rendered = render(
+      <EditorErrorBoundary resetKey="m1">
+        <Notepad
+          meetingId="m1"
+          initialDoc={null}
+          initialRevision={0}
+          save={save}
+          onReady={(v) => {
+            if (v) views.push(v)
+          }}
+        />
+      </EditorErrorBoundary>,
+    )
+
+    const view = views[0]
+    const stale = view.state.tr.insertText('périmée', 1)
+    typeInto(view, 'ce que le commercial a tapé')
+    await act(async () => {
+      view.dispatch(stale)
+    })
+
+    // The boundary's recovery is a remount, and a remount reads `initialDoc` —
+    // null here, as on the first minute of a call. Without the handoff the rep's
+    // page of notes would have been redrawn empty.
+    expect(views).toHaveLength(2)
+    expect(rendered.container.textContent).toContain('ce que le commercial a tapé')
+
+    // And it is in the log, not only on screen.
+    await act(async () => {
+      vi.advanceTimersByTime(SAVE_DEBOUNCE_MS)
+    })
+    expect(JSON.stringify(saves)).toContain('ce que le commercial a tapé')
+
+    // A second failure is where the sentence itself is owed: one automatic
+    // remount, then the message and a button (`editor-error-boundary.tsx`).
+    const second = views[1]
+    const staleAgain = second.state.tr.insertText('encore', 1)
+    typeInto(second, ' et la suite')
+    await act(async () => {
+      second.dispatch(staleAgain)
+    })
+    expect(rendered.container.textContent).toContain('L’enregistrement continue.')
+
+    consoleError.mockRestore()
   })
 })
 

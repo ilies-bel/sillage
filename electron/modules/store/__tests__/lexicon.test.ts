@@ -130,3 +130,55 @@ test('a meeting teaches the client scope, so the next one starts already boosted
 
   store.close()
 })
+
+/**
+ * **`hits` is a ranking signal, and until it was wired it ranked nothing.**
+ *
+ * `correct()` has always returned `applied` — « the enrichment signal for
+ * `hits` » in its own docblock — and `main.ts`'s corrector threw it away into a
+ * diagnostic line. So `hits` was zero on every row of every install, and
+ * `forClient`'s `ORDER BY hits DESC` was a no-op: the promise that a term which
+ * keeps turning up survives truncation ahead of one added once and never spoken
+ * was ordered by `created_at` alone.
+ *
+ * This is the ordering, held where it is decided.
+ */
+test('a term that has been heard outranks one that never was', () => {
+  const store = openMemoryStore()
+  store.lexicon.add({
+    term: 'Néovia',
+    category: 'company',
+    variants: ['néo via'],
+    scope: 'client',
+    scopeKey: 'Néovia Santé',
+  })
+  store.lexicon.add({
+    term: 'Kubernetes',
+    category: 'tech-en',
+    variants: ['cubernetes'],
+    scope: 'client',
+    scopeKey: 'Néovia Santé',
+  })
+
+  // Added first, so `created_at ASC` puts it first while nothing has been heard.
+  assert.deepEqual(
+    store.lexicon.forClient('Néovia Santé').map((t) => t.term),
+    ['Néovia', 'Kubernetes'],
+  )
+
+  store.lexicon.observe('client', 'Néovia Santé', 'Kubernetes')
+  store.lexicon.observe('client', 'Néovia Santé', 'Kubernetes')
+
+  const ranked = store.lexicon.forClient('Néovia Santé')
+  assert.deepEqual(
+    ranked.map((t) => t.term),
+    ['Kubernetes', 'Néovia'],
+  )
+  assert.equal(ranked[0]?.hits, 2)
+
+  // A term nobody stored is not an error and increments nothing — the shipped
+  // ESN list lives in code and comes back in `applied` beside the rows.
+  store.lexicon.observe('client', 'Néovia Santé', 'terme inconnu')
+  assert.equal(store.lexicon.forClient('Néovia Santé').length, 2)
+  store.close()
+})

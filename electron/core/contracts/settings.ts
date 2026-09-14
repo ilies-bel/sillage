@@ -64,7 +64,15 @@ export const ProviderRowSchema = z
     label: z.string().min(1),
     tier: ProviderTierSchema,
     residency: ResidencySchema,
-    streaming: z.boolean(),
+    /*
+     * `streaming` used to ride here too, and it never reached a pixel: whether a
+     * provider can stream is how `providerRank` breaks a tie (`registry.ts`), not
+     * anything a rep can act on — and every shipped row declares `false`, so the
+     * column would have said one word, always the same. A field that crosses the
+     * bridge on every settings read for nobody is the shape
+     * `scripts/check-surfaces.mjs` exists to catch, one layer below where that
+     * check looks.
+     */
     cost: CostSchema,
     /** How this provider is reached. The screen renders its control from this (DEC-34). */
     auth: AuthKindSchema,
@@ -137,5 +145,27 @@ export const SettingsSnapshotSchema = z.object({
   /** Why there is no probe. Non-null exactly when `probe` is null. */
   probeReason: z.string().nullable(),
   retention: RetentionPolicySchema,
+  /**
+   * **« Cette machine uniquement »** (DEC-37) — the one switch in this product
+   * that still refuses something.
+   *
+   * It existed as `SILLAGE_STT_OFFLINE_ONLY=1` and nowhere else, on a product
+   * whose DEC-34 says no environment variable is required to run it and whose
+   * own decision describes this as « the rep asking, **in the product** ». A
+   * guarantee nobody can reach is not a guarantee, and `check-surfaces.mjs`
+   * would now call it by its name: declared, and unreached.
+   */
+  offlineOnly: z.boolean(),
+  /**
+   * **The sentence the rep reads to the client** (US-11, US-19,
+   * `core/contracts/mention.ts`).
+   *
+   * Always resolved, never raw: a blank stored value comes back as the default,
+   * because a control that copies emptiness is the dead control DEC-26 forbids and
+   * this is what the pill draws. So a deployment that has never opened this pane
+   * and one that saved an empty box are the same product, and Réglages can say so
+   * rather than showing a field that looks configured and is not.
+   */
+  mentionSentence: z.string().min(1),
 })
 export type SettingsSnapshot = z.infer<typeof SettingsSnapshotSchema>

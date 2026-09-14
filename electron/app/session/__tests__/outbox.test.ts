@@ -142,6 +142,9 @@ const mailStub = (result: () => Promise<PushResult> = async () => ok('AAMkAGI2')
 
 const nowhere = async (): Promise<void> => {}
 
+/** One turn of the microtask queue, so an in-flight pass has actually started. */
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
 // ── the DAG ────────────────────────────────────────────────────────────────
 
 test('the opportunity drains before the task that carries its reference', async () => {
@@ -181,7 +184,26 @@ test('the CRM being unreachable still ships the Outlook draft (DEC-26)', async (
   store.close()
 })
 
-test('a terminal failure blocks its dependants and nothing else', async () => {
+test('a terminal failure costs its own row and nothing else — the compte-rendu still ships', async () => {
+  /*
+   * **This asserted the defect, in the words of the rule it came from.**
+   *
+   * « a dependency that failed terminally blocks its dependants » — and
+   * `blocked` had no exit: `drainable()` is `state = 'pending'`, so no boot
+   * re-drain ever named the row again, `allIntentsSettled` never counted it, the
+   * meeting stayed in `pushing` for the life of the database, and
+   * `updateReadiness` refused every installer from that moment on. One VSA 500
+   * on the *opportunity* — an enrichment — permanently cost the **compte-rendu**,
+   * which is the product's primary deliverable into the client's CRM, and
+   * *Historique* drew « en attente d'un autre envoi » over it, which was false.
+   *
+   * The ordering exists to carry the opportunity's remote id into the task, and
+   * `#withDependencyRef` already handles a dependency that did not drain: the
+   * reference stays null and `VsaCrm.link()` falls through to the company. A
+   * compte-rendu linked to the account beats no compte-rendu at all, and DEC-26
+   * says as much. What blocking protects is untouched — the task is never sent
+   * before the opportunity is *decided*, only after it is decided either way.
+   */
   const store = seed()
   const crm = crmStub({ opportunity: async () => terminal('champ obligatoire manquant') })
   const mail = mailStub()
@@ -190,11 +212,18 @@ test('a terminal failure blocks its dependants and nothing else', async () => {
   const entries = await outbox.drain(MEETING)
 
   assert.equal(stateOf(entries, 'i-opportunity'), 'failed')
-  assert.equal(stateOf(entries, 'i-task'), 'blocked')
+  assert.equal(stateOf(entries, 'i-task'), 'drained', 'le compte-rendu part quand même')
   assert.equal(stateOf(entries, 'i-mail'), 'drained')
   assert.equal(rowOf(store, 'i-opportunity')?.lastError, 'champ obligatoire manquant')
   // One attempt only: a terminal failure is not retried, by the app or by this pass.
   assert.equal(crm.calls.filter((c) => c === 'opportunity').length, 1)
+  // And it ships with no reference rather than with an invented one (DEC-7).
+  assert.equal(crm.seenCompteRendu[0]?.opportunityRef, null)
+  // Nothing is left non-terminal, so the meeting can reach `done`.
+  assert.deepEqual(
+    entries.filter((e) => e.state !== 'drained' && e.state !== 'failed'),
+    [],
+  )
   store.close()
 })
 
@@ -325,11 +354,255 @@ test('two concurrent drains are one drain', async () => {
   assert.deepEqual(crm.calls, ['opportunity', 'task'])
   assert.equal(mail.calls, 1)
   assert.deepEqual(a, b)
-  assert.equal(outbox.isDraining(MEETING), false)
+  assert.equal(outbox.settledSynchronously(), true)
+  store.close()
+})
+
+test('a quit waits for a push already on the wire, and never for ever', async () => {
+  /*
+   * `review:confirm` fires the drain without awaiting it, so « press *Valider*,
+   * close the window » — the ordinary gesture on Windows, where closing quits —
+   * used to kill the process with the POST in flight. `before-quit` asked only
+   * whether a meeting was *recording*.
+   */
+  const store = seed([OPP_INTENT])
+  let release = (): void => {}
+  const crm = crmStub({
+    opportunity: async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return ok('OPP-1')
+    },
+  })
+  const outbox = new Outbox({ journal: store, crm: crm.port, mail: null, sleep: nowhere })
+
+  const pass = outbox.drain(MEETING)
+  await tick()
+  assert.equal(outbox.settledSynchronously(), false, 'the pass is in flight')
+
+  // Bounded: a quit that waited on a wedged POST would be a window that will
+  // not go away. The row is reclaimed on the next launch either way.
+  assert.equal(await outbox.settle(1), false, 'a wedged pass does not hold the quit')
+
+  release()
+  assert.equal(await outbox.settle(), true, 'and the pass that finishes is waited for')
+  await pass
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'drained')
+  store.close()
+})
+
+test('an intent nobody can route does not hold the meeting in pushing for ever', async () => {
+  /*
+   * **The demo build, which DEC-28 calls the first deliverable.**
+   *
+   * There is no VerySwing tenant, so `crm` is null. `draftIntents` is pure
+   * domain and creates the `crm.task` intent anyway; the gate draws the
+   * connector trouble on the row and leaves it checked. The rep presses
+   * *Valider* once. `Outbox.#attempt` finds no port, abandons the intent without
+   * an attempt event — deliberately, so it ships the day the connector is
+   * configured — and the row stays `pending`.
+   *
+   * That was the whole of it: `allIntentsSettled` counts only `drained` and
+   * `failed`, so the meeting never left `pushing`; the calendar read « Envoi… »
+   * for the life of the database; and because the boot re-drain rehydrates the
+   * session on every launch, `liveStates()` carried `pushing` and every future
+   * update was refused, permanently, with a sentence that was false — nothing
+   * was in flight and nothing ever would be. The same trap as `blocked`, one
+   * layer up.
+   */
+  const store = seed()
+  const mail = mailStub()
+  const outbox = new Outbox({ journal: store, crm: null, mail: mail.port, sleep: nowhere })
+
+  const entries = await outbox.drain(MEETING)
+  // The queue keeps both VerySwing intents — the opportunity unattempted, the
+  // task behind it — and the Outlook draft ships regardless (DEC-26).
+  assert.equal(stateOf(entries, 'i-opportunity'), 'pending', 'la file garde l’intention')
+  assert.equal(stateOf(entries, 'i-task'), 'blocked')
+  assert.equal(stateOf(entries, 'i-mail'), 'drained')
+
+  // What the state machine is asked, with and without a connector behind the
+  // kind. The queue is untouched either way — only the meeting settles.
+  const settled = (routable: (kind: string) => boolean): boolean =>
+    store.projections
+      .outboxFor(MEETING)
+      .every((e) => e.state === 'drained' || e.state === 'failed' || !routable(e.kind))
+
+  assert.equal(settled(() => true), false, 'avec VerySwing câblé : toujours en vol')
+  assert.equal(settled((kind) => kind === 'mail.draft'), true, 'sans VerySwing : réglée')
+  store.close()
+})
+
+test('every row is terminal after a pass, so the meeting can leave pushing', async () => {
+  /*
+   * **The property `allIntentsSettled` needs and nothing guaranteed.**
+   *
+   * It counts `drained` and `failed`; `blocked` was neither, and there was no
+   * path out of it. So a meeting whose opportunity failed sat in `pushing` for
+   * the life of the database — and because `Orchestrator.session()` caches the
+   * rehydrated session, `liveStates()` carried `pushing` from boot onwards and
+   * `updateGate` refused every installer for ever, on the primary platform.
+   *
+   * Asserted over the three ways a dependency can be decided, because the guard
+   * is about all of them and the old test only ever drove one.
+   */
+  for (const [label, behaviour] of [
+    ['terminal', async () => terminal('champ obligatoire manquant')],
+    ['retryable, then exhausted', async () => retryable('502')],
+    ['clean', null],
+  ] as const) {
+    const store = seed()
+    const crm = crmStub(behaviour ? { opportunity: behaviour } : {})
+    const outbox = new Outbox({
+      journal: store,
+      crm: crm.port,
+      mail: mailStub().port,
+      sleep: nowhere,
+    })
+
+    const entries = await outbox.drain(MEETING)
+    const settled = (id: string): boolean => {
+      const state = entries.find((e) => e.intentId === id)?.state
+      return state === 'drained' || state === 'failed'
+    }
+    /*
+     * `blocked` is legitimate only while a dependency is genuinely undecided.
+     * A row blocked behind a *settled* dependency is the state with no exit:
+     * `drainable()` never names it, `allIntentsSettled` never counts it, and
+     * nothing in the product can move it again.
+     */
+    const stuck = entries.filter(
+      (entry) =>
+        entry.state === 'blocked' &&
+        (store.projections.intents(MEETING).find((i) => i.id === entry.intentId)?.dependsOn ?? [])
+          .every(settled),
+    )
+    assert.deepEqual(
+      stuck.map((e) => [e.kind, e.state]),
+      [],
+      `${label} : une dépendante bloquée derrière une dépendance décidée`,
+    )
+    store.close()
+  }
+})
+
+test('a push interrupted mid-POST is reclaimed by the next launch', async () => {
+  /*
+   * **The row the boot re-drain could not see.** `drainable()` is
+   * `state = 'pending'`, and a row that reached `push.started` is `draining` —
+   * so a meeting whose only non-terminal row was in flight when the process died
+   * was never passed to `drain()`, and `#reclaim`, which exists for exactly this
+   * row, ran for nobody. The Historique row said « envoi en cours » for the life
+   * of the database, `pushSettled` never fired so the meeting never reached
+   * `done`, and `POST /v1/crm/tasks` has no idempotency key, so the rep could
+   * not find out by sending it again.
+   */
+  const store = seed([OPP_INTENT])
+  // Exactly what `#attempt` appends before the POST goes on the wire.
+  store.append(MEETING, { type: 'push.attempted', intentId: 'i-opportunity', attempt: 1 })
+
+  assert.deepEqual(store.projections.drainable(), [], 'nothing is pending — this is the trap')
+  const stalled = store.projections.interrupted()
+  assert.deepEqual(
+    stalled.map((entry) => entry.intentId),
+    ['i-opportunity'],
+    'and this is what the boot sweep now sees',
+  )
+
+  // The boot re-drain, verbatim in shape: the union of both projections.
+  const crm = crmStub()
+  const outbox = new Outbox({ journal: store, crm: crm.port, mail: null, sleep: nowhere })
+  for (const meetingId of new Set(
+    [...store.projections.drainable(), ...stalled].map((entry) => entry.meetingId),
+  )) {
+    await outbox.drain(meetingId)
+  }
+
+  const entry = store.projections.outboxFor(MEETING)[0]
+  assert.equal(entry?.state, 'failed')
+  assert.equal(entry?.lastError, INTERRUPTED_REASON)
+  // Never re-POSTed: nobody knows whether the first one landed.
+  assert.deepEqual(crm.calls, [])
   store.close()
 })
 
 // ── retries and resume ─────────────────────────────────────────────────────
+
+test('a 429 is answered when the server said to, not one second later', async () => {
+  /*
+   * `429` is the one status that states the request was **not processed**, which
+   * is why it is the only one that returns a row to `pending` — and the only one
+   * that comes with an instruction. Both adapters parsed `Retry-After` and both
+   * dropped it at `PushResult`, so the outbox answered « wait two minutes » with
+   * a re-POST after one, three times a pass and again on every launch. Against
+   * Graph's mailbox throttling that is the pattern that extends a throttle.
+   */
+  const store = seed([OPP_INTENT])
+  const waits: number[] = []
+  const crm = crmStub({
+    opportunity: async () => ({
+      ok: false as const,
+      intentId: '',
+      reason: 'quota VerySwing atteint',
+      retryable: true,
+      retryAfterMs: 30_000,
+    }),
+  })
+  const outbox = new Outbox({
+    journal: store,
+    crm: crm.port,
+    mail: null,
+    backoffMs: 1_000,
+    sleep: async (ms) => {
+      waits.push(ms)
+    },
+  })
+
+  await outbox.drain(MEETING)
+
+  assert.ok(
+    waits.every((ms) => ms >= 30_000),
+    `the server's own instruction is the floor — waited ${JSON.stringify(waits)}`,
+  )
+  // Still pending, never failed: nothing was written, so the next launch is
+  // entitled to try again.
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'pending')
+  store.close()
+})
+
+test('a Retry-After longer than a minute ends the pass instead of holding a timer', async () => {
+  // DEC-26: nothing here outlives a meeting. A server entitled to say « an hour »
+  // is not entitled to a background timer that lives that long — the row stays
+  // pending and the next launch is the retry.
+  const store = seed([OPP_INTENT])
+  const waits: number[] = []
+  const crm = crmStub({
+    opportunity: async () => ({
+      ok: false as const,
+      intentId: '',
+      reason: 'quota VerySwing atteint',
+      retryable: true,
+      retryAfterMs: 3_600_000,
+    }),
+  })
+  const outbox = new Outbox({
+    journal: store,
+    crm: crm.port,
+    mail: null,
+    backoffMs: 1_000,
+    sleep: async (ms) => {
+      waits.push(ms)
+    },
+  })
+
+  await outbox.drain(MEETING)
+
+  assert.deepEqual(waits, [60_000], 'one capped wait, then the pass ends')
+  assert.deepEqual(crm.calls, ['opportunity'], 'and exactly one POST went out')
+  assert.equal(stateOf(store.projections.outboxFor(MEETING), 'i-opportunity'), 'pending')
+  store.close()
+})
 
 test('retries are bounded and backed off', async () => {
   const store = seed([OPP_INTENT])

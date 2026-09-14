@@ -23,7 +23,7 @@ test('a recording meeting blocks the install', () => {
  * said yes, install — and destroyed something.
  */
 test('every state with work in flight blocks the install', () => {
-  for (const state of ['armed', 'ended', 'extracting', 'awaiting_confirmation', 'pushing'] as const) {
+  for (const state of ['armed', 'ended', 'extracting', 'awaiting_confirmation'] as const) {
     const readiness = updateReadiness([state])
     assert.equal(readiness.safe, false, `${state} must block`)
     assert.ok(readiness.reason, `${state} must say why`)
@@ -59,8 +59,29 @@ test('every declared state is either safe or gives a French reason', () => {
 test('the blocking set is exactly the states that hold unfinished work', () => {
   assert.deepEqual(
     [...UPDATE_BLOCKING_STATES].sort(),
-    ['armed', 'awaiting_confirmation', 'ended', 'extracting', 'pushing', 'recording'],
+    ['armed', 'awaiting_confirmation', 'ended', 'extracting', 'recording'],
   )
   const safe = ALL_STATES.filter((state) => !UPDATE_BLOCKING_STATES.includes(state))
-  assert.deepEqual([...safe].sort(), ['aborted', 'done', 'idle'])
+  assert.deepEqual([...safe].sort(), ['aborted', 'done', 'idle', 'pushing'])
+})
+
+test('a push blocks while it is on the wire, and not a moment longer', () => {
+  /*
+   * **`pushing` was in the set and it is not a duration the app controls.**
+   *
+   * The danger is one POST: `POST /v1/crm/tasks` has no idempotency key, so
+   * killing the process between the request and the commit that stores its id
+   * creates the task twice. That lasts as long as the request. `pushing` lasts
+   * until every intent settles — and an intent whose connector is absent is
+   * never attempted, so on the demo build (DEC-28, no VerySwing tenant) one
+   * press of *Valider* refused every future update, for ever, with a sentence
+   * that was false. Driven: four consecutive launches, all refused.
+   */
+  assert.deepEqual(updateReadiness(['pushing']), { safe: true, reason: null })
+  assert.deepEqual(updateReadiness(['done'], true), {
+    safe: false,
+    reason: 'un envoi vers VerySwing est en cours',
+  })
+  // And a live meeting still wins, whatever the outbox is doing.
+  assert.match(updateReadiness(['recording'], false).reason ?? '', /enregistrement/)
 })

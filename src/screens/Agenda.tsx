@@ -31,12 +31,13 @@
  * meeting is drawn in the same grid as one that came from Outlook, because the
  * calendar is the app's own surface and not a rendering of Exchange.
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { HistoryFilter } from '../../electron/core/contracts/history.ts'
 import type { AgendaSnapshotPayload } from '../../electron/core/contracts/ipc.ts'
 import type { AuthState } from '../../electron/core/contracts/identity.ts'
-import type { Meeting } from '../../electron/core/contracts/meeting.ts'
+import { meetingAnchor, type Meeting } from '../../electron/core/contracts/meeting.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { useShortcuts } from '../app/shortcuts.ts'
 import {
   dayKeyOf,
   monthMatrix,
@@ -47,11 +48,19 @@ import {
   weekOf,
   type DayKey,
 } from '../app/calendar.ts'
-import { formatAgo, formatDayLong, formatDayMedium, formatMonthLong } from '../app/format.ts'
-import { Button, Segmented, unavailable, type SegmentedOption } from '../ui/index.ts'
+import {
+  formatDayLong,
+  formatDayMedium,
+  formatMonthLong,
+  upperFirst,
+} from '../app/format.ts'
+import { Button, Rail, Segmented, type SegmentedOption } from '../ui/index.ts'
+import type { SectionId } from './Reglages.tsx'
+import { useUpdateReady } from '../app/update.ts'
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
 import { NewMeeting } from './agenda/NewMeeting.tsx'
+import { PendingGates, PENDING_LIMIT } from './agenda/PendingGates.tsx'
 import { buildEntries, countsByDay, marksByDay } from './agenda/entries.ts'
 import { NO_FILTER, isSearchActive } from './search/filters.ts'
 import { Results } from './search/Results.tsx'
@@ -92,12 +101,25 @@ interface AgendaProps {
    * would type it twice.
    */
   onHistorique: (query: string, filter: HistoryFilter) => void
-  onReglages: () => void
+  /**
+   * Opens Réglages — on a named pane when the caller knows which one.
+   *
+   * Three callers on this screen now want three different panes: the header
+   * status control lands on *Connecteurs* (DEC-32), the empty day's line lands
+   * on the same one, and the rail's « Mise à jour prête » lands on *Mise à
+   * jour*. Sending all three to the landing section would make the one click
+   * each of them hands over cost a second one.
+   */
+  onReglages: (section?: SectionId) => void
+  /** Replays first run, from the empty day. It is seen once and worth seeing twice. */
+  onOnboarding: () => void
 }
 
-export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
+export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: AgendaProps) {
   const agenda = useInvoke('agenda:snapshot', {})
   const auth = useInvoke('auth:state', {})
+  /* The rail's one conditional row. `phase: 'ready'` only — see `app/update.ts`. */
+  const updateReady = useUpdateReady()
   const [busy, setBusy] = useState(false)
 
   useBroadcast('agenda:changed', agenda.set)
@@ -112,6 +134,27 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   const [view, setView] = useState<View>('jour')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<HistoryFilter>(NO_FILTER)
+
+  /*
+   * The keyboard (`app/shortcuts.ts`, VISION.md §6 « keyboard-first »).
+   *
+   * The three that belong to the home screen. `Ctrl/⌘ N` is not here: it is on
+   * *Démarrer une réunion* itself, in `NewMeeting`, because that control owns
+   * both the creation and the busy state a second press has to be refused
+   * against — a shortcut wired to a copy of that logic would be a second way to
+   * start a recording, and it would drift.
+   */
+  const searchRef = useRef<HTMLInputElement>(null)
+  useShortcuts({
+    rechercher: () => searchRef.current?.focus(),
+    /*
+      Overridden here, and only here: `App.tsx` opens the reader on an empty
+      query, and this screen has one on the field beside it. `Ctrl/⌘ H` from
+      the calendar carries what the rep has already typed, which is the whole
+      relationship between the two screens (DEC-25).
+    */
+    historique: () => onHistorique(query, filter),
+  })
 
   /**
    * The meetings this screen has to draw, scoped to the window it draws.
@@ -148,6 +191,27 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   const search = useHistorySearch(query, filter, RESULT_LIMIT)
   const searching = isSearchActive(query, filter)
 
+  /*
+   * The backlog: calls that were recorded and never confirmed.
+   *
+   * A second question to the same channel rather than a filter over `entries`,
+   * because the answer is not on this screen's calendar — a call from three
+   * weeks ago is still owed and the grid is showing September. The main process
+   * already answers exactly this question for the `À valider` chip; asking it
+   * with no query and that one chip is the same query, and the corpus still
+   * never crosses (DEC-25).
+   *
+   * `PENDING_LIMIT` and not « one more than it draws »: the section's count is
+   * the point of it, and it has to be the same number on every day of the
+   * calendar. An empty query folds no transcript, so this is one indexed scan
+   * and a chip filter.
+   */
+  const pendingFilter = useMemo<HistoryFilter>(
+    () => ({ ...NO_FILTER, statut: 'a-valider' }),
+    [],
+  )
+  const pending = useHistorySearch('', pendingFilter, PENDING_LIMIT)
+
   const snapshot: AgendaSnapshotPayload | null =
     agenda.state.status === 'ready' ? agenda.state.value : null
   const authState: AuthState | null = auth.state.status === 'ready' ? auth.state.value : null
@@ -171,6 +235,93 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
     }
     return entries.filter((entry) => monthOf(entry.day) === monthOf(month))
   }, [entries, view, selected, month])
+
+  /**
+   * **The one row that carries the screen's filled control** (US-26, HR-7).
+   *
+   * Measured on the shipped home screen at 1280×800, at 14:35 with the Néovia call
+   * being recorded: six controls in the right-hand column — *Ouvrir* at y=206,
+   * *Enregistrer* at 276 and 345, *Ouvrir* at 464, 534 and 681 — every one of them
+   * `bordered`, `rgb(255,255,255)` on a 1px `rgb(211,222,230)` border. And
+   * *Démarrer une réunion* in the header was **bordered too**, because
+   * `NewMeeting` steps it down beside an armed row (`armedElsewhere`) and the armed
+   * row here is `recording`, which `DayPane` drew as an ordinary *Ouvrir*. So the
+   * screen a rep opens mid-call had **no filled control at all**: the header had
+   * given the weight up and nothing took it.
+   *
+   * One row gets it, and the ranking is what the rep would do next:
+   *
+   *  1. the call that is **being recorded** — « En cours », opened and not started;
+   *  2. the **armed** row — « Prêt », the offer `core/domain/arming.ts` made, which
+   *     is what carried the fill before and still does. It cannot coexist with (1):
+   *     `Orchestrator.dispatch` allows one recording at a time and `Agenda.#arm`
+   *     refuses beside a live one, so the two are a ranking and never a tie;
+   *  3. the **oldest** row still `à valider`, across the day list *and* *En attente
+   *     de validation*, because a compte-rendu that never reached VerySwing is the
+   *     product's quietest failure and the rep owes it one gesture.
+   *
+   * It is an id and not a flag per component, which is the whole point: « exactly
+   * one filled control » is a fact about the *screen*, and two components each
+   * deciding locally is how a screen ends up with two. `null` is an ordinary
+   * answer — a quiet day owes nothing, and then the header's *Démarrer une
+   * réunion* is the only fill, which is what it was built to be.
+   *
+   * Nothing gains or loses an affordance here. Every control that was on a row is
+   * still on it, with the same verb and the same handler; only the ink moves.
+   */
+  const emphasis = useMemo<string | null>(() => {
+    const live = inRange.find((entry) => entry.state === 'recording')
+    if (live?.meetingId) return live.meetingId
+    const armed = inRange.find((entry) => entry.armed)
+    if (armed?.meetingId) return armed.meetingId
+
+    /*
+     * Oldest first, and over both lists at once — `entry.start` and
+     * `meetingAnchor` are the same clock. The day pane draws its past rows newest
+     * first and the pending section is ordered by the store, so « the earliest »
+     * cannot be read off either render order.
+     */
+    const owed = inRange
+      .filter((entry) => entry.state === 'awaiting_confirmation' && entry.meetingId !== null)
+      .map((entry) => ({ id: entry.meetingId as string, at: entry.start }))
+    for (const row of pending.result?.rows ?? []) {
+      if (owed.some((seen) => seen.id === row.meeting.id)) continue
+      owed.push({ id: row.meeting.id, at: meetingAnchor(row.meeting) })
+    }
+    owed.sort((a, b) => a.at - b.at)
+    return owed[0]?.id ?? null
+  }, [inRange, pending.result])
+
+  /**
+   * **Whether the range on screen is one Graph was actually asked about.**
+   *
+   * The sync window is yesterday through a week ahead — eight days — and this
+   * grid draws six weeks. So an empty Thursday three weeks out was reported as
+   * « Aucune réunion ce jour-là. », which is a claim about the calendar the app
+   * has no basis for, under the *arming* reason, which accounted for it with
+   * « Teams émet du son ». Thirty-four of forty-two days.
+   *
+   * Only when the **whole** visible range is outside the window: a week that
+   * straddles the edge has been half answered, and « nothing here » is true of
+   * the half that was asked. A day inside the window with nothing on it is an
+   * empty day and says so.
+   */
+  const unsynced = useMemo(() => {
+    const bounds = snapshot?.window
+    if (!bounds || bounds.to === 0) return false
+    const days =
+      view === 'liste'
+        ? []
+        : view === 'jour'
+          ? [selected]
+          : view === 'semaine'
+            ? weekOf(selected)
+            : monthMatrix(month).flat().filter((day) => monthOf(day) === monthOf(month))
+    if (days.length === 0) return false
+    const from = dayKeyOf(bounds.from)
+    const to = dayKeyOf(bounds.to)
+    return days.every((day) => day < from || day > to)
+  }, [snapshot, view, selected, month])
 
   const select = useCallback((day: DayKey) => {
     setSelected(day)
@@ -222,6 +373,32 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
     [meetings, onOpen, select],
   )
 
+  /**
+   * *Enregistrer* on an upcoming invite: arm it now, then open it.
+   *
+   * The arming is the **same** one the clock performs — `agenda:arm` reaches
+   * `Agenda.armNow`, which calls the private `#arm` that `decideArming` calls —
+   * so the meeting carries the invite's `eventId`, its subject and its
+   * attendees. That is the whole reason this exists rather than reusing
+   * *Démarrer une réunion*, whose meeting has `eventId: null` by design.
+   *
+   * It opens the session but does **not** start recording: HR-7 says arming is
+   * an offer a human accepts, and the rep pressing a row is asking to be taken
+   * to the call, not to have capture begin behind a list. *Enregistrer* on the
+   * session screen is the second press, and it is the same second press an
+   * automatically armed meeting asks for.
+   *
+   * A refusal is shown rather than swallowed — `#arm` declines an event whose
+   * meeting has already been held, and « rien ne se passe » on a button is the
+   * dead control DEC-26 forbids. `preload.ts` has already stripped Electron's
+   * `Error invoking remote method` prefix, so what surfaces is our sentence.
+   */
+  /**
+   * Re-read the calendar, from the one place that asks about it (`agenda:refresh`).
+   *
+   * It was a permanent *Synchronisé il y a 4 min* under the month grid. It is the
+   * empty card's freshness clause now — see `DayPaneProps.onRefresh`.
+   */
   const refresh = useCallback(async () => {
     setBusy(true)
     try {
@@ -231,24 +408,94 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
     }
   }, [agenda])
 
+  const armNow = useCallback(
+    async (eventId: string) => {
+      setBusy(true)
+      try {
+        const { meetingId } = await invoke('agenda:arm', { eventId })
+        agenda.set(await invoke('agenda:snapshot', {}))
+        meetings.reload()
+        onOpen(meetingId)
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [agenda, meetings, onOpen],
+  )
+
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full overflow-hidden">
+      {/*
+        The rail, on every screen a rep can reach outside a call (V2). It holds
+        three destinations and two footer rows and it is the same component on
+        *Historique*, so « where am I » is answered in one place.
+
+        `À valider` is a query and not a screen — it opens *Historique* with the
+        chip the calendar's own section links to (DEC-25), which is the same
+        query asked from two places rather than a second inbox.
+      */}
+      <Rail
+        current="aujourdhui"
+        pending={pending.result?.rows.length ?? null}
+        updateReady={updateReady}
+        onPlace={(place) => {
+          if (place === 'a-valider') onHistorique('', pendingFilter)
+          else if (place === 'historique') onHistorique('', NO_FILTER)
+        }}
+        onReglages={() => onReglages()}
+        onUpdate={() => onReglages('maj')}
+      />
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/*
         Full width, with the border that separates it from the two columns
         below. The screen is a surface, not a page of floating cards.
       */}
       <header className="border-subtle flex items-baseline justify-between gap-4 border-b px-gutter pb-4 pt-7">
         {/*
-          Title and date on one line (`5.1 Aujourd'hui — Canonical`). Stacked,
-          the date read as a subtitle of the screen; beside the title it reads
-          as what it is — which day the calendar is opened on.
+          **The page is named by what changed, and the day is drawn once.**
+
+          This held « Calendrier » in 42px serif — the largest thing on the screen,
+          over a calendar — and beside it `formatDayLong(now)` at 11px uppercase,
+          which the day pane's own `h2` then drew a *second* time: measured on the
+          shipped screen, « dimanche 13 septembre » at y=40 and « Dimanche 13
+          septembre » at y=148, 108px apart at 1280×800 and 107 at 960×600. The
+          casefold is why no review round saw it — one was `text-transform:
+          uppercase`, so as strings they differed.
+
+          Of the two positions this one survives, and the `h2` in `main` goes. Both
+          were built and measured, and the difference is not the one the layout
+          suggests: promoting the `h2` costs **nothing** vertically (the row's
+          height is set by the `Jour · Semaine · Mois · Liste` switch beside it, so
+          the first day row stays at y=188 either way, and the header loses 4px).
+          What decides it is the scroller. `main` is `overflow-y-auto`, so a title
+          promoted there **leaves the screen**: measured at 960×600 — the minimum
+          `app/main.ts` declares — scrolling the day list to its end takes it from
+          top 138 to **−10**, above `main`'s own top edge at 78, on a 148px scroll;
+          in *Liste* it goes to −365 at 1280×800 and −565 at 960×600. A page whose
+          title scrolls away has no title. **And note the shape of how that hides:
+          at 1280×800 on *Jour* the day list fits, so nothing scrolls and the
+          version measures perfectly — it only breaks at the size `main.ts` declares
+          as the minimum, and in the one view a rep switches to when they want more
+          than a day.** That is HR-2's mac-first failure one level over: correct on
+          the comfortable machine, wrong on the one that ships, and invisible to
+          anybody who looked once. It is why `smoke.mjs` drives two sizes, and it is
+          worth not re-deriving.
+          Here it is outside the scroller and the tallest text box above the fold
+          at both sizes (28px against the grid's 14px `h2`).
+
+          It carries the **selected range** rather than `now`, which is a
+          correction and not a move: the `h2` it replaces answered « what is the
+          right column showing » — the day, the week, the month, or « Toutes les
+          réunions » — while the header answered « what day is it today », so a rep
+          who clicked Thursday read a list of Thursday under a title saying Sunday.
+          The day the rep is *on* is what changed; today is marked in the grid.
         */}
-        <div className="flex items-baseline gap-inline">
-          <h1 className="font-display text-strong text-display leading-none">Calendrier</h1>
-          <p className="text-muted text-label font-semibold uppercase tracking-wider">
-            {formatDayLong(now)}
-          </p>
-        </div>
+        <h1 className="font-display text-strong text-display leading-none">
+          {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month, inRange.length))}
+        </h1>
 
         <div className="flex items-center gap-3">
           {/*
@@ -259,23 +506,46 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             optional (DEC-26) and an unreachable Graph is not a degradation of
             the app.
           */}
-          <StatusControl onReglages={onReglages} />
+          <StatusControl onReglages={() => onReglages('connecteurs')} />
 
           {/*
-            One word, not a nav bar. HR-10 says one window and no modal chrome,
-            and a permanent sidebar for a screen a rep opens once a week is
-            chrome that is present during every call it is not wanted in.
-
-            *Historique* used to sit here. It does not any more (DEC-25,
-            VISION.md §6): it is not a destination, it is where the search below
-            goes when the rep wants the full record — so it is reached by typing
-            a client's name on the screen they are already on, and the link that
-            opens it carries that query with it.
+            *Réglages* used to be a word in this header. It is in the rail now,
+            at the bottom, with « Mise à jour prête » above it — one place for
+            the two rows that are not destinations, on every screen rather than
+            on this one. A header link and a rail row would be two doors to one
+            pane, and the header is where the screen says what it is *about*.
           */}
-          <Button variant="text" onClick={onReglages}>
-            Réglages
-          </Button>
-          <NewMeeting day={selected} today={today} onCreated={created} />
+          {/*
+            The header drops *Ajouter au …* exactly when the day pane is
+            drawing its own — one scheduling control on screen, and it is the
+            one the rep is looking at. *Démarrer une réunion* is never dropped:
+            it always means now, and without Graph it is the only way in.
+          */}
+          <NewMeeting
+            day={selected}
+            today={today}
+            onCreated={created}
+            showSchedule={searching || inRange.some((entry) => !entry.past)}
+            /*
+              **`armedElsewhere` is read by `NewMeeting` as « the list already
+              carries the screen's one fill », and the set of rows that can claim
+              it has widened.**
+
+              Its own comment is « never the second filled blue on the screen »,
+              with the measurement beside it: *Démarrer une réunion* at x=1099 and
+              the armed row's *Enregistrer* at x=1140, both `--brand-700`, 172px
+              apart and horizontally overlapping — « one primary per view »
+              (VISION.md §6) being two. That reasoning is about the *fill*, not
+              about arming; arming was simply the only thing that could take it.
+              US-26 gives it to a live call and to the oldest unvalidated call as
+              well, so this is the same question asked of the same answer.
+
+              Passing `entry.armed` here now would put a second blue on the home
+              screen the moment a call is being recorded or a compte-rendu is
+              waiting, which is most afternoons.
+            */
+            armedElsewhere={emphasis !== null}
+          />
         </div>
       </header>
 
@@ -302,22 +572,20 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           />
 
           {/*
-            The calendar's own sync state, beside the calendar. Not in the
-            header: a connector that is optional (DEC-26, DEC-32) states its
-            condition on the control it belongs to, and never as an app-level
-            line.
+            **The sync line is gone, and where it went is the point.**
+
+            « Synchronisé il y a 4 min » sat here permanently, under the grid, on
+            every screenful of every day — an optional connector (DEC-26)
+            reporting itself whether or not anything turned on it, which is the
+            app-level line DEC-32 retired one level up. Read on a day that has
+            calls in it, it answers nothing: the calls are on the screen.
+
+            It is said once now, in the empty day's card, where it is the
+            *answer* — « there is nothing here » is a claim about the calendar,
+            and how old the reading is, is how much that claim is worth. The
+            manual refresh went with it: `agenda:refresh` is still the channel,
+            and nothing on this screen waits on it (DEC-26).
           */}
-          {snapshot && authState?.status === 'signedIn' ? (
-            <div className="mt-2 flex justify-center">
-              <Button
-                variant="text"
-                onClick={() => void refresh()}
-                {...unavailable(busy, 'Synchronisation…')}
-              >
-                {`Synchronisé ${formatAgo(snapshot.syncedAt, now)}`}
-              </Button>
-            </div>
-          ) : null}
         </aside>
 
         {/*
@@ -327,7 +595,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           what stops the window from ending in bare canvas half way down: below
           the last row there is still a surface, which is what a page is.
         */}
-        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter py-row">
+        <main className="bg-card min-h-0 min-w-0 flex-1 overflow-y-auto px-gutter py-row">
           {/*
             Above the list, and the product's only entry into the past
             (VISION.md §6). It is drawn signed out and on an empty corpus: the
@@ -341,14 +609,29 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             filter={filter}
             onFilter={setFilter}
             clients={search.result?.clients ?? []}
+            inputRef={searchRef}
             onHistorique={() => onHistorique(query, filter)}
+            /*
+              The axes appear when the rep asks. On this screen the day list is
+              directly underneath, and a permanent row of « 7 jours »,
+              « À valider » and seven client names reads as a filter *on that
+              list* — which it is not: pressing one replaces it with search
+              results. On *Historique*, where the search is the whole screen,
+              they stay.
+            */
+            chipsAlways={false}
             className="mb-3"
           />
 
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-strong capitalize text-copy">
-              {searching ? 'Résultats' : rangeLabel(view, selected, month)}
-            </h2>
+          {/*
+            The range label was here, in `text-copy`, and it is the page's `h1`
+            now — US-22. Nothing replaces it: this row holds the switch that
+            *changes* the range, and the title above says which one is on, so a
+            caption between the two would be the third rendering of one fact.
+            `justify-end` rather than `justify-between`, because the control it
+            holds has always sat at the end of the rule.
+          */}
+          <div className="mb-3 flex items-center justify-end gap-4">
             {/*
               The view switch belongs to the day list, so it goes with it. A
               `Jour · Semaine · Mois · Liste` left on screen over a list of
@@ -379,32 +662,141 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             <Results
               rows={search.result?.rows ?? null}
               failure={search.failure}
-              truncated={(search.result?.rows.length ?? 0) >= RESULT_LIMIT}
+              /*
+                The main process's own answer, never a count against
+                `RESULT_LIMIT`. `rows.length >= limit` is one more than the
+                question — eight matches, eight rows, nothing hidden, and the
+                pane told the rep to go and look in *Historique* for results
+                that do not exist. `useHistorySearch` derives it once, from the
+                field the channel has always shipped.
+              */
+              truncated={search.capped}
               onOpen={onOpen}
             />
           ) : (
             <DayPane
+              onArm={armNow}
               entries={inRange}
+              /* The screen's one filled control, decided once, above. */
+              emphasis={emphasis}
               reason={snapshot?.reason ?? null}
               signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
+              when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
+              unsynced={unsynced}
+              /*
+                The calendar's own freshness, said where it answers something:
+                in the empty card, and nowhere else on the screen.
+              */
+              readAt={snapshot?.syncedAt ?? null}
+              now={now}
+              onConnecteurs={() => onReglages('connecteurs')}
+              onRefresh={() => void refresh()}
+              refreshing={busy}
+              /*
+                The header's *Ajouter au …* again, this time where the rep is
+                looking. Same component and therefore the same form, the same
+                validation and the same `onCreated` — a second copy of the
+                control, never a second way of doing it.
+              */
+              action={
+                <div className="flex flex-wrap items-center justify-center gap-inline">
+                  <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
+                  {/*
+                    **The other way out of an empty day, and it is not a demo.**
+
+                    A rep who installs on Tuesday with no calls until Thursday
+                    opens the app on nothing: a grey box and a scheduling form.
+                    The general-purpose notetakers answer that with « try a demo
+                    meeting » — a fabricated recording that proves the fixture
+                    works, and that would sit in *Historique* afterwards
+                    indistinguishable from a client call.
+
+                    What this product has instead is already true: the first-run
+                    sequence, which says what happens in three beats and offers
+                    twenty seconds of *real* capture on the rep's own machine
+                    (DEC-45). Seen once and then never again — so on the day it
+                    is worth seeing a second time, there was no way back to it.
+                  */}
+                  <Button variant="nav" onClick={onOnboarding}>
+                    Revoir la présentation ›
+                  </Button>
+                </div>
+              }
+              onOpen={onOpen}
+            />
+          )}
+
+          {/*
+            What the rep owes, under what the rep has planned.
+
+            Below the day and not beside it: it is not about today. It is drawn
+            only when there is something in it, and only when the pane is showing
+            a day — over search results it would be a second list answering a
+            question nobody asked.
+
+            Rows already visible above are dropped: a call held this morning that
+            has not been validated is in *Passées* two inches higher, and the
+            same meeting twice on one screen is a rep wondering whether they are
+            two.
+          */}
+          {searching ? null : (
+            <PendingGates
+              rows={(pending.result?.rows ?? []).filter(
+                (row) => !inRange.some((entry) => entry.meetingId === row.meeting.id),
+              )}
+              /* The backlog's size, before the de-duplication above — so the
+                 number is a fact about the rep's work and not about which day
+                 cell happens to be open. */
+              total={pending.result?.rows.length ?? 0}
+              /* Whether there are more than the rows counted — the handler's own
+                 answer, so « 50+ » is drawn when a row was hidden and never
+                 because the count happens to equal the limit. */
+              capped={pending.capped}
+              /* The same one id the day list is given: whichever list holds that
+                 row draws the fill, and neither can invent a second. */
+              emphasis={emphasis}
+              now={now}
+              onSeeAll={() => onHistorique('', pendingFilter)}
               onOpen={onOpen}
             />
           )}
         </main>
       </div>
+      </div>
     </div>
   )
 }
 
-/** What the right column is showing, in French, always on screen. */
-const rangeLabel = (view: View, selected: DayKey, month: DayKey): string => {
+/**
+ * What the right column is showing, in French — and it is the page's title
+ * (US-22), not a caption over the list.
+ *
+ * This used to be drawn as an `h2` inside `main` *and* the day was printed a
+ * second time in the header, which is the echo `shot.mjs --echo` now measures.
+ *
+ * **`mois` names the count, because the month is already named beside it.**
+ * `--echo` found this the moment the title moved into the header and changed tag:
+ * « Novembre 2026 » at y=28 as the page title and « Novembre 2026 » at y=99 as the
+ * calendar's own pager, on `agenda-hors-fenetre` at both sizes. Seventy pixels
+ * apart, and the pager is the control the rep uses to *change* it — so the title
+ * repeating it said nothing at all. (It was there before US-22 too, as an `h2`
+ * against the pager's `h2`; identical tag and class, which is the one pair
+ * exemption 1 cannot see. Changing the tag is what exposed it.) The count is what
+ * switching to *Mois* actually asks about, and it is the same gesture US-22 asks
+ * of *Historique*'s title.
+ */
+const rangeLabel = (view: View, selected: DayKey, month: DayKey, held: number): string => {
   if (view === 'jour') return formatDayLong(noonOf(selected))
   if (view === 'semaine') {
     const first = startOfWeek(selected)
     const week = weekOf(selected)
     return `Semaine du ${formatDayMedium(noonOf(first))} au ${formatDayMedium(noonOf(week[6]))}`
   }
-  if (view === 'mois') return formatMonthLong(noonOf(month))
+  if (view === 'mois') {
+    const on = formatMonthLong(noonOf(month))
+    if (held === 0) return `Aucune réunion en ${on}`
+    return `${held} réunion${held > 1 ? 's' : ''} en ${on}`
+  }
   return 'Toutes les réunions'
 }

@@ -1,6 +1,6 @@
 # Working rules for this repo
 
-Read these three before writing code. They are the spec, not background:
+Read these before writing code. They are the spec, not background:
 
 | File | What it settles |
 |---|---|
@@ -8,198 +8,38 @@ Read these three before writing code. They are the spec, not background:
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Repo decision, kill list, module layout, build order |
 | [IMPLEMENTATION.md](./IMPLEMENTATION.md) | The ordered task list. **Start here.** |
 
+Every rule below is stated in one line. The measurement behind it — what shipped, what it
+cost, how it was found — is in [docs/INVARIANTS.md](./docs/INVARIANTS.md). Read that entry
+before changing the code a rule names; a one-line rule is not enough to re-derive the trap.
+
 ## What this is
 
-**Sillage** — a desktop meeting notetaker for sales reps at a French ESN. The name is
-carried all the way down: the package id `fr.ilies-bel.sillage`, the crate `sillage-audio`, and
-the `SILLAGE_*` development overrides. It never joins the call —
-it listens to the machine's own audio, transcribes, writes French notes, and after **one**
-human confirmation pushes to VerySwing CRM and drafts a follow-up in Outlook.
+**Sillage** — a desktop meeting notetaker for sales reps at a French ESN. It never joins the
+call: it listens to the machine's own audio, transcribes, writes French notes, and after
+**one** human confirmation pushes to VerySwing CRM and drafts a follow-up in Outlook.
 
-**This repo is the only live checkout**, published at `github.com/ilies-bel/sillage`. Its
-history deliberately starts at one root commit: the predecessor
-(`Natively-AI-assistant/natively-cluely-ai-assistant`, branch `rebuild/sillage`) was
-archived to `~/project/archive/natively-cluely-ai-assistant` on 2026-08-12 and is not to be
-worked in. That archive is the only place the old history and the `.mars/` task database
-still exist. Do not copy code out of it without diffing first — everything there still says
-`notetaker`.
+This repo is the only live checkout (`github.com/ilies-bel/sillage`). The predecessor was
+archived to `~/project/archive/natively-cluely-ai-assistant` and is not to be worked in.
+First deliverable is a live demo against the public VSA sandbox (DEC-28) — no client tenant.
 
-**Current phase: rebuilding.** The repo previously held a real-time answer assistant. That
-product has been deleted (`scripts/demolish.sh`) and this one is being built in its place.
-If you find code that has nothing to do with meeting notes, it is a leftover — check the
-kill list in ARCHITECTURE.md §2 before assuming it matters.
-
-**First deliverable is a live demo against the public VSA sandbox** (DEC-28). Not a client
-deployment. There is no client tenant.
-
-## Architecture rules
+## Architecture
 
 The folder structure is the pipeline. Data flows one way.
 
 ```
 electron/core/       pure. no electron, no i/o, no network. contracts + domain logic.
-electron/modules/    one external boundary each. capture, transcribe, calendar,
-                     identity, llm, signals, extract, crm, mail, store, diagnostics.
+electron/modules/    one external boundary each.
 electron/app/        electron wiring. main, session state machine, ipc, windows.
 src/                 renderer.
 ```
 
-**The import rule, enforced in CI:**
-
-```
-core/*      → may import nothing but core/
-modules/X   → may import core/ and modules/X/.  NOT modules/Y.
-app/*       → may import core/ and modules/*.
-src/*       → may import core/contracts/ only.  Never modules/, never app/.
-```
-
-Modules never talk to each other. The orchestrator wires them. This one rule is what
-prevents another 11,810-line `ipcHandlers.ts`.
-
-If a behaviour is hard to place, it belongs in `app/session/MeetingSession.ts` (the state
-machine) or in `core/domain/` — never in an IPC handler.
-
-## Invariants that are easy to break
-
-- **The rep's document is never written by AI during a call** (DEC-5, DEC-14). The signal
-  rail is a read-only side surface. Gray AI text enters the document exactly once, at
-  meeting end.
-- **Proof of life is the input meter, not a live transcript** (DEC-38). The transcript pane
-  was removed: it was seconds late, blank through every pause, and looked identical whether
-  the room was quiet or the microphone was too quiet to transcribe — which is a meeting that
-  actually happened. The header meter draws the amplitude measured on the capture path and
-  greys every bar the transcriber would drop — **both channels**, mirrored about a baseline,
-  the rep above and the far end below, because "nobody is being heard" and "the client is not
-  being heard" have opposite fixes. The transcript itself is untouched: captured, stored, and
-  still the only thing a citation may point at (DEC-21). Do not reintroduce a live transcript
-  surface to prove the tool is working; that job now has an instrument.
-- **No `/NN` opacity modifier on a design token.** Tailwind cannot recompute alpha on a bare
-  `var()`, so `bg-muted/30` compiles to *no rule at all* — the class name is spelled right,
-  nothing throws, and the element is simply unstyled. Two shipped that way: the meter's
-  below-floor bars were transparent, and the signal rail's empty « — » inherited `--text-body`,
-  drawing empty slots stronger than filled ones. `npm run check:tokens` now fails on it. The
-  fix is a named token in `tokens.css`; a `color-mix()` derived from an existing one needs no
-  entry in VISION.md §6.
-- **The signal rail draws the whole slate, empty rows included** (DEC-14, DEC-38). The ESN
-  recipe's fields are fixed (DEC-13), so they are known before the call starts. An empty slot
-  says « — » and stays that way until somebody says the thing — filling one is the failure
-  DEC-21 exists to prevent. The slate comes from the recipe (`slate` in `recipes.ts`); a
-  recipe that declares none draws only what landed, and says so. **It is never behind a tab
-  with the compte-rendu**: once one exists the session screen is three columns — notes,
-  document, slate — because judging the document against the slate means seeing « Durée — »
-  empty *and* the prose silent about it in one glance, and a switch costs that glance a click
-  and a memory. Side by side, not stacked: stacked, the document showed six lines under a
-  full slate at 900px.
-- **The compte-rendu opens on a « ## Résumé »** (DEC-40). Two to four sentences that read on
-  their own — a summary of whatever happened, so *both* recipes open on it.
-  `COMPTE_RENDU_SECTIONS` is the single source for the ESN headings; the prompt and the tests
-  both read it, and it lives in `core/contracts/recipes.ts` beside the recipe that uses it.
-- **The register is declared, shared by both recipes, and the quoting licence is bounded**
-  (DEC-44). `REGISTRE` in `modules/extract/prompt.ts` is what makes the prose *report* rather
-  than assert — attribution, hedges kept as spoken, quantities with their original
-  approximation. It reaches the two **reduce** prompts only; a 240-character note has no
-  register. Two things are load-bearing. **No new markdown**: the document is never rendered
-  as markdown anywhere — `CompteRenduPane` draws it `whitespace-pre-wrap`, the gate edits it
-  in a textarea, VerySwing gets the same string — so a table or a fact-line block lands as
-  literal pipes on every surface a human reads. And **the guillemet guard stays in `REGISTRE`,
-  never in `FORBIDDEN`**: `deterministicLeaks.ts` exempts the `citation` *key*, never a
-  quotation, so a « … » fragment in the prose can fail the whole extraction — but `FORBIDDEN`
-  is also read by the map prompts, whose citations are verbatim transcript and must be allowed
-  to contain names (DEC-21). Tune the register with `npm run replay:extract`, not by reading it.
-- **Two recipes, declared in one file, and never a template the rep writes** (DEC-43,
-  amending DEC-13). `core/contracts/recipes.ts` declares a *shape* — headings, field names,
-  labels — and never a fact. A third recipe is an entry there plus its prompt in
-  `modules/extract/prompt.ts`. A rep-authored template would be a prompt nobody benchmarks,
-  which is the half of DEC-13 that stands. The free recipe extracts **nothing typed**, and
-  that costs exactly two things, both stated on screen rather than silently absent: no
-  measured confidence (DEC-21 has no cited value to verify) and no VerySwing *opportunité*
-  (every descriptive column of one is fed by a field it does not produce, so `draftIntents`
-  refuses it with the reason on the row). Everything that was never the recipe's still holds
-  — the deterministic header, the leak check, the CRM task, the Outlook draft.
-  `LlmInterpretation.recipe` is a **defaulted** key so that every extraction stored before
-  this existed replays as the ESN one; do not make it required.
-- **A meeting that ends never leaves the screen blank** (DEC-39). `ended` draws no control and
-  the review gate refuses it, so when enhancement cannot run the rep sees a recording finish and
-  nothing happen. `EnhancementNotice` is the answer: it states the case, and *waiting for a model*
-  is a promise the app keeps — every write in Réglages drains what is waiting. Compute
-  `EnhancementStatus`, never store it.
-- **The compte-rendu never requires a Microsoft account** (DEC-39). `repEmail` is nullable the
-  whole way down. It names the rep on the header line and subtracts them from `interlocuteurs`;
-  neither is worth the extraction. Reinstating a `if (!repEmail) return` makes Entra a
-  prerequisite of the only thing the product does.
-- **The model reads the de-duplicated transcript; the store keeps all of it** (DEC-41). On a
-  laptop with its speakers open the microphone hears the far end, so the client is transcribed
-  twice — once correctly on `far`, once as the rep. Measured on a real call: 24 of 38 rep
-  segments. `core/domain/channelBleed.ts` drops the rep copy *at read time*, in `main.ts` before
-  the recipe. Never filter the stored transcript: DEC-21 verifies citations against it and
-  `[source ▸]` points at it. The timing test is **proximity of arrival**, not interval overlap —
-  `modules/transcribe` sets `startMs === endMs` (a batch provider cannot report acoustic time),
-  so an intersection test silently never fires.
-- **Echo cancellation is one filter, not one canceller per platform** (DEC-42). `aec3`, a
-  pure-Rust AEC3, inside the native module — because the OS cancellers are unreachable
-  through `cpal` and taking one would mean a second microphone path, COM, and two
-  `check-platform.mjs` allowances for one behaviour. It runs **before** silence
-  suppression: a canceller fed a gated signal cannot hold adaptation, and the gated frames
-  are the ones carrying the echo. The far channel is the reference and stays untouched.
-  Three things are load-bearing and none of them are obvious. **`enable_high_pass_filter`
-  must stay `true`** — without it the filter cancels 66 dB and then permanently diverges,
-  and the crate documents none of this. **Noise suppression and AGC2 must stay off**: they
-  reshape the amplitude that `inputLevel.ts`, the VAD and DEC-40's too-quiet detector all
-  measure downstream. **The version is pinned exactly**, and the regression test in
-  `echo_canceller.rs` carries the one signal that exposes the divergence — speech with
-  pauses and a low first formant. Continuous speech at 520 Hz hides it completely; a draft
-  of that test passed with the stage disabled. Everything fails open (DEC-26): a graph that
-  will not build, a frame it rejects, a rate that is not 16 kHz, all leave the microphone
-  exactly as it arrived.
-- **Deterministic data never comes from the LLM** (DEC-7). Attendee names, emails, dates and
-  account codes come from Graph or VSA. `LlmInterpretation`'s schema has no fields for them.
-- **Confidence is measured, not self-reported** (DEC-21). Every interpretive field cites a
-  transcript span; the app verifies the span exists. No verifiable span → `⚠ faible`.
-- **Never write to the Outlook event body** (DEC-10). It mails attendees and destroys the
-  Teams join blob.
-- **We create drafts, never send mail** (HR-8). `Mail.ReadWrite`. Never `Mail.Send`.
-- **Raw audio is never retained** (DEC-12). Transcribed and discarded.
-- **The capture path has zero network dependencies** (DEC-26). Everything downstream may
-  fail; nothing downstream may stop a meeting being recorded.
-- **`POST /v1/crm/tasks` has no idempotency key.** The outbox persists the returned `id` in
-  the same transaction that drains the intent, and never re-posts a drained one.
-- **Where a provider runs is surfaced, never enforced** (HR-11 as amended by DEC-33 and
-  narrowed by DEC-37). Every provider row declares `local | remote` and Réglages shows it as
-  « sur la machine » / « hors machine ». It refuses nothing and breaks no ties. **Do not
-  reintroduce a jurisdiction claim** — no `eu` value, no « UE » badge, no allow-list flag: a
-  contractual term differs per client and per year, and a literal in a source file cannot
-  keep it true, which makes a stale one worse than none. The one switch that still refuses is
-  `offlineOnly` — the rep asking, in the product, for this meeting's audio to stay on the
-  machine.
-- **Local transcription is the default, not the fallback** (DEC-30). Never call it *dégradé*
-  in a French string, never present it as a downgrade, and never show a cloud engine as the
-  normal case. Cloud STT is an opt-in accuracy upgrade; falling back to local is a return to
-  the default and is not announced.
-- **The calendar is always drawn** (DEC-31), with no Graph connection and on an empty day. A
-  rep can create and record a meeting on any day. No placeholder box where the grid belongs.
-- **One general status, and only required subsystems move it** (DEC-32). Capture,
-  transcription and analysis — nothing else. VerySwing, Outlook and the calendar are optional
-  (DEC-26) and must never render as an app-level degradation. Per-control reasons still stay
-  inline; only the aggregate footer strip is gone.
-- **No environment variable is required to run this app** (DEC-34). Keys go to the OS
-  credential store from Réglages; everything else a provider needs — a base URL, an Azure
-  deployment, a region — is a `fields` entry on its descriptor, stored in the KV store and
-  rendered as a text field. `process.env` is a *development override* and is read last. When
-  you add a provider setting, declare it; do not reach for a new `SILLAGE_*`.
-- **What Réglages says is what a meeting does.** `resolveLlm` and `recordingOptionsFor` read
-  the vault, the provider preference and the model preference, and are asked *per use*. Both
-  were once boot-time snapshots that consulted only `process.env`, which made the whole
-  settings surface decorative. A new read path that skips `credentials.keys()` or
-  `preferences.provider(…)` reintroduces exactly that.
-- **The ChatGPT row borrows, never runs, an OAuth flow** (DEC-36). It reads
-  `~/.codex/auth.json` and never writes to it: refreshing here would invalidate the token
-  Codex holds. Its model comes from Codex's `config.toml`, because the endpoint serves a short
-  account-specific list. Do not add a *Se connecter* button to it.
+**The import rule, enforced in CI:** `core/*` imports only `core/`. `modules/X` imports
+`core/` and itself, never `modules/Y`. `app/*` imports `core/` and `modules/*`. `src/*`
+imports `core/contracts/` only. Modules never talk to each other; the orchestrator wires
+them. Behaviour that is hard to place goes in `app/session/MeetingSession.ts` or
+`core/domain/` — never in an IPC handler.
 
 ## The CRM boundary (DEC-29)
-
-The client will have their own developments on top of VSA. That must cost an adapter change,
-never a core change.
 
 ```
 core/contracts/crm.ts     CrmPort — domain verbs, knows nothing about VSA
@@ -209,94 +49,189 @@ modules/crm/vsa/          the only place VSA exists
   generated/              from OpenAPI. never hand-edit.
 ```
 
-**CI check:** `grep -rn 'tiersCode\|oppyId\|salesStage' electron/ src/` must return hits
-only under `electron/modules/crm/vsa/`. Anywhere else means the abstraction leaked.
+`grep -rn 'tiersCode\|oppyId\|salesStage' electron/ src/` must hit only under
+`electron/modules/crm/vsa/`.
+
+## Invariants
+
+**Writes into a client's systems**
+- `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb. Every rule below follows from that.
+- One confirmation gate (DEC-4). No second path may confirm what the button refuses.
+- A 5xx on a POST is not retryable. `429` is — it is the one status that says the request was not processed.
+- `blocked` means a dependency has not settled *yet*, never that it failed.
+- A row left `draining` by a dead process is reclaimed; a quit waits for one still on the wire.
+- A `failed` push gets a sentence naming the cause, never a *Réessayer* button.
+- An intent nobody can route is settled as far as the meeting is concerned (`routable`, injected by `main.ts`).
+- An empty compte-rendu is not a task; `draftIntents` refuses one with no description.
+- A field the gate cannot ship is read-only, with the reason above it.
+- The outbox persists the returned id in the same transaction that drains the intent.
+- Never write to the Outlook event body (DEC-10). We create drafts, never send mail (HR-8) — `Mail.ReadWrite`, never `Mail.Send`.
+
+**Evidence (DEC-21)**
+- Confidence is measured, never self-reported: every interpretive field cites a transcript span the app verifies. No verifiable span → `⚠ faible`.
+- Deterministic data never comes from the LLM (DEC-7) — names, emails, dates, account codes come from Graph or VSA.
+- One lookup: `locateSegments` in `core/contracts/` (normalised, channel-joined). Never write a second one.
+- An answer with no citation is no answer. A quote too short to look up is kept and marked, never dropped.
+- A quote is attributed to a **side**, never to a person. Exactly one interlocutor on the far side names them; otherwise « Client ».
+- A mark is the rep's and is never inferred onto a sentence. Taking one back is an event, never a delete.
+- The model reads the de-duplicated transcript (`channelBleed.ts`); the store keeps all of it. The timing test is proximity of arrival, not interval overlap.
+- `Demander` reads the same transcript the recipe does and says how much of it it read.
+- `⚠ faible` is a mark everywhere it appears, `font-semibold` as well as coloured. The string is never rewritten.
+
+**The review gate**
+- The arming guard measures what the rep was *shown*, not where a scroller sits; `data-unmeasured` marks what a column holds but does not send.
+- Coverage is keyed by which view was read; growth never invalidates, a shrink past `SHRINK_SLACK` does.
+- The page turn must move a scroller, and lands on the covered band's edge, not a page away.
+- The one control that ships is never the rectangle the rep just pressed.
+- Never draw an inert primary: while *Valider* is withheld the slot holds the control that shows the rest.
+- The measurement reaches the button: « Valider malgré N champ(s) non vérifié(s) ».
+- The gate opens on the first `⚠ faible` field.
+- Leaving the gate never discards a correction (`PENDING_EDITS`, in memory, cleared by a confirmation).
+- Nothing hides inside the measured columns — `field-sizing: content`, checked by `--scrollers`.
+- `Ctrl/⌘ Entrée` never fires from inside an editable.
+
+**Capture**
+- The capture path has zero network dependencies (DEC-26). A downstream failure never stops a recording.
+- Raw audio is never retained (DEC-12).
+- Proof of life is the input meter, never a transcript (DEC-38) — both channels, mirrored.
+- A channel producing *nothing* emits no frames, so the watchdog is fed before the keepalive guard, on a timer, per channel.
+- A change of output route during a call is reported, never repaired.
+- One missing channel is `degraded`, never `down` (DEC-32), and the sentence names which side.
+- The permission is asked for; capability-tested, never platform-tested. A refusal leads to the settings pane, not a prompt.
+- The dry run is offered, never automatic; silence is « rien n'a été entendu », not a broken machine. Its verdict is kept and outranks the boot probe (DEC-45).
+- A 200 that is not a transcription is a failure, not a silence. A string body is not a transcript.
+- AEC (`aec3`, pinned exactly) runs before silence suppression; `enable_high_pass_filter` true, noise suppression and AGC2 off. Tests assert the **shipped** constructor.
+- The local engine is pooled and outlives the meeting, so its prompt is set unconditionally — an empty prompt is a statement.
+
+**The session and the agenda**
+- One recording at a time, enforced in `Orchestrator.dispatch` — the state table is per meeting.
+- `liveStates()`/`liveIds()` mean *work in flight in this process*, never the rehydration cache. Reading a past meeting must not make it live.
+- A window closing never abandons a recording; a boot sweep ends one a crash left in `recording`.
+- `arm` is illegal beside a live recording, and a refusal names the live call.
+- One conversation, one offer: `calendarClaim` defers the ad-hoc detector to the calendar's better offer.
+- `#spent` is « has the product finished with this conversation », and `ended`/`extracting` are not in it (they persist for ever with no model — DEC-39).
+- « Over » means absent, cancelled, or past `scheduledEnd + OVERRUN_GRACE_MS` — `wait` is not over.
+- `armNow` returns the meeting for the event the rep pressed, and raises no notification.
+- A synthesised end (`eventId === null`) never gets the short end-of-meeting grace.
+- Detection does not require Microsoft: `Agenda` is built over `NULL_CALENDAR` in both branches, with no `onHealth` in the null one.
+- Exactly two things navigate without a press: the arming notice (DEC-46) and `PowerWatch`'s. Neither starts anything.
+- One anchor for when a meeting is: `meetingAnchor` = `scheduledStart ?? startedAt ?? createdAt`. `endedAt` is never consulted.
+- A meeting that ends never leaves the screen blank — `EnhancementNotice` states the case and waits (DEC-39).
+
+**The widget (DEC-49)**
+- A saved position is a request, never an instruction — the window must land on a real display.
+- The window is the size of its own content, plus the shadow's extent, given back with `widget:passThrough`.
+- `setContentProtection(true)`: it is over everything the rep shares.
+- It is not an open app — `second-instance`, `activate` and teardown name `mainWindow`.
+- It leaves by asking the renderer to fade (`widget:leave` → `widget:left`), with a fallback timer armed first; it stops being `#window` and stops taking the mouse before it does.
+- It is not shown before the renderer has measured itself, with the real font and `widget:state` settled. The order must hold: harness `widget:state` latency < `MEASURE_DEADLINE_MS` < `FIRST_FRAME_MS` < `APPEARANCE_MS`, and the renderer states its own deadline from its own mount.
+- Every timer is reset when a window is created; an elapsed deadline is elapsed.
+- The pill is the anchor, not a window edge — the renderer reports `pillTop`, the main process answers `above`.
+- The transcript is opt-in on both surfaces and off by default — proof of life stays the meter (DEC-38). The **window** collects it, never the panel; on the session screen `LiveAside` does, never `Session`. No provisional text — `isFinal: false` cannot occur.
+
+**The renderer**
+- The rep's document is never written by AI during a call (DEC-5, DEC-14). Gray AI text enters once, at meeting end.
+- The compte-rendu is typeset by `CompteRenduDocument`, markers hanging in a gutter — never a markdown renderer, because VerySwing receives the string the rep read.
+- One reading measure: `.measure`, `58ch`, **on the element holding the prose**, never only on a wrapper. `--prose` ceiling is 75; do not change the number without re-running the count.
+- A pane is named by its content; a page title names what changed. Well is silent.
+- A reading column says how much of itself is left (`ui/ReadingColumn.tsx`).
+- No `/NN` opacity modifier on a design token. Whatever `border-*` can say, `ring-*` and `decoration-*` must say too.
+- Every control clears 24×24.
+- A gutter is owned by what hangs in it, and geometry is measured, not read.
+- Ease-out on the way in, ease-in on the way out.
+- The keyboard is declared in `src/app/shortcuts.ts` and printed in Réglages: both modifiers always, `closest` as the typing guard, an unclaimed key never `preventDefault`ed.
+- The signal rail draws the whole slate, empty rows included.
+- Nothing Electron composes reaches a rep's eyes — `preload.ts` strips the `Error invoking remote method` prefix.
+
+**Extraction**
+- The compte-rendu opens on a « ## Résumé » (DEC-40), for both recipes.
+- Two recipes, declared in `core/contracts/recipes.ts`, never a rep-authored template (DEC-43). `LlmInterpretation.recipe` stays a defaulted key.
+- `REGISTRE` reaches the two reduce prompts only. No new markdown. The guillemet guard stays in `REGISTRE`, never in `FORBIDDEN`.
+- The compte-rendu never requires a Microsoft account — `repEmail` is nullable the whole way down.
+- The document's own lines are followable, by string equality against `compteRenduSources` — never a heuristic. Provenance travels beside the document, never inside it (DEC-44).
+
+**Settings, privacy, updates**
+- No environment variable is required to run this app (DEC-34). Keys go to the OS credential store; other provider settings are a `fields` entry. `process.env` is a development override, read last.
+- What Réglages says is what a meeting does: `resolveLlm` and `recordingOptionsFor` are asked per use, never snapshotted at boot.
+- « Cette machine uniquement » binds the **candidate set**, before ranking and before the explicit pick, and it binds the language model too.
+- Where a provider runs is surfaced, never enforced. No jurisdiction claim — no `eu`, no « UE » badge.
+- Local transcription is the default, not the fallback (DEC-30). Never call it *dégradé*.
+- The calendar is always drawn (DEC-31), with no Graph and on an empty day.
+- One general status, moved only by capture, transcription and analysis (DEC-32).
+- A model download must report progress, land where the engine looks, and never run during a call (DEC-35).
+- The ChatGPT row borrows, never runs, an OAuth flow (DEC-36). No *Se connecter* button.
+- An update is verified before it runs: on an unsigned Windows build the updater is not constructed and the panel says why (`core/domain/updateTrust.ts`).
+- Diagnostics: a message the product did not write is **declared** (`origin: 'foreign'`), not cleaned. `detail` is an allowlist over shapes — never a place to put a foreign string.
+- The schema stamp is written after the fold, not before it.
+
+**Ports and prose**
+- A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
+- A comment is not a check. Prose in this repo has been wrong about the code eight times; measure before trusting a sentence.
+- A test is not a caller.
 
 ## Commands
 
 ```
-npm test                  # the suite. prints which tests are deferred, and why
-npm run check             # typecheck + import boundaries + CRM containment + platform branches
-npm run build:electron    # esbuild → dist-electron (core/, modules/, app/, preload only)
+npm test                  # the suite. no build needed — Node type-stripping
+npm run check             # typecheck ×2 + boundaries + CRM + tokens + platform + French
+                          # + ports + surfaces + reasons + diag + motion
+npm run test:e2e          # builds, then walks the real main process under Electron.
+                          # NEEDS a dev server: 5180, or VITE_DEV_SERVER_URL=…
+npm run build:electron    # esbuild → dist-electron
+npm run dist              # package (scripts/package-app.mjs), either host
 ```
 
-`npm test` needs no build: `.ts` runs directly under Node's type stripping.
-
-**Looking at a screen** — the renderer runs in a plain Chromium with a stubbed IPC bridge,
-so no Electron, no audio device, no Graph and no keys are needed:
+**Looking at a screen** — the renderer runs in plain Chromium with a stubbed IPC bridge:
 
 ```
 npm run dev -- --port 5180 --strictPort        # first, in another shell
 node scripts/harness/shot.mjs review scratch/review.png --scan
-node scripts/harness/serve.mjs                 # the same app at a URL, for tools that take one
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all six checks
 ```
 
-`scripts/harness/README.md` has the screen list. `--scan` runs a design detector inside the
-rendered page. **A design pass that only reads `src/` has not looked at the product** — the
-defects that matter here live in rendered geometry and in the accessibility tree.
+`--geometry`, `--targets`, `--prose`, `--a11y`, `--contrast`, `--scrollers` are the six
+measured checks; each exists because something shipped past a screenshot. **Both sizes,
+always** — 1280×800 and 960×600, the minimum `main.ts` declares. A design pass that only
+reads `src/` has not looked at the product. Stages are held together by the product's own
+French strings, so a copy change breaks one silently.
+
+`scripts/e2e.mjs` launches the built main process (not the packaged renderer — that comes
+from Vite) and walks a rep's first ten minutes, twice, seeding the gate through the
+product's own `Store` with the app closed. `scripts/harness/README.md` has the screen list;
+measure its claims before trusting them.
 
 ## Platforms — Windows is the primary one (HR-2)
 
-The reps this ships to are on Windows laptops. macOS is where it is *written*, which is the
-whole risk: a mac-first decision looks reasonable on the machine where it is typed and is
-only discovered on the platform that matters.
-
-**CI check:** `npm run check:platform`. Every file allowed to know what it is running on is
-declared in `scripts/check-platform.mjs` with the reason it cannot be written portably —
-five today, all in capture and whisper. A new `process.platform`, a `sysctl`, a `tasklist`,
-a `/Applications` path or a `C:\` literal outside that list fails the check. So does an
-allowance whose branch has since gone, so the list cannot rot into a blanket exemption.
-
-Where the two platforms genuinely differ, the difference lives in one place each:
+macOS is where it is written, which is the whole risk. `npm run check:platform`: every file
+allowed to know what it is running on is declared in `scripts/check-platform.mjs` with the
+reason, and an allowance whose branch has gone also fails.
 
 | | macOS | Windows |
 |---|---|---|
-| System audio | ScreenCaptureKit, `native-module/src/speaker/macos.rs` | WASAPI loopback, `speaker/windows.rs` |
-| Toolchain for that module | full Xcode (`cidre`), not Command Line Tools | VS Build Tools + `rustup target add x86_64-pc-windows-msvc` |
-| Refresh token | Keychain | Credential Manager (DPAPI) — same `SecretVault` port |
-| Capture permission | TCC prompt, screen recording | none |
+| System audio | ScreenCaptureKit, `speaker/macos.rs` | WASAPI loopback, `speaker/windows.rs` |
+| Toolchain | full Xcode (`cidre`) | VS Build Tools + `x86_64-pc-windows-msvc` |
+| Refresh token | Keychain | Credential Manager — same `SecretVault` port |
+| Capture permission | TCC prompt | none |
 | Package | dmg + zip | NSIS + portable |
 
-`npm run dist` (→ `scripts/package-app.mjs`) runs on either host. Never put shell syntax in a
-`package.json` script: `$?`, subshells and `&&`-chains that must not short-circuit belong in a
-`.mjs` runner, because `cmd.exe` does not read them and the failure lands on the primary
-platform.
-
-Third-party native addons are down to **one** — `keytar`. Adding a second is a decision, not a
-dependency: it has to be rebuilt per Electron ABI, per arch, on both platforms, and on Windows
-that means MSVC and Python on every machine that runs `npm install`.
+Never put shell syntax in a `package.json` script — `cmd.exe` does not read it. Third-party
+native addons are **one** (`keytar`); adding a second is a decision, not a dependency.
 
 ## Conventions
 
 - TypeScript strict. Zod schemas for every IPC payload and every LLM output.
-- **Relative imports inside `electron/` carry their `.ts` extension.** That is what lets one
-  source tree run under `node --test`, esbuild and `tsc --noEmit` with no build step between.
-  `electron/package.json` marks the tree `"type": "module"`; the root stays CommonJS.
-- Node's type stripping is **strip-only**, so no TypeScript construct with runtime meaning:
-  no `enum`, no `namespace`, no constructor parameter properties (`constructor(private x: T)`).
-  String-literal unions and explicit field assignments instead. `tsc` will not catch these —
-  `node --test` will, with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`.
-- **SQLite is `node:sqlite`**, never `better-sqlite3` — stdlib, no ABI rebuild, and it loads
-  in plain `node`, which is what keeps the store and `core/domain/` testable without Electron.
-- A module never imports another module. If `modules/X` needs something `modules/Y` has,
-  declare a port (an interface) and let `app/` inject it — as `modules/diagnostics` does with
-  `DiagLog`, and as every module does with `DiagRecorder` from `core/contracts/diagnostics.ts`.
-- French for all user-facing strings. English for code, comments and commits.
-- `core/domain/` is unit-tested with no Electron, no audio device, no network. If a rule
-  needs an Electron mock to test, it is in the wrong folder.
-- Ported ProseMirror code keeps its upstream tests (`vendor/anarlog-editor/`, MIT).
-- Never edit `vendor/` — port out of it into `src/editor/`, then adapt there.
+- Relative imports inside `electron/` carry their `.ts` extension.
+- Node's type stripping is strip-only: no `enum`, no `namespace`, no constructor parameter properties.
+- SQLite is `node:sqlite`, never `better-sqlite3`.
+- A module never imports another module — declare a port and let `app/` inject it.
+- French for user-facing strings. English for code, comments and commits.
+- `core/domain/` is unit-tested with no Electron, no audio device, no network.
+- Never edit `vendor/` — port out of it into `src/editor/`, then adapt.
+- Reference: `docs/reference/vsa-api.md`, `docs/reference/vsa-sandbox-openapi.json`.
 
-## Reference material
+## Already decided — do not relitigate
 
-- `docs/reference/vsa-api.md` — the VSA endpoints we use, with shapes and gotchas
-- `docs/reference/vsa-sandbox-openapi.json` — the full 261-path spec
-- `vendor/anarlog-editor/PROVENANCE.md` — what to port and what to leave
-
-## Things already decided — do not relitigate
-
-Editor is raw ProseMirror, not TipTap (DEC-8). Calendar is Microsoft Graph, not Google
-(HR-3). No monorepo (ARCHITECTURE.md §1). No live AI writing into the document (DEC-5). Two
-declared compte-rendu recipes and no rep-authored template (DEC-13 as amended by DEC-43).
-One confirmation gate (DEC-4). If you think one of these is wrong, say so — don't silently
-build the other thing.
+Raw ProseMirror, not TipTap (DEC-8). Microsoft Graph, not Google (HR-3). No monorepo. No
+live AI writing into the document (DEC-5). Two declared recipes, no rep template (DEC-43).
+One confirmation gate (DEC-4). If you think one is wrong, say so — don't silently build the
+other thing.

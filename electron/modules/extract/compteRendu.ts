@@ -34,6 +34,7 @@ import type {
 } from '../../core/contracts/extraction.ts'
 import type { Cited } from '../../core/contracts/extraction.ts'
 import type { Attendee } from '../../core/contracts/meeting.ts'
+import type { TranscriptSpan } from '../../core/contracts/transcript.ts'
 import { isFreeForm } from '../../core/contracts/recipes.ts'
 import type { z } from 'zod'
 import type {
@@ -74,9 +75,71 @@ const formatAttendee = (attendee: Attendee): string => {
   return email === '' ? name : `${name} (${email})`
 }
 
+/**
+ * Unwrap the model's prose: a soft line break inside a paragraph becomes a space.
+ *
+ * Models return French prose hard-wrapped at seventy-odd columns more often than
+ * not, and the string they wrap is the string that is stored, rendered and sent
+ * to VerySwing (DEC-44). Nothing downstream can undo it: `whitespace-pre-wrap`
+ * honours the break, so the document reads « …avant la fin de l'année et /
+ * généralise dbt sur les domaines métier. » — a sentence cut after « et », at
+ * every width, on every surface, and in the CRM.
+ *
+ * It is normalised **here**, where the document is composed, rather than in a
+ * renderer, precisely so the stored string is the clean one and the rep still
+ * reads exactly what VerySwing will receive.
+ *
+ * The rule is the closed vocabulary the recipe writes and nothing else:
+ *
+ *   · a blank line is a paragraph break and is kept;
+ *   · a line that opens a heading (`#`) or a list item (`- `) keeps its break,
+ *     and so does the line *before* one — those are structure, not prose;
+ *   · anything else joined to the line above by a single newline was a wrap,
+ *     and becomes one space.
+ *
+ * A model that returns one line per paragraph — which is what the prompt asks
+ * for — passes through untouched.
+ */
+const STRUCTURAL = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||```)/
+
+export const unwrapProse = (prose: string): string => {
+  const out: string[] = []
+  for (const line of prose.split('\n')) {
+    const previous = out[out.length - 1]
+    const joinable =
+      previous !== undefined &&
+      previous.trim() !== '' &&
+      line.trim() !== '' &&
+      !STRUCTURAL.test(line) &&
+      !STRUCTURAL.test(previous)
+    if (joinable) out[out.length - 1] = `${previous.trimEnd()} ${line.trimStart()}`
+    else out.push(line)
+  }
+  return out.join('\n')
+}
+
 /** The suffix a line wears when its citation could not be found. */
 const mark = (report: VerificationReport | undefined, path: string): string =>
   report?.fields[path] === 'faible' ? ` ${FAIBLE_MARKER}` : ''
+
+/**
+ * **A typed field's value is one line, and it is made one here.**
+ *
+ * `unwrapProse` undoes the model's soft wraps in the *narrative* and nothing
+ * touched the eleven typed values — so a newline the model put inside « Besoin »
+ * broke the row in half: the second half was drawn as ordinary prose with no
+ * marker and no gutter, and `compteRenduSources` matches the line **as written**
+ * by string equality, so the `[source ▸]` on the most operative line in the
+ * document silently went. A line that matches nothing is drawn plain, which is
+ * the behaviour that keeps the free recipe working and is exactly what makes
+ * this invisible: nothing on screen says the provenance was lost.
+ *
+ * Collapsed rather than unwrapped, because these are *values*: a field holds one
+ * answer, and a newline inside one is never meaning, only formatting the model
+ * chose. The narrative keeps `unwrapProse`, which has to decide whether a break
+ * ends a sentence.
+ */
+export const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
 
 const line = (
   report: VerificationReport | undefined,
@@ -84,7 +147,9 @@ const line = (
   label: string,
   body: string | null,
 ): string =>
-  body === null ? `- **${label}** : ${NOT_MENTIONED}` : `- **${label}** : ${body}${mark(report, path)}`
+  body === null
+    ? `- **${label}** : ${NOT_MENTIONED}`
+    : `- **${label}** : ${oneLine(body)}${mark(report, path)}`
 
 const formatProfil = (profil: z.infer<typeof ProfilRechercheSchema>): string => {
   const stack = profil.stack.filter((s) => s.trim() !== '')
@@ -133,7 +198,7 @@ const listSection = <T>(
   return [
     heading,
     '',
-    ...items.map((item, i) => `- ${format(item.value)}${mark(report, `${path}.${i}`)}`),
+    ...items.map((item, i) => `- ${oneLine(format(item.value))}${mark(report, `${path}.${i}`)}`),
     '',
   ]
 }
@@ -174,18 +239,43 @@ export const renderCompteRendu = (
   const taskName = facts.taskName.trim()
   const accountName = facts.account.name.trim()
 
+  /*
+   * **The four deterministic lines carry no `**`, and that is a decision about
+   * two surfaces at once.**
+   *
+   * They used to: `**Client** : Néovia Santé`, `**Date** : …`,
+   * `**Interlocuteurs** : …`, `**Commercial** : …` — four consecutive lines,
+   * each with two literal asterisk pairs, at the very top of every document.
+   * The block markers (`#`, `##`, `- `) hang in a gutter outside the measure,
+   * which is what makes them readable; `**` cannot, because it sits inside a
+   * line. So the first thing the eye landed on, on the flagship screen, was a
+   * row of punctuation — and the same eight asterisks landed in the VerySwing
+   * task body, where a delivery manager reads them as noise the app forgot to
+   * remove.
+   *
+   * The emphasis was never load-bearing here. These are the *only* four lines
+   * in the document composed in code, from Graph and the CRM (DEC-7): a label,
+   * a colon and a fact, in a fixed order, already set apart by sitting under the
+   * title and above the prose. Where `**` *does* earn its place is where the
+   * model wrote it — inside « Éléments retenus », where it distinguishes a
+   * field's name from its value in a list the model produced — and there it
+   * stays, hangs nowhere, and is drawn muted (`CompteRenduDocument`).
+   *
+   * DEC-44 is untouched: nothing is *hidden*. The characters are not emitted at
+   * all, so VerySwing still receives the string the rep read, byte for byte.
+   */
   const head: string[] = [
     taskName === '' ? '# _Réunion sans objet_' : `# ${taskName}`,
     '',
-    `**Client** : ${accountName === '' ? '_non résolu_' : accountName}${accountMark}`,
-    `**Date** : ${formatWhen(facts.startsAt, facts.endsAt)}`,
-    `**Interlocuteurs** : ${interlocuteurs}`,
+    `Client : ${accountName === '' ? '_non résolu_' : accountName}${accountMark}`,
+    `Date : ${formatWhen(facts.startsAt, facts.endsAt)}`,
+    `Interlocuteurs : ${interlocuteurs}`,
     // Omitted rather than rendered empty when nobody is signed into Microsoft.
-    // « **Commercial** :  » followed by nothing reads as a value the app failed
-    // to find, and the rep reading it is the person it would have named.
-    ...(facts.repEmail === null ? [] : [`**Commercial** : ${facts.repEmail}`]),
+    // « Commercial :  » followed by nothing reads as a value the app failed to
+    // find, and the rep reading it is the person it would have named.
+    ...(facts.repEmail === null ? [] : [`Commercial : ${facts.repEmail}`]),
     '',
-    interpretation.compteRendu.trim(),
+    unwrapProse(interpretation.compteRendu.trim()),
   ]
 
   // The narrative is the whole document for a free-form recipe. Nothing is
@@ -195,6 +285,27 @@ export const renderCompteRendu = (
     return `${head.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
   }
 
+  /*
+   * The recap, and everything in it is a **sub**-section of it.
+   *
+   * The three list fields used to be appended at `##`, which collided head-on
+   * with the model's own narrative: `COMPTE_RENDU_SECTIONS` already contains
+   * « ## Objections et points de vigilance » and « ## Prochaines étapes », so
+   * every ESN compte-rendu this app has ever produced carried each of those two
+   * headings *twice*, several hundred words apart, once over prose and once over
+   * a list — on screen, in the CRM task, and in the exported copy.
+   *
+   * No screenshot pass caught it because the harness fixture was four invented
+   * headings rather than the document the composer writes; the fixture is now
+   * the real shape, which is how this surfaced at all.
+   *
+   * `###` is the fix rather than a rename, because the relationship is real:
+   * above « Éléments retenus » is the model's prose, below it is the extracted
+   * slate with its `⚠ faible` markers, and the profils / objections / étapes
+   * lists are three fields of that slate — not three more chapters. `###` is in
+   * the typesetter's vocabulary (`compteRenduLines.ts`), so the gutter draws it
+   * like the rest.
+   */
   const lines: string[] = [
     ...head,
     '',
@@ -246,7 +357,7 @@ export const renderCompteRendu = (
     ),
     '',
     ...listSection(
-      '## Profils recherchés',
+      '### Profils recherchés',
       interpretation.profilsRecherches,
       'profilsRecherches',
       verification,
@@ -254,7 +365,7 @@ export const renderCompteRendu = (
       '_Aucun profil précisé._',
     ),
     ...listSection(
-      '## Objections et points de vigilance',
+      '### Objections et points de vigilance',
       interpretation.objections,
       'objections',
       verification,
@@ -262,7 +373,7 @@ export const renderCompteRendu = (
       '_Aucune objection relevée._',
     ),
     ...listSection(
-      '## Prochaines étapes',
+      '### Prochaines étapes',
       interpretation.prochainesEtapes,
       'prochainesEtapes',
       verification,
@@ -271,5 +382,115 @@ export const renderCompteRendu = (
     ),
   ]
 
-  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
+  /*
+   * **The marker explains itself, once, in the document that carries it.**
+   *
+   * `⚠ faible` is written into the compte-rendu on purpose — the whole of DEC-21
+   * is that a rep skimming the document, rather than opening the form, still
+   * sees which sentence the app could not stand behind. But this string is also
+   * the body of the VerySwing task, and there it is read by a delivery manager,
+   * a consultant, a recruiter — none of whom have ever seen the review gate, its
+   * header banner or its orange rail. To them it was a dingbat and a lowercase
+   * adjective at the end of a line.
+   *
+   * One line at the foot, and only when a marker is actually present, so a
+   * clean compte-rendu carries no apparatus at all. It is the same rule the
+   * screens follow (DEC-26): nothing on it is unexplained.
+   */
+  const document = lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+  const legend = document.includes(FAIBLE_MARKER)
+    ? `\n\n${FAIBLE_MARKER} : la citation de cette valeur n’a pas été retrouvée dans la transcription. À confirmer auprès du client.`
+    : ''
+
+  return `${document}${legend}\n`
+}
+
+/**
+ * **Where each line of the document came from, so the bullets can be checked
+ * the way the fields already are** (DEC-21).
+ *
+ * The eleven typed rows in the gate's rail each carry a `[source ▸]`, and the
+ * twenty-four hundred pixels of compte-rendu beside them carried provenance on
+ * quotations only — five followable fragments across twenty-eight substantive
+ * lines, and **none at all on the twelve bullets**. The bullets are the
+ * operative half: « 2 × Data Engineer confirmé », « Envoyer 3 CV avec TJM avant
+ * vendredi ». Those are the commitments that become the VerySwing task, and they
+ * were the least checkable thing on a screen whose whole argument is that
+ * nothing ships unchecked.
+ *
+ * Nothing new is claimed and nothing is re-verified. Every one of these lines is
+ * already composed *from* a `Cited<T>` whose span `spanVerification` looked up in
+ * the stored transcript; the span simply never left the extraction. This pairs
+ * each rendered line with the span it was rendered from — deterministically,
+ * because both sides call the same `format`, so the renderer matches on string
+ * equality and never on a heuristic.
+ *
+ * What is *followed* is the span's own quote, never the composed line: the line
+ * is how the document says it and the quote is what was actually said, and only
+ * the second is findable in a transcript. So the pairing is « this line, that
+ * fragment » — which is the same pairing `[source ▸]` already makes for a field.
+ *
+ * It is a **side channel on purpose.** DEC-44: the document is never rendered as
+ * markdown anywhere and VerySwing receives the string the rep read, so a marker
+ * written into the text would land in the CRM as literal punctuation. The
+ * provenance travels beside the document, not inside it.
+ */
+export interface CompteRenduSource {
+  /** The line as `renderCompteRendu` wrote it, without the `- ` and any marker. */
+  text: string
+  span: TranscriptSpan
+}
+
+export const compteRenduSources = (extraction: ExtractionESN): CompteRenduSource[] => {
+  const { interpretation } = extraction
+  const out: CompteRenduSource[] = []
+
+  /*
+   * The line **as written**, which is the whole of the match. `text` is compared
+   * for equality by the renderer, so it has to be assembled by exactly the code
+   * paths that assembled the document — `\`**${label}** : ${body}\`` for an
+   * « Éléments retenus » row, `format(item.value)` for a list item — or the
+   * provenance silently disappears the day one of them is reworded, with nothing
+   * failing anywhere. `compteRendu.test.ts` holds the two halves together.
+   */
+  const row = (label: string, body: string | null, span: TranscriptSpan | null | undefined) => {
+    const trimmed = body === null ? '' : oneLine(body)
+    if (!trimmed || !span) return
+    out.push({ text: `**${label}** : ${trimmed}`, span })
+  }
+  const item = (text: string, span: TranscriptSpan | null | undefined) => {
+    if (!span) return
+    out.push({ text: oneLine(text), span })
+  }
+
+  row('Besoin', interpretation.besoin?.value ?? null, interpretation.besoin?.span)
+  row(
+    'Mode de collaboration',
+    interpretation.modeCollaboration === null
+      ? null
+      : MODE_LABEL[interpretation.modeCollaboration.value],
+    interpretation.modeCollaboration?.span,
+  )
+  row(
+    'TJM évoqué',
+    interpretation.tjmEvoque === null ? null : formatTjm(interpretation.tjmEvoque.value),
+    interpretation.tjmEvoque?.span,
+  )
+  row('Démarrage', interpretation.dateDemarrage?.value ?? null, interpretation.dateDemarrage?.span)
+  row(
+    'Durée de mission',
+    interpretation.dureeMission?.value ?? null,
+    interpretation.dureeMission?.span,
+  )
+  row(
+    'Contexte technique',
+    interpretation.contexteTechnique?.value ?? null,
+    interpretation.contexteTechnique?.span,
+  )
+
+  for (const p of interpretation.profilsRecherches) item(formatProfil(p.value), p.span)
+  for (const o of interpretation.objections) item(formatObjection(o.value), o.span)
+  for (const e of interpretation.prochainesEtapes) item(formatEtape(e.value), e.span)
+
+  return out
 }

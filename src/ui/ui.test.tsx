@@ -17,8 +17,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   Button,
   Chip,
+  CopyButton,
   EmptyState,
   List,
+  OverflowMenu,
   Row,
   RowTitle,
   SectionHeader,
@@ -314,6 +316,120 @@ describe('the primitives stay inside the token system', () => {
   })
 })
 
+/*
+ * ── the press, and the three controls that must not have one ────────────────
+ *
+ * Measured on the shipped renderer before this round: across six stages, 311
+ * live declarations, **one** animated property — 307 colour transitions and four
+ * `riseIn`s. Nothing in the product answered a press. It does now, as a one-pixel
+ * translate on the transition these controls already carry (`--motion-fast`,
+ * 90ms) — driven in Chromium on the day row's own button, `transform: none` at
+ * rest and `matrix(1, 0, 0, 1, 0, 1)` with the pointer down.
+ *
+ * **What this block really holds is the exclusion.** `primary`, `caution` and
+ * `danger` are what the review gate's decision ships on, and US-3's own
+ * out-of-scope line names them: the page turn and *Valider* were once the same
+ * DOM node in the same rectangle 63ms apart, and a shared `transition` painted
+ * the ship's fill under the turn's label for a frame. `POST /v1/crm/tasks` has no
+ * idempotency key. jsdom cannot press anything usefully — every box measures zero
+ * and `:active` is not reachable — so what is asserted is the *class*, which is
+ * the thing a future edit would delete or extend by hand.
+ */
+describe('a control answers the press, and the ones that ship do not', () => {
+  const PRESS = /(^|\s|:)active:translate-y-px(\s|$)/
+
+  test.each(['bordered', 'nav', 'text', 'link'] as const)(
+    'Button variant %s sinks one pixel under the finger',
+    (variant) => {
+      render(<Button variant={variant}>Ouvrir</Button>)
+      expect(screen.getByRole('button').className).toMatch(PRESS)
+    },
+  )
+
+  test.each(['primary', 'caution', 'danger'] as const)(
+    'Button variant %s is deliberately still — it is what a decision ships on',
+    (variant) => {
+      render(<Button variant={variant}>Valider</Button>)
+      expect(screen.getByRole('button').className).not.toMatch(PRESS)
+    },
+  )
+
+  test('the press is never offered by a control that cannot be used', () => {
+    // `enabled:` and not a bare `active:`: a disabled control that sinks under
+    // the finger is DEC-26's dead button pretending to work.
+    render(
+      <Button variant="bordered" disabled disabledReason="Aucun modèle configuré.">
+        Ouvrir
+      </Button>,
+    )
+    expect(screen.getByRole('button').className).toMatch(/enabled:active:translate-y-px/)
+  })
+
+  test('a chip, a view switch and a section rail answer it too', () => {
+    render(
+      <div>
+        <Chip onClick={() => {}}>Groupe SA</Chip>
+        <Segmented
+          label="Affichage du calendrier"
+          options={[
+            { id: 'jour', label: 'Jour' },
+            { id: 'mois', label: 'Mois' },
+          ]}
+          current="mois"
+          onSelect={() => {}}
+        />
+        <SectionNav
+          label="Sections des réglages"
+          items={[{ id: 'connecteurs', label: 'Connecteurs' }]}
+          current="connecteurs"
+          onSelect={() => {}}
+        />
+      </div>,
+    )
+    const pressable = screen.getAllByRole('button').filter((el) => PRESS.test(el.className))
+    // Chip, two segments, one rail item.
+    expect(pressable.length).toBe(4)
+  })
+})
+
+/*
+ * ── `animate-fade-in` finally has a caller ───────────────────────────────────
+ *
+ * `fadeIn` was declared in `tailwind.config.js` beside `riseIn` from the day the
+ * config was written, and a grep for `animate-fade-in` under `src/` returned
+ * nothing: two keyframes declared, one reachable — the same shape `--motion-fast`
+ * was in. `CopyButton` is the surface that wanted it, because the whole argument
+ * for a label swap over a toast is that the answer appears under the rep's
+ * cursor, and it appeared between two frames.
+ *
+ * `key={state}` is what makes it replay: React reuses the node otherwise, the
+ * class never re-enters, and the animation runs once per mount and never again.
+ * jsdom runs no animation, so the property asserted here is the one a hand edit
+ * would break — that the label is wrapped, that the wrapper carries the class,
+ * and that it is keyed. Measured in Chromium on the gate's own *Copier*: « Copié »
+ * at opacity 0.227 at +20ms, 0.864 at +60ms, 1.000 at +360ms; and 1.000 at every
+ * sample under `prefers-reduced-motion`, which is the instant swap this replaces.
+ */
+describe('the copy confirmation arrives rather than appearing', () => {
+  test('the label is a keyed, fading wrapper and not a bare string', () => {
+    const { container } = render(<CopyButton text="le compte-rendu" what="le compte-rendu" />)
+    const wrapper = container.querySelector('.animate-fade-in')
+    expect(wrapper, 'le libellé doit être enveloppé pour pouvoir réapparaître').toBeTruthy()
+    expect(wrapper!.textContent).toBe('Copier')
+  })
+
+  test('and the wrapper is the only thing the button holds, so the width does not move', () => {
+    // `CopyButton`'s own docblock: « The width does not move: « Copié » is set on
+    // the same box, so nothing beside it steps sideways. » A fade that introduced
+    // a block wrapper would break that silently, and no screenshot shows a
+    // one-character reflow.
+    render(<CopyButton text="le brouillon" what="le brouillon" />)
+    const button = screen.getByRole('button')
+    expect(button.children.length).toBe(1)
+    expect(button.children[0].tagName).toBe('SPAN')
+  })
+})
+
 describe('cn() resolves conflicting utilities instead of emitting both', () => {
   test('the later class wins, which is what makes a className override an override', () => {
     // The old implementation returned 'px-row px-block' and left the winner to
@@ -347,5 +463,37 @@ describe('cn() resolves conflicting utilities instead of emitting both', () => {
 
     expect(keys('spacing').sort()).toEqual([...SPACING_STEPS].sort())
     expect(keys('fontSize').sort()).toEqual([...TYPE_STEPS].sort())
+  })
+})
+
+/*
+ * The overflow: one 24×24 glyph, a real menu behind it, three ways out.
+ */
+describe('OverflowMenu', () => {
+  test('opens on press, selects an item, and closes on Échap back to the trigger', () => {
+    const onSelect = vi.fn()
+    render(
+      <OverflowMenu what="le compte-rendu" items={[{ id: 'copier', label: 'Copier', onSelect }]} />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Autres actions sur le compte-rendu' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(trigger)
+    const item = screen.getByRole('menuitem', { name: 'Copier' })
+    expect(document.activeElement).toBe(item)
+    fireEvent.keyDown(item, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copier' }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  test('an outside press closes it', () => {
+    render(<OverflowMenu what="le compte-rendu" items={[{ id: 'a', label: 'A', onSelect() {} }]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Autres actions sur le compte-rendu' }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

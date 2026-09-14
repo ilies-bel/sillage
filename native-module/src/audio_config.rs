@@ -17,17 +17,6 @@ pub const FRAME_SAMPLES: usize = 320;
 // Legacy alias for compatibility during migration
 pub const CHUNK_SAMPLES: usize = FRAME_SAMPLES;
 
-/// VAD thresholds (for UI display only - does NOT gate STT audio)
-/// These match the Swift implementation values
-pub const VAD_START_RMS: f32 = 185.0; // Speech start threshold (~-45dBFS)
-pub const VAD_END_RMS: f32 = 100.0; // Speech end threshold (~-50dBFS)
-
-/// VAD preroll chunks to include before speech detection
-pub const VAD_PREROLL_CHUNKS: usize = 3;
-
-/// VAD hangover duration in milliseconds
-pub const VAD_HANGOVER_MS: u128 = 500;
-
 /// DSP thread poll interval in milliseconds (fallback timeout)
 /// Primary wakeup is via Condvar signal from audio callbacks.
 /// This only triggers if no audio arrives within the interval.

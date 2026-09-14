@@ -16,6 +16,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { LocalWhisperSession } from '../LocalWhisperSession.ts'
 import type { WorkerLike } from '../LocalWhisperSession.ts'
 import { __resetLoadSlotForTests } from '../whisper/onnx.ts'
@@ -419,4 +421,43 @@ test('the prewarm and the meeting resolve to the same engine', () => {
   // would answer the next test's audio.
   const fake = acquireEngine({ model: 'Xenova/whisper-small', spawn: () => new FakeWorker() })
   assert.notEqual(fake, boot)
+})
+
+test('a meeting with no vocabulary clears the last meeting’s prompt', () => {
+  /*
+   * **The engine is pooled and outlives the call**, and this was
+   * `if (this.#prompt) engine.setPrompt(…)` — so a meeting with no calendar
+   * context and no stored terms never overwrote the previous one's.
+   * `prewarmLocalEngine()` holds a reference that is never released, so the
+   * pooled engine and its worker survive every meeting, and `setPrompt` is
+   * last-writer-wins.
+   *
+   * Whisper's `initial_prompt` *biases decoding toward what it is given* —
+   * IMPLEMENTATION.md §4 measured the terms inserting themselves into speech,
+   * and `boost.ts` calls that outcome « worse than not learning at all ». So a
+   * prospect's transcript could acquire a different client's company name and a
+   * different client's surnames, in the transcript the compte-rendu is folded
+   * from and VerySwing receives.
+   *
+   * **Asserted on the source, the way `preloadUnwrap.test.ts` is**, and for the
+   * same reason: the behaviour cannot be driven from here. `acquireEngine`
+   * returns `new WhisperEngine(options)` outright whenever a `spawn` is injected
+   * (`whisper/engine.ts`), which every test must do — so two sessions in a test
+   * can never share the pooled engine that production always shares, and on a
+   * fresh engine `setPrompt('')` short-circuits and the leak is invisible.
+   *
+   * A guard in front of this call is the bug. An empty prompt is a statement —
+   * « this call has no vocabulary » — and it has to be made, not skipped.
+   */
+  const source = readFileSync(
+    fileURLToPath(new URL('../LocalWhisperSession.ts', import.meta.url)),
+    'utf8',
+  )
+  const call = /^\s*(?:if \(.*\) )?engine\.setPrompt\(/m.exec(source)?.[0] ?? ''
+  assert.ok(call !== '', 'engine.setPrompt introuvable — mets ce test à jour')
+  assert.ok(
+    !call.includes('if ('),
+    'engine.setPrompt est de nouveau conditionnel : une réunion sans vocabulaire ' +
+      'laisserait le prompt du client précédent dans le moteur mutualisé.',
+  )
 })

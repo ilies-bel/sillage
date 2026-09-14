@@ -71,7 +71,10 @@ test('a 4xx we caused carries the adapter’s own verdict rather than a guess', 
   )
   assert.equal(state.state, 'down')
   assert.equal(state.state === 'down' ? state.retryable : true, false)
-  assert.equal(state.state === 'down' ? state.reason : '', 'modèle introuvable')
+  assert.equal(
+    state.state === 'down' ? state.reason : '',
+    'modèle de langage indisponible — modèle introuvable',
+  )
 })
 
 test('an unrecognised failure still states a reason', () => {
@@ -87,12 +90,28 @@ test('every reason is French — the rep reads it verbatim (HR-6)', () => {
     new LlmError({ kind: 'timeout', message: 'x', retryable: true }),
     new LlmError({ kind: 'server', message: 'x', retryable: true }),
     new LlmError({ kind: 'network', message: 'x', retryable: true }),
+    /*
+     * **`unknown` was the one kind this list left out, and the only one that
+     * could fail.** Every other branch composes its own sentence and ignores
+     * `message`, so the loop below was asserting French over six constants —
+     * while `unknown` returned the provider's string, which for a model name
+     * that does not exist is « The model \`gpt-5\` does not exist or you do not
+     * have access to it. » A property stated over the cases that cannot break it.
+     */
+    new LlmError({ kind: 'unknown', message: 'The model does not exist', retryable: false }),
     new LlmSchemaError({ message: 'x', issues: [], raw: '' }),
   ].map((error) => {
     const state = health(error)
     return state.state === 'ok' ? '' : state.reason
   })
   for (const reason of reasons) {
-    assert.doesNotMatch(reason, /\b(the|error|failed|unavailable|invalid)\b/i, reason)
+    /*
+     * **The sentence is the clause before the em dash; what follows it is the
+     * remote's own words, kept as evidence.** « Incorrect API key provided » is
+     * exactly what tells a rep which key they pasted, so it is not thrown away —
+     * it just never stands as the whole reason on a French card.
+     */
+    const ours = reason.split(' — ')[0]!
+    assert.doesNotMatch(ours, /\b(the|error|failed|unavailable|invalid)\b/i, reason)
   }
 })

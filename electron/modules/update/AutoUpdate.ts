@@ -208,6 +208,7 @@ export class AutoUpdate implements UpdatePort {
       severity: 'warn',
       code,
       module: 'update',
+      origin: 'foreign',
       message: reason,
       detail: { raw: messageOf(error) },
     })
@@ -273,6 +274,7 @@ export class AutoUpdate implements UpdatePort {
           severity: 'info',
           code: 'update.available',
           module: 'update',
+          origin: 'authored',
           message: `version ${info.version} disponible`,
           detail: { version: info.version, current: this.#state.currentVersion },
         })
@@ -314,6 +316,7 @@ export class AutoUpdate implements UpdatePort {
           severity: 'info',
           code: 'update.downloaded',
           module: 'update',
+          origin: 'authored',
           message: `version ${info.version} prête à installer`,
           detail: { version: info.version },
         })
@@ -427,6 +430,7 @@ export class AutoUpdate implements UpdatePort {
       severity: 'info',
       code: 'update.install.requested',
       module: 'update',
+      origin: 'authored',
       message: `installation de la version ${this.#state.availableVersion ?? 'inconnue'}`,
       detail: { version: this.#state.availableVersion },
     })

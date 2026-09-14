@@ -19,7 +19,13 @@
  * orange.
  */
 import { addMonths, monthMatrix, monthOf, noonOf, type DayKey } from '../../app/calendar.ts'
-import { formatDayLong, formatDayNumber, formatMonthLong, formatWeekdayShort } from '../../app/format.ts'
+import {
+  formatDayLong,
+  formatDayNumber,
+  formatMonthLong,
+  formatWeekdayShort,
+  upperFirst,
+} from '../../app/format.ts'
 import { cn } from '../../lib/utils.ts'
 import { Button } from '../../ui/index.ts'
 import type { DayMark } from './entries.ts'
@@ -58,11 +64,29 @@ export function CalendarGrid({
   return (
     <section aria-label="Calendrier">
       <header className="mb-2 flex items-center justify-between gap-2">
-        <Button variant="text" aria-label="Mois précédent" onClick={() => onMonth(addMonths(month, -1))}>
+        {/*
+          `min-w-[24px]`, because a chevron is five pixels wide.
+          `Button` gives every control 24px of height; the width comes from its
+          label, and « ‹ » has almost none. These are the two controls a rep uses
+          to look at last month, on a grid that fills the left third of the home
+          screen — and they were a five-pixel target beside a heading (WCAG 2.2;
+          `shot.mjs --targets` measures it).
+        */}
+        <Button
+          variant="text"
+          className="min-w-[24px]"
+          aria-label="Mois précédent"
+          onClick={() => onMonth(addMonths(month, -1))}
+        >
           ‹
         </Button>
-        <h2 className="text-strong text-copy capitalize">{formatMonthLong(noonOf(month))}</h2>
-        <Button variant="text" aria-label="Mois suivant" onClick={() => onMonth(addMonths(month, 1))}>
+        <h2 className="text-strong text-copy">{upperFirst(formatMonthLong(noonOf(month)))}</h2>
+        <Button
+          variant="text"
+          className="min-w-[24px]"
+          aria-label="Mois suivant"
+          onClick={() => onMonth(addMonths(month, 1))}
+        >
           ›
         </Button>
       </header>
@@ -74,9 +98,9 @@ export function CalendarGrid({
               <th
                 key={day}
                 scope="col"
-                className="text-muted pb-1 text-label font-medium capitalize"
+                className="text-muted pb-1 text-label font-medium"
               >
-                {formatWeekdayShort(noonOf(day))}
+                {upperFirst(formatWeekdayShort(noonOf(day)))}
               </th>
             ))}
           </tr>
@@ -133,11 +157,23 @@ export function CalendarGrid({
  *
  * Built from `MARK_CLASS`, so a dot cannot change colour in the grid and keep
  * its old colour in the legend.
+ *
+ * **Each entry names what the day holds, and the middle one used to name a
+ * *state* instead.** It was « prêt », which is `STATE_LABEL.armed` — the word the
+ * row beside it already draws through `StateDot`. So on `agenda-appel-imprevu` the
+ * screen said « prêt » twice, 248 pixels apart: once as a key for a 6px dot in the
+ * grid and once as the condition of the row that dot points at. `shot.mjs --echo`
+ * measures it at both sizes.
+ *
+ * « réunion prête » is the fix and it is a consistency gain rather than a dodge:
+ * the other two entries are noun phrases about the day's content, and `MARK_NAME`
+ * below — whose own docblock says the wording tracks this list deliberately —
+ * already announces the same mark to a screen reader as « dont une prête ». The
+ * state word stays where it belongs, on the row.
  */
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
   { mark: 'captured', label: 'réunion enregistrée' },
-  { mark: 'armed', label: 'prêt' },
-  { mark: 'scheduled', label: 'événement seul' },
+  { mark: 'armed', label: 'réunion prête' },
 ]
 
 function Legend() {
@@ -207,7 +243,9 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
         that flickers all morning.
       */}
       <span aria-hidden className="flex h-1.5 items-center">
-        {mark ? <span className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])} /> : null}
+        {mark && mark !== 'scheduled' ? (
+          <span className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])} />
+        ) : null}
       </span>
     </button>
   )

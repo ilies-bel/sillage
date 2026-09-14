@@ -41,6 +41,20 @@ export interface SectionNavItem<Id extends string = string> {
   id: Id
   /** French, and the words the section itself is headed with. */
   label: string
+  /**
+   * A short mark at the right of the item — a count of things wrong in the
+   * section it names.
+   *
+   * A rail whose items are all identical makes a rep open every one of them to
+   * find the two connectors that are down. This is the same information the
+   * section already states, hoisted to where the choice is made.
+   *
+   * Text, never a bare dot: colour is never the only signal in this product,
+   * and « 2 » is both the mark and the count.
+   */
+  note?: string
+  /** What `note` says, in French, for a screen reader. Required with `note`. */
+  noteLabel?: string
 }
 
 export interface SectionNavProps<Id extends string> {
@@ -86,13 +100,33 @@ export function SectionNav<Id extends string>({
                 onClick={() => onSelect(item.id)}
                 aria-current={selected ? 'page' : undefined}
                 className={cn(
-                  'w-full border-l-2 px-row py-2 text-left text-ui transition',
+                  /*
+                    `active:translate-y-px`: the press, one pixel, on the
+                    existing `transition`. `Button`'s docblock carries the
+                    measurement and the exclusions.
+                  */
+                  'flex w-full items-center gap-2 border-l-2 px-row py-2 text-left text-ui transition active:translate-y-px',
                   selected
                     ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
                     : 'text-muted hover:bg-subtle hover:text-body border-transparent',
                 )}
               >
-                {item.label}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {item.note ? (
+                  <>
+                    <span aria-hidden className="text-warn shrink-0 text-meta tabular-nums">
+                      {item.note}
+                    </span>
+                    {/*
+                      The glyph is a count; the accessible name needs a
+                      sentence. `noteLabel` is required alongside `note` for the
+                      same reason `StateDot` refuses a blank label: a mark whose
+                      only reading is visual is a mark half the users cannot
+                      read.
+                    */}
+                    <span className="sr-only">{item.noteLabel}</span>
+                  </>
+                ) : null}
               </button>
             </li>
           )

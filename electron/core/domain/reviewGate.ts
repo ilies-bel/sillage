@@ -21,7 +21,7 @@
  * thing this screen exists to guarantee is that what the rep read is what the
  * CRM receives.
  */
-import type { MeetingState } from '../contracts/meeting.ts'
+import { STATE_REASON, type MeetingState } from '../contracts/meeting.ts'
 import type { Attendee } from '../contracts/meeting.ts'
 import type {
   Confidence,
@@ -60,20 +60,8 @@ export type ReviewAvailability = { open: true } | { open: false; reason: string 
  * `recording` is the one that matters and it is deliberately bland: the rep is
  * on a call and the string exists for a screen they should not be looking at.
  */
-const CLOSED_REASON: Record<MeetingState, string> = {
-  idle: 'La réunion n’a pas encore démarré.',
-  armed: 'La réunion n’a pas encore démarré.',
-  recording: 'Réunion en cours.',
-  ended: 'Compte-rendu en attente d’analyse.',
-  extracting: 'Analyse en cours…',
-  awaiting_confirmation: '',
-  pushing: 'Envoi en cours…',
-  done: 'Déjà validée.',
-  aborted: 'Réunion abandonnée.',
-}
-
 export const reviewAvailability = (state: MeetingState): ReviewAvailability =>
-  state === REVIEW_STATE ? { open: true } : { open: false, reason: CLOSED_REASON[state] }
+  state === REVIEW_STATE ? { open: true } : { open: false, reason: STATE_REASON[state] }
 
 // ── DEC-21: the measured markers ────────────────────────────────────────────
 
@@ -487,6 +475,22 @@ export interface DraftIntentsInput {
   edits: ReviewEdits
   mailTo: readonly string[]
   /**
+   * Whether a Microsoft account is connected at all.
+   *
+   * Optional and defaulting to `true`, so every caller written before this
+   * drafts exactly what it always drafted.
+   *
+   * It exists because « Aucun destinataire au calendrier. » was the *only*
+   * reason this row could give, and on the build the first demo ships in
+   * (DEC-28) it is a true sentence about the wrong thing: there is no Entra
+   * registration, so there is no calendar to have attendees in and no account to
+   * draft from either. A rep reading it goes looking for people to add to a
+   * meeting, which is a search that cannot succeed. Both causes are real and
+   * they have different remedies, so the row names the one that is actually in
+   * the way — the deeper one first.
+   */
+  mailAccount?: boolean
+  /**
    * Which recipe produced the document being confirmed. Defaults to the ESN one,
    * so a caller written before DEC-43 drafts exactly what it always drafted.
    */
@@ -527,8 +531,28 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
    * in a field that is on screen, next to the reason.
    */
   const taskName = edits.taskName.trim()
-  const taskPossible = taskName !== ''
-  const NO_TASK_NAME = 'Donnez un objet à la réunion — VerySwing n’accepte pas une tâche sans nom.'
+  /*
+   * **And a body, which the contract said was checked here and was not.**
+   *
+   * `ReviewEdits.compteRendu` carries no `min(1)`, and its own comment explains
+   * why — a rep who selects the whole document in « Modifier » and deletes it
+   * has done something they can undo, and rejecting the confirmation would
+   * discard every other correction alongside it — on the strength of « and
+   * `draftIntents` already refuses a task with no description, on the row, in
+   * French ». It did not: `taskPossible` read the *name* and nothing else. An
+   * empty string, or three spaces and a newline, went into `taskDescription` and
+   * landed in the client's system of record, where `POST /v1/crm/tasks` has no
+   * idempotency key and `CrmPort` no delete verb.
+   *
+   * Stated on the row like every other unavailable intent (DEC-26), and the
+   * remedy is on the same screen: the document is in the column next to it.
+   */
+  const taskBody = edits.compteRendu.trim()
+  const taskPossible = taskName !== '' && taskBody !== ''
+  const NO_TASK_NAME =
+    taskName === ''
+      ? 'Donnez un objet à la réunion — VerySwing n’accepte pas une tâche sans nom.'
+      : 'Le compte-rendu est vide — VerySwing recevrait une tâche sans contenu.'
 
   /*
    * A free-form compte-rendu drafts no opportunity (DEC-43).
@@ -551,14 +575,53 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
   const opportunityId = intentIdFor(meetingId, 'crm.opportunity')
   const opportunityPossible = typedFields && edits.accountId !== null && taskPossible
   const opportunityChecked = opportunityPossible && checked.has(opportunityId)
-  const mailPossible = mailTo.length > 0
+  const mailAccount = input.mailAccount ?? true
+  /*
+   * **A subject, stated as a reason and never as a schema error.**
+   *
+   * `ReviewEditsSchema` carried a `min(1)` on `mailSubject`, so a rep who
+   * cleared the field — there is no guard on it, and no reason for one — armed
+   * *Valider* normally and got a raw English Zod blob across the top of the
+   * gate, with nothing shipped at all: not the task, not the opportunity, not
+   * the draft. The requirement is real; the instrument was wrong. Enforced here
+   * it costs the rep the draft and nothing else (DEC-26), which is exactly what
+   * `taskName` three dozen lines above already does, in the same words.
+   */
+  const mailSubject = edits.mailSubject.trim()
+  const NO_MAIL_SUBJECT = 'Donnez un objet au brouillon — Outlook n’accepte pas un message sans objet.'
+  const mailPossible = mailAccount && mailTo.length > 0 && mailSubject !== ''
 
+  /*
+   * **Every field the gate lets a rep correct has to reach something.**
+   *
+   * This composed five of the nine and silently dropped the other three.
+   * `objections`, `prochainesEtapes` and `dateDemarrage` were rendered as live
+   * textareas, cited, verified and — for objections — the field the whole
+   * screen is built around: it carries the `⚠ faible`, it turns the primary
+   * orange, it names itself in « Valider malgré 1 champ non vérifié », and the
+   * line under the button names it again. A rep corrected it, pressed *Valider*,
+   * and the correction went nowhere. Nothing on screen could have told them:
+   * the row looked exactly like the five that were read.
+   *
+   * They go into the opportunity's description, which is the sales narrative a
+   * bench manager reads — objections and next steps are the two most actionable
+   * things said on the call, and « démarrage souhaité » is the date the staffing
+   * decision hangs on. Not into `startingDate`: that column is a date and this
+   * field is what the client actually said (« début septembre », « dès que le
+   * budget passe »), which DEC-7 forbids the app from turning into one.
+   *
+   * `reviewGate.test.ts` asserts that every key of `ReviewEdits` a row exposes
+   * appears in some payload, so a tenth field cannot ship unread.
+   */
   const description = [
     edits.besoin,
     edits.profils,
     edits.modeCollaboration === '' ? '' : `Mode : ${edits.modeCollaboration}`,
     edits.tjm === '' ? '' : `TJM : ${edits.tjm}`,
     edits.dureeMission === '' ? '' : `Durée : ${edits.dureeMission}`,
+    edits.dateDemarrage === '' ? '' : `Démarrage : ${edits.dateDemarrage}`,
+    edits.objections === '' ? '' : `Objections :\n${edits.objections}`,
+    edits.prochainesEtapes === '' ? '' : `Prochaines étapes :\n${edits.prochainesEtapes}`,
   ]
     .filter((part) => part.trim() !== '')
     .join('\n')
@@ -661,7 +724,13 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
         label: INTENT_LABEL[kind],
         summary: mailPossible ? `${edits.mailSubject} → ${mailTo.join(', ')}` : 'Indisponible',
         available: mailPossible,
-        reason: mailPossible ? null : 'Aucun destinataire au calendrier.',
+        reason: mailPossible
+          ? null
+          : !mailAccount
+            ? 'Aucun compte Microsoft connecté.'
+            : mailTo.length === 0
+              ? 'Aucun destinataire au calendrier.'
+              : NO_MAIL_SUBJECT,
       },
       // A draft, never a send (HR-8). `modules/mail` posts to
       // `/me/messages`, which creates a draft in the rep's mailbox.

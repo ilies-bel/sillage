@@ -93,6 +93,25 @@ export class CredentialCache {
 const PROVIDER_KEY = { stt: 'settings.provider.stt', llm: 'settings.provider.llm' } as const
 const MODEL_KEY = 'settings.model.local'
 /**
+ * « Cette machine uniquement » (DEC-37).
+ *
+ * The one switch in this product that still *refuses* something, and until now
+ * the only way to ask for it was `SILLAGE_STT_OFFLINE_ONLY=1` — an environment
+ * variable, on a product whose DEC-34 says no environment variable is required
+ * to run it and whose VISION.md describes this as « the rep asking, **in the
+ * product** ». A guarantee nobody can reach is not a guarantee.
+ */
+const OFFLINE_ONLY_KEY = 'settings.offlineOnly'
+/**
+ * The sentence the rep reads to the client (US-19, `core/contracts/mention.ts`).
+ *
+ * A deployment setting like every other one here, and the reason it is one is that
+ * the wording is a legal matter belonging to the ESN rather than to us. Stored raw;
+ * `resolveMentionSentence` is what turns « nobody has said » and « somebody saved an
+ * empty box » into the one answer the product uses.
+ */
+const MENTION_SENTENCE_KEY = 'settings.mentionSentence'
+/**
  * One row per (provider, field), not one JSON blob per provider.
  *
  * A blob would need read-modify-write on every keystroke's save, and two rapid
@@ -123,6 +142,43 @@ export class ProviderPreferenceStore {
 
   model(): string | null {
     return this.#store.get(MODEL_KEY)
+  }
+
+  /**
+   * Null when the rep has never said, which is what lets the development
+   * override still mean something: `main.ts` reads this first and falls back to
+   * `SILLAGE_STT_OFFLINE_ONLY`, which is DEC-34's « `process.env` is a
+   * development override and is read last ».
+   */
+  offlineOnly(): boolean | null {
+    const raw = this.#store.get(OFFLINE_ONLY_KEY)
+    return raw === null ? null : raw === '1'
+  }
+
+  async setOfflineOnly(value: boolean): Promise<void> {
+    this.#store.set(OFFLINE_ONLY_KEY, value ? '1' : '0')
+  }
+
+  /**
+   * Null when nobody has said, which `resolveMentionSentence` reads as the default.
+   * Raw, not resolved: this class stores what it was given, and the one place that
+   * decides what a blank means is `core/contracts/mention.ts`.
+   */
+  mentionSentence(): string | null {
+    return this.#store.get(MENTION_SENTENCE_KEY)
+  }
+
+  /**
+   * An empty value **deletes** the row rather than storing an empty string, so
+   * « returned to the default » and « never asked » are the same state in the
+   * database as well as on screen. Storing `''` would leave a row that means the
+   * default and does not look like it, which is the sort of thing a later reader
+   * resolves differently.
+   */
+  async setMentionSentence(value: string): Promise<void> {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) this.#store.delete(MENTION_SENTENCE_KEY)
+    else this.#store.set(MENTION_SENTENCE_KEY, trimmed)
   }
 
   async selectProvider(capability: 'stt' | 'llm', providerId: string | null): Promise<void> {

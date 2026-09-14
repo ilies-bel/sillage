@@ -100,6 +100,24 @@ const REST_PROVIDERS = new Set<string>([
  * provider that cannot take hotwords must not be handed them (DEC-17). Azure
  * over the short-audio REST endpoint is exactly that case.
  */
+/**
+ * **Every provider the registry offers has an adapter here, and this is checked.**
+ *
+ * `deepgram` was declared in `STT_PROVIDERS` with `streaming: true` — the only
+ * streaming row, so `selectProvider` preferred it the moment a rep opted into a
+ * cloud upgrade — and it was absent from `REST_PROVIDERS`, so it had none. The
+ * cost was not a missing feature: `TranscribeSession.start` threw out of
+ * `Recording.start`, `Orchestrator`'s single catch set **capture** down and
+ * aborted the meeting, and a rep who pasted a Deepgram key into Réglages stopped
+ * being able to record a call while being told their microphone was
+ * unavailable. `registry.test.ts` asserted the selector picks it. Nobody had
+ * asked whether it could run.
+ *
+ * `transcribe.test.ts` now holds every id in `STT_PROVIDERS` to a constructible
+ * session, so a row without an adapter fails the suite instead of the call.
+ */
+export const ADAPTED_PROVIDERS: ReadonlySet<string> = new Set([...REST_PROVIDERS, 'local-whisper'])
+
 export const createSttSession = (providerId: string, options: SttSessionOptions): SttSession => {
   if (REST_PROVIDERS.has(providerId)) {
     const boostAllowed = descriptorFor(providerId)?.boost !== 'none'
@@ -121,8 +139,12 @@ export const createSttSession = (providerId: string, options: SttSessionOptions)
  */
 export const isLocalWhisperReady = (modelId: string = DEFAULT_MODEL_ID, modelsDir?: string): boolean => {
   try {
-    const dir = modelsDir ?? resolveModelsDir(electronPaths())
-    return isModelCached(dir, modelId, resolveInferenceConfig().dtype)
+    const dtype = resolveInferenceConfig().dtype
+    // The checkpoint decides the directory, not the other way round: a packaged
+    // build always has a non-empty `resources/whisper-models`, so a model
+    // downloaded after install lives in `userData` and nothing used to look.
+    const dir = modelsDir ?? resolveModelsDir(electronPaths(), (d) => isModelCached(d, modelId, dtype))
+    return isModelCached(dir, modelId, dtype)
   } catch {
     // No Electron, no `userData`, nothing on disk — all mean "not available",
     // and none of them may throw out of a capability probe.
@@ -244,7 +266,8 @@ export class TranscribeSession extends EventEmitter {
       severity: 'warn',
       code: 'transcribe.failover',
       module: 'transcribe',
-      message: `transcription reprise par ${fallback} après l'échec de ${from}`,
+      origin: 'authored',
+      message: `transcription reprise par ${fallback} après l’échec de ${from}`,
       detail: { from, to: fallback, reason },
     })
 
@@ -263,6 +286,7 @@ export class TranscribeSession extends EventEmitter {
         severity: 'error',
         code: 'transcribe.failover.failed',
         module: 'transcribe',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : String(error),
         detail: { to: fallback },
       })
@@ -317,6 +341,7 @@ export class TranscribeSession extends EventEmitter {
           severity: 'warn',
           code: 'transcribe.stop.failed',
           module: 'transcribe',
+          origin: 'foreign',
           message: result.reason instanceof Error ? result.reason.message : String(result.reason),
           detail: {},
         })
@@ -362,6 +387,8 @@ export class TranscribeSession extends EventEmitter {
       severity: 'error',
       code: `transcribe.${channel}.error`,
       module: 'transcribe',
+      // A provider's or the local engine's own `Error.message`.
+      origin: 'foreign',
       message,
       detail: { provider: this.#providerId },
     })
@@ -379,7 +406,7 @@ export class TranscribeSession extends EventEmitter {
       reason:
         channel === 'rep'
           ? `transcription du micro dégradée — ${message}`
-          : `transcription de l'audio système dégradée — ${message}`,
+          : `transcription de l’audio système dégradée — ${message}`,
       since: this.#clock(),
       retryable: true,
     } satisfies ConnectorHealth)

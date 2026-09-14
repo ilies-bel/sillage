@@ -132,7 +132,60 @@ export class Recording {
     const recording = new Recording(session, capture, transcribe, deps)
     recording.#wire()
 
-    transcribe.start()
+    /*
+     * **The transcriber still starts first, and it may no longer throw** (DEC-26).
+     *
+     * `TranscribeSession.start` reaches `createSttSession`, which throws for any
+     * provider id it has no branch for. The throw propagated out of here into
+     * `Orchestrator.startRecording`'s single catch, which sets **capture** down
+     * and aborts the meeting — so a downstream, remote, *optional* subsystem
+     * failing at t=0 meant the rep pressed *Enregistrer*, nothing was recorded,
+     * and the app told them the microphone was unavailable. Capture had never
+     * been asked to start.
+     *
+     * DEC-26 is one sentence and this was its exact inversion: « everything
+     * downstream may fail; nothing downstream may stop a meeting being
+     * recorded ». `#corrected` and `#notifySpeech` below each carry a comment
+     * saying so; the discipline was present in the small and absent in the one
+     * place that decides whether a call gets recorded at all.
+     *
+     * **The order is not the bug and must not be changed to fix it**: the
+     * transcriber goes first so it is listening before the first frame can
+     * arrive, and the test below holds that. Containment is the fix.
+     *
+     * The reachable instance was `deepgram` — declared in `STT_PROVIDERS` as the
+     * only *streaming* row, so `selectProvider` prefers it the moment a rep opts
+     * into a cloud upgrade, and absent from `REST_PROVIDERS`, so it had no
+     * adapter. Pasting a key into Réglages stopped the product recording. But the
+     * instance is not the finding: a 401 on an expired key, a proxy refusing the
+     * model host, a VPN, or a local engine that will not load all arrive here.
+     *
+     * What a meeting with no transcriber costs is stated rather than hidden: the
+     * connector row goes down with the real reason, and the compte-rendu cannot
+     * be written — which is DEC-39's `ended` case, already drawn, with the rep's
+     * own notes untouched (DEC-5). A recording with no transcript is a bad
+     * outcome. No recording at all is the one this product exists to prevent.
+     */
+    try {
+      transcribe.start()
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'transcription indisponible'
+      deps.onHealth?.('transcribe', {
+        state: 'down',
+        reason,
+        since: (deps.clock ?? Date.now)(),
+        retryable: true,
+      })
+      deps.diagnostics?.record({
+        severity: 'error',
+        code: 'transcribe.start.failed',
+        module: 'transcribe',
+        origin: 'foreign',
+        message: reason,
+        detail: { meetingId: session.id },
+        meetingId: session.id,
+      })
+    }
     await capture.start()
     return recording
   }
@@ -266,6 +319,7 @@ export class Recording {
       severity: 'error',
       code: `recording.${module}.${channel}`,
       module,
+      origin: 'foreign',
       message: error instanceof Error ? error.message : String(error),
       detail: {},
     })

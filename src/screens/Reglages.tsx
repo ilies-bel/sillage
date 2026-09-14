@@ -68,8 +68,15 @@ import type {
 } from '../../electron/core/contracts/settings.ts'
 import type { CapabilityFinding, CapabilityReport } from '../../electron/core/contracts/crm.ts'
 import type { ProviderTier } from '../../electron/core/contracts/providers.ts'
+import {
+  MENTION_MAX_CHARS,
+  MENTION_SENTENCE_DEFAULT,
+} from '../../electron/core/contracts/mention.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { SHORTCUTS } from '../app/shortcuts.ts'
+import { NOTE_SHORTCUTS } from '../editor/note/keymap.ts'
+import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { formatAgo } from '../app/format.ts'
 import {
   Button,
@@ -84,7 +91,13 @@ import {
 } from '../ui/index.ts'
 import type { SectionNavItem, StateDotProps } from '../ui/index.ts'
 
-type SectionId = 'transcription' | 'llm' | 'connecteurs' | 'maj' | 'diagnostics'
+export type SectionId =
+  | 'transcription'
+  | 'llm'
+  | 'connecteurs'
+  | 'raccourcis'
+  | 'maj'
+  | 'diagnostics'
 
 /** VISION.md §6 names them in this order: the two provider tables, then the
  *  connectors, then diagnostics. Updates sit last but one — next to
@@ -94,6 +107,14 @@ const SECTIONS: readonly SectionNavItem<SectionId>[] = [
   { id: 'transcription', label: 'Transcription' },
   { id: 'llm', label: 'Modèle de langage' },
   { id: 'connecteurs', label: 'Connecteurs' },
+  /*
+   * The keyboard has a pane because it has to be discoverable somewhere, and
+   * the alternative is the one this product refuses: a `?` sheet over the
+   * window (HR-10). It sits after the connectors — a rep looking for it is
+   * looking for a reference, not for a setting — and nothing on it is a
+   * setting, which is why it is a table and not a form.
+   */
+  { id: 'raccourcis', label: 'Raccourcis clavier' },
   { id: 'maj', label: 'Mise à jour' },
   { id: 'diagnostics', label: 'Diagnostics' },
 ]
@@ -109,10 +130,21 @@ const LANDING: SectionId = 'connecteurs'
 
 interface ReglagesProps {
   onBack: () => void
+  /**
+   * Where to open, when the caller knows which pane it is sending the rep to.
+   *
+   * First run's two *Réglages ›* links both used to land on the landing
+   * section, so a rep told « à choisir dans Réglages » about the language model
+   * arrived on the connector list and had to find the pane themselves — which
+   * is the same as not routing at all. The default stays the landing section:
+   * a rep who opened this from the calendar was not sent anywhere in
+   * particular.
+   */
+  section?: SectionId
 }
 
-export function Reglages({ onBack }: ReglagesProps) {
-  const [section, setSection] = useState<SectionId>(LANDING)
+export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
+  const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
   const [busy, setBusy] = useState<string | null>(null)
@@ -132,6 +164,37 @@ export function Reglages({ onBack }: ReglagesProps) {
   useBroadcast('auth:changed', (auth) => {
     if (settings.state.status !== 'ready') return
     settings.set({ ...settings.state.value, auth })
+  })
+  /**
+   * **The download's progress, which nothing was listening for.**
+   *
+   * `main.ts` broadcasts `models:progress` on every change, under a comment
+   * naming the bug it was written to fix — and the renderer subscribed to eleven
+   * channels, of which this was not one. So a rep who pressed *Télécharger* on a
+   * 1.5 GB model watched the row read « téléchargement · 0 % » beside an
+   * *Annuler* button, unchanged, **including after it finished**: the row only
+   * ever moved when some other write happened to re-read the whole snapshot.
+   * `bridge.ts` states the contract this broke in one line — every screen reads
+   * one thing and is then kept current by a broadcast.
+   *
+   * The jsdom test that should have caught it (« a download in flight shows its
+   * percentage ») sets 38 % **in the snapshot** and asserts the row draws it. It
+   * proves the row can render a number. It never asked whether one arrives.
+   */
+  useBroadcast('models:progress', (payload) => {
+    if (settings.state.status !== 'ready') return
+    const snapshot = settings.state.value
+    settings.set({
+      ...snapshot,
+      models: {
+        ...snapshot.models,
+        rows: snapshot.models.rows.map((row) =>
+          row.id === payload.id
+            ? { ...row, status: payload.status, progress: payload.progress, reason: payload.reason }
+            : row,
+        ),
+      },
+    })
   })
 
   /**
@@ -164,53 +227,136 @@ export function Reglages({ onBack }: ReglagesProps) {
     [settings],
   )
 
+  /*
+    The two unsettled states are drawn **inside the sheet**, not instead of it.
+
+    Returning a bare `Centered` here painted a full-window panel over the
+    calendar with no veil and no frame — so for the length of one `settings:
+    snapshot` the rep's screen was replaced by the word « Chargement… », and a
+    failed read replaced it permanently with a red sentence and no way back that
+    was not `Échap`. The sheet is the chrome; what is in it is the question.
+  */
   if (settings.state.status === 'loading') {
-    return <Centered>Chargement…</Centered>
+    return (
+      <Sheet onClose={onBack} title="Réglages">
+        <Centered>Chargement…</Centered>
+      </Sheet>
+    )
   }
   if (settings.state.status === 'failed') {
     return (
-      <Centered>
-        <p className="text-danger text-copy">{settings.state.reason}</p>
-      </Centered>
+      <Sheet onClose={onBack} title="Réglages">
+        <Centered>
+          <p className="text-danger text-copy">{settings.state.reason}</p>
+        </Centered>
+      </Sheet>
     )
   }
 
   const snapshot: SettingsSnapshot = settings.state.value
 
+  /*
+   * How many connectors are not `ok` — required or optional alike.
+   *
+   * Optional ones never move the header's general status (DEC-32) and they
+   * should not: VerySwing being down is not the app being degraded. But it is
+   * still something a rep has to find, and « find it » currently means opening
+   * a section to look. The rail carries the count; the header still does not.
+   */
+  const broken = snapshot.connectors.filter((row) => row.health.state !== 'ok').length
+
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-subtle flex items-baseline gap-4 border-b px-gutter pb-4 pt-7">
-        <Button variant="nav" onClick={onBack}>
-          ‹ Calendrier
-        </Button>
-        <h1 className="font-display text-strong text-display leading-none">Réglages</h1>
-      </header>
-
-      {/*
-        Two panes, one window (HR-10). No dialog, no popover, no toast — the
-        rail switches what the right pane holds and nothing overlays anything.
-
-        Both panes carry a surface and run the full height (`5.5 Réglages`). A
-        border alone left the rail and the content on the same white, so the
-        split existed as a hairline and nothing else — and a rail that does not
-        read as a rail is a column of links a rep scrolls past. The content pane
-        is `--bg-card`, the rail one step back on `--bg-card-soft`, which is the
-        same pairing the calendar uses one screen over.
-      */}
-      <div className="flex min-h-0 flex-1">
+    <Sheet
+      onClose={onBack}
+      /*
+        **The pane is named by what it holds, and that name is the sheet's
+        title.** It used to be « Réglages » in the window header with the
+        section's own name repeated as a `pane-label` inside the pane: the same
+        screen said « Réglages » once and « Connecteurs » twice. The sheet's rail
+        is headed « Réglages » — which is what the *sheet* is — and the pane is
+        headed by the section, once.
+      */
+      title={SECTIONS.find((item) => item.id === section)?.label ?? 'Réglages'}
+      nav={
         <SectionNav
           label="Sections des réglages"
-          items={SECTIONS}
+          /*
+            The rail says where the trouble is. Only *Connecteurs* can carry a
+            count today, because it is the only section whose contents have a
+            health state — the provider tables are configuration, and a rail
+            that marked them would be marking a preference as a fault.
+          */
+          items={SECTIONS.map((item) =>
+            item.id === 'connecteurs' && broken > 0
+              ? {
+                  ...item,
+                  note: String(broken),
+                  noteLabel:
+                    broken === 1 ? '1 connecteur en défaut' : `${broken} connecteurs en défaut`,
+                }
+              : item,
+          )}
           current={section}
           onSelect={setSection}
-          className="bg-card-soft border-subtle w-60 overflow-y-auto border-r py-row"
+          className="w-full overflow-y-auto"
         />
+      }
+    >
+          {/*
+            One measure for the whole pane.
+            
+            The explanatory paragraphs were capped at `max-w-prose` and the rows
+            under them were not, so a single section ran two different widths:
+            « VerySwing · indisponible » sat at x≈250 and its *Réessayer* at
+            x≈1400, a window apart, with a 470px paragraph above them. A rep
+            reading a connector's failure and reaching for its retry crossed a
+            thousand pixels of nothing. The cap is the paragraph's, applied
+            once, to everything — so a row's state, its reason and its recovery
+            are one glance wide.
 
-        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+            `.measure` and not 46rem: at 46 the paragraphs ran a hundred and
+            twenty characters a line, which is unifying two measures onto the
+            wrong one. The product's one reading width is also, comfortably, the
+            width a connector row needs — a label, a state, a sentence of reason
+            and a *Réessayer*.
+          */}
+          {/*
+            Left, against the rail. Centring it put a two-hundred-pixel gutter
+            between the nav and the first heading, which is a worse read than the
+            empty space on the right: a pane that starts nowhere near the thing
+            that opened it looks unfinished, where one that runs out on the right
+            just looks like a column. `px-gutter` is the only space between the
+            rail and the content, as everywhere else in the product.
+          */}
+          <div className="measure">
           {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (
             <>
+              <OfflineOnly
+                value={snapshot.offlineOnly}
+                busy={busy === 'offlineOnly'}
+                onChange={(value) =>
+                  void write('offlineOnly', () => invoke('settings:setOfflineOnly', { value }))
+                }
+              />
+              {/*
+                Beside « Cette machine uniquement » on purpose (US-19). One says where
+                the client's words go, the other says what the client is told about it,
+                and a rep or an administrator arriving here with « que voit le client »
+                in mind is asking both questions at once. It is not a section of its
+                own: a nav entry for one field would put the product's only legal
+                setting behind a click nobody takes.
+              */}
+              <MentionSentence
+                value={snapshot.mentionSentence}
+                busy={busy === 'mentionSentence'}
+                onSave={(value) =>
+                  void write('mentionSentence', () =>
+                    invoke('settings:setMentionSentence', { value }),
+                  )
+                }
+              />
               <Providers
                 title="Transcription"
                 capability="stt"
@@ -299,20 +445,196 @@ export function Reglages({ onBack }: ReglagesProps) {
                 })
               }}
             />
+          ) : section === 'raccourcis' ? (
+            <Raccourcis />
           ) : section === 'maj' ? (
             <UpdatePanel />
           ) : (
             <DiagnosticsPanel retentionDays={snapshot.retention.diagnosticsDays} />
           )}
+          </div>
+    </Sheet>
+  )
+}
+
+/**
+ * **The one sheet in this product** (V2).
+ *
+ * HR-10 says one window and no modal chrome, and this is the exception the
+ * design makes on purpose: Réglages is not a *place* — it is a drawer the rep
+ * opens over whatever they were doing and closes again. Making it a screen cost
+ * them their position on the calendar every time they went to look at a
+ * connector, which is the trip the header status control exists to make short.
+ *
+ * Three things it owes, and each is a way modals go wrong:
+ *
+ *  · **A way out that is not the keyboard.** The veil closes it and the pane's
+ *    own ✕ closes it. `Échap` closes it too (`app/shortcuts.ts`, installed by
+ *    `App.tsx` for every route that has somewhere to go back to) — but a sheet
+ *    whose only exit is a key is a sheet a rep gets stuck in.
+ *  · **A frame the content cannot burst.** 920×600, and both are ceilings as
+ *    well as sizes: at 960×600 — the minimum `app/main.ts` declares — the sheet
+ *    takes the window less a margin rather than hanging off the bottom edge.
+ *    The pane scrolls inside it; the sheet never does.
+ *  · **Ease-out on the way in.** `animate-rise-in` is `var(--motion)
+ *    var(--ease-out)`, the one curve this product owns for a thing arriving, and
+ *    it collapses to nothing under `prefers-reduced-motion` because `--motion`
+ *    does.
+ */
+function Sheet({
+  title,
+  nav,
+  onClose,
+  children,
+}: {
+  title: string
+  /** The sections column. Absent on the two unsettled states — there is nothing to switch. */
+  nav?: ReactNode
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
+      {/*
+        The veil, and it is a control: pressing outside a sheet closes it, which
+        is the gesture everybody already has. `aria-hidden` because the ✕ in the
+        pane is the same act, named, and two accessible « fermer » targets on one
+        surface is one too many.
+      */}
+      <div className="bg-veil absolute inset-0" aria-hidden onClick={onClose} />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Réglages"
+        className="border-card bg-card animate-rise-in relative flex h-[600px] max-h-full w-[920px] max-w-full overflow-hidden rounded-lg border"
+      >
+        {nav ? (
+          <div className="bg-card-soft border-subtle flex w-[220px] shrink-0 flex-col border-r py-row">
+            <p className="font-display text-strong mb-block px-row text-display leading-none">
+              Réglages
+            </p>
+            {nav}
+          </div>
+        ) : null}
+
+        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+          {/*
+            The pane's own title row. The ✕ is at the right of it, on the
+            baseline of the heading, and it is a `nav` button rather than an
+            icon-only rectangle with a tooltip: it clears 24×24 and it carries a
+            French name.
+          */}
+          <div className="mb-block flex items-baseline gap-4">
+            <h2 className="font-display text-strong min-w-0 flex-1 truncate text-display leading-none">
+              {title}
+            </h2>
+            {/* `min-w-[24px]`, like the calendar's month pager: a glyph this
+                narrow is 9px of target otherwise (WCAG 2.2, 24×24). */}
+            <Button
+              variant="nav"
+              className="min-w-[24px]"
+              aria-label="Fermer les réglages"
+              onClick={onClose}
+            >
+              ✕
+            </Button>
+          </div>
+          {children}
         </main>
       </div>
     </div>
   )
 }
 
+/**
+ * **The keyboard, printed** (`app/shortcuts.ts`).
+ *
+ * VISION.md §6 says « keyboard-first » and the app had not one global shortcut;
+ * once it had six, they were invisible. A product whose accelerators are only
+ * in the source is a product without accelerators.
+ *
+ * It reads `SHORTCUTS` rather than restating it, so a key that is added, moved
+ * or dropped cannot leave a row here claiming otherwise — the pane is a *view*
+ * of the table the matcher itself uses. Nothing on it is pressable: a shortcut
+ * drawn as a button would be a control that does with the mouse the thing it
+ * exists to do without one.
+ */
+function Raccourcis() {
+  return (
+    <section>
+      <Lede>
+        Ctrl sur Windows, ⌘ sur Mac — les deux fonctionnent partout. Ils sont ignorés pendant
+        que vous écrivez, sauf Échap et Ctrl&nbsp;Entrée.
+      </Lede>
+
+      <List as="div">
+        {SHORTCUTS.map((shortcut) => (
+          <Row as="div" key={shortcut.id} align="center">
+            <span className="min-w-0 flex-1">
+              <span className="text-strong text-copy">{shortcut.label}</span>
+              {/* Where it works, when that is not everywhere. Four of the six
+                  were silent on the screen a rep was looking at, and a table
+                  that promises six global keys is worse than no table. */}
+              {shortcut.where ? (
+                <span className="text-muted ml-2 text-meta">{shortcut.where}</span>
+              ) : null}
+            </span>
+            {/*
+              `kbd`, and not a styled span: this is a key on a keyboard, and the
+              element that says so is the one a screen reader announces as one.
+            */}
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+              {shortcut.keys}
+            </kbd>
+          </Row>
+        ))}
+      </List>
+
+      {/*
+        **The notepad's own keys, from the table the editor binds**
+        (`editor/note/keymap.ts`).
+
+        They are here for the reason the six above are: `index.css` has styled
+        headings, lists and quotes for that pane since it was written, and until
+        the input rules were wired there was no way to make any of them — no
+        toolbar, no key, nothing. A vocabulary a rep cannot find is a vocabulary
+        they do not have, and the lede names the typed forms because that is how
+        most people will meet them.
+      */}
+      <SectionHeader>Dans le bloc-notes</SectionHeader>
+      <Lede>
+        En début de ligne, <Typed>#&nbsp;</Typed>, <Typed>##&nbsp;</Typed>, <Typed>-&nbsp;</Typed>,{' '}
+        <Typed>1.&nbsp;</Typed>, <Typed>&gt;&nbsp;</Typed>, <Typed>---&nbsp;</Typed> et{' '}
+        <Typed>```</Typed> font la même chose en tapant ; <Typed>**gras**</Typed> et{' '}
+        <Typed>_italique_</Typed> aussi. Retour arrière juste après annule la transformation et
+        rend les caractères.
+      </Lede>
+
+      <List as="div">
+        {NOTE_SHORTCUTS.map((shortcut) => (
+          <Row as="div" key={shortcut.combo} align="center">
+            <span className="text-strong text-copy min-w-0 flex-1">{shortcut.label}</span>
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+              {shortcut.keys}
+            </kbd>
+          </Row>
+        ))}
+      </List>
+    </section>
+  )
+}
+
+/** A literal a rep types, inline in a sentence. `code`, because that is what it is. */
+function Typed({ children }: { children: ReactNode }) {
+  return <code className="text-body bg-subtle rounded-sm px-1 font-mono">{children}</code>
+}
+
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */
 function Lede({ children }: { children: ReactNode }) {
-  return <p className="text-muted mb-3 max-w-prose text-ui">{children}</p>
+  // `74ch`, not the shared `.measure`: 38rem is 87 characters at `--type-copy`,
+  // and a measure is a count of characters rather than a width.
+  return <p className="text-muted mb-3 measure text-copy leading-relaxed">{children}</p>
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────
@@ -330,6 +652,187 @@ const RESIDENCY_LABEL = {
   local: 'sur la machine',
   remote: 'hors machine',
 } as const
+
+/** What a provider costs to use, in the two words a rep needs (DEC-33). */
+const COST_LABEL = {
+  free: 'gratuit',
+  metered: 'facturé à l’usage',
+  included: 'inclus dans votre abonnement',
+} as const
+
+/**
+ * **« Cette machine uniquement »** (DEC-37) — the one switch in this product
+ * that refuses something.
+ *
+ * DEC-37 withdrew every jurisdiction claim: no `eu` value, no « UE » badge, no
+ * allow-list, because a contractual term differs per client and per year and a
+ * literal in a source file cannot keep it true. What it kept is this — the rep
+ * asking, *in the product*, for this meeting to stay on the machine — and until
+ * now the only way to ask was an environment variable, on a product whose
+ * DEC-34 says none is required to run it.
+ *
+ * Three things the wording has to get right, because this is a promise and a
+ * promise stated loosely is worse than none:
+ *
+ *  · it covers **both** hops. The audio goes to the transcriber and the
+ *    transcript goes to the language model, and the second is the one carrying
+ *    the client's name — a switch that only bound transcription would be true
+ *    of the smaller half;
+ *  · it is a **constraint**, not a preference: turning it on removes every
+ *    remote engine from the candidate set, including one the rep had explicitly
+ *    chosen, which is why the tables below change under it;
+ *  · it says what it **costs**, here, rather than leaving the rep to find out
+ *    when the compte-rendu does not arrive.
+ */
+function OfflineOnly({
+  value,
+  busy,
+  onChange,
+}: {
+  value: boolean
+  busy: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <label className="border-card bg-card mb-block flex items-start gap-inline rounded-sm border p-row">
+      <input
+        type="checkbox"
+        checked={value}
+        disabled={busy}
+        onChange={(event) => onChange(event.target.checked)}
+        className="accent-brand-700 mt-0.5 h-4 w-4 shrink-0"
+      />
+      <span className="min-w-0">
+        <span className="text-strong block text-ui font-medium">
+          Cette machine uniquement
+        </span>
+        <span className="text-muted measure mt-tight block text-meta">
+          Rien de ce qui est dit ni de ce qui est écrit ne quitte cet ordinateur : ni l’audio
+          envoyé à la transcription, ni le texte envoyé au modèle de langage. Les moteurs hors
+          machine disparaissent des listes ci-dessous, y compris celui que vous auriez choisi.
+          Sans modèle installé ici, le compte-rendu ne sera pas rédigé — l’enregistrement et la
+          transcription, eux, continuent.
+        </span>
+      </span>
+    </label>
+  )
+}
+
+/**
+ * **The sentence the rep reads to the client** (US-11, US-19,
+ * `core/contracts/mention.ts`).
+ *
+ * The one setting in this pane whose value is a piece of *speech*, and the reason it
+ * is a setting at all is that the wording is a legal matter belonging to the ESN
+ * rather than to us. DEC-34's rule applied to it literally: declared, stored in the
+ * KV store, rendered as a field.
+ *
+ * Four things, each of which would otherwise be a defect this repo has already had.
+ *
+ * **The field shows what the pill will hand over, never what is stored.** The
+ * snapshot resolves through `resolveMentionSentence`, so a deployment that saved an
+ * empty box and one that never opened this pane look the same here — which is true,
+ * because they behave the same. A box that stayed blank would claim the product says
+ * nothing, and the product says the default.
+ *
+ * **Saving an empty box is how you go back**, and there is a control that says so
+ * rather than a trick a rep has to know: *Rétablir la phrase par défaut* is live
+ * exactly when what is on screen is not the default, which is the `SettingField`
+ * rule — a button is dead precisely when pressing it would do nothing (DEC-26).
+ *
+ * **`[field-sizing:content]` and no scroller.** A four-line sentence in a
+ * three-line box is the eleven clipped textareas at the gate, and `--scrollers`
+ * would find it. `.measure` on the textarea itself and not on a wrapper, because
+ * `ch` resolves against the element's own font size.
+ *
+ * **Nothing here claims consent.** There is no second field for « le client a
+ * accepté » and no sentence in the explanation that implies pressing the pill's
+ * control obtained anything. The product knows what it handed to the rep; what the
+ * client said is not in the record and must not look as though it is.
+ */
+function MentionSentence({
+  value,
+  busy,
+  onSave,
+}: {
+  value: string
+  busy: boolean
+  onSave: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const dirty = draft.trim() !== value.trim()
+  const customised = value.trim() !== MENTION_SENTENCE_DEFAULT
+
+  return (
+    <section className="border-card bg-card mb-block rounded-sm border p-row">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSave(draft.trim())
+        }}
+      >
+        <label className="text-strong block text-ui font-medium" htmlFor="mention-sentence">
+          Ce que vous dites au client
+        </label>
+        <p className="text-muted measure mt-tight text-meta">
+          Pendant l’appel, la pastille propose de copier cette phrase en un clic : vous la collez
+          dans la conversation, ou vous la lisez à voix haute. Sillage n’envoie rien et
+          n’enregistre pas la réponse du client — il note seulement que la phrase vous a été
+          remise. La formulation vous appartient ; celle-ci est vraie de l’outil tel qu’il
+          fonctionne.
+        </p>
+        <textarea
+          id="mention-sentence"
+          value={draft}
+          maxLength={MENTION_MAX_CHARS}
+          onChange={(event) => setDraft(event.target.value)}
+          className="measure text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
+        />
+        <div className="mt-1 flex items-center gap-inline">
+          <Button
+            type="submit"
+            variant="bordered"
+            {...unavailable(
+              busy || !dirty,
+              busy ? 'enregistrement en cours' : 'aucune modification',
+            )}
+          >
+            {/*
+              Not the bare « Enregistrer » `SettingField` uses. This pane already holds
+              one per provider row, and a second verb with a different meaning under the
+              same accessible name is the `--a11y` failure one step up from a control
+              whose only name is « ‹ » : a rep tabbing the pane, or reading it with a
+              screen reader, gets two identical offers that do different things.
+            */}
+            Enregistrer la phrase
+          </Button>
+          {/*
+            Not a *Supprimer*. Emptying the box is the request to come back to the
+            default, and the default is what the pill would then hand over — so the
+            control says what happens rather than what it clears.
+          */}
+          <Button
+            type="button"
+            variant="text"
+            onClick={() => {
+              setDraft(MENTION_SENTENCE_DEFAULT)
+              onSave('')
+            }}
+            {...unavailable(
+              busy || !customised,
+              busy ? 'enregistrement en cours' : 'c’est déjà la phrase par défaut',
+            )}
+          >
+            Rétablir la phrase par défaut
+          </Button>
+          <span className="text-muted ml-auto shrink-0 tabular-nums text-meta">
+            {draft.trim().length} / {MENTION_MAX_CHARS}
+          </span>
+        </div>
+      </form>
+    </section>
+  )
+}
 
 /**
  * DEC-30, in the two sentences a rep actually reads.
@@ -371,6 +874,19 @@ function LlmIntro() {
 }
 
 // ── Local models (DEC-35) ───────────────────────────────────────────────────
+
+/**
+ * How hard a checkpoint works the machine during a call.
+ *
+ * Named for the rep's experience rather than for the model: « rapide » is what a
+ * laptop does with `small`, and « lent » is the honest word for a large model on
+ * the four-year-old Windows machines this ships to (HR-2).
+ */
+const SPEED_LABEL = {
+  fast: 'rapide',
+  medium: 'assez rapide',
+  slow: 'lent sur une machine modeste',
+} as const
 
 /** French, and the sentence is the state — never a bare status word. */
 const MODEL_STATE: Record<ModelRow['status'], (row: ModelRow) => string> = {
@@ -440,8 +956,19 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
               </span>
 
               <span className="flex shrink-0 items-center gap-3">
+                {/*
+                  **Size, accuracy and speed — the three the lede promises.**
+
+                  « plus ils sont grands, plus ils sont précis et plus ils
+                  sollicitent la machine pendant la réunion » is two sentences
+                  above this row, and the row itself answered two thirds of it:
+                  `speed` has been on `ModelRow` since the table existed and was
+                  drawn by nothing. It is the half a rep on a four-year-old
+                  Windows laptop cares about most, and the one the prose can only
+                  state in general.
+                */}
                 <span className="text-muted text-meta">
-                  {row.sizeMb} Mo · précision {row.accuracy}
+                  {row.sizeMb} Mo · précision {row.accuracy} · {SPEED_LABEL[row.speed]}
                 </span>
 
                 {row.status === 'ready' && !row.selected ? (
@@ -516,15 +1043,24 @@ function Providers({
    */
   const [open, setOpen] = useState<string | null>(null)
 
+    /*
+      **The table is named, and its name is no longer drawn twice.**
+
+      `<SectionHeader>{title}</SectionHeader>` stood at the head of this section
+      and the pane it is the whole of is now headed with the same words by the
+      sheet — « Transcription » over « Transcription », « Modèle de langage »
+      over « Modèle de langage ». The heading goes and the name stays, as the
+      section's accessible name: a landmark with no name is a landmark nobody can
+      address, and this screen holds more than one list.
+    */
   return (
-    <section>
-      <SectionHeader>{title}</SectionHeader>
+    <section aria-label={title}>
 
       {intro}
 
       {/* Why nothing is selected, from the registry's own refusal (DEC-26). */}
       {section.selected === null && section.reason ? (
-        <p className="text-warn mb-2 text-ui">{section.reason}</p>
+        <p className="text-warn mb-2 measure text-ui">{section.reason}</p>
       ) : null}
 
       <List as="div">
@@ -631,6 +1167,23 @@ function ProviderLine({
 
         <span className="flex shrink-0 items-center gap-3">
           <span className="text-muted text-meta">{RESIDENCY_LABEL[row.residency]}</span>
+          {/*
+            **What it costs, beside where it runs.**
+
+            `cost` has been on `ProviderRow` since the row existed, crossed the
+            bridge on every settings read, and was drawn by nothing — so the one
+            question a rep asks after « où ça tourne » had an answer in the
+            payload and nowhere on screen. It is two words and it is the
+            difference between a provider they can leave on and one that invoices
+            per meeting.
+
+            `free` says nothing: on this table it is true of exactly the local
+            engines, which already say « sur la machine » next to it, and a label
+            repeating the neighbouring one is noise.
+          */}
+          {row.cost === 'free' ? null : (
+            <span className="text-muted text-meta">{COST_LABEL[row.cost]}</span>
+          )}
 
           {/*
             Choosing is a separate act from configuring. A rep with two keys
@@ -940,26 +1493,24 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
 
   return (
     <section>
-      <SectionHeader>Connecteurs</SectionHeader>
 
       {/*
-        The sentence the split exists for (DEC-26, DEC-32). It states what the
-        header control means, so that a rep reading « Tout fonctionne » while
-        VerySwing is unreachable does not read it as a lie — and so that the
-        reverse never happens either.
-      */}
-      <Lede>
-        L’indicateur d’état, en haut de l’écran, ne suit que les trois connecteurs requis —
-        audio, transcription, analyse. Les connecteurs facultatifs signalent leur panne
-        ici, avec son motif ; ils ne rendent jamais l’application indisponible.
-      </Lede>
+        **One line per section, and none before the first control.**
 
-      <SectionHeader as="h3" className="mt-block">
-        Requis
-      </SectionHeader>
+        There were three paragraphs here — what the header indicator tracks, what
+        the required connectors are for, what the optional ones are not for —
+        about sixty words of rationale standing between the rep and the red row
+        they opened this screen because of. The reasoning was written for a
+        reviewer; a rep arrives here at the moment VerySwing has just broken.
+
+        What each sentence was *doing* is kept, because the split does need
+        stating (DEC-26, DEC-32): it moved onto the two headings it explains, one
+        line each, where it reads as a caption rather than as a preamble.
+      */}
+      <SectionHeader as="h3">Requis</SectionHeader>
       <Lede>
-        Sans eux, une réunion ne peut pas être enregistrée. Ce sont les seuls à faire
-        changer l’indicateur d’état.
+        Audio, transcription, analyse : sans eux une réunion ne peut pas être enregistrée,
+        et ce sont les seuls à faire changer l’indicateur d’état en haut de l’écran.
       </Lede>
       <List>
         {required.map((row) => (
@@ -972,12 +1523,32 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
         ))}
       </List>
 
+      {/*
+        **The trial belongs beside the rows it disagrees with.**
+
+        « Audio · connecté » is a device that opened. It is not a sound that
+        arrived, and the difference is the whole reason `capture:essai` exists
+        (DEC-45): the permission can be granted and the loopback still produce
+        nothing, and the rep finds out from a compte-rendu that describes a
+        monologue.
+
+        It could only be reached from first run, and from there only through
+        « Revoir la présentation › » in the *empty-day* panel — so a rep whose
+        headset changed, whose Bluetooth output moved or whose grant a Windows
+        update revoked had three calls on the day they needed it and no way in.
+        The placement was keyed on « the day is empty » when the need is
+        « capture is suspect », and this is the screen a rep opens when they
+        suspect it: the row above says « connecté » and this is the control that
+        can disagree.
+      */}
+      <EssaiAudio />
+
       <SectionHeader as="h3" className="mt-block">
         Facultatifs
       </SectionHeader>
       <Lede>
-        Une réunion s’enregistre, se transcrit et s’analyse sans eux. Chacun garde son
-        état et son propre bouton, ici.
+        Une réunion s’enregistre, se transcrit et s’analyse sans eux : leur panne se
+        signale ici, avec son motif, et jamais dans l’indicateur d’état.
       </Lede>
 
       {/*
@@ -1069,8 +1640,14 @@ function ConnectorLine({ row, retrying, onRetry }: ConnectorLineProps) {
           <span className="text-muted block text-meta">{row.health.reason}</span>
         ) : null}
       </span>
+      {/*
+        `bordered`, not `link`. This is the only recovery a rep has for a broken
+        connector and it had the visual weight of a footnote — an underlined
+        grey word at the far edge of the row, indistinguishable from the four
+        captions above it. A control that fixes something looks like a control.
+      */}
       {row.health.state !== 'ok' && row.health.retryable ? (
-        <BusyButton variant="link" busy={retrying} busyReason="Vérification…" onClick={onRetry}>
+        <BusyButton busy={retrying} busyReason="Vérification…" onClick={onRetry}>
           Réessayer
         </BusyButton>
       ) : null}
@@ -1137,7 +1714,10 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
         </p>
       ) : (
         <>
-          <p className={`mb-2 text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
+          {/* `.measure` on the sentence itself: it is set at `--type-ui`, one
+              step below the body, so a box sized for body copy runs it to
+              ninety-seven characters. */}
+          <p className={`mb-2 measure text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
             {report.summary} · {formatAgo(report.at, Date.now())}
           </p>
           <List>
@@ -1227,7 +1807,6 @@ function UpdatePanel() {
   if (status.state.status !== 'ready') {
     return (
       <section>
-        <SectionHeader>Mise à jour</SectionHeader>
         <Lede>
           {status.state.status === 'failed' ? status.state.reason : 'Lecture de l’état…'}
         </Lede>
@@ -1247,7 +1826,6 @@ function UpdatePanel() {
 
   return (
     <section>
-      <SectionHeader>Mise à jour</SectionHeader>
 
       <Lede>
         Version installée&nbsp;: <span className="text-body font-medium">{update.currentVersion}</span>
@@ -1285,7 +1863,7 @@ function UpdatePanel() {
             gigabyte and the app refuses to start one during a call — a rep who
             presses this and sees nothing happen deserves to know why.
           */}
-          <p className="text-muted max-w-prose text-meta">
+          <p className="text-muted text-meta">
             Environ 550 Mo. Le téléchargement ne démarre pas pendant une réunion, pour ne pas
             gêner l’appel en cours.
           </p>
@@ -1302,7 +1880,7 @@ function UpdatePanel() {
             bar that just went back to zero. Nothing underneath resumes a broken
             transfer, so silence here reads as a bug.
           */}
-          {update.reason ? <p className="text-muted max-w-prose text-meta">{update.reason}</p> : null}
+          {update.reason ? <p className="text-muted text-meta">{update.reason}</p> : null}
         </div>
       ) : null}
 
@@ -1330,7 +1908,7 @@ function UpdatePanel() {
           >
             Installer et redémarrer
           </Button>
-          <p className="text-muted max-w-prose text-meta">
+          <p className="text-muted text-meta">
             Sillage se ferme, s’installe et se rouvre. Vos réunions, vos notes et vos clés sont
             conservées.
           </p>
@@ -1397,7 +1975,6 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
 
   return (
     <section>
-      <SectionHeader>Diagnostics</SectionHeader>
 
       <Lede>
         Les diagnostics sont conservés {retentionDays} jours puis effacés. Le contenu des
@@ -1446,7 +2023,24 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
       <SectionHeader as="h3" className="mb-2">
         Erreurs récentes
       </SectionHeader>
-      {errors.length === 0 ? (
+      {recent.state.status !== 'ready' ? (
+        /*
+          **« Aucune erreur récente. » was asserted when the log could not be
+          read at all.**
+
+          `events` collapses `loading` and `failed` to `[]`, and the sentence
+          below reads that as « nothing broke ». So the one pane a support
+          engineer opens — on DEC-27's own evidence trail — stated positively
+          that the app was healthy at the exact moment it could not tell. An
+          absence of evidence drawn as evidence of absence, on the screen whose
+          whole job is evidence.
+        */
+        <p className={recent.state.status === 'failed' ? 'text-warn text-ui' : 'text-muted text-ui'}>
+          {recent.state.status === 'failed'
+            ? 'Le journal n’a pas pu être lu — ceci ne veut pas dire qu’il est vide.'
+            : 'Lecture du journal…'}
+        </p>
+      ) : errors.length === 0 ? (
         <p className="text-muted text-ui">Aucune erreur récente.</p>
       ) : (
         <List>

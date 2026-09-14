@@ -17,7 +17,12 @@
  */
 import type { CalendarEvent } from '../../../electron/core/contracts/calendar.ts'
 import type { AgendaSnapshotPayload } from '../../../electron/core/contracts/ipc.ts'
-import type { Meeting, MeetingState } from '../../../electron/core/contracts/meeting.ts'
+import {
+  AFTER_THE_CALL,
+  Meeting,
+  MeetingState,
+  OVERRUN_GRACE_MS,
+} from '../../../electron/core/contracts/meeting.ts'
 import { dayKeyOf, type DayKey } from '../../app/calendar.ts'
 
 export interface AgendaEntry {
@@ -31,10 +36,32 @@ export interface AgendaEntry {
   /** Attendees, or the client the rep named. Never both. */
   subtitle: string | null
   /**
-   * Non-null ⇒ there is a session to open. An entry without one is
-   * information and carries no button (DEC-26).
+   * Non-null ⇒ there is a session to *open*.
+   *
+   * This used to say « an entry without one is information and carries no
+   * button (DEC-26) », and that reading was too broad by exactly one case. A
+   * past event the app never recorded is information, and a dead *Ouvrir* on it
+   * would indeed be the control DEC-26 forbids. An **upcoming** event is not
+   * information: it is a call that has not started yet, and the rep can start
+   * it. Both fell into the same `null` and the whole upcoming list went inert —
+   * four of five rows with no control at all, and the row is not clickable
+   * either. `eventId` is what separates them.
    */
   meetingId: string | null
+  /**
+   * The invite this row came from, when it came from one.
+   *
+   * Null for a meeting the app created itself (*Démarrer une réunion*), which
+   * by construction has no invite — `meeting:create`'s docblock is explicit
+   * that `eventId: null` is the normal case there, not a fallback.
+   *
+   * It is here so an upcoming calendar row can offer *Enregistrer* through
+   * `agenda:arm`, which reaches `Agenda`'s own arm path and therefore keeps the
+   * attendees and the subject. Without it the only way to record a call
+   * starting early is the header's *Démarrer*, which drops the invite and with
+   * it every deterministic fact DEC-7 keeps away from the model.
+   */
+  eventId: string | null
   /** The offer, never a recording (HR-7). */
   armed: boolean
   /** Null for a calendar event the app has never opened. */
@@ -42,20 +69,6 @@ export interface AgendaEntry {
   /** Held already — it goes under *Passées*. */
   past: boolean
 }
-
-/**
- * The states a meeting reaches only after the call. `recording` is deliberately
- * absent, and so is `armed`: a call running past its scheduled end is the most
- * important row on the screen, and filing it under *Passées* would hide it.
- */
-const AFTER_THE_CALL: ReadonlySet<MeetingState> = new Set<MeetingState>([
-  'ended',
-  'extracting',
-  'awaiting_confirmation',
-  'pushing',
-  'done',
-  'aborted',
-])
 
 /** French, and never the machine's own vocabulary. */
 export const STATE_LABEL: Record<MeetingState, string> = {
@@ -113,6 +126,7 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
       title: event.context.subject || 'Sans objet',
       subtitle: attendeesOf(event),
       meetingId,
+      eventId: event.id,
       armed: isArmed,
       state,
       past: isPast({ state, end: event.context.scheduledEnd, now }),
@@ -134,6 +148,10 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
       title: meeting.title || 'Sans objet',
       subtitle: meeting.clientName,
       meetingId: meeting.id,
+      // The app's own record. It may *carry* an `eventId` — a meeting armed
+      // from an invite whose event has since fallen out of the sync window —
+      // but it already has a meeting, so there is nothing here left to arm.
+      eventId: null,
       armed: armed?.meetingId === meeting.id,
       state: meeting.state,
       past: isPast({ state: meeting.state, end: meeting.endedAt ?? start, now }),
@@ -151,6 +169,28 @@ export const buildEntries = ({ snapshot, meetings, now }: BuildInput): AgendaEnt
 const startOf = (meeting: Meeting): number =>
   meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt
 
+/**
+ * Is this row behind the rep, or still theirs to record?
+ *
+ * **A call that runs over is not past, and this used to say it was.** For a row
+ * with no meeting yet the answer was `end < now`, so at 14:31 on a 14:00–14:30
+ * slot the row moved under *Passées* and `DayPane` drew **no control at all** —
+ * while `Agenda.armNow`, which the control would have called, would happily have
+ * armed it. DEC-9 says sales calls overrun constantly.
+ *
+ * The domain has the same grace (`decideArming`, `OVERRUN_GRACE_MS`) and applies
+ * it only while a microphone is still held, because a schedule alone is not
+ * evidence a call is still happening and the app must not *offer* on a guess.
+ * Here the microphone deliberately does not come into it: `armNow` does not
+ * consult `decideArming` — the detector guesses, the rep has said — so the
+ * control has to be reachable on a machine that produces no microphone signal at
+ * all, which is every older binary, macOS before 14.4, a locked-down Windows box
+ * and any call taken on a desk phone. Withholding it there would be the dead
+ * control DEC-26 forbids, in reverse: a live meeting with no way to record it.
+ *
+ * One number, imported rather than restated — see its docblock in
+ * `core/contracts/meeting.ts` for why it lives there.
+ */
 const isPast = ({
   state,
   end,
@@ -162,7 +202,7 @@ const isPast = ({
 }): boolean => {
   if (state === 'recording' || state === 'armed') return false
   if (state && AFTER_THE_CALL.has(state)) return true
-  return end < now
+  return end + OVERRUN_GRACE_MS < now
 }
 
 const attendeesOf = (event: CalendarEvent): string | null => {

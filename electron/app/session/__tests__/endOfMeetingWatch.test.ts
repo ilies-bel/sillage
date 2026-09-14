@@ -131,13 +131,13 @@ test('a meeting that fell silent before its scheduled end keeps the full window'
   assert.equal(h.ends.length, 1)
 })
 
-test('Terminer short-circuits everything', () => {
-  const h = harness()
-  h.watch.speechStarted('far')
-  h.watch.manual()
-  assert.equal(h.ends.length, 1)
-  assert.match(h.ends[0] ?? '', /utilisateur/)
-})
+/*
+ * « Terminer short-circuits everything » went with `manual()`, which no caller
+ * could have had: pressing *Terminer* goes through the state machine, and
+ * `Orchestrator.stopRecording` calls `stop()` on this watch as its second line.
+ * The test proved the method did what it said; nothing asked whether anything
+ * could say it.
+ */
 
 test('a meeting ends exactly once, however many edges arrive afterwards', () => {
   const h = harness()
@@ -146,7 +146,8 @@ test('a meeting ends exactly once, however many edges arrive afterwards', () => 
   h.watch.speechStarted('far')
   h.watch.speechEnded('far')
   h.advance(SILENCE_GRACE_MS * 3)
-  h.watch.manual()
+  // The route that *is* reachable: the orchestrator stopping the watch.
+  h.watch.stop()
   assert.equal(h.ends.length, 1)
 })
 

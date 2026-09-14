@@ -44,6 +44,59 @@ export type Sensitivity = z.infer<typeof SensitivitySchema>
 /** Epoch milliseconds, UTC. The app has exactly one time representation. */
 export const TimestampSchema = z.number().int()
 
+/**
+ * How long past its scheduled end an event stays recordable.
+ *
+ * Twenty minutes. DEC-9 says in as many words that sales calls overrun
+ * constantly, and the rule this bounds used to be « `now >= scheduledEnd` →
+ * skip », which stopped both the automatic offer and the manual control at the
+ * scheduled minute — at the moment a conversation is going *well enough to run
+ * late*. What the rep had instead was « Démarrer une réunion », which drops
+ * `eventId` and with it the attendees, « Interlocuteurs », `speakerLabel`'s one
+ * chance to name the far channel after a person rather than « Client », and the
+ * strongest signal account resolution has.
+ *
+ * **It lives in `contracts` for the reason `meetingAnchor` and `speakerLabel`
+ * do**: two surfaces apply it and `src/*` may import nothing else.
+ * `core/domain/arming.ts` uses it to decide whether to keep *offering* — and
+ * only while a microphone is still held, because the schedule alone is not
+ * evidence the call is still happening. `src/screens/agenda/entries.ts` uses it
+ * to decide whether the row is *past*, and there the microphone does not come
+ * into it: `Agenda.armNow` deliberately does not consult `decideArming` — the
+ * detector guesses, the rep has said — so the control has to be there even on a
+ * machine with no microphone signal at all (an older binary, macOS before 14.4,
+ * a locked-down Windows box, or a call taken on a desk phone).
+ *
+ * Written in two files as two numbers, they would drift the first time one
+ * moved; that is the lesson `PROCESS_TTL_MS` and `ARM_POLL_MS` had to learn the
+ * expensive way.
+ */
+/**
+ * The states a meeting reaches only **after** the call.
+ *
+ * `recording` is deliberately absent, and so is `armed`: a call running past its
+ * scheduled end is the most important row on the screen, and filing it under
+ * *Passées* would hide it.
+ *
+ * It lives in `contracts` for the reason `meetingAnchor` and `speakerLabel` do —
+ * `src/*` may import nothing else — and because it had **two** readers asking the
+ * same question in two layers. *Historique* uses it to decide what is behind the
+ * rep; `Agenda` uses it to decide whether the calendar is finished with an event,
+ * which is what stops a claimed slot silencing the unscheduled detector for twenty
+ * minutes after a meeting the rep already recorded and ended. Two copies of that
+ * list would be two answers to « is this conversation over », one per layer.
+ */
+export const AFTER_THE_CALL: ReadonlySet<MeetingState> = new Set<MeetingState>([
+  'ended',
+  'extracting',
+  'awaiting_confirmation',
+  'pushing',
+  'done',
+  'aborted',
+])
+
+export const OVERRUN_GRACE_MS = 20 * 60_000
+
 export const MeetingContextSchema = z.object({
   /** Graph `event.id`. Null for a manually started session with no calendar entry. */
   eventId: z.string().nullable(),
@@ -123,6 +176,34 @@ export const UserCommandSchema = z.enum(['start', 'end', 'abort', 'extract', 'co
 export type UserCommand = z.infer<typeof UserCommandSchema>
 
 /**
+ * **What a meeting is doing, in one French line each.**
+ *
+ * Two surfaces read it and both put it in front of a rep. `reviewAvailability`
+ * uses it to say why the gate is closed, and `MeetingSession.dispatch` uses it
+ * to say why a command was refused — which used to be
+ * « confirm is not legal from pushing », rendered verbatim in a `role="alert"`
+ * banner at the gate on the likeliest gesture at the most consequential screen,
+ * a second press of *Valider*. The transition identifier is still what the
+ * diagnostic records: it is precise, it is what a support reader needs, and it
+ * is not a sentence.
+ *
+ * One table rather than two, because two screens naming the same state
+ * differently is two things for a rep to reconcile — the reason `meetingAnchor`
+ * and `speakerLabel` live here as well.
+ */
+export const STATE_REASON: Record<MeetingState, string> = {
+  idle: 'La réunion n’a pas encore démarré.',
+  armed: 'La réunion n’a pas encore démarré.',
+  recording: 'Réunion en cours.',
+  ended: 'Compte-rendu en attente d’analyse.',
+  extracting: 'Analyse en cours…',
+  awaiting_confirmation: 'En attente de votre validation.',
+  pushing: 'Envoi en cours…',
+  done: 'Déjà validée.',
+  aborted: 'Réunion abandonnée.',
+}
+
+/**
  * A projection row, not a source of truth. Rebuildable by folding the event
  * log (ARCHITECTURE.md §5.C). Never written to directly.
  */
@@ -152,3 +233,91 @@ export const MeetingSchema = z.object({
   updatedAt: TimestampSchema,
 })
 export type Meeting = z.infer<typeof MeetingSchema>
+
+/**
+ * **The day a meeting belongs on**, as an instant (DEC-31) — the one moment
+ * every surface sorts by, filters by and prints.
+ *
+ * The order is the calendar grid's: the day the rep put it on, else the day it
+ * ran, else the day it was created. *Période* has to agree with where the
+ * meeting is drawn, or a call filed under Thursday would drop out of « 7 jours »
+ * on Wednesday.
+ *
+ * It lives in `contracts` and not in `core/domain/historySearch.ts`, where it
+ * was, because `src/*` may import `core/contracts/` and nothing else — so every
+ * screen that needed this question answered had rolled its own answer, and the
+ * three answers disagreed. Historique printed `startedAt ?? scheduledStart ??
+ * createdAt`, the pending-gates list printed `endedAt ?? …`, and the store
+ * ordered by `updated_at`, which is not a date at all but the last time the
+ * event log touched the row. Historique therefore drew 10/09, 09/09, 07/09,
+ * **01/09, 03/09**, 27/08: a call validated late had been *edited* more recently
+ * than a call held two days after it, so it sorted above it. On a screen whose
+ * only organising principle is recency, that is the defect a rep notices in the
+ * first minute and never trusts again.
+ *
+ * `endedAt` is deliberately never consulted: a recording left running overnight
+ * would move the call to the next morning, and the rep filed it the day they
+ * held it.
+ */
+export const meetingAnchor = (meeting: Meeting): number =>
+  meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt
+
+/**
+ * **How a row names one call: the client on top, the objet under it, and the
+ * client's name printed once.**
+ *
+ * The objet a rep types almost always opens with the client's own name —
+ * « Sodexial — comité de staffing hebdomadaire », « Nordis Retail — cadrage
+ * support N2 » — because that is how a calendar invitation is written. Drawn
+ * as-is the row said « Sodexial » over « Sodexial — comité de staffing
+ * hebdomadaire », which spends the strongest line on a word repeated three
+ * pixels below it and buries the only part that distinguishes one call from the
+ * next. So the client stays on top, where the eye scans, and the objet drops the
+ * prefix it duplicates along with the dash that joined them. Nothing is invented
+ * and nothing is truncated away: an objet that does not open on the client is
+ * drawn whole.
+ *
+ * The third case — neither name — is not an edge: a meeting now starts on one
+ * click with no objet and no client, and it stays that way until the rep types
+ * one into the session header. Two screens had the same `clientName || title`
+ * pair, which drew an *empty row* for such a meeting: a list of dates with
+ * nothing beside them. « Sans objet » is a rendering and stops at the screen —
+ * nothing is written into the store, so the CRM never receives it.
+ *
+ * **It lives in `contracts` for the reason `meetingAnchor` and `speakerLabel`
+ * do, and it moved here because the main process needs it too.** It was in
+ * `src/app/format.ts`, where four screens could reach it and the search could
+ * not — so `searchableRecord` built its own surface by joining the raw title to
+ * the raw client name, and the excerpt under the row read « Sodexial — comité de
+ * staffing Sodexial ». The row above it printed the name once and the evidence
+ * line under it put it back, three pixels apart, on the same screen. One
+ * function, one answer, everywhere a call is named.
+ */
+export const meetingHeading = (meeting: {
+  title: string
+  clientName: string | null
+}): { title: string; subtitle: string | undefined } => {
+  const client = meeting.clientName?.trim() ?? ''
+  const objet = meeting.title.trim()
+  if (client === '') return { title: objet === '' ? 'Sans objet' : objet, subtitle: undefined }
+  if (objet === '') return { title: client, subtitle: undefined }
+  const rest = withoutClientPrefix(objet, client)
+  return { title: client, subtitle: rest === '' ? undefined : rest }
+}
+
+/**
+ * `« Sodexial — comité de staffing »` under a `Sodexial` title becomes
+ * `« comité de staffing »`. Case- and accent-insensitive on the name, and it
+ * only ever strips a *leading* occurrence followed by a separator — « point
+ * Sodexial » keeps every word it has.
+ */
+const HEADING_SEPARATOR = /^\s*[\u2014\u2013\-:\u00b7|]\s*/
+const foldName = (value: string): string =>
+  value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('fr')
+
+const withoutClientPrefix = (objet: string, client: string): string => {
+  if (!foldName(objet).startsWith(foldName(client))) return objet
+  // « Sodexial » as the whole objet leaves nothing for a second line to say —
+  // the title above it already is that word — so the row draws one line.
+  return objet.slice(client.length).replace(HEADING_SEPARATOR, '').trim()
+}

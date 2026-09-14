@@ -14,14 +14,18 @@
  * `docs/reference/capture-invariants.md` because it was a bug first.
  */
 import { EventEmitter } from 'node:events'
+import type { CapturePort } from '../../core/contracts/capture.ts'
 import type { Channel } from '../../core/contracts/transcript.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import { InputLevelWatch, rmsOfInt16, type InputLevel } from '../../core/domain/inputLevel.ts'
+import { getDefaultCommunicationsDeviceId, getDefaultOutputDeviceId } from './AudioDevices.ts'
 import { MicrophoneCapture } from './MicrophoneCapture.ts'
 import { SystemAudioCapture } from './SystemAudioCapture.ts'
 import { loadNativeModule } from './nativeModule.ts'
+import { SystemAudioHealthClassifier } from './systemAudioHealthClassifier.ts'
+import type { HealthEvent } from './systemAudioHealthClassifier.ts'
 
 export { MicrophoneCapture } from './MicrophoneCapture.ts'
 export { SystemAudioCapture } from './SystemAudioCapture.ts'
@@ -37,11 +41,38 @@ export interface AudioFrame {
   sampleRate: number
 }
 
+/**
+ * At or below this, the microphone came off a narrowband link.
+ *
+ * HFP is 8 kHz, and 16 is the resampler's own target — a device that opens at
+ * 16 has nothing left to give the DSP. Anything above it is a real wideband
+ * microphone.
+ */
+const HFP_SAMPLE_RATE = 16_000
+
 export interface CaptureOptions {
   micDeviceId?: string | null
   systemDeviceId?: string | null
   diagnostics?: DiagRecorder
   clock?: () => number
+  /**
+   * How often the watchdog asks « has this channel produced anything ». Four
+   * seconds in production, so the classifier's twelve-second window is reached
+   * with room; injectable because the alternative is a test that waits twelve
+   * real seconds, and a check nobody runs is a check that does not exist.
+   */
+  tickMs?: number
+  /**
+   * The default output route, injected so a test can move it.
+   *
+   * Defaults to the real `AudioDevices` reader, which answers null on a binary
+   * that predates the function — and null means « we cannot tell », which is
+   * never reported as a change.
+   */
+  defaultOutputDeviceId?: () => string | null
+  defaultCommunicationsDeviceId?: () => string | null
+  /** The microphone's hardware rate, injected so a test needs no headset. */
+  nativeSampleRate?: () => number
 }
 
 export interface CaptureSessionEvents {
@@ -81,26 +112,15 @@ const isKeepalive = (chunk: Buffer): boolean => {
 }
 
 /**
- * What `app/` is allowed to depend on: a thing that produces frames.
+ * What `app/` is allowed to depend on is declared in
+ * `core/contracts/capture.ts`, not here — a port declared inside the module
+ * that implements it is invisible to `check-ports.mjs`, and that file's
+ * docblock carries the measurement.
  *
- * The devices are one implementation and `FileCapture` is another. Declaring the
- * port is what makes the second one a capture source rather than a cast — the
- * concrete class carries `#private` fields, so a structurally identical replay
- * would not be assignable to it and every call site would need `as never`. That
- * cast was already in the tests; a fixture is a poor reason to spread it.
+ * Re-exported so `app/session/Recording.ts` still imports its capture types
+ * from one place.
  */
-export interface CapturePort extends EventEmitter {
-  readonly running: boolean
-  start(): Promise<void>
-  stop(): Promise<void>
-  /**
-   * Peak amplitude per channel since the last call, for the in-call level
-   * meter. Optional because it is a cosmetic read: `FileCapture` replays a wav
-   * and has no meter to feed, and a replay fixture should not have to grow a
-   * method to stay assignable to this port.
-   */
-  takeLevels?(): Record<Channel, number>
-}
+export type { CapturePort }
 
 /**
  * Owns one meeting's audio. Constructed per meeting and never reused: the Rust
@@ -113,6 +133,7 @@ export class CaptureSession extends EventEmitter {
   #system: SystemAudioCapture | null = null
   #options: CaptureOptions
   #diagnostics: DiagRecorder
+  #clock: () => number
   #running = false
   /**
    * A stop in flight. Every entry point awaits it before starting, so a restart
@@ -130,6 +151,7 @@ export class CaptureSession extends EventEmitter {
     super()
     this.#options = options
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
+    this.#clock = options.clock ?? Date.now
   }
 
   /**
@@ -141,6 +163,13 @@ export class CaptureSession extends EventEmitter {
 
   /** Per channel: is the level high enough to be transcribed? */
   #levels = new Map<Channel, InputLevelWatch>()
+  /** One per channel — see `#watch`. The two have opposite failures (DEC-45). */
+  #health = new Map<Channel, SystemAudioHealthClassifier>()
+  /** Feeds `watchdog-tick`, which is how a channel that produced *nothing* is noticed. */
+  #tick: ReturnType<typeof setInterval> | null = null
+  /** The default output route when the tap was opened, or null if unknowable. */
+  #routeAtStart: string | null = null
+  #routeChangeReported = false
   #reported = new Map<Channel, InputLevel>()
 
   /**
@@ -154,6 +183,15 @@ export class CaptureSession extends EventEmitter {
    * here, which is the same argument that admits the zero test above it.
    */
   #onFrame(channel: Channel, chunk: Buffer, sampleRate: number): void {
+    /*
+     * The watchdog is fed **before** the keepalive guard, and that ordering is
+     * the point. A keepalive is the tap saying « I am alive and there was
+     * nothing » — which is exactly the state this is here to notice, and the
+     * early return below is why `#measure` never ran for a channel that
+     * produced no audio at all.
+     */
+    this.#watch(channel, { kind: 'chunk', chunk, nowMs: this.#clock() })
+
     if (isKeepalive(chunk)) return
 
     this.#measure(channel, chunk, sampleRate)
@@ -191,6 +229,7 @@ export class CaptureSession extends EventEmitter {
       severity: verdict === 'tooQuiet' ? 'warn' : 'info',
       code: verdict === 'tooQuiet' ? 'capture.level.tooQuiet' : 'capture.level.ok',
       module: 'capture',
+      origin: 'authored',
       message:
         verdict === 'tooQuiet'
           ? `niveau d’entrée trop faible pour être transcrit (crête ${watch.peak.toFixed(4)})`
@@ -255,6 +294,44 @@ export class CaptureSession extends EventEmitter {
 
     this.#running = true
 
+    /*
+     * The watchdog tick, which is the **only** way a channel that produced
+     * nothing at all is ever noticed: every other signal in this file is
+     * derived from a frame, and a channel with no frames emits none. Four
+     * seconds, so the classifier's twelve-second window is reached with room;
+     * `unref` so it can never hold the process open (DEC-26 — nothing here may
+     * outlive a meeting).
+     */
+    this.#health.clear()
+    /*
+     * The route the system tap was opened on, so a change can be noticed.
+     *
+     * `getDefaultOutputDeviceId` has existed, with a docblock saying « polled
+     * during a meeting: when it changes, the system capture has to be rebuilt or
+     * the tap keeps recording the old device — which is silence, not an error »,
+     * and **nothing polled it**. Plugging in a headset mid-call, or Teams moving
+     * itself to the communications device, silences the far channel for the rest
+     * of the meeting.
+     *
+     * What this does is *say so*, not rebuild the tap. The watchdog below
+     * already notices the silence four seconds later and reports it; what it
+     * cannot do is say why, and « rien n'arrive de l'audio de votre ordinateur »
+     * and « la sortie audio a changé pendant l'appel » lead a rep to two very
+     * different actions. Restarting a live capture is a bigger promise than
+     * this can keep on a platform it cannot be tested on from here.
+     *
+     * `null` where the binary predates the function, and the whole check is
+     * then skipped — « we cannot tell » is not « it changed » (DEC-45).
+     */
+    this.#routeAtStart = this.#defaultOutputDeviceId()
+    this.#routeChangeReported = false
+    this.#tick = setInterval(() => {
+      const nowMs = this.#clock()
+      this.#checkOutputRoute()
+      for (const channel of ['rep', 'far'] as const) this.#watch(channel, { kind: 'watchdog-tick', nowMs })
+    }, this.#options.tickMs ?? 4_000)
+    this.#tick.unref?.()
+
     const mic = new MicrophoneCapture(this.#options.micDeviceId ?? null)
     this.#mic = mic
     mic.on('data', (chunk: Buffer) => {
@@ -277,6 +354,47 @@ export class CaptureSession extends EventEmitter {
       this.#mic = null
       this.#onError('rep', error)
       throw error
+    }
+
+    /*
+     * **The microphone's own hardware rate, which nothing had ever asked for.**
+     *
+     * `get_native_sample_rate` was written for this — « for diagnostics and
+     * HFP/Bluetooth-degradation detection », in its own docblock — exposed as
+     * `#[napi]`, wrapped in both TS capture classes, and called by nobody. So
+     * nothing in the product detected the degradation it was written to detect.
+     *
+     * A Bluetooth headset that negotiates HFP « call mode » drops the microphone
+     * to 8 kHz narrowband for the length of the meeting. The audio still
+     * arrives, the meter still moves, and the transcript comes back materially
+     * worse — a failure with no symptom a rep can see, which is the shape this
+     * whole file exists to end. It is `degraded` and never `down` (DEC-32): the
+     * meeting records and half of it is fine.
+     *
+     * `0` is « we could not tell » — an older binary, a device that answers
+     * nothing — and is never reported (DEC-45). The threshold is the rate
+     * itself: HFP is 8 kHz or 16, and the resampler's target is 16, so anything
+     * at or below that came off a narrowband link.
+     */
+    const native = this.#nativeRateOf(mic)
+    if (native > 0 && native <= HFP_SAMPLE_RATE) {
+      this.emit('health', {
+        state: 'degraded',
+        reason:
+          `Votre micro est en mode « communication » (${Math.round(native / 1000)}\u00a0kHz) — ` +
+          'la transcription sera moins précise. Un casque Bluetooth fait cela ; un micro filaire ou ' +
+          'les haut-parleurs l’évitent.',
+        since: this.#clock(),
+        retryable: true,
+      } satisfies ConnectorHealth)
+      this.#diagnostics.record({
+        severity: 'warn',
+        code: 'capture.rep.narrowband',
+        module: 'capture',
+        origin: 'authored',
+        message: `micro ouvert à ${native}\u00a0Hz — lien bande étroite (HFP)`,
+        detail: { nativeSampleRate: native },
+      })
     }
 
     if (generation !== this.#generation) {
@@ -313,6 +431,12 @@ export class CaptureSession extends EventEmitter {
     if (!this.#running && !this.#teardown) return this.#teardown ?? undefined
     this.#running = false
 
+    if (this.#tick) clearInterval(this.#tick)
+    this.#tick = null
+    for (const classifier of this.#health.values()) {
+      classifier.handle({ kind: 'capture-stopped' })
+    }
+
     const mic = this.#mic
     const system = this.#system
     this.#mic = null
@@ -336,6 +460,185 @@ export class CaptureSession extends EventEmitter {
     return undefined
   }
 
+  /**
+   * **Has this channel produced any audio at all?**
+   *
+   * `SystemAudioHealthClassifier` is 137 lines written for exactly this — a
+   * 12-second no-chunk watchdog and a sustained-zero detector — and it was
+   * constructed **only in its own test file**. Nothing in the product asked it
+   * anything, so the one failure this whole product is built around could happen
+   * in silence: on Windows the loopback taps the *multimedia* default while
+   * Teams routes to the communications default (`speaker/windows.rs` documents
+   * that hole itself), a route change mid-call leaves the tap on an endpoint
+   * that is no longer playing, a mic is muted in hardware — and in every case
+   * the channel yields nothing, `#measure` is never reached because `#onFrame`
+   * returns early on keepalives, no `InputLevelWatch` is ever created, and
+   * `capture.level.tooQuiet` can never fire. The header said « Tout fonctionne »
+   * for the length of the call and the compte-rendu described a monologue.
+   *
+   * CLAUDE.md states this failure in the macOS-permission case and
+   * `Onboarding.tsx` exists to prevent it. This is the same outcome on the
+   * *primary* platform (HR-2), reachable through a Sound Settings checkbox
+   * rather than a permission prompt.
+   *
+   * **Per channel, because the two have opposite fixes** (DEC-45): nothing on
+   * `rep` is a microphone, nothing on `far` is the system tap, and the rep is
+   * the only one who can tell which.
+   *
+   * `degraded`, never `down`: the meeting is being recorded and half of it is
+   * arriving. DEC-32 reserves an app-level status change for a subsystem that
+   * stops a meeting, and this one has not.
+   */
+  /**
+   * Injected so a test can move the route without an audio device, and so the
+   * native call is made lazily — `AudioDevices` documents why nothing in this
+   * module may touch the native host at import time.
+   */
+  /** Injected so a test can move the rate without a Bluetooth headset. */
+  #nativeRateOf(mic: MicrophoneCapture): number {
+    const read = this.#options.nativeSampleRate
+    try {
+      return read ? read() : mic.getNativeSampleRate()
+    } catch {
+      return 0
+    }
+  }
+
+  #defaultOutputDeviceId(): string | null {
+    const read = this.#options.defaultOutputDeviceId ?? getDefaultOutputDeviceId
+    try {
+      return read()
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * **Why the system tap is hearing nothing, when it is this.**
+   *
+   * The loopback binds the *console* default and a call application renders to
+   * the *communications* default, which Windows lets a rep set separately in one
+   * checkbox. When they differ the tap records an endpoint nothing is playing to
+   * and produces no chunks at all — which the watchdog already reports as « rien
+   * n'arrive ». That sentence sends a rep to look at their microphone. This one
+   * sends them to the checkbox that fixes it.
+   *
+   * Only ever *added* to a silence already being reported, and only when the two
+   * ids are both known and differ: « we did not measure it » is never a finding
+   * (DEC-45), and on macOS — which has no such role — the answer is always null.
+   */
+  #routeSplit(): boolean {
+    const read = this.#options.defaultCommunicationsDeviceId ?? getDefaultCommunicationsDeviceId
+    let communications: string | null
+    try {
+      communications = read()
+    } catch {
+      return false
+    }
+    const console_ = this.#defaultOutputDeviceId()
+    return communications !== null && console_ !== null && communications !== console_
+  }
+
+  /**
+   * The default output route changed while the tap was open.
+   *
+   * Said once per meeting: a rep who switches to headphones and back would
+   * otherwise get the sentence twice, and the second one says nothing the first
+   * did not. `degraded`, never `down` — the microphone is still arriving and the
+   * meeting is still being recorded (DEC-32) — and it names the side, because
+   * this one is only ever the system tap (DEC-45).
+   */
+  #checkOutputRoute(): void {
+    if (this.#routeAtStart === null || this.#routeChangeReported) return
+    const now = this.#defaultOutputDeviceId()
+    if (now === null || now === this.#routeAtStart) return
+    this.#routeChangeReported = true
+    this.#diagnostics.record({
+      severity: 'warn',
+      code: 'capture.far.routeChanged',
+      module: 'capture',
+      message: 'la sortie audio par défaut a changé pendant que la capture système était ouverte',
+      detail: {},
+    })
+    this.emit('health', {
+      state: 'degraded',
+      reason:
+        'La sortie audio de l’ordinateur a changé pendant l’appel — le son du client peut ne plus être capté. Terminez et redémarrez l’enregistrement pour le reprendre.',
+      since: this.#clock(),
+      retryable: true,
+    } satisfies ConnectorHealth)
+  }
+
+  #watch(channel: Channel, event: HealthEvent): void {
+    let classifier = this.#health.get(channel)
+    if (!classifier) {
+      classifier = new SystemAudioHealthClassifier()
+      classifier.handle({ kind: 'capture-started', nowMs: this.#clock() })
+      this.#health.set(channel, classifier)
+    }
+    const outcome = classifier.handle(event)
+    if (outcome.type === 'none') return
+
+    const side = channel === 'rep' ? 'votre micro' : 'l’audio de votre ordinateur'
+    // The same two, as the subject of a sentence rather than its object.
+    const sideCap = channel === 'rep' ? 'Votre micro' : 'L’audio de votre ordinateur'
+    if (outcome.type === 'log') {
+      this.#diagnostics.record({
+        severity: outcome.level,
+        code: `capture.${channel}.${outcome.reason ?? 'silence'}`,
+        module: 'capture',
+        origin: 'authored',
+        message: outcome.message,
+        detail: { channel },
+      })
+      /*
+       * A channel that has produced nothing at all is the case a rep has to be
+       * told about while the call is still running, not after it — **and so is a
+       * channel producing nothing but zeros.**
+       *
+       * The second was a log line and no more. Frames arrive, the tap is alive,
+       * every sample is exactly zero: that is a microphone muted in hardware —
+       * the switch on a headset, the OS mute — or a tap bound to a dead
+       * endpoint. It is *not* a quiet room, which carries room tone, and the
+       * meter cannot tell the rep apart from one: both draw a flat line. Two
+       * minutes of it is a meeting being half recorded with nothing saying so,
+       * which is the failure this whole file exists to end.
+       */
+      /*
+       * **And the third: a channel that was arriving and stopped.**
+       *
+       * The watchdog used to be disarmed by the first chunk, so the case the
+       * classifier's own header claims — a route change mid-call leaving the tap
+       * on an endpoint no longer playing — was reported by nothing. A rep who
+       * unplugs a USB headset twenty minutes into a call loses the far side for
+       * the rest of it; on Windows there is no error channel from
+       * `SystemAudioCapture` to say so either, so the silence *is* the signal.
+       */
+      if (
+        outcome.reason === 'initial-silence-no-chunks' ||
+        outcome.reason === 'sustained-zero-valued-silence' ||
+        outcome.reason === 'stalled-mid-capture'
+      ) {
+        this.emit('health', {
+          state: 'degraded',
+          reason:
+            outcome.reason === 'initial-silence-no-chunks'
+              ? `Rien n’arrive depuis ${side} — ce côté de l’appel ne sera pas transcrit.${
+                  channel === 'far' && this.#routeSplit()
+                    ? ' Votre application d’appel utilise un autre périphérique de sortie que Windows : alignez les deux dans les paramètres de son.'
+                    : ''
+                }`
+              : outcome.reason === 'sustained-zero-valued-silence'
+                ? `${sideCap} est coupé : le signal est à zéro depuis le début de l’appel. Vérifiez le bouton « muet ».`
+                : `${sideCap} s’est interrompu pendant l’appel — plus rien n’arrive. Vérifiez le périphérique audio.`,
+          since: this.#clock(),
+          retryable: true,
+        } satisfies ConnectorHealth)
+      }
+      return
+    }
+  }
+
   #onError(channel: Channel, error: unknown): void {
     this.#record('error', `capture.${channel}.error`, error)
     this.emit('error', channel, error)
@@ -355,6 +658,7 @@ export class CaptureSession extends EventEmitter {
       severity,
       code,
       module: 'capture',
+      origin: 'foreign',
       message: message(error),
       detail: {},
     })

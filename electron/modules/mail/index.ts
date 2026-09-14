@@ -57,18 +57,18 @@ export const mailHealth = (error: unknown, at: number): ConnectorHealth => {
       }
     }
     if (error.retryable) {
-      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)} s` : ''
+      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)}\u00a0s` : ''
       // Degraded, not down: the meeting is recorded, the compte-rendu is
       // written, and the draft is one retry away. A throttled request is not a
       // lost follow-up.
       return { state: 'degraded', reason: `messagerie temporairement indisponible${wait}`, since: at, retryable: true }
     }
-    return { state: 'down', reason: error.message, since: at, retryable: false }
+    return { state: 'down', reason: `messagerie indisponible — ${error.message}`, since: at, retryable: false }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'messagerie indisponible',
+    reason: error instanceof Error ? `messagerie indisponible — ${error.message}` : 'messagerie indisponible',
     since: at,
     retryable: true,
   }

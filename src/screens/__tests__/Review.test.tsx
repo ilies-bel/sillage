@@ -11,7 +11,7 @@
  *   DEC-20  an unchecked intent is absent from what *Valider* sends
  *   DEC-4   one button, one gesture, and the rep's edit is what leaves
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { ReviewPanel, ReviewSnapshot } from '../../../electron/core/contracts/review.ts'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
@@ -25,6 +25,18 @@ import { Review } from '../Review.tsx'
 
 let bridge: FakeBridge
 let uninstall: () => void
+
+/** One stored transcript row, as `review:transcript` answers with it. */
+const segment = (id: string, channel: 'rep' | 'far', startMs: number, text: string) => ({
+  id,
+  channel,
+  text,
+  startMs,
+  endMs: startMs + 4_000,
+  isFinal: true,
+  provider: 'local-whisper',
+  receivedAt: 1000 + startMs,
+})
 
 const meeting: Meeting = {
   id: 'm1',
@@ -48,7 +60,8 @@ const panel = (over: Partial<ReviewPanel> = {}): ReviewPanel => ({
     taskName: 'Acme Industries — besoin Dev Java',
     accountId: 'ACC-1042',
     accountName: 'Acme Industries',
-    compteRendu: '# Acme Industries\n\nRenfort de deux profils Java.\n',
+    compteRendu:
+      '# Acme Industries\n\nRenfort de deux profils Java.\n\n### Prochaines étapes\n\n- envoyer 2 CV — Julien — vendredi\n- ranger le bureau\n',
     besoin: "Renfort de l'équipe plateforme",
     profils: '2 × Dev Java — senior (Java, Spring)',
     modeCollaboration: 'régie',
@@ -97,6 +110,16 @@ const panel = (over: Partial<ReviewPanel> = {}): ReviewPanel => ({
   ],
   mailTo: ['camille.leroy@acme-industries.fr'],
   overall: 'ok',
+  /*
+   * Two of the three bullets came from a cited item; the third did not. The
+   * document has to make exactly the first two followable — the point of
+   * matching on string equality is that a line the composer did not write from
+   * evidence stays plain rather than acquiring a control that leads nowhere.
+   */
+  sources: [
+    { text: 'envoyer 2 CV — Julien — vendredi', span: span('on vous envoie deux CV vendredi') },
+    { text: 'relancer les achats', span: span('il faut repasser par les achats') },
+  ],
   intents: [
     {
       id: 'm1:crm.task',
@@ -172,6 +195,25 @@ beforeEach(() => {
     }))
     // Healthy by default, so the existing cases render no connector warnings.
     .when('health:snapshot', () => snapshot({}))
+    /*
+      **The recipe the document came out of** (DEC-43), which the gate reads from
+      the one channel that answers it.
+
+      In `beforeEach` and not only in the recipe tests on purpose: the chip is on
+      every gate, so every case in this file should have it. A fixture that only
+      supplies it where it is being asserted is a fixture that cannot exercise the
+      screen — and the read failing has to leave the gate exactly as it was
+      (DEC-26), which is what the last case in this file drives.
+    */
+    .when('meeting:get', () => ({
+      meeting,
+      segments: [],
+      signals: [],
+      outbox: [],
+      document: null,
+      compteRendu: panel().edits.compteRendu,
+      recipe: 'besoin-commercial' as const,
+    }))
 })
 
 afterEach(() => {
@@ -227,7 +269,21 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
 
     await screen.findByText('Prêt à envoyer')
-    expect(screen.getAllByText('⚠ faible')).toHaveLength(1)
+    /*
+      On the row it flags, exactly once — the marker is a measurement about that
+      field and scattering it would make it decoration (DEC-21).
+
+      Scoped to the rail rather than counted across the screen, because the
+      document column also *names* the glyph: the compte-rendu is a second
+      document that goes out on the same press and carries its own `⚠ faible`,
+      so the gate says once, where the confusion happens, that a doubt lifted in
+      the rail has not been lifted in that text.
+    */
+    const row = document.getElementById('row-account')
+    expect(row).toBeTruthy()
+    // `selector` because testing-library matches an ancestor whose whole text is
+    // the string as well as the leaf that holds it, and the row wraps the marker.
+    expect(within(row as HTMLElement).getAllByText('⚠ faible', { selector: 'span' })).toHaveLength(1)
     // DEC-18: something matched but not confidently, so the candidate is there
     // to correct rather than to re-type.
     expect((screen.getByLabelText('Client') as HTMLInputElement).value).toBe('Acme Holding')
@@ -255,11 +311,17 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     const account = screen.getByLabelText('Client') as HTMLInputElement
     expect(account.value).toBe('')
     expect(account.placeholder).toBe('Client non résolu')
-    expect(screen.getAllByText('⚠ faible')).toHaveLength(1)
+    const unresolved = document.getElementById('row-account')
+    expect(unresolved).toBeTruthy()
+    expect(
+      within(unresolved as HTMLElement).getAllByText('⚠ faible', { selector: 'span' }),
+    ).toHaveLength(1)
 
     // And leaving it that way is a valid confirmation — nothing on this screen
-    // blocks on it, and the header does not print a dangling « · ».
-    fireEvent.click(screen.getByRole('button', { name: 'Valider' }))
+    // blocks on it, and the header does not print a dangling « · ». The button
+    // says what it is shipping, though: an unverified field reaches the one
+    // control the screen has, or the `⚠` is decoration (DEC-21).
+    fireEvent.click(screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' }))
     await waitFor(() => expect(confirmCall()).toBeTruthy())
     expect(confirmCall()?.edits.accountName).toBe('')
   })
@@ -295,6 +357,233 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
       sources[1]?.click()
     })
     expect(screen.getByText(/jamais lu sur la transcription/)).toBeTruthy()
+  })
+
+  /*
+   * DEC-21's loop, closed.
+   *
+   * A quote with no context is evidence a rep cannot weigh. Following a
+   * citation has to land in the *stored* transcript — the same rows
+   * `spanVerification.ts` checked the quote against — and when the quote is not
+   * in there, the reader has to say so rather than opening silently at 0:00 and
+   * leaving the rep hunting for a sentence that was never said.
+   */
+  test('a citation can be followed into the transcript it was verified against', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [
+        segment('s1', 'far', 0, 'Bonjour, merci pour le point.'),
+        segment('s2', 'far', 61_000, 'Il nous faut deux dev java senior sur le sujet.'),
+      ],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // The gate opens on the document; the transcript is not fetched until asked.
+    expect(screen.queryByText(/Bonjour, merci pour le point/)).toBeNull()
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    // The record is on screen, and the reader names the field and the moment.
+    expect(await screen.findByText(/Il nous faut deux dev java senior/)).toBeTruthy()
+    // Both the heading and the cited row carry the moment — the reader says
+    // where it landed, and the row says when it was said.
+    expect(screen.getByText(/Citation du champ/)).toBeTruthy()
+    expect(screen.getAllByText('1:01')).toHaveLength(2)
+  })
+
+  test('a citation the transcript does not contain says so, and does not pretend', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [segment('s1', 'far', 0, 'Rien de ce qui a été cité.')],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    expect(await screen.findByText(/est introuvable dans la transcription/)).toBeTruthy()
+    // The record is still drawn — the rep reads the call and judges for
+    // themselves, which is the whole reason this is the transcript and not a
+    // second summary of it.
+    expect(screen.getByText(/Rien de ce qui a été cité/)).toBeTruthy()
+  })
+
+  /*
+   * Saying « introuvable » is the honest half. Leaving the rep at 0:04 of a
+   * twenty-minute call is the other half, and the search is what closes it:
+   * the claim is usually in the record, paraphrased or split across two turns.
+   */
+  test('the transcript search opens carrying the quote that did not verify', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [
+        segment('s1', 'far', 0, 'Rien de ce qui a été cité.'),
+        /*
+         * **Close, and genuinely not the quote.**
+         *
+         * This turn used to be « Il nous faudrait deux dev java, senior de
+         * préférence » against a cited « deux dev java senior » — which the
+         * *gate* verifies, because `normalizeForVerification` folds the comma,
+         * and which the reader's own raw `includes` did not. So the fixture was
+         * an instance of the contradiction rather than a test of the dead end:
+         * the two halves of one screen disagreeing about the same sentence, with
+         * this test asserting the losing half. One search now, so the dead end
+         * has to be a real one.
+         */
+        segment('s2', 'far', 61_000, 'Il nous faudrait deux profils java confirmés, plutôt seniors.'),
+      ],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    const box = (await screen.findByLabelText(
+      'Rechercher dans la transcription',
+    )) as HTMLInputElement
+    // Seeded with the fragment the verification looked for and did not find,
+    // and saying so rather than silently listing the whole call.
+    expect(box.value).toBe('deux dev java senior')
+    expect(screen.getByText('aucun passage')).toBeTruthy()
+
+    /*
+     * The dead end ends in a tap, and what it offers is a **moment of the call**,
+     * not a word.
+     *
+     * It used to offer content words of the failed quote as chips, which was
+     * right and useless: the rep is not looking for « senior », they are looking
+     * for the turn where the client said something close to what was cited. So
+     * the candidates are segments, scored by how much of the query they carry
+     * weighted by how rare each term is in this call, and they are labelled as
+     * candidates — the app failed to verify this quote and a ranked guess must
+     * never wear the verified treatment (DEC-21).
+     */
+    expect(screen.getByText(/Les plus proches, à vérifier/)).toBeTruthy()
+    const candidate = screen.getByRole('button', { name: /Il nous faudrait deux profils java/ })
+    // The one turn that carries four of the query's terms, and not the turn that
+    // carries none of them.
+    expect(screen.queryByRole('button', { name: /Rien de ce qui a été cité/ })).toBeNull()
+
+    // Pressing it marks that turn in the record below — with the search rule,
+    // never the citation's wash.
+    await act(async () => {
+      candidate.click()
+    })
+    // The last of the two — the candidate button above carries the same string,
+    // and the one that has to change is the turn in the record itself.
+    const drawn = screen.getAllByText('Il nous faudrait deux profils java confirmés, plutôt seniors.')
+    expect(drawn[drawn.length - 1]?.className).toContain('text-strong')
+  })
+
+  test('a verified citation does not pre-fill the search over its own hit', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [segment('s1', 'far', 61_000, 'Il nous faut deux dev java senior.')],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[3]?.click()
+    })
+    await act(async () => {
+      screen.getByRole('button', { name: /Voir dans la transcription/ }).click()
+    })
+
+    expect(
+      (screen.getByLabelText('Rechercher dans la transcription') as HTMLInputElement).value,
+    ).toBe('')
+    expect(screen.getByText(/Citation du champ/)).toBeTruthy()
+  })
+
+  /*
+   * The two rows that were never interpreted (DEC-7) have no citation to
+   * follow, and offering one would be a control that lands nowhere (DEC-26).
+   */
+  test('a deterministic row offers no jump, because it has nothing to jump to', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      screen.getAllByRole('button', { name: /^source/ })[1]?.click()
+    })
+    expect(screen.queryByRole('button', { name: /Voir dans la transcription/ })).toBeNull()
+  })
+})
+
+/**
+ * The measurement reaches the button.
+ *
+ * DEC-21 is the whole of what this product has over a general-purpose
+ * notetaker: it checks its own sentences against the recording and says so. The
+ * gate drew a mid-blue *Valider* whether every citation had verified or whether
+ * one had failed — same colour, same word, same place — so the `⚠` in the
+ * banner and the `⚠` on the row were counted by nothing. Two things change with
+ * the payload and nothing else does: there is still one button, it is still
+ * live, and pressing it still ships (DEC-4).
+ */
+describe('DEC-21 — the one button says what it is shipping', () => {
+  test('a clean gate says Valider, and nothing on it is amber', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const button = screen.getByRole('button', { name: 'Valider' })
+    expect(button.className).toContain('bg-brand-700')
+    expect(screen.queryByText(/malgré/)).toBeNull()
+  })
+
+  test('an unverified field is named on the button and carried in its colour', async () => {
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'besoin' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const button = screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' })
+    // Warn, not brand — and not disabled: withholding the control would be a
+    // second gate, and a greyed primary is a button a rep presses (DEC-4).
+    expect(button.className).toContain('bg-warn')
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+
+    // And the count's obvious follow-up question — *which* — is answered on the
+    // line under it rather than left to the rep to go hunting for.
+    expect(screen.getByText(/Besoin — introuvable dans la transcription/)).toBeTruthy()
+
+    await act(async () => {
+      button.click()
+    })
+    await waitFor(() => expect(confirmCall()).toBeTruthy())
   })
 })
 
@@ -441,6 +730,13 @@ describe('the rep’s correction is what ships', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
     await screen.findByText('Prêt à envoyer')
 
+    // The gate opens on the typeset reading of the document; the raw string is
+    // one word away and *Modifier* is the word. Both halves show every marker.
+    expect(screen.queryByLabelText('Compte-rendu')).toBeNull()
+    await act(async () => {
+      screen.getByRole('button', { name: 'Modifier' }).click()
+    })
+
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Client'), {
         target: { value: 'Acme Industries SAS' },
@@ -486,6 +782,183 @@ describe('the rep’s correction is what ships', () => {
     })
     await valider()
     expect(confirmCall()?.edits.mailBody).toBe('Bonjour Camille, comme convenu…')
+  })
+})
+
+describe('the guard measures the rep, not the scroller', () => {
+  /*
+   * **The gate's own opening scroll used to satisfy its own guard.**
+   *
+   * It jumps the rail to the first `⚠ faible` row (DEC-21), and on the ESN
+   * document that lands it at exactly `scrollHeight − clientHeight`. The old
+   * flag was « the bottom has been touched », so it was true before the rep had
+   * done anything: scrolling the *document* alone then armed « Valider malgré 1
+   * champ non vérifié » with seven of eleven fields never drawn at 1280×800 —
+   * *Client* among them, the field that decides which VerySwing account gets the
+   * opportunity — under a caption reading « Tout ce qui part doit avoir été
+   * affiché avant d'être validé ».
+   *
+   * The guard was inverted by its own good behaviour: the jump only happens when
+   * there *is* something unverified, so it stood down exactly when there was
+   * something to check.
+   *
+   * jsdom measures every box as zero, so the guard's *permissive* default is all
+   * that can be asserted here — the arithmetic itself is held by
+   * `scripts/harness` driving a real layout. What these hold is the thing jsdom
+   * can see: that a column which cannot be measured never refuses, because a
+   * gate dead in a test environment is worse than no guard.
+   */
+  test('a column that cannot be measured never blocks the button', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Every box is 0×0 here, so nothing is measurable and nothing is withheld.
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /(la suite|Remonter)/ })).toBeNull()
+  })
+})
+
+describe('a correction is not lost by leaving the screen', () => {
+  /*
+   * `edits` is component state, so every way off this screen threw it away
+   * silently — `Échap` (one of exactly two shortcuts deliberately allowed while
+   * typing, on the one screen with a fifty-six-line textarea), `Ctrl/⌘ H`,
+   * `Ctrl/⌘ ,` and the back link. A rep who corrected the objection, glanced at
+   * the calendar and came back found the model's sentence again, with nothing
+   * having said the correction was gone.
+   */
+  test('what was typed is still there after leaving and coming back', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-draft" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'le TJM a été accepté après relecture' },
+    })
+
+    // Leaving is anything at all — the map is keyed by meeting, not by route.
+    first.unmount()
+
+    render(<Review meetingId="m-draft" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      'le TJM a été accepté après relecture',
+    )
+  })
+
+  test('another meeting’s gate is not another meeting’s draft', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-un" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'correction du premier appel' },
+    })
+    first.unmount()
+
+    render(<Review meetingId="m-deux" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    // The server's pre-fill, not the other call's correction.
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).not.toBe(
+      'correction du premier appel',
+    )
+  })
+
+  test('a confirmed gate keeps no draft', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const first = render(<Review meetingId="m-confirme" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    const objections = document.getElementById('field-objections') as HTMLTextAreaElement
+    const original = objections.value
+    fireEvent.change(objections, { target: { value: 'une correction envoyée' } })
+
+    // Read to the end, then ship.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Valider/ }))
+    })
+    await waitFor(() => expect(confirmCall()).toBeTruthy())
+    first.unmount()
+
+    render(<Review meetingId="m-confirme" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    /*
+     * Nothing to restore: it was confirmed, the gate refuses this meeting from
+     * here on, and a leftover draft would outlive the screen that could show it.
+     */
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      original,
+    )
+  })
+})
+
+describe('a correction that would reach nothing is not offered', () => {
+  /*
+   * The nine interpretive rows are the *opportunity's* columns and nothing
+   * else's — `draftIntents` composes them into its description, and the CRM task
+   * carries the compte-rendu instead. So an opportunity that does not ship turns
+   * nine live textareas into controls over a payload that will never exist: the
+   * rep corrects the objection this screen is architected around, presses
+   * *Valider*, and VerySwing gets the model's uncorrected text.
+   *
+   * Read-only and stated (DEC-26), never hidden: the value, its citation and its
+   * `⚠ faible` are still what the screen is for.
+   */
+  const withoutOpportunity = () =>
+    openGate({
+      intents: panel().intents.map((intent) =>
+        intent.kind === 'crm.opportunity'
+          ? { ...intent, available: false, reason: 'Compte non résolu — pas d’opportunité.' }
+          : intent,
+      ),
+    })
+
+  test('the typed rows go read-only, and the reason is stated once', async () => {
+    bridge.when('review:get', () => withoutOpportunity())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const objections = document.getElementById('field-objections') as HTMLTextAreaElement
+    expect(objections.readOnly).toBe(true)
+    // Once, above the group — nine identical sentences would be a wall.
+    expect(screen.getAllByText(/Les valeurs ci-dessous ne partiront pas/)).toHaveLength(1)
+    // And it names where a correction *does* still land.
+    expect(screen.getByText(/corrigez le compte-rendu à gauche/)).toBeTruthy()
+  })
+
+  test('the objet stays editable, because the task still ships it', async () => {
+    bridge.when('review:get', () => withoutOpportunity())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Two of the eleven rows are the task's, and the task is unaffected.
+    expect((document.getElementById('field-taskName') as HTMLInputElement).readOnly).toBe(false)
+  })
+
+  test('unchecking the opportunity is the same case', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).readOnly).toBe(
+      false,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /Opportunité/ }))
+    })
+
+    // Unchecked: the same nine rows now reach nothing, and say so.
+    await waitFor(() =>
+      expect((document.getElementById('field-objections') as HTMLTextAreaElement).readOnly).toBe(
+        true,
+      ),
+    )
+    expect(screen.getByText(/L’opportunité n’est pas cochée/)).toBeTruthy()
   })
 })
 
@@ -578,22 +1051,72 @@ describe('a connector that is down (DEC-26)', () => {
   })
 })
 
-describe('the gate says which screen it is', () => {
-  test('open, it is headed *Revue*, with the meeting under the name', async () => {
-    // It used to open with the meeting title alone, which made the one
-    // irreversible screen in the product look like a second view of the
-    // meeting. A rep arriving here from a broadcast is told where they are.
+describe('the gate is headed by the call, never by the word « Revue »', () => {
+  test('open, the one h1 is the meeting, and nothing names the furniture', async () => {
+    /*
+     * It was a 28px serif « Revue » — the largest thing on the screen, naming
+     * what the screen permanently is — with the call in muted 12px beside it.
+     * The rep pressed *Relire et valider* on that call thirty seconds ago; what
+     * the strongest ink owes them is which call the one irreversible press is
+     * about.
+     */
     bridge.when('review:get', () => openPanel())
 
     render(<Review meetingId="m1" onBack={() => {}} />)
 
-    expect(await screen.findByRole('heading', { name: 'Revue' })).toBeTruthy()
-    // The meeting is in the header too — as the line under the screen's name,
-    // not as the name. (It also fills the *Objet* field, which is why this
-    // reads the header rather than the document.)
-    expect(screen.getByRole('banner').textContent).toContain(
-      'Acme Industries — besoin Dev Java · Acme Industries',
-    )
+    const title = await screen.findByRole('heading', { level: 1 })
+    expect(title.textContent).toContain('Acme Industries — besoin Dev Java')
+    expect(screen.queryByRole('heading', { name: 'Revue' })).toBeNull()
+
+    // The client is *not* appended: this title already opens with it, and
+    // « Acme Industries — besoin Dev Java · Acme Industries » is the account
+    // name printed twice on one line.
+    const banner = screen.getByRole('banner').textContent ?? ''
+    expect(banner).toContain('Acme Industries — besoin Dev Java')
+    expect(banner).not.toContain('Dev Java · Acme Industries')
+
+    // And the way back still names a *destination*, which is a different job
+    // from a screen naming itself.
+    expect(screen.getByRole('button', { name: '‹ Calendrier' })).toBeTruthy()
+  })
+
+  test('no caption over the document, and the switch is what says which view', async () => {
+    /*
+     * « COMPTE-RENDU » sat over a document whose own first line is `# <objet>`,
+     * two inches under a segmented control already naming the three views — so
+     * in the third tab « Transcription » was drawn twice on one screen. A pane is
+     * named by its content (`ui/SectionHeader.tsx`).
+     *
+     * Asked of the *heading* role, not of the text: « compte-rendu » appears in
+     * this screen's prose in several places that are doing work — the document's
+     * own title, the copy control, the switch's own label.
+     */
+    bridge.when('review:get', () => openPanel())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByRole('button', { name: 'Valider' })
+
+    expect(screen.queryByRole('heading', { name: 'Compte-rendu' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Transcription' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Lecture', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Modifier' })).toBeTruthy()
+  })
+
+  test('the markers sentence is here, where the document is editable', async () => {
+    /*
+     * It used to be drawn on all three surfaces that typeset a compte-rendu, two
+     * of which are read-only — including the session pane, during the call. It is
+     * a real promise (DEC-44: VerySwing receives the string the rep read) and it
+     * is needed once, at the moment the rep can act on it: this screen, where the
+     * text is editable and where the press that writes into the client's CRM is.
+     */
+    bridge.when('review:get', () => openPanel())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByRole('button', { name: 'Valider' })
+
+    expect(screen.getByText(/font partie du texte/)).toBeTruthy()
+    expect(screen.getByText(/VerySwing reçoit exactement ce qui est affiché/)).toBeTruthy()
   })
 
   test('closed, there is no header at all — only the reason and the way back', async () => {
@@ -606,7 +1129,7 @@ describe('the gate says which screen it is', () => {
     render(<Review meetingId="m1" onBack={() => {}} />)
 
     await screen.findByText('Réunion en cours.')
-    expect(screen.queryByRole('heading', { name: 'Revue' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 })
 
@@ -725,5 +1248,517 @@ describe('DEC-4 — the rows describe the form as it stands, not as it arrived',
 
     await valider()
     expect(confirmCall()?.intentIds).toContain('m1:crm.opportunity')
+  })
+})
+
+describe('the bullets are checkable, the way the fields are (DEC-21)', () => {
+  /*
+   * The eleven typed rows each offered a `[source ▸]` and the twenty-four
+   * hundred pixels of compte-rendu beside them offered provenance on quotations
+   * only — five followable fragments across twenty-eight substantive lines, and
+   * **none at all on the twelve bullets**. The bullets are the operative half:
+   * « Envoyer 3 CV avec TJM avant vendredi » is the commitment that becomes the
+   * VerySwing task, and it was the least checkable thing on a screen whose whole
+   * argument is that nothing ships unchecked.
+   *
+   * Nothing new is claimed here. The spans were already on the `Cited<T>` items
+   * the composer wrote each line from and `spanVerification` had already looked
+   * them up; they simply never left the extraction.
+   */
+  test('a bullet written from a cited item opens the record on it', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [segment('s1', 'far', 61_000, 'On vous envoie deux CV vendredi, promis.')],
+    }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Not fetched until asked — the same rule `source ▸` keeps.
+    expect(screen.queryByText(/promis/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /envoyer 2 CV — Julien — vendredi/ }))
+    // The same reader, over the same stored segments.
+    await screen.findByText(/On vous envoie deux CV vendredi/)
+  })
+
+  test('a ⚠ faible bullet keeps its provenance — it is the one most worth checking', async () => {
+    // The marker is appended to the rendered line and is not part of what was
+    // said. Comparing with it attached would strip the control from exactly the
+    // lines a rep needs it on, which is backwards.
+    bridge.when('review:get', () =>
+      openGate({
+        edits: {
+          ...panel().edits,
+          compteRendu: '### Prochaines étapes\n\n- relancer les achats ⚠ faible\n',
+        },
+        sources: [
+          { text: 'relancer les achats', span: span('il faut repasser par les achats') },
+        ],
+      }),
+    )
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.getByRole('button', { name: /relancer les achats/ })).toBeTruthy()
+  })
+
+  test('a bullet the composer did not write from evidence stays plain', async () => {
+    /*
+     * The match is string equality on purpose. A near-match would be the app
+     * guessing which sentence a piece of evidence belongs to — the failure
+     * DEC-21 exists to prevent — and a control that leads nowhere is the dead
+     * control DEC-26 forbids.
+     */
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.queryByRole('button', { name: /ranger le bureau/ })).toBeNull()
+    expect(screen.getByText(/ranger le bureau/)).toBeTruthy()
+  })
+})
+
+/**
+ * **« ce n’est pas le bon modèle de compte-rendu »** (DEC-43, US-8).
+ *
+ * The recipe was decided before the call and then invisible: measured on the
+ * shipped gate at 1280×800 and at 960×600, the words « Prise de besoin »,
+ * « Compte-rendu libre » and « Modèle » appeared nowhere on the screen and none
+ * of its forty-two controls could change it — so a rep who recorded a discovery
+ * call under the ESN trame had to re-record to get the other shape.
+ *
+ * These hold the three things that decide whether the picker is right, and the
+ * one thing jsdom cannot see is named where it is missing rather than dropped:
+ * every box measures zero here, so the arming guard fails open by design and
+ * « *Valider* is withheld until the new document has been shown » is driven
+ * against real layout instead, at both smoke sizes.
+ */
+describe('the recipe is on the document, and changeable (DEC-43)', () => {
+  /** Open the picker and hand back its rewrite control for the other recipe. */
+  const openPicker = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /^Modèle :/ }))
+    return screen.findByRole('button', { name: /^Réécrire avec/ })
+  }
+
+  test('the gate names the recipe the meeting is set to produce', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(
+      await screen.findByRole('button', { name: 'Modèle : Prise de besoin commercial' }),
+    ).toBeTruthy()
+  })
+
+  test('the free recipe names itself, and the picker offers the other one', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:get', () => ({
+        meeting,
+        segments: [],
+        signals: [],
+        outbox: [],
+        document: null,
+        compteRendu: panel().edits.compteRendu,
+        recipe: 'libre' as const,
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })).toBeTruthy()
+    // The declared set minus the current one, and nothing a rep typed (DEC-43).
+    const offered = await openPicker()
+    expect(offered.textContent).toBe('Réécrire avec « Prise de besoin commercial »')
+    expect(
+      screen.queryByRole('button', { name: /Réécrire avec « Compte-rendu libre »/ }),
+    ).toBeNull()
+  })
+
+  /*
+   * **The retry path, and only it.**
+   *
+   * `meeting:recipe` records the choice and fires `runEnhancement`, which is
+   * `Orchestrator.enhance` — whose docblock states the property this acceptance
+   * line exists for: `#enhance` gathers the transcript, the context and the rep's
+   * notes the same way whichever way the run is reached, so a re-extraction can
+   * never analyse less material than the attempt it replaces. Dispatching
+   * `extract` over `session:command` would be a second way in, and that channel's
+   * own docblock says a renderer using it moves the meeting to `extracting` with
+   * no run behind it.
+   */
+  test('the rewrite goes through meeting:recipe and through nothing else', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: true,
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    const recipeCalls = bridge.calls.filter((c) => c.channel === 'meeting:recipe')
+    expect(recipeCalls).toHaveLength(1)
+    expect(recipeCalls[0]?.payload).toEqual({ meetingId: 'm1', recipe: 'libre' })
+    expect(bridge.calls.some((c) => c.channel === 'session:command')).toBe(false)
+    expect(bridge.calls.some((c) => c.channel === 'enhancement:retry')).toBe(false)
+  })
+
+  test('what happens to the rep’s corrections is on screen, counted, before the press', async () => {
+    bridge.when('review:get', () => openGate())
+    render(<Review meetingId="m-compte" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Nothing touched: the sentence promises nothing about corrections.
+    await openPicker()
+    expect(
+      screen.getByText(/Réécrire remplace le compte-rendu, les champs et le brouillon de/),
+    ).toBeTruthy()
+
+    // One correction, named in the singular.
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'le TJM a été accepté' },
+    })
+    expect(screen.getByText(/votre correction sur cet écran sera perdue/)).toBeTruthy()
+
+    // Three, counted rather than described.
+    fireEvent.change(document.getElementById('field-besoin') as HTMLTextAreaElement, {
+      target: { value: 'trois profils' },
+    })
+    fireEvent.change(screen.getByLabelText('Objet du brouillon'), {
+      target: { value: 'Suite à notre point' },
+    })
+    expect(screen.getByText(/vos 3 corrections sur cet écran seront perdues/)).toBeTruthy()
+
+    // And what is *not* lost is named too — the notes are the rep's (DEC-5) and
+    // the transcript is the record (DEC-21).
+    expect(screen.getByText(/Vos notes et la transcription ne changent pas/)).toBeTruthy()
+  })
+
+  /*
+   * **And the sentence is true.**
+   *
+   * `PENDING_EDITS` is per meeting and lives as long as the window, so a draft
+   * that outlived the document it was made against would come back on the next
+   * mount — over a compte-rendu it does not belong to. Driven the way the product
+   * does it: the rewrite starts, and the panel that comes back on
+   * `session:changed` is the new document.
+   */
+  test('the corrections named are the corrections dropped, and the new document is drawn', async () => {
+    let rewritten = false
+    bridge
+      .when('review:get', () =>
+        rewritten
+          ? openGate({
+              edits: {
+                ...panel().edits,
+                compteRendu: '# Compte-rendu libre — Acme Industries\n\nUn autre plan.\n',
+                objections: '',
+                besoin: '',
+              },
+              fields: panel().fields.slice(0, 2),
+            })
+          : openGate(),
+      )
+      .when('meeting:recipe', (payload) => {
+        rewritten = true
+        return { recipe: payload.recipe, regenerating: true }
+      })
+    render(<Review meetingId="m-libre" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'MA CORRECTION' },
+    })
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    // The broadcast the new extraction really arrives on.
+    await act(async () => {
+      bridge.emit('session:changed', { meetingId: 'm-libre', state: 'awaiting_confirmation' })
+    })
+    await screen.findByText('Prêt à envoyer')
+
+    /*
+     * The document *Valider* would ship is the new one, not the one the rewrite
+     * replaced — which is what the shipped gate did at both smoke sizes before
+     * this existed: the rail dropped from eleven rows to two and the document
+     * stayed at the heading of the compte-rendu that had just been replaced.
+     */
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('Compte-rendu') as HTMLTextAreaElement).value).toBe(
+        '# Compte-rendu libre — Acme Industries\n\nUn autre plan.\n',
+      ),
+    )
+    // The row the correction was in is gone with the recipe that asked for it.
+    expect(document.getElementById('field-objections')).toBeNull()
+
+    // And the draft is dropped rather than held: a fresh mount gets the pre-fill.
+    cleanup()
+    render(<Review meetingId="m-libre" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.queryByDisplayValue('MA CORRECTION')).toBeNull()
+  })
+
+  /*
+   * The gate closes under the rep while the run goes — `extract` is legal from
+   * `awaiting_confirmation` and the machine moves — so the one screen they were
+   * confirming on disappears. `STATE_REASON.extracting` is « Analyse en cours… »,
+   * which is the right bland sentence for a meeting nobody touched and no answer
+   * at all to « I pressed *Réécrire* ».
+   */
+  test('the gate closing under the rep says which press closed it', async () => {
+    let rewritten = false
+    bridge
+      .when('review:get', () =>
+        rewritten
+          ? { open: false as const, state: 'extracting' as const, reason: 'Analyse en cours…' }
+          : openGate(),
+      )
+      .when('meeting:recipe', (payload) => {
+        rewritten = true
+        return { recipe: payload.recipe, regenerating: true }
+      })
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    await act(async () => {
+      bridge.emit('session:changed', { meetingId: 'm1', state: 'extracting' })
+    })
+
+    expect(
+      await screen.findByText(
+        /Le compte-rendu est en cours de réécriture avec « Compte-rendu libre »/,
+      ),
+    ).toBeTruthy()
+  })
+
+  /*
+   * `regenerating: false` means the recorded choice already matched the stored
+   * document's, so nothing is being replaced — and nothing of the rep's may be
+   * thrown away for a run that is not happening.
+   */
+  test('a choice that replaces nothing keeps what the rep typed', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: false,
+        state: 'awaiting_confirmation' as const,
+      }))
+    render(<Review meetingId="m-garde" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    fireEvent.change(document.getElementById('field-objections') as HTMLTextAreaElement, {
+      target: { value: 'gardée' },
+    })
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    expect((document.getElementById('field-objections') as HTMLTextAreaElement).value).toBe(
+      'gardée',
+    )
+    // And the chip has moved to what was recorded.
+    expect(await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })).toBeTruthy()
+  })
+
+  /*
+   * DEC-26, and the reason this read is not allowed to be load-bearing: a picker
+   * is worth less than the one confirmation in the product, so a channel that
+   * refuses costs the chip and nothing else.
+   */
+  test('a recipe the app could not read costs the chip and not the gate', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:get', () => {
+        throw new Error('réunion inconnue: m1')
+      })
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.queryByRole('button', { name: /^Modèle/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+  })
+
+  /*
+   * **One press, one run — and the lock lasts exactly as long as the request.**
+   *
+   * `meeting:recipe` would happily record a second choice mid-run, and the run
+   * already reading the first would finish and store a document whose recipe is
+   * not the one the chip shows. So the panel is closed by the press: the gesture
+   * is over, and what happens next arrives in the column behind it.
+   *
+   * The lock is deliberately **not** « a rewrite has been asked for », and the
+   * reason is the case the three tests below drive: on the build DEC-28 ships
+   * first — and on any machine whose key has expired — `Enhancement.run` returns
+   * without moving the machine, so the gate stays open and no document ever
+   * arrives. A *lock* keyed on the request would hold « Réécriture… » over a live
+   * gate for the life of the window, which is the dead control DEC-26 forbids.
+   *
+   * What that reasoning got wrong, and R33-1 measured, is the *conclusion* it
+   * drew: « the renderer cannot tell that case from a slow one, because
+   * `enhancement:status` answers `idle` for every meeting past `ended` ». It can,
+   * because `statusOf` reports `running` off `#running` and off
+   * `state === 'extracting'` — and a run that started is one or the other by the
+   * time the press's own answer crosses the bridge. That is what the gate asks
+   * now, once, and it is the only thing allowed to say a rewrite did not start.
+   */
+  test('the press closes the picker, and two clicks are one run', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({
+        recipe: payload.recipe,
+        regenerating: true,
+      }))
+      .when('enhancement:status', () => ({ status: 'running' as const, since: null }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const press = await openPicker()
+    await act(async () => {
+      press.click()
+      press.click()
+    })
+    expect(bridge.calls.filter((c) => c.channel === 'meeting:recipe')).toHaveLength(1)
+    // Gone with the gesture, not greyed: there is no second « Réécrire » under
+    // the pointer over a document that is already being replaced.
+    expect(screen.queryByRole('button', { name: /^Réécrire avec/ })).toBeNull()
+    // And the control it was opened from is still live, still naming what was
+    // recorded — never stuck on a promise the main process may not keep.
+    const chip = await screen.findByRole('button', { name: 'Modèle : Compte-rendu libre' })
+    expect(chip.hasAttribute('disabled')).toBe(false)
+  })
+
+  /*
+   * **A rewrite that cannot run took *Valider* away and said nothing** (R33-1).
+   *
+   * The three cases below are one behaviour and each is a different half of it.
+   * What made this reachable is that nothing on the **open** gate ever learned
+   * the run had not started: `register.ts` answers `changed: true` and fires
+   * `runEnhancement` without awaiting it, `Enhancement.run` finds no recipe,
+   * records `enhancement.deferred` and returns *without moving the machine*, and
+   * the only sentence this screen had was drawn in the `!open` branch under
+   * `state === 'extracting'` — the one branch a deferred rewrite never reaches.
+   *
+   * **Two of the three are visible here only because the withdrawal stopped
+   * being a measurement.** jsdom gives every box a height of zero, so `below` is
+   * null and the arming guard fails open by design — the coverage reset the press
+   * used to do was structurally invisible to every test in this repo, which is
+   * why the five-to-eight page turns it cost were found by driving the browser
+   * and not here. *Valider* is now withheld by the marker itself, which is a fact
+   * about the press rather than about a rectangle, so jsdom can see it; the cost
+   * in page turns is still measured against real layout, in
+   * `review-modele-differe`.
+   */
+  test('a rewrite in flight withholds Valider and says so, without a greyed copy', async () => {
+    let answer: (status: { status: 'running'; since: number | null }) => void = () => {}
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      // Held open, which is the window the marker exists for: between the press
+      // and knowing, *Valider* may not be on screen — `confirm` is legal from
+      // `awaiting_confirmation` and would ship the document being replaced.
+      .when(
+        'enhancement:status',
+        () =>
+          new Promise((resolve) => {
+            answer = resolve as typeof answer
+          }),
+      )
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    expect(screen.queryByRole('button', { name: /^Valider/ })).toBeNull()
+    expect(
+      screen.getByText(
+        /Réécriture avec « Compte-rendu libre » demandée — la validation reprendra/,
+      ),
+    ).toBeTruthy()
+
+    // The run really started: the gate goes on waiting, and the way out is the
+    // machine moving, which the two tests above drive.
+    await act(async () => {
+      answer({ status: 'running', since: null })
+    })
+    expect(screen.queryByRole('button', { name: /^Valider/ })).toBeNull()
+  })
+
+  test('a rewrite that never starts gives Valider back, and names what it ships', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      /*
+       * What the shipped main process answers for this meeting, measured against
+       * the real `Orchestrator` and the real `Enhancement` wired the way `main.ts`
+       * wires them: the meeting is `awaiting_confirmation`, so `statusOf` returns
+       * `idle` — the deferral is recorded and announced, and `idle` is what an
+       * open gate sees.
+       */
+      .when('enhancement:status', () => ({ status: 'idle' as const }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    // Back, at no cost in page turns: nothing on screen changed, so nothing the
+    // rep had read stopped being read.
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+    // And it says what it is about to send, because the panel had just promised
+    // « La validation reprendra dès que le nouveau compte-rendu sera prêt ».
+    expect(
+      screen.getByText(/La réécriture n’a pas démarré : ce que « Valider » envoie est le/),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        /n’a pas démarré\. Le compte-rendu ci-dessous est toujours celui de « Prise de besoin commercial »/,
+      ),
+    ).toBeTruthy()
+  })
+
+  /*
+   * **And the chip names the document, which is also what keeps the retry on the
+   * screen.**
+   *
+   * `recipe` is `chosen ?? meeting:get`, so the press moves it at once. Left
+   * there, the chip claimed the document was the recipe that had just failed to
+   * be written — and `RecipeSwitch`'s `others` excludes the current value, so
+   * « Réécrire avec « Compte-rendu libre » » left the screen: a rep told the
+   * rewrite had not started, on a gate with no way to ask again.
+   */
+  test('a stalled rewrite keeps the document’s recipe on the chip, and the retry offered', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('meeting:recipe', (payload) => ({ recipe: payload.recipe, regenerating: true }))
+      .when('enhancement:status', () => ({ status: 'idle' as const }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+
+    expect(
+      await screen.findByRole('button', { name: 'Modèle : Prise de besoin commercial' }),
+    ).toBeTruthy()
+    // And pressing it again is a real retry, not a press recording the recipe the
+    // document already has.
+    await act(async () => {
+      ;(await openPicker()).click()
+    })
+    const calls = bridge.calls.filter((c) => c.channel === 'meeting:recipe')
+    expect(calls).toHaveLength(2)
+    expect(calls[1]?.payload).toEqual({ meetingId: 'm1', recipe: 'libre' })
   })
 })

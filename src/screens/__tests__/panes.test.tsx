@@ -28,7 +28,7 @@ describe('the signal rail shows what it is listening for', () => {
     // The old rail was an empty column for the first several minutes of every
     // meeting, and an empty column is indistinguishable from a broken one. The
     // slate is fixed (DEC-13), so there is nothing to hide.
-    render(<SignalRail signals={[]} recording />)
+    render(<SignalRail signals={[]} />)
 
     const labels = rows()
     expect(labels).toHaveLength(7)
@@ -44,7 +44,6 @@ describe('the signal rail shows what it is listening for', () => {
     render(
       <SignalRail
         signals={[signal(3, 'etape', 'RDV technique'), signal(1, 'tjm', 'TJM 520 €')]}
-        recording
       />,
     )
 
@@ -60,7 +59,6 @@ describe('the signal rail shows what it is listening for', () => {
     render(
       <SignalRail
         signals={[signal(1, 'objection', 'budget gelé'), signal(2, 'objection', 'délai court')]}
-        recording
       />,
     )
 
@@ -72,25 +70,28 @@ describe('the signal rail shows what it is listening for', () => {
   test('the catch-all appears only once something lands in it', () => {
     // `autre` has no slot to wait in — an "Autre —" row would be a promise the
     // extractor never made.
-    render(<SignalRail signals={[]} recording />)
+    render(<SignalRail signals={[]} />)
     expect(screen.queryByText(/^Autre$/)).toBeNull()
 
     cleanup()
-    render(<SignalRail signals={[signal(1, 'autre', 'refonte SI 2027')]} recording />)
+    render(<SignalRail signals={[signal(1, 'autre', 'refonte SI 2027')]} />)
     expect(rows()).toHaveLength(8)
     expect(screen.getByText('refonte SI 2027')).toBeTruthy()
   })
 
-  test('the count reports covered slots, not signals', () => {
-    // Two signals of the same kind cover one slot. A count that said 2/7 would
-    // read as progress the meeting has not made.
+  test('two signals of one kind are two lines in one slot, and the rail counts nothing', () => {
+    // The « 1/7 » count is gone from the product — a ratio beside the list it
+    // counts is arithmetic the rep has to redo, and it is invisible which row
+    // held two. What is left is the rail itself: one slot, both lines in it.
     render(
       <SignalRail
         signals={[signal(1, 'tjm', '520 €'), signal(2, 'tjm', '480 € en régie')]}
-        recording
       />,
     )
-    expect(screen.getByText('1/7')).toBeTruthy()
+    expect(rows()).toHaveLength(7)
+    expect(screen.getByText('520 €')).toBeTruthy()
+    expect(screen.getByText('480 € en régie')).toBeTruthy()
+    expect(screen.queryByText('1/7')).toBeNull()
   })
 })
 

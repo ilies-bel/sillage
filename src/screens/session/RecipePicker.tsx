@@ -196,7 +196,7 @@ export function RecipeSwitchNotice({ choice }: { choice: RecipeChoice }) {
       role="status"
       className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-2"
     >
-      <p className="text-body min-w-0 max-w-[74ch] flex-1 text-ui">
+      <p className="text-body min-w-0 measure flex-1 text-ui">
         Réécrire le compte-rendu avec « {titleOf(to)} » ?{' '}
         <span className="text-muted">
           {describe(to)} Le compte-rendu actuel (« {titleOf(choice.current)} ») sera remplacé ; vos

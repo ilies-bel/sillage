@@ -29,6 +29,24 @@ const dot = cva('h-1.5 w-1.5 shrink-0 rounded-full', {
       down: 'bg-danger',
       /* Selection and navigation, per VISION.md §6. 3.05:1 — non-text UI. */
       selected: 'bg-brand-500',
+      /*
+       * Asked and not yet answered — an outline, not a colour.
+       *
+       * `none` was doing this job on the splash and it draws *nothing*, so the
+       * one row still waiting read as a row whose dot had failed to render
+       * beside two that had one. A ring says « the slot is here and it is
+       * empty », which is exactly the state, and it commits to no semantic
+       * colour: a pending answer is not a green light and not a red one.
+       *
+       * The ring was `ring-card` and drew *nothing at all* for two rounds:
+       * `ringColor` was not in `tailwind.config.js`, so the class name spelled
+       * a token that `ring-*` could not reach and compiled to no rule. Same
+       * failure mode as `bg-muted/30` — a name that is right, a rule that does
+       * not exist, and an element that is simply unstyled — and the row it hit
+       * was the one this tone was written for. Both `borderColor` and
+       * `ringColor` now carry the pair.
+       */
+      pending: 'bg-transparent ring-1 ring-inset ring-muted',
       /* Present but says nothing. Keeps the row's text aligned with its neighbours. */
       none: 'bg-transparent',
     },
@@ -45,9 +63,20 @@ export interface StateDotProps extends VariantProps<typeof dot> {
   label: string
   /** `text-muted` unless the row wants the label to carry weight. */
   className?: string
+  /**
+   * On the *word*, not on the dot.
+   *
+   * The one caller is the session header's recording pill, whose room runs out
+   * at the window's minimum width and which drops the word « ENREGISTREMENT »
+   * there — an orange dot and a running clock say the same thing beside it. The
+   * word is still in the DOM and still read aloud, because a dot whose only
+   * meaning is its colour is what this component exists to make impossible;
+   * what the class does is take it out of the *layout*.
+   */
+  labelClassName?: string
 }
 
-export function StateDot({ tone, label, className }: StateDotProps) {
+export function StateDot({ tone, label, className, labelClassName }: StateDotProps) {
   if (label.trim() === '') {
     throw new Error(
       'StateDot: `label` cannot be blank — a state dot is never the only signal (VISION.md §6).',
@@ -57,7 +86,7 @@ export function StateDot({ tone, label, className }: StateDotProps) {
   return (
     <span className={cn('text-muted inline-flex shrink-0 items-center gap-2 text-ui', className)}>
       <span aria-hidden className={dot({ tone })} />
-      {label}
+      <span className={labelClassName}>{label}</span>
     </span>
   )
 }

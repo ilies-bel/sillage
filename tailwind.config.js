@@ -68,6 +68,9 @@ module.exports = {
          */
         'meter-dropped': 'var(--meter-dropped)',
 
+        /* The one sheet's backdrop (Réglages). See `--veil` in tokens.css. */
+        veil: 'var(--veil)',
+
         accent: 'var(--accent)',
         success: 'var(--success)',
         warn: 'var(--warn)',
@@ -78,13 +81,69 @@ module.exports = {
         subtle: 'var(--border-subtle)',
         card: 'var(--border-card)',
       },
+      /*
+       * The same two rules, reachable from `ring-*`.
+       *
+       * They were not, and the failure was silent in exactly the way the naming
+       * rule above describes: `StateDot`'s `pending` tone is
+       * `bg-transparent ring-1 ring-inset ring-card`, `ring-card` resolved to no
+       * colour, and the outline that *is* the dot never drew. On the splash the
+       * « Audio » row therefore had a hole where the other two rows have a dot —
+       * which is the rendering fault an empty slot was invented to avoid.
+       *
+       * `ring` and `border` are two utilities over one pair of tokens; whatever
+       * `border-x` can say, `ring-x` has to be able to say too, or the next
+       * outline is invisible for the same reason.
+       */
+      /*
+       * And the third utility that draws a rule, for the third time.
+       *
+       * `decoration-card` would otherwise resolve through the generic `colors`
+       * palette to `--bg-card` — a near-white *background* token — so a dotted
+       * underline asked to be the weight of a table rule would have drawn in the
+       * colour of the paper. Same shape as `ring-card` below and `bg-muted/30`
+       * before it: the class name is right, something resolves, and the element
+       * is silently unstyled. A rule-drawing utility reads the border tokens,
+       * and `design/tokens.test.ts` holds the three scales to each other.
+       */
+      textDecorationColor: {
+        subtle: 'var(--border-subtle)',
+        card: 'var(--border-card)',
+        muted: 'var(--text-muted)',
+      },
+      ringColor: {
+        DEFAULT: 'var(--border-subtle)',
+        subtle: 'var(--border-subtle)',
+        card: 'var(--border-card)',
+        muted: 'var(--text-muted)',
+        brand: 'var(--brand-500)',
+      },
       borderRadius: {
         sm: 'var(--radius-sm)',
         DEFAULT: 'var(--radius)',
         lg: 'var(--radius-lg)',
       },
+      /*
+       * **One entry, and `shadow-card` is gone because nothing wore it.**
+       *
+       * It was mapped here, backed by `--shadow-card` in `tokens.css`, and had
+       * **zero** `className` occurrences anywhere under `src/` — a utility a
+       * developer could reach for and that no screen had ever used. Same shape as
+       * the two motion tokens US-3 found unspent, and as `ring-card`, which named a
+       * colour `ringColor` did not have and drew nothing: the class name is right,
+       * something resolves, and no screenshot shows anything.
+       *
+       * Deleted rather than sprinkled onto a surface to justify it. Every card in
+       * this product is a 1px `--border-card` on `--bg-card`, which is what VISION
+       * §6's « Borders 1px » and « Density over decoration » produce, and adding an
+       * elevation to one pane to use up a declaration is the opposite of a design
+       * system. `--shadow-card` stays in `tokens.css` — VISION §6 names its value,
+       * and `--shadow-overlay`'s own reasoning is stated *relative* to it — so the
+       * day a surface genuinely lifts off the paper this is one line again.
+       */
       boxShadow: {
-        card: 'var(--shadow-card)',
+        /* The in-meeting widget, which floats over another application. */
+        overlay: 'var(--shadow-overlay)',
       },
       /*
        * Five steps, added alongside Tailwind's numeric scale rather than
@@ -117,9 +176,33 @@ module.exports = {
         sans: 'var(--font-body)',
         mono: 'var(--font-mono)',
       },
+      /*
+       * **`transition` means the pointer's own feedback, which is the fast rung.**
+       *
+       * `DEFAULT` was `--motion` and `fast` was `--motion-fast`, and a grep for
+       * `duration-fast` under `src/` returned **nothing** — so the fast rung was
+       * declared in `tokens.css`, mapped here, and drawn by no element in the
+       * product. Measured on the shipped renderer across six stages: 311 live
+       * declarations, of which 307 are a bare `transition` on a hover tint, all
+       * of them at 150ms. One duration, on a token file that documents two.
+       *
+       * What `transition` is written on, everywhere it appears, is a control
+       * answering the pointer: a row tint, a chip, a button, a nav item, a
+       * segmented option, a calendar cell, a dotted underline. That is the
+       * frequency table's « hundreds of times a day → reduce » row, and 90ms is
+       * where it lands — measured per animation frame, the change is 44% landed
+       * at the second frame at 150ms and 79% at 90ms. `tokens.css` carries the
+       * table.
+       *
+       * `--motion` is not orphaned by this and is not reachable as a utility on
+       * purpose: it belongs to a *surface* arriving or leaving, and all three of
+       * those are declared as rules rather than assembled out of utilities —
+       * `animate-rise-in`, `animate-fade-in` and `.widget-leaving`. A
+       * `duration-slow` class would be a fourth way to spell the same thing and
+       * would be the first to drift.
+       */
       transitionDuration: {
-        DEFAULT: 'var(--motion)',
-        fast: 'var(--motion-fast)',
+        DEFAULT: 'var(--motion-fast)',
       },
       transitionTimingFunction: {
         DEFAULT: 'var(--ease-out)',

@@ -47,8 +47,28 @@ entryPoints.push('electron/preload.ts');
 
 const start = Date.now();
 
+/**
+ * What the packaging config says about signing, baked in at build time.
+ *
+ * Read here rather than at runtime because electron-builder does not promise to
+ * keep the `build` block in the `package.json` it writes into the asar, and an
+ * updater that decided whether it could verify itself from a field that may
+ * have been stripped would fail *open* — which is the one direction this
+ * particular decision must never fail in (`core/domain/updateTrust.ts`).
+ */
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+const winBuild = pkg.build?.win ?? {};
+const updateTrustDefine = JSON.stringify({
+  publisherName: winBuild.publisherName ?? null,
+  certificateFile: winBuild.certificateFile ?? null,
+});
+
 build({
   entryPoints,
+  // A dotted key, because the source reads it off `globalThis` — esbuild
+  // replaces the member expression only when the define names it exactly, and a
+  // bare `__SILLAGE_WIN_BUILD__` key silently substitutes nothing.
+  define: { 'globalThis.__SILLAGE_WIN_BUILD__': updateTrustDefine },
   bundle: true,           // resolve all static + dynamic imports so postProcessor
                          // is inlined and the path rewrite works (vs bundle:false
                          // which copies files as-is and leaves unresolved relative paths)
@@ -82,7 +102,24 @@ build({
     'pdf-parse',
     'mammoth',
   ],
+  /*
+   * **Maps yes, sources no — and they never reach an installer.**
+   *
+   * `sourcemap: true` alone embedded `sourcesContent`: 82 MB of the 126 MB in
+   * `dist-electron` were `.map` files, and `main.js.map` carried 655
+   * `sourcesContent` entries — 108 of them this product's own `DEC-`
+   * commentary, verbatim. `package.json`'s `build.files` shipped
+   * `dist-electron` whole, so a third of the payload was the original
+   * TypeScript, handed to anyone holding the installer.
+   *
+   * The maps are still written, because a stack trace that maps to
+   * `Recording.ts:135` is worth having while developing and in a diagnostics
+   * bundle. What is dropped is the *content* of those files, which a map does
+   * not need to do that job — and `build.files` now excludes every
+   * map file outright, so what ships has neither.
+   */
   sourcemap: true,
+  sourcesContent: false,
   jsx: 'automatic',
   loader: {
     '.ts': 'ts',

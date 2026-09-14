@@ -41,6 +41,14 @@ pub fn list_output_devices() -> Result<Vec<(String, String)>> {
 /// changes (user plugs in headphones, switches to AirPods) — when the default
 /// changes, the JS side recreates SystemAudioCapture so the CoreAudio Tap
 /// follows the new route instead of capturing silence on the old device.
+/// **macOS has no `eCommunications` role**, so there is nothing to compare and
+/// the honest answer is « we did not measure it » — the empty string, which is
+/// what `default_output_device_uid` already returns when CoreAudio refuses.
+/// DEC-45: a condition the app cannot measure is never reported as a finding.
+pub fn default_communications_device_uid() -> String {
+    String::new()
+}
+
 pub fn default_output_device_uid() -> String {
     match ca::System::default_output_device() {
         Ok(dev) => dev.uid().map(|u| u.to_string()).unwrap_or_default(),

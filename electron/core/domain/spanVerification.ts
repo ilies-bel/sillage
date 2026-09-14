@@ -25,32 +25,14 @@
  * to defend against it is to never ask for one.
  */
 import type { Confidence } from '../contracts/extraction.ts'
-import type { Channel, TranscriptSegment, TranscriptSpan } from '../contracts/transcript.ts'
-
-/**
- * Shorter than this, a match is a coincidence rather than evidence: `à`, `oui`
- * and `520` occur in almost any French call, so they prove nothing about the
- * claim built on top of them. Counted after normalisation, so `TJM 520 €` (→
- * `tjm 520`, 7 chars) still qualifies and a bare `€` does not.
- */
-export const MIN_QUOTE_CHARS = 4
-
-/**
- * Fold away everything two renderings of the same sentence can disagree about.
- *
- * Case, punctuation, currency signs, typographic apostrophes and accents. The
- * accents are the debatable one and they are folded on purpose: French STT
- * routinely emits `demarrage` where the model writes `démarrage`, and refusing
- * that match would drop true chips. It cannot create a false one — folding only
- * merges characters, so an invented sentence stays absent.
- */
-export const normalizeForVerification = (text: string): string =>
-  text
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
+import {
+  MIN_QUOTE_CHARS,
+  locateSegments,
+  normalizeForVerification,
+  type Channel,
+  type TranscriptSegment,
+  type TranscriptSpan,
+} from '../contracts/transcript.ts'
 
 /** Where a quote was said. Read off the transcript, never off the reply. */
 export interface LocatedSpan {
@@ -59,40 +41,6 @@ export interface LocatedSpan {
   endMs: number
 }
 
-interface ChannelIndex {
-  haystack: string
-  /** Normalised offsets back to the segment they came from. */
-  parts: { start: number; end: number; segment: TranscriptSegment }[]
-}
-
-/**
- * One channel's final segments as a single normalised string.
- *
- * Joining is what lets a quote that straddles two segments verify — providers
- * cut on silence, not on sentences, and a model quoting a sentence has no idea
- * where the cut fell. It is also the one place this check is deliberately
- * generous: two utterances a minute apart are adjacent in the haystack, so a
- * quote could in principle bridge them. The alternative — refusing every
- * cross-segment quote — drops far more true citations than it stops false ones.
- */
-const indexChannel = (segments: readonly TranscriptSegment[]): ChannelIndex => {
-  const chunks: string[] = []
-  const parts: ChannelIndex['parts'] = []
-  let cursor = 0
-
-  for (const segment of segments) {
-    const normalized = normalizeForVerification(segment.text)
-    if (normalized.length === 0) continue
-    if (cursor > 0) cursor += 1 // the space `join` will insert
-    parts.push({ start: cursor, end: cursor + normalized.length, segment })
-    chunks.push(normalized)
-    cursor += normalized.length
-  }
-
-  return { haystack: chunks.join(' '), parts }
-}
-
-const byStart = (a: TranscriptSegment, b: TranscriptSegment): number => a.startMs - b.startMs
 
 /**
  * Finds `quote` in the transcript and reports where it was said.
@@ -107,31 +55,25 @@ export const locateQuote = (
   segments: readonly TranscriptSegment[],
   channel: Channel | null = null,
 ): LocatedSpan | null => {
-  const needle = normalizeForVerification(quote)
-  if (needle.length < MIN_QUOTE_CHARS) return null
-
-  const channels: Channel[] = channel === null ? ['rep', 'far'] : [channel]
-
-  for (const candidate of channels) {
-    const index = indexChannel(
-      segments.filter((s) => s.isFinal && s.channel === candidate).sort(byStart),
-    )
-    const at = index.haystack.indexOf(needle)
-    if (at === -1) continue
-
-    const end = at + needle.length
-    const touched = index.parts.filter((p) => p.start < end && p.end > at)
-    if (touched.length === 0) continue
-
-    return {
-      channel: candidate,
-      startMs: Math.min(...touched.map((p) => p.segment.startMs)),
-      endMs: Math.max(...touched.map((p) => p.segment.endMs)),
-    }
+  /*
+   * **One search, in `contracts`, because two searches is a contradiction the
+   * rep reads.** `TranscriptReader` wrote its own — `text.includes(quote)`, raw,
+   * inside one segment — under a comment claiming it was this one, and it
+   * answered « introuvable » for an accent the STT dropped, a typographic
+   * apostrophe, a trailing full stop, and every quote spanning two turns, on
+   * rows this function had just certified. `src/*` may import `contracts` and
+   * nothing else, which is why the implementation moved rather than the caller.
+   */
+  const touched = locateSegments(quote, segments, channel)
+  if (touched.length === 0) return null
+  return {
+    channel: touched[0]!.channel,
+    startMs: Math.min(...touched.map((s) => s.startMs)),
+    endMs: Math.max(...touched.map((s) => s.endMs)),
   }
-
-  return null
 }
+
+export { MIN_QUOTE_CHARS, normalizeForVerification, locateSegments }
 
 /** The predicate form. `span.channel` narrows the search when it is set. */
 export const spanOccursIn = (

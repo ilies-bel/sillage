@@ -97,6 +97,23 @@ export const INTERRUPTED_REASON =
 const errorReason = (error: unknown): string =>
   error instanceof Error ? error.message : 'envoi impossible'
 
+/**
+ * How long a quit waits for a push already on the wire. Long enough for a POST
+ * and its answer, short enough that a rep who pressed close sees the window go.
+ */
+const SETTLE_TIMEOUT_MS = 8_000
+
+/**
+ * The longest a pass will wait on a `Retry-After` before leaving the row for the
+ * next launch. A server entitled to say « an hour » is not entitled to a
+ * background timer that lives that long (DEC-26: nothing here outlives a
+ * meeting).
+ */
+const MAX_BACKOFF_MS = 60_000
+
+const THROTTLED_REASON =
+  'le service distant demande d’attendre — l’envoi reprendra au prochain démarrage'
+
 export class Outbox {
   #journal: OutboxJournal
   #crm: CrmPort | null
@@ -118,8 +135,42 @@ export class Outbox {
     this.#diagnostics = deps.diagnostics ?? NULL_RECORDER
   }
 
-  isDraining(meetingId: MeetingId): boolean {
-    return this.#inFlight.has(meetingId)
+  /**
+   * **Waits for every pass in flight, bounded.** The one caller is `before-quit`.
+   *
+   * `review:confirm` fires the drain without awaiting it — deliberately, so a
+   * rep is never made to wait on a POST — and `before-quit` asked only whether a
+   * meeting was *recording*. On Windows, the primary platform, closing the
+   * window quits. So the ordinary sequence « press *Valider*, close the window,
+   * go to the next call » killed the process with the request on the wire, and
+   * the row stayed `draining`: `POST /v1/crm/tasks` has no idempotency key, so
+   * nobody — the rep included — could find out whether the task exists.
+   *
+   * Bounded, because a pass can sleep out its backoff and a rep who pressed
+   * close is owed a window that goes away. What the timeout costs is now only a
+   * delay: `Projections.interrupted()` reclaims the row on the next launch,
+   * which is the recovery that has to exist whatever this method does. The
+   * predecessor of this method was `isDraining`, which answered a question no
+   * caller asked — declared, documented, unit-tested, unreached.
+   */
+  /** Whether there is nothing to wait for, asked before a quit is deferred. */
+  settledSynchronously(): boolean {
+    return this.#inFlight.size === 0
+  }
+
+  async settle(timeoutMs = SETTLE_TIMEOUT_MS): Promise<boolean> {
+    const passes = [...this.#inFlight.values()]
+    if (passes.length === 0) return true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([Promise.allSettled(passes).then(() => true), expired])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /**
@@ -145,9 +196,22 @@ export class Outbox {
 
     /** Intents this pass will not touch again: terminally failed, or unroutable. */
     const abandoned = new Set<string>()
+    /**
+     * The longest `Retry-After` this round was told to wait, in ms.
+     *
+     * A `429` is the one status that says the request was **not processed** —
+     * which is why it is the only one that returns a row to `pending` — and it
+     * is the one status that comes with an instruction. Both adapters parsed it
+     * and the value died at `PushResult`, so the outbox answered « wait two
+     * minutes » with a re-POST after one, three times a pass and again on every
+     * launch. Against Graph's mailbox throttling that is the pattern that
+     * *extends* the throttle.
+     */
+    let told = 0
 
     for (let round = 0; round < this.#maxAttempts; round++) {
       const tried = new Set<string>()
+      told = 0
 
       // Re-read after every attempt rather than iterating a snapshot: a
       // succeeded opportunity unblocks its task *inside* this loop, and the
@@ -155,12 +219,28 @@ export class Outbox {
       let next = this.#ready(meetingId, abandoned, tried)
       while (next) {
         tried.add(next.intentId)
-        await this.#attempt(meetingId, next, abandoned)
+        told = Math.max(told, await this.#attempt(meetingId, next, abandoned))
         next = this.#ready(meetingId, abandoned, tried)
       }
 
       if (this.#ready(meetingId, abandoned, new Set()) === null) break
-      if (round + 1 < this.#maxAttempts) await this.#sleep(this.#backoffMs * 2 ** round)
+      if (round + 1 >= this.#maxAttempts) continue
+      /*
+       * The server's instruction wins over our curve, but it does not get to
+       * hold a pass open: past the ceiling the round ends and the row stays
+       * `pending`, which is what makes the next launch the retry. A rep never
+       * waits on any of this — `review:confirm` fires the drain without
+       * awaiting it.
+       */
+      const waited = Math.min(Math.max(this.#backoffMs * 2 ** round, told), MAX_BACKOFF_MS)
+      if (told > MAX_BACKOFF_MS) {
+        this.#record('warn', 'outbox.throttled', THROTTLED_REASON, 'authored', meetingId, {
+          retryAfterMs: told,
+        })
+        await this.#sleep(waited)
+        break
+      }
+      await this.#sleep(waited)
     }
 
     return this.#journal.projections.outboxFor(meetingId)
@@ -188,25 +268,26 @@ export class Outbox {
     return null
   }
 
-  async #attempt(meetingId: MeetingId, entry: OutboxEntry, abandoned: Set<string>): Promise<void> {
+  /** Returns what the server said to wait, in ms — 0 when it said nothing. */
+  async #attempt(meetingId: MeetingId, entry: OutboxEntry, abandoned: Set<string>): Promise<number> {
     const entries = this.#entries(meetingId)
     const fresh = entries.get(entry.intentId)
     const intent = this.#intents(meetingId).get(entry.intentId)
 
     // Guard 2 (see the file header). Reached only if something changed the row
     // between selection and here; cheap enough to keep for the day it does.
-    if (!fresh || !intent || fresh.state === 'drained') return
+    if (!fresh || !intent || fresh.state === 'drained') return 0
 
     const port = this.#portFor(intent)
     if (!port) {
       // No attempt event: nothing was attempted. The row stays `pending`, so
       // the intent ships once the connector is configured, on the next drain.
       abandoned.add(intent.id)
-      this.#record('warn', 'outbox.skipped', 'connecteur non configuré', meetingId, {
+      this.#record('warn', 'outbox.skipped', 'connecteur non configuré', 'authored', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
       })
-      return
+      return 0
     }
 
     const attempt = fresh.attempts + 1
@@ -226,36 +307,43 @@ export class Outbox {
     // payload and has no idea which row it belongs to.
     const settled: PushResult = result.ok
       ? { ok: true, intentId: intent.id, remoteId: result.remoteId }
-      : { ok: false, intentId: intent.id, reason: result.reason, retryable: result.retryable }
+      : {
+          ok: false,
+          intentId: intent.id,
+          reason: result.reason,
+          retryable: result.retryable,
+          ...(result.retryAfterMs == null ? {} : { retryAfterMs: result.retryAfterMs }),
+        }
 
     this.#journal.append(meetingId, { type: 'push.settled', result: settled })
 
     if (settled.ok) {
-      this.#record('info', 'outbox.drained', 'intention envoyée', meetingId, {
+      this.#record('info', 'outbox.drained', 'intention envoyée', 'authored', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
         attempt,
       })
-      return
+      return 0
     }
 
     if (settled.retryable) {
-      this.#record('warn', 'outbox.retry', settled.reason, meetingId, {
+      this.#record('warn', 'outbox.retry', settled.reason, 'foreign', meetingId, {
         intentId: intent.id,
         kind: intent.kind,
         attempt,
       })
-      return
+      return settled.retryAfterMs ?? 0
     }
 
     // Terminal. The projection leaves the dependants blocked and touches
     // nothing else, so the independent intents in the same fan-out still ship.
     abandoned.add(intent.id)
-    this.#record('error', 'outbox.failed', settled.reason, meetingId, {
+    this.#record('error', 'outbox.failed', settled.reason, 'foreign', meetingId, {
       intentId: intent.id,
       kind: intent.kind,
       attempt,
     })
+    return 0
   }
 
   /**
@@ -273,7 +361,7 @@ export class Outbox {
         type: 'push.settled',
         result: { ok: false, intentId: entry.intentId, reason: INTERRUPTED_REASON, retryable: false },
       })
-      this.#record('error', 'outbox.interrupted', INTERRUPTED_REASON, meetingId, {
+      this.#record('error', 'outbox.interrupted', INTERRUPTED_REASON, 'authored', meetingId, {
         intentId: entry.intentId,
         kind: entry.kind,
       })
@@ -326,10 +414,19 @@ export class Outbox {
     return new Map(this.#journal.projections.intents(meetingId).map((i) => [i.id, i]))
   }
 
+  /**
+   * `origin` is not optional and that is the point (`npm run check:diag`,
+   * `DiagEvent.origin`). Half of these calls pass a literal French sentence and
+   * half pass a remote adapter's `reason` verbatim; from inside this helper the
+   * two are one `string`, and the redacted bundle must not carry the second.
+   * A required parameter is what makes the fan-in the type system's problem
+   * rather than a grep's — the check can only see the one `.record({…})` below.
+   */
   #record(
     severity: 'info' | 'warn' | 'error',
     code: string,
     message: string,
+    origin: 'authored' | 'foreign',
     meetingId: MeetingId,
     detail: Record<string, unknown> = {},
   ): void {
@@ -337,6 +434,7 @@ export class Outbox {
       severity,
       code,
       module: 'app',
+      origin,
       message,
       detail: { meetingId, ...detail },
     })

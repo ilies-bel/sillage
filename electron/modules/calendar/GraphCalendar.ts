@@ -182,6 +182,7 @@ export class GraphCalendar implements CalendarPort {
         severity: 'warn',
         code: 'calendar.window.notPersisted',
         module: 'calendar',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : String(error),
         detail: {},
       })

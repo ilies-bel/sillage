@@ -17,14 +17,42 @@
  *    the product that writes to an external system is *Valider* (DEC-4).
  */
 import { z } from 'zod'
-import { MeetingSchema } from './meeting.ts'
+import { AttendeeSchema, MeetingSchema } from './meeting.ts'
 import { TranscriptSegmentSchema } from './transcript.ts'
+import { MomentMarkSchema } from './marks.ts'
 import { ConfidenceSchema } from './extraction.ts'
 import { OutboxStateSchema, PushIntentKindSchema } from './push.ts'
 import { ReviewFieldSchema } from './review.ts'
 
-/** Which of the four surfaces a query hit. */
-export const HistoryMatchWhereSchema = z.enum(['transcript', 'notes', 'compteRendu'])
+/**
+ * Which of the five surfaces a query hit.
+ *
+ * **`meeting` was missing, and it is the one a rep types first.** The three
+ * below are all *contents of a call*, so a search for « Néovia » — the client
+ * name this very screen offers as a filter chip, one row above the box —
+ * returned nothing unless somebody had happened to say the word out loud and the
+ * transcriber had happened to spell it that way. Anything before the gate was
+ * unreachable by name entirely: a scheduled call has no transcript, no notes and
+ * no compte-rendu, and the search *replaces* the day list while it is active, so
+ * the row was not visible either.
+ *
+ * The comment on this line said « four surfaces » over a three-value enum, which
+ * is how long the omission had been half-noticed.
+ *
+ * **`marks` is the fifth, and it is the only one a rep can write from inside the
+ * call** (`core/contracts/marks.ts`). A mark is typed one-handed over a client's
+ * face, capped at 280 characters, drawn by the widget and by both readers — and
+ * reached by no search, so « prix : ils bloquent à 550 » was in the record and
+ * `550` did not find it. The surface the product built for a rep who is talking
+ * was write-only.
+ */
+export const HistoryMatchWhereSchema = z.enum([
+  'meeting',
+  'marks',
+  'transcript',
+  'notes',
+  'compteRendu',
+])
 export type HistoryMatchWhere = z.infer<typeof HistoryMatchWhereSchema>
 
 export const HistoryMatchSchema = z.object({
@@ -118,10 +146,17 @@ export const HistorySearchResultSchema = z.object({
   /** Echoed for the same reason, because a chip changes the answer too. */
   filter: HistoryFilterSchema,
   /**
-   * How many meetings the main process read to answer.
+   * How many meetings the main process read to answer — the whole corpus.
    *
    * Not decoration: it is the observable difference between searching here and
-   * shipping every transcript to the renderer, and a test asserts on it.
+   * shipping every transcript to the renderer. **It was read by a test and by no
+   * screen**, which is exactly the `diag:appended` shape — published, subscribed
+   * to by nobody — one level down, in a payload field rather than a channel; and
+   * it was the field that could have said the scan itself had stopped at five
+   * hundred meetings while `capped` reported only the *result* cap. The scan
+   * reads everything now, and *Historique* draws this number in the sentence
+   * that says the list was truncated, so « fifty of how many » is answered
+   * instead of assumed.
    */
   scanned: z.number().int().nonnegative(),
   /**
@@ -133,6 +168,39 @@ export const HistorySearchResultSchema = z.object({
    */
   clients: z.array(z.string()),
   rows: z.array(HistoryRowSchema),
+  /**
+   * **Whether the cap was reached**, which the screen had no way to know.
+   *
+   * `history:search` stops at `limit` rows and said nothing, while the eight-row
+   * preview a rep arrives *from* draws « Les premiers résultats — l'historique
+   * les porte tous. » An ESN rep passes fifty calls matching « TJM » inside a
+   * year, and from that point the screen that was just promised to carry all of
+   * them silently carried fifty. Optional, so every stub and every call written
+   * before this keeps working.
+   *
+   * **It is the `limit`th match that is not hidden.** This was `rows.length >=
+   * limit`, so exactly fifty matches with nothing left over still drew « Affinez
+   * la recherche pour en voir d'autres » — a screen telling a rep to narrow a
+   * search that was already complete. The handler now collects one row past the
+   * limit, drops it, and reports whether it existed.
+   *
+   * **And it is the only thing allowed to answer that question.** The fix above
+   * landed in the handler, and the two screens that had *not* read this field
+   * kept the arithmetic it replaced: the calendar's pane compared its own row
+   * count to `RESULT_LIMIT`, the backlog section compared its own total to
+   * `PENDING_LIMIT`, and both were the same off-by-one one layer out — eight
+   * matches with nothing hidden sent a rep to *Historique* for results that do
+   * not exist, and exactly fifty calls owed read « 50+ » over « Toutes › ».
+   * `useHistorySearch` derives it once now, so no screen counts rows.
+   *
+   * **It is set for the plain listing too**, and that is not a defect — fifty of
+   * sixty calls is a truncation whether or not anything was typed. What *was* a
+   * defect is reading it as « a search was truncated »: *Historique*'s sentence
+   * named « affinez la recherche » over an empty box, which is a remedy that is
+   * not available. A screen drawing anything from this asks what question was
+   * answered — both halves are echoed back beside it for exactly that.
+   */
+  capped: z.boolean().optional(),
 })
 export type HistorySearchResult = z.infer<typeof HistorySearchResultSchema>
 
@@ -154,9 +222,25 @@ export const HistoryRecordSchema = z.object({
   notes: z.string(),
   /** Null when the meeting never reached the gate. */
   compteRendu: z.string().nullable(),
+  /**
+   * The client-side people on the call, from the calendar (DEC-7).
+   *
+   * Carried so the reader can name the far speaker when there is exactly one of
+   * them — the channel is measured by the hardware and the name comes from
+   * Graph, so the join is a fact (`speakerLabel`). Empty for a meeting that
+   * never reached an extraction, which is the correct answer: the app has
+   * nobody to name.
+   */
+  interlocuteurs: z.array(AttendeeSchema),
   /** Each with its cited span, and a measured confidence (DEC-21). */
   fields: z.array(ReviewFieldSchema),
   overall: ConfidenceSchema,
   intents: z.array(HistoryIntentSchema),
+  /**
+   * The rep's own bookmarks (`core/contracts/marks.ts`). The reader here and
+   * the reader at the gate draw the same record, so they draw the same marks —
+   * two screens showing one call differently is two things to reconcile.
+   */
+  marks: z.array(MomentMarkSchema).default([]),
 })
 export type HistoryRecord = z.infer<typeof HistoryRecordSchema>

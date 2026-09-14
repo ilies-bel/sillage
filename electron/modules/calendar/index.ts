@@ -59,17 +59,17 @@ export const calendarHealth = (error: unknown, at: number): ConnectorHealth => {
       }
     }
     if (error.retryable) {
-      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)} s` : ''
+      const wait = error.retryAfterMs ? ` — nouvelle tentative dans ${Math.ceil(error.retryAfterMs / 1000)}\u00a0s` : ''
       // Degraded, not down: the last fold is still on screen and still correct
       // enough to arm from. A throttled request is not a lost calendar.
       return { state: 'degraded', reason: `calendrier temporairement indisponible${wait}`, since: at, retryable: true }
     }
-    return { state: 'down', reason: error.message, since: at, retryable: false }
+    return { state: 'down', reason: `calendrier indisponible — ${error.message}`, since: at, retryable: false }
   }
 
   return {
     state: 'down',
-    reason: error instanceof Error ? error.message : 'calendrier indisponible',
+    reason: error instanceof Error ? `calendrier indisponible — ${error.message}` : 'calendrier indisponible',
     since: at,
     retryable: true,
   }

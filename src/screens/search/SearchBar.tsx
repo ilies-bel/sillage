@@ -51,9 +51,10 @@
  * recover. So the whole line scrolls, and « Effacer » stays outside it, because
  * a reset that scrolls out of view is a reset a rep cannot find.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { HistoryFilter } from '../../../electron/core/contracts/history.ts'
 import { Button, Chip } from '../../ui/index.ts'
+import { scrollElementBy } from '../../lib/scroll.ts'
 import {
   INTENTIONS,
   INTENTION_LABEL,
@@ -78,6 +79,13 @@ export interface SearchBarProps {
    */
   clients: readonly string[]
   /**
+   * The field itself, so a screen can put the cursor in it — `Ctrl/⌘ K`, from
+   * `app/shortcuts.ts`. A ref rather than a `focus` prop the caller toggles:
+   * focus is an act, not a state, and a boolean that has to be set back to
+   * false is a second thing to get wrong.
+   */
+  inputRef?: Ref<HTMLInputElement>
+  /**
    * Opens *Historique* on this same query and these same chips — permanently,
    * whatever the field holds and whatever came back.
    *
@@ -90,6 +98,34 @@ export interface SearchBarProps {
    * recorded anything is exactly the rep who needs to see that the room exists.
    */
   onHistorique?: () => void
+  /**
+   * Whether the chip row is drawn before the rep has asked anything.
+   *
+   * `true` on *Historique*, which is the search: the chips are its axes and
+   * there is nothing else on the screen for them to be mistaken for.
+   *
+   * `false` on the calendar, where the day list sits directly underneath and
+   * the chips — « 7 jours », « À valider », seven client names — read as
+   * filters *on that list*, which they are not: pressing one replaces it. They
+   * appear when the field is focused, when something is typed, or when a chip
+   * is already on, which is every moment they are relevant and no other.
+   */
+  chipsAlways?: boolean
+  /**
+   * Whether the two *data* axes — *Intention* and *Client* — are offered.
+   *
+   * `true` on the calendar, where the search is a lookup and the client names
+   * the main process computed are the fastest way into a call a rep half
+   * remembers.
+   *
+   * `false` on *Historique* (V2), where the axes are the reader's own two
+   * questions — how far back, and what state the call is in — and the row of
+   * client names under them turned the one screen built for reading a record
+   * into a facet browser. The names are still reachable there: typing one into
+   * the box beside the chips is the same query, and it is the gesture DEC-25
+   * says the product is entered by.
+   */
+  dataAxes?: boolean
   className?: string
 }
 
@@ -99,14 +135,27 @@ export function SearchBar({
   filter,
   onFilter,
   clients,
+  inputRef,
   onHistorique,
+  chipsAlways = true,
+  dataAxes = true,
   className,
 }: SearchBarProps) {
+  /*
+   * Focus opens the axes and blur does not close them: a rep who focused the
+   * field to reach a chip would watch the chips vanish on the way to clicking
+   * one. Once asked for, they stay for the life of the screen.
+   */
+  const [asked, setAsked] = useState(false)
+  const chips = chipsAlways || asked || query !== '' || isFiltering(filter)
+
   return (
     <div className={className}>
       <div className="flex items-center gap-inline">
         <input
+          ref={inputRef}
           type="search"
+          onFocus={() => setAsked(true)}
           aria-label="Rechercher un client, un sujet, une transcription ou une note"
           placeholder="Rechercher un client, un sujet, un mot dit en réunion…"
           value={query}
@@ -123,6 +172,7 @@ export function SearchBar({
       </div>
 
       {/* One line: every axis in one scroller, and the reset outside it. */}
+      {chips ? (
       <div className="mt-2 flex items-center gap-tight">
         {/* Joined rather than passed as the array: the caller writes
             `clients={result?.clients ?? []}`, so a fresh `[]` arrives on every
@@ -149,16 +199,20 @@ export function SearchBar({
             onSelect={(statut) => onFilter({ ...filter, statut })}
           />
 
-          <Rule />
+          {dataAxes ? (
+            <>
+              <Rule />
 
-          <Axis
-            label="Intention"
-            values={INTENTIONS}
-            labels={INTENTION_LABEL}
-            current={filter.intention}
-            neutral={NO_FILTER.intention}
-            onSelect={(intention) => onFilter({ ...filter, intention })}
-          />
+              <Axis
+                label="Intention"
+                values={INTENTIONS}
+                labels={INTENTION_LABEL}
+                current={filter.intention}
+                neutral={NO_FILTER.intention}
+                onSelect={(intention) => onFilter({ ...filter, intention })}
+              />
+            </>
+          ) : null}
 
           {/*
             The client axis, last and inside the same scroller: it is the axis
@@ -167,7 +221,7 @@ export function SearchBar({
             Drawn at all only when the main process offers names — an axis
             holding nothing is a control that does nothing (DEC-26).
           */}
-          {clients.length > 0 ? (
+          {dataAxes && clients.length > 0 ? (
             <>
               <Rule />
               <div role="group" aria-label="Client" className="flex shrink-0 gap-tight">
@@ -200,6 +254,7 @@ export function SearchBar({
           </Button>
         ) : null}
       </div>
+      ) : null}
     </div>
   )
 }
@@ -313,14 +368,88 @@ function Scroller({ children, deps }: { children: ReactNode; deps: readonly unkn
     }
   }, deps)
 
+  /**
+   * One page of chips, in the direction asked for. 80 % rather than 100 %, so
+   * the chip that was at the edge is still on screen after the jump and the rep
+   * keeps their place in the row.
+   */
+  const page = (direction: -1 | 1) => {
+    const el = ref.current
+    if (!el) return
+    scrollElementBy(el, { left: direction * el.clientWidth * 0.8 })
+  }
+
   return (
-    <div
-      ref={ref}
-      data-fade={fade}
-      className="filter-scroller flex min-w-0 flex-1 items-center gap-tight"
-    >
-      {children}
+    /*
+     * The fade says « there is more ». It does not say « and here is how ».
+     *
+     * A mask is a good signal and a bad affordance: it is easy to read as the
+     * row simply ending, it offers nothing to a rep whose hand is on a mouse
+     * (Chromium hands a vertical tick to the ancestor, which is why the wheel
+     * handler above exists at all), and it is invisible in any review of a
+     * screenshot. Two chevrons, drawn only on the side that is actually cut, are
+     * the control the mask was standing in for — and they are never dead
+     * (DEC-26): a row that fits has neither.
+     *
+     * Two 20px gutters, always reserved, each holding a chevron only while that
+     * side is actually cut.
+     *
+     * The first cut floated the buttons *over* the row, on the argument that a
+     * control taking width changes how much of the row fits — which is the
+     * input to whether the control should be there. That argument is about
+     * oscillation and it is answered by reserving the space unconditionally:
+     * the scroller is a constant 40px narrower whether or not either chevron is
+     * drawn, so there is no feedback loop to oscillate. What floating actually
+     * bought was a button sitting on top of whichever chip happened to be at
+     * the edge — « Sodexial » was a third covered, so its right third simply
+     * could not be clicked. A chevron that eats a filter is worse than the fade
+     * it was added to explain.
+     *
+     * An empty gutter is not a dead control (DEC-26): there is nothing in it.
+     */
+    <div className="flex min-w-0 flex-1 items-center">
+      <span className="flex w-5 shrink-0 justify-center">
+        {fade === 'start' || fade === 'both' ? (
+          <Page direction={-1} onClick={() => page(-1)} />
+        ) : null}
+      </span>
+      <div
+        ref={ref}
+        data-fade={fade}
+        /*
+          `data-scrolls`: declared on purpose, which is what that attribute
+          means. This row scrolls sideways by design and says so — `data-fade`
+          masks whichever edge is cut — and `--scrollers` is about content cut
+          off with *nothing* saying so. It only became visible to the check when
+          the scope widened from the landmark list to the tree.
+        */
+        data-scrolls
+        className="filter-scroller flex min-w-0 flex-1 items-center gap-tight"
+      >
+        {children}
+      </div>
+      <span className="flex w-5 shrink-0 justify-center">
+        {fade === 'end' || fade === 'both' ? (
+          <Page direction={1} onClick={() => page(1)} />
+        ) : null}
+      </span>
     </div>
+  )
+}
+
+/** One chevron. Named for what it does, not for the glyph on it. */
+function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={direction === -1 ? 'Filtres précédents' : 'Filtres suivants'}
+      // `h-6 w-6` — twenty-four pixels, WCAG 2.2's target size. It was twenty,
+      // on the one control that reaches the filters the fade is hiding.
+      className="text-muted hover:text-body bg-canvas border-subtle flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-meta leading-none"
+    >
+      {direction === -1 ? '‹' : '›'}
+    </button>
   )
 }
 

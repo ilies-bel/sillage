@@ -91,14 +91,29 @@ export const modelsDirCandidates = (env: PathEnvironment): string[] => {
 }
 
 /**
- * The first candidate that holds anything, else the writable one.
+ * The first candidate that holds **the checkpoint asked for**, else the writable one.
  *
- * "Holds anything" rather than "holds the model we want": the caller asks for a
- * specific checkpoint and `isModelCached` answers that question properly, with
- * the dtype in hand. All this has to do is not point at an empty bundled
- * directory when the real cache is in `userData`.
+ * This used to test « holds anything », and the docblock explaining why named
+ * the exact hazard it then failed to avoid: « not point at an empty bundled
+ * directory when the real cache is in `userData` ». In a packaged build the
+ * bundled directory is never empty — it ships the default model — so it always
+ * won, and a model downloaded *after* install landed in `userData` where nothing
+ * ever looked. With `allowRemoteModels: false` the load then failed and told the
+ * rep to download the thing they had just downloaded.
+ *
+ * `holds` is supplied by the caller rather than imported, so this file stays
+ * free of the catalog and the dtype: the caller is the one that knows which
+ * checkpoint it wants and at which quantization, and `isModelCached` already
+ * answers that question properly. With no predicate it degrades to the old
+ * « holds anything », which is right for a caller that has no model in hand.
+ *
+ * The fallback stays the **writable** candidate, so a download lands where the
+ * next resolve will look for it.
  */
-export const resolveModelsDir = (source: PathSource): string => {
+export const resolveModelsDir = (
+  source: PathSource,
+  holds?: (dir: string) => boolean,
+): string => {
   const override = process.env.SILLAGE_WHISPER_MODELS_DIR?.trim()
   if (override) return override
 
@@ -106,6 +121,13 @@ export const resolveModelsDir = (source: PathSource): string => {
   const exists = env.exists ?? fs.existsSync
   const candidates = modelsDirCandidates(env)
   const writable = candidates[candidates.length - 1] ?? path.join(env.userData, MODELS_DIRNAME)
+  /*
+   * With a checkpoint in hand the fallback is the **writable** directory and not
+   * « the first that exists »: falling back to the latter is the old rule, which
+   * is what pointed the engine at a packaged `resources/` that has some *other*
+   * model in it. « Nobody has it » and « put it here » are the same answer.
+   */
+  if (holds) return candidates.find((dir) => exists(dir) && holds(dir)) ?? writable
   return candidates.find(exists) ?? writable
 }
 

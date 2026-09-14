@@ -34,16 +34,24 @@
  *  - **Read-only.** Nothing here is clickable during the call and nothing here
  *    writes to the document (DEC-5). The rail is a side surface.
  *
+ * ## No header of its own
+ *
+ * It had one, carrying a « 4/7 » count and the *Masquer* verb. The count is
+ * gone from the product — a ratio beside the list it counts is arithmetic the
+ * rep has to redo, and the list says the same thing more slowly and more
+ * exactly — and *Masquer* moved up to `LiveAside`, which is the one header this
+ * column has now that the same slot can also hold a transcript.
+ *
  * A slot stays empty for as long as nobody says the thing. A meeting where no
  * price comes up shows « TJM — » to the end, and filling it would be the exact
  * failure DEC-21 exists to prevent.
  */
 import type { Signal, SignalKind } from '../../../electron/core/contracts/signals.ts'
 import { DEFAULT_RECIPE, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
+import { ReadingColumn } from '../../ui/index.ts'
 
 interface SignalRailProps {
   signals: Signal[]
-  recording: boolean
   /** Which compte-rendu the meeting is set to produce — it owns the slate. */
   recipe?: RecipeId
 }
@@ -60,7 +68,7 @@ const KIND_LABEL: Record<SignalKind, string> = {
   autre: 'Autre',
 }
 
-export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: SignalRailProps) {
+export function SignalRail({ signals, recipe = DEFAULT_RECIPE }: SignalRailProps) {
   const ordered = [...signals].sort((a, b) => a.seq - b.seq)
   const byKind = new Map<SignalKind, Signal[]>()
   for (const signal of ordered) {
@@ -87,27 +95,28 @@ export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: Sign
    * that rail is.
    */
   const extra = [...byKind.keys()].filter((kind) => !slots.includes(kind))
-  const covered = slots.filter((kind) => byKind.has(kind)).length
-  const heard = ordered.length
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
-      <header className="flex items-baseline justify-between gap-inline px-4 pb-2 pt-4">
-        <h2 className="pane-label">Signaux</h2>
-        {/*
-          A count, not a score. With a slate it answers "how much of it has come
-          up" at a glance, which is the question the list below answers slowly.
-          With no slate there is no denominator that would mean anything — a
-          « 4/7 » against a document with no fields is a score against a target
-          nobody set — so it counts what has been heard instead. `tabular-nums`
-          either way, so it does not jitter as it changes.
-        */}
-        <span className="text-muted shrink-0 tabular-nums text-label" aria-hidden>
-          {slots.length > 0 ? `${covered}/${slots.length}` : heard}
-        </span>
-      </header>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* `.slate` declares the container the rows measure themselves against;
+          see `index.css`. Below 250px they stack rather than shrink the value. */}
+      {/*
+        `ReadingColumn` — the rail is a reading surface and had no edge.
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        Measured at 960×600, 120 of 494 pixels of the slate sat below the fold
+        with a hard rule under the last visible row, which is exactly the « a
+        document cut off at the fold looks like a document that ends there »
+        this component was written for. The slate is the whole point of the
+        rail (DEC-14): a rep judges the compte-rendu against it by seeing
+        « Durée — » empty, and a slot they never knew was there is a slot they
+        cannot judge.
+
+        The class alone would not have done it: `.fade-below` draws from
+        `data-above` / `data-below`, which this component is what sets — a bare
+        class would have masked nothing and exempted the element from the check,
+        which is the worst of both.
+      */}
+      <ReadingColumn subject={{ determiner: 'la', noun: 'fiche' }} className="slate px-4 pb-4">
         <ul className="space-y-1.5">
           {slots.map((kind) => (
             <Slot key={kind} label={KIND_LABEL[kind]} found={byKind.get(kind) ?? []} />
@@ -134,13 +143,34 @@ export function SignalRail({ signals, recording, recipe = DEFAULT_RECIPE }: Sign
             dit.
           </p>
         ) : null}
-        <p className="text-muted mt-row text-label">
-          {recording
-            ? 'Se remplit à mesure · ne clique nulle part · rien ne migre dans vos notes.'
-            : 'Ne se réordonne pas · ne clique nulle part · rien ne migre dans vos notes.'}
-        </p>
-      </div>
-    </section>
+        {/*
+          **And no promise about a thing that does not happen.**
+
+          The last line of the rail read « Rien ne migre dans vos notes. » — a
+          statement, drawn permanently, about something the product never does,
+          at the foot of the column, which is where the eye ends. It was already
+          two clauses shorter than the version before it (« Se remplit à mesure ·
+          ne clique nulle part · rien ne migre dans vos notes. »), and the same
+          argument finishes the job: a rep who has never suspected this panel of
+          typing into their notes is being told not to, during a client call.
+
+          DEC-5's promise is not dropped, it is made where a rep is reading
+          rather than talking, and it is made twice: step 1 of first run carries
+          « Vos notes restent les vôtres — Sillage n’écrit jamais dans votre
+          bloc-notes pendant l’appel », and step 3's third beat names this rail
+          and what it does — « À droite, Sillage note au passage ce qu’il
+          entend … sans rien écrire chez vous » (`Onboarding.tsx`, read before
+          this line was deleted rather than assumed). The
+          slate-less sentence above stays: it is not a promise, it is the reason
+          an empty rail is empty (DEC-43).
+
+          Measured on the shipped renderer: 33 px of content — one line plus its
+          `mt-row` — which at 960×600, the only size where this rail overflows,
+          is 197 → 164 px of slate below the fold during a recording and
+          192 → 159 px once a compte-rendu is beside it.
+        */}
+      </ReadingColumn>
+    </div>
   )
 }
 
@@ -168,11 +198,13 @@ function Slot({ label, found }: SlotProps) {
 
   return (
     <li
-      className={`border-card flex items-baseline gap-inline rounded-sm border px-2.5 py-1.5 ${
+      className={`slate-row border-card flex items-baseline gap-inline rounded-sm border px-2.5 py-1.5 ${
         empty ? 'border-transparent' : 'bg-inner'
       }`}
     >
-      <span className="text-muted w-[4.5rem] shrink-0 text-meta">{label}</span>
+      {/* 64px, not 72: every pixel here is a pixel the value does not get,
+          and the longest label in the slate (« Démarrage ») fits. */}
+      <span className="slate-label text-muted w-16 shrink-0 text-meta">{label}</span>
       {empty ? (
         /*
          * `text-muted`, not the `text-muted/60` that stood here. Tailwind cannot

@@ -25,9 +25,43 @@ export const DiagEventSchema = z.object({
   module: z.string().min(1),
   message: z.string(),
   /**
+   * **Where the message's text came from — and it is a declaration, not a
+   * measurement.**
+   *
+   * `redactMessage` is a denylist over free-form text and it has now leaked in
+   * four review rounds: a Windows home directory, a vendor API key, a client's
+   * name inside a quotation, and then a client's name that quoting *published*
+   * because the surrounding apostrophes were an English possessive. The verdict
+   * written in `redactDiagnostics.ts` after the third round was that a denylist
+   * over free-form text cannot be made safe, only made narrower — « Néovia
+   * Santé » is an ordinary capitalised French word and no rule separates it from
+   * « Windows Defender ».
+   *
+   * So the redactor stops guessing and the call site says. `'foreign'` means the
+   * text is not a literal this product authored — a vendor's error body, an OS
+   * string, a value interpolated in from the world — and the redacted bundle
+   * carries `[message:N]` instead of it. Absent means authored here, which is
+   * what every string-literal call site and every row stored before this field
+   * existed means.
+   *
+   * It is **persisted** rather than applied at record time so that `full` mode
+   * is unchanged and a support reader can see that a message was withheld rather
+   * than that none was recorded.
+   *
+   * `npm run check:diag` is what makes it omission-proof: a `.record({…})` whose
+   * `message:` is anything other than a string literal must declare one of the
+   * two values, so the fifty-fourth call site fails CI instead of leaking.
+   */
+  origin: z.enum(['authored', 'foreign']).optional(),
+  /**
    * Structured detail. Passed through `core/domain/redactDiagnostics.ts` before
    * it can leave the machine — the redacted export is the one the button
    * reaches first, so this must survive being wrong.
+   *
+   * **It is not a safe home for a foreign string.** The allowlist there admits
+   * identifier *shapes*, and a word is a shape it cannot refuse: `far`, `rep`,
+   * `whisper` and `sodexial` are the same thing to a grammar. A value the app
+   * did not mint belongs here only as a count or a length.
    */
   detail: z.record(z.string(), z.unknown()),
   meetingId: MeetingIdSchema.nullable(),
@@ -90,6 +124,14 @@ export interface DiagInput {
   code: string
   module: string
   message: string
+  /**
+   * Required by `npm run check:diag` whenever `message:` is not a string
+   * literal — see `DiagEventSchema.origin` above. `'foreign'` withholds the
+   * text from the redacted bundle; `'authored'` says this product wrote every
+   * part of it, which is a claim about a template's interpolations as much as
+   * about its prose.
+   */
+  origin?: 'authored' | 'foreign'
   detail?: Record<string, unknown>
   meetingId?: string | null
 }

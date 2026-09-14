@@ -45,6 +45,25 @@ export interface DiagnosticsOptions {
   clock?: () => number
   /** Injected so a test can assert on ids without matching a UUID. */
   mintId?: () => string
+  /**
+   * Every event, as it is written — so the *Diagnostics* pane can be live.
+   *
+   * `diag:appended` was declared in the IPC contract and subscribed to by
+   * Réglages, and **nothing anywhere published it**: the pane read
+   * `diagnostics:recent` once on mount and then sat still, so a rep watching
+   * the screen while something failed saw the same two hundred rows they had
+   * arrived with. The one moment that surface exists for — « fais-le encore,
+   * je regarde » on a support call — was the one moment it did not work.
+   *
+   * A callback rather than an import, for the reason every other dependency
+   * here is one: broadcasting is `app/`'s business and a module never reaches
+   * for a `BrowserWindow`. It runs **after** the append, so a listener can
+   * never see an event the log has not got, and it is deliberately not
+   * wrapped in a try: this is wiring the app controls, not a port, and a
+   * throw here would be a bug in `main.ts` worth surfacing rather than
+   * swallowing under the one recorder that could have reported it.
+   */
+  onRecorded?: (event: DiagEvent) => void
 }
 
 const DAY_MS = 86_400_000
@@ -55,6 +74,7 @@ export class Diagnostics implements DiagRecorder {
   #retention: RetentionPolicy
   #clock: () => number
   #mintId: () => string
+  #onRecorded: ((event: DiagEvent) => void) | null
 
   constructor(log: DiagLog, options: DiagnosticsOptions) {
     this.#log = log
@@ -62,6 +82,7 @@ export class Diagnostics implements DiagRecorder {
     this.#retention = options.retention ?? DEFAULT_RETENTION
     this.#clock = options.clock ?? Date.now
     this.#mintId = options.mintId ?? (() => crypto.randomUUID())
+    this.#onRecorded = options.onRecorded ?? null
   }
 
   record(input: DiagInput): DiagEvent {
@@ -72,12 +93,17 @@ export class Diagnostics implements DiagRecorder {
       code: input.code,
       module: input.module,
       message: input.message,
+      // Carried through rather than decided here: `redactDiagEvent` is the only
+      // thing that reads it, and `full` mode must be able to show the message a
+      // foreign row withheld from the redacted bundle.
+      ...(input.origin ? { origin: input.origin } : {}),
       detail: input.detail ?? {},
       meetingId: input.meetingId ?? null,
     }
     // Scoped to the meeting when there is one, so Historique can show a call's
     // failures beside its transcript; otherwise to the app.
     this.#log.append(event.meetingId ?? APP_SCOPE, { type: 'diag', event }, event.ts)
+    this.#onRecorded?.(event)
     return event
   }
 

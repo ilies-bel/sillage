@@ -23,9 +23,24 @@
  */
 export { StateDot, type StateDotProps } from './StateDot.tsx'
 export { Button, unavailable, type ButtonProps } from './Button.tsx'
+export { CopyButton, type CopyButtonProps } from './CopyButton.tsx'
+export {
+  OverflowMenu,
+  type OverflowMenuItem,
+  type OverflowMenuProps,
+} from './OverflowMenu.tsx'
 export { List, Row, RowTitle, type ListProps, type RowProps, type RowTitleProps } from './List.tsx'
 export { Chip, type ChipProps } from './Chip.tsx'
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader.tsx'
 export { SectionNav, type SectionNavItem, type SectionNavProps } from './SectionNav.tsx'
+export { Rail, type RailPlace, type RailProps } from './Rail.tsx'
 export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmented.tsx'
 export { EmptyState, Centered, type EmptyStateProps } from './EmptyState.tsx'
+export { PageTurn } from './PageTurn.tsx'
+export { ReadingColumn, type ReadingColumnProps } from './ReadingColumn.tsx'
+export {
+  readingTurnLabels,
+  type ReadingDeterminer,
+  type ReadingSubject,
+  type ReadingTurnLabels,
+} from './readingSubject.ts'

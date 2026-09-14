@@ -1,0 +1,2287 @@
+/**
+ * **The in-meeting widget** — the product, on top of the call.
+ *
+ * For fifty minutes the Sillage window is behind Teams, and everything this
+ * app knows about the call it is recording was on the other side of it. That is
+ * the whole gap this screen closes. It is a second *window*, never a second
+ * product: every reading on it is a broadcast the main window already
+ * subscribes to, and every control is a channel the main window already calls.
+ *
+ * ## The four things on it, and what each is for
+ *
+ * **The meter** (DEC-38). Collapsed or open, the bars are always on screen —
+ * they are the proof of life, and they are the one thing here that must never
+ * be behind a press. `variant="pill"` is the same instrument at the size the
+ * pill has: same scale, same floor, same two channels mirrored about a
+ * baseline, without the two-word key a 232-pixel pill cannot afford.
+ *
+ * **The live transcript**, and this is the one that needs an argument, because
+ * DEC-38 removed a live transcript pane and this repo's rules say not to
+ * reintroduce one *to prove the tool is working*. That clause is the whole of
+ * it. The transcript is bad at proving the tool works — seconds late, blank
+ * through every pause, identical whether the room is quiet or the microphone is
+ * dead — and this product now has an instrument for that job, which is exactly
+ * what frees the transcript to do the job it is *good* at: showing the rep what
+ * was just said. A number the client gave thirty seconds ago, a name, the end
+ * of a sentence the rep missed while typing. It is opened by a press, it is
+ * never on the pill, and the meter is on screen either way — so at no point is
+ * a rep watching text to find out whether they are being heard.
+ *
+ * **It is collected by this component and not by the panel**, which is the
+ * difference between the feature working and not. The panel is mounted by a
+ * press and unmounted by the next one, so a transcript held there began at the
+ * press and was destroyed by the one that closed it — a rep who opened the
+ * widget to check a number, closed it off the client's face, and opened it
+ * again had an empty box, on the exact use case the paragraph above describes.
+ * The subscription lives here, for the life of the window, whether anybody is
+ * looking or not.
+ *
+ * **The mark** (`core/contracts/marks.ts`). One press — on the pill for a
+ * moment, on a line for that turn — with an optional note. It is the only thing
+ * the rep can put into the record from here, and it goes into the *log*, never
+ * into their document (DEC-5) and never into a prompt (DEC-7).
+ *
+ * **Telling the client** (`mention.ts`, US-11). One press that puts the French
+ * sentence on the clipboard and draws it, so the rep pastes it into the Teams
+ * chat or reads it out. It is the whole of this product's answer to « est-ce que
+ * j’ai le droit d’enregistrer ce client ? », and it is deliberately the smallest
+ * possible one: Granola runs a native messaging host, a socket per user, a
+ * browser extension and a cross-machine arbitration to post the same sentence
+ * into the meeting chat, and DEC-49 says this product never joins the call. So
+ * the rep stays the one who speaks. It **sends nothing**, it is **never a gate**
+ * — a rep who does not press it records exactly as before — and it claims only
+ * that the sentence was handed over, never that anybody agreed.
+ *
+ * **The two ways out**: *Ouvrir Sillage*, which raises the main window on this
+ * meeting, and *Terminer*, which ends the recording — behind a second press,
+ * for the reason stated where it is drawn.
+ *
+ * ## What is deliberately not here
+ *
+ * No compte-rendu, no signal rail, no confidence, no CRM, nothing the model
+ * wrote. DEC-14 keeps the model's output away from the rep during the call, and
+ * a panel that changed by itself over a client's face is the loudest possible
+ * version of what that decision forbids. DEC-4 keeps the one confirmation on a
+ * screen the rep goes to deliberately, with the document in front of them —
+ * nothing here can reach a client's CRM, and nothing here confirms anything.
+ *
+ * And **no provisional text**. An early draft drew interim results muted, with
+ * an ellipsis, and claimed that as a difference over Granola's widget: every
+ * shipped provider is batch — `LocalWhisperSession` and `RestSttSession` both
+ * emit `isFinal: true` and every row in `STT_PROVIDERS` declares
+ * `streaming: false` — so `isFinal: false` cannot occur, and what was written
+ * was a rendering no run of this product could produce, proved by a test that
+ * fed it a fixture. A non-final segment is dropped here rather than drawn, in
+ * one line, so the day a streaming provider ships the widget shows the record
+ * and not a guess until somebody decides otherwise.
+ */
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { EyeOff } from 'lucide-react'
+import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
+import { speakerLabel } from '../../electron/core/contracts/transcript.ts'
+import {
+  MARK_NOTE_MAX,
+  interleaveMarks,
+  type MomentMark,
+} from '../../electron/core/contracts/marks.ts'
+import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { formatElapsed } from '../app/format.ts'
+import { LevelMeter } from '../screens/session/LevelMeter.tsx'
+import { Button } from '../ui/index.ts'
+import {
+  MENTION_COPY_STATE,
+  MENTION_LABEL,
+  MENTION_NOTE,
+  MENTION_NOT_LOGGED,
+} from './mention.ts'
+
+/**
+ * How many turns the widget keeps.
+ *
+ * A ceiling and not a window onto the record: this is a glance at what was just
+ * said, the whole transcript is two clicks away in the app, and an unbounded
+ * list in a window that lives for fifty minutes is a leak with a scrollbar.
+ */
+const KEPT_TURNS = 60
+
+/** Both windows' idea of « rien n'a encore été dit ». */
+const NOTHING_YET = 'Rien n’a encore été transcrit.'
+
+/**
+ * **The clipboard, and the fact that it is allowed to say no.**
+ *
+ * This is the whole transport US-11 has, and the window it runs in is the least
+ * favourable one in the product for it: frameless, transparent, always on top,
+ * shown with `showInactive()` and never focused by the app. Chromium refuses
+ * `writeText` from a document that is not focused — a click on the pill does focus
+ * this window (`focusable: true`), which is why it works, and that is a property
+ * of another process's window options rather than something this file can assert.
+ *
+ * So a refusal is an ordinary outcome and not an error: the story's own first
+ * route is the rep *reading the sentence out*, which costs a clipboard nothing.
+ * `false` is reported upward, the card says « lisez-la à voix haute » instead of
+ * « collez-la », and the log records the weaker of the two facts (`MENTION_NOTE`).
+ * Nothing here throws and nothing here is retried — a rep mid-sentence over a
+ * client's face is not going to read a stack trace.
+ *
+ * jsdom has no `navigator.clipboard` at all, which is the same branch and is how
+ * the renderer's tests reach it.
+ */
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    const clipboard = navigator.clipboard
+    if (!clipboard || typeof clipboard.writeText !== 'function') return false
+    await clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * **What the one card over the call is showing** — a refusal, or the sentence.
+ *
+ * A union and not two states, because « a refusal the rep has not dismissed
+ * outranks a mention card » has to be true by construction: two independent
+ * states drawn from one slot put the precedence in the JSX, and the writer sixty
+ * lines above then deleted the refusal before the guard could ever read it (see
+ * `card` in `Widget`). One state means exactly one of these can be on screen, and
+ * the only place a precedence can be *applied* is where the state is written.
+ *
+ * A string-literal discriminant and never an `enum`: Node's type stripping is
+ * strip-only, so an `enum` has runtime meaning and would not survive it.
+ */
+type WidgetCard =
+  /**
+   * A write the rep believes happened and did not — a mark `meeting:mark`
+   * refused, or a mark it would not take back.
+   */
+  | { kind: 'refus'; text: string }
+  /**
+   * The sentence the rep just took, and what became of it (US-11). Three facts,
+   * because each leads to a different next move: the sentence itself, so it can be
+   * read out; whether the clipboard took it, because « collez-la » and
+   * « lisez-la » are different instructions; and whether the log took it, because
+   * « did I tell them » is answered from the log and a write that failed silently
+   * would leave the rep believing it was answered.
+   *
+   * `sentence` is the sentence **as it was when the press happened**, not as it is
+   * now: this window re-reads `widget:state` whenever `session:changed` fires, so a
+   * card bound to the live value would rewrite itself out from under a rep who is
+   * in the middle of reading it aloud. A card is a record of a press; the field in
+   * Réglages is a setting. `logged: null` is « the write is on the wire » — the card
+   * is drawn on the copy, before the log answers, because the sentence is the
+   * urgent half and must not wait on SQLite behind a preload hop.
+   */
+  | { kind: 'mention'; sentence: string; copied: boolean; logged: boolean | null }
+
+export function Widget() {
+  const state = useInvoke('widget:state', {})
+  /*
+   * **The window is going away, and from here on it draws the call it recorded.**
+   *
+   * `widget:leave` is the only warning this window gets, and it used to be heard
+   * one component down, in `Frame`, where it moved a class and nothing else.
+   * Everything else went on running: `session:changed` fires for the very
+   * transition that is dismissing us, this component's handler reloads
+   * `widget:state`, the meeting is `null` by then — and the card dropped the
+   * `LevelMeter`, the elapsed time and the mark counter **17 ms into a 150 ms
+   * fade, at opacity 0.998**, measured in the packaged app
+   * (`scratch/r26-e2e-widget-last-frame.cjs`: 241 px « … | 00:00:03 | 1 | ▴ » at
+   * +23 ms, 200 px « … | Aucun enregistrement | ▾ » at +54 ms). The last thing a
+   * rep sees of a call they just recorded was this product saying there was no
+   * recording — and the previous round's `--ease-in` fix, correct on its own
+   * terms, multiplied the exposure of that false statement by **8.6×**
+   * (`∫opacity·dt` over the wrong card 12.5 → 107.6; above 0.05 opacity for
+   * 53 ms → 131 ms, `scratch/r26-curve.mjs`). A fix that produces the next
+   * round's finding, with a number.
+   *
+   * The reordering candidate — `syncOverlay()` before the `session:changed`
+   * broadcast in `main.ts` — was rejected, and the reason is worth keeping.
+   * `useInvoke.reload()` holds its previous value until the new one lands, so
+   * the reload that blanks the card is already **in flight** when `widget:leave`
+   * arrives; winning the race changes when `leaving` becomes true, not whether
+   * the answer lands. And it would make a property of this window depend on the
+   * order of two sends in another process, for one channel, when the card can
+   * also be changed by `transcript:appended`, `moment:marked`,
+   * `moment:forgotten`, `health:changed` and `widget:placed` — each of which can
+   * arrive during the fade, and one of which (`health:changed`) grows the frame
+   * and asks for a `widget:resize` that `Overlay` now refuses, which is the
+   * ~20 px slide in the same measurement.
+   *
+   * So the rule is the one that is true of every channel and every order: **a
+   * window that has been told to go away stops taking state.** It keeps drawing
+   * what it last drew, because the recording did happen.
+   *
+   * **A latch and not only a state**, and that took a failing test to learn. React
+   * batches: two broadcasts arriving in one task are both handled before anything
+   * re-renders, so a handler guarded on the *state* reads `false` for the message
+   * that arrives beside `widget:leave` — which is exactly the pair this is about,
+   * since `main.ts` sends `session:changed` and `widget:leave` from the same
+   * function. The ref is the fact, read at the moment it is needed; the state is
+   * what re-renders the shell so the fade can start. One latch, two readers.
+   */
+  const gone = useRef(false)
+  const [leaving, setLeaving] = useState(false)
+  useBroadcast('widget:leave', () => {
+    gone.current = true
+    setLeaving(true)
+  })
+
+  const live = state.state.status === 'ready' ? state.state.value.meeting : null
+  /*
+   * The last meeting this window *rendered*, which is what makes the freeze cover
+   * a read that was already on the wire. Written during render and only while the
+   * window is staying: that is the definition of « what is on screen », and there
+   * is no commit after `leaving` in which it could be captured instead.
+   */
+  const drawn = useRef(live)
+  if (!gone.current) drawn.current = live
+  const meeting = drawn.current
+  const meetingId = meeting?.meetingId ?? null
+  /**
+   * The sentence the ESN configured, as it stood when this window last read state
+   * (US-19, `core/contracts/mention.ts`).
+   *
+   * Not frozen with `drawn`, because it is not a property of the meeting: it comes
+   * down on **every** `widget:state` answer including `{ meeting: null }`, which is
+   * what makes it present at the one measurement the window is held off screen for.
+   * Null only before that answer arrives, which is the same instant the control is
+   * not drawn — so this file holds no default of its own, and a default written in
+   * two places cannot start disagreeing with itself.
+   */
+  const sentence = state.state.status === 'ready' ? state.state.value.mentionSentence : null
+
+  const [open, setOpen] = useState(false)
+
+  /*
+   * **Everything live is collected here, not in the panel.**
+   *
+   * The panel is mounted by a press. State held there begins at that press and
+   * is destroyed by the one that closes it — which for the transcript is the
+   * feature not working, and for the marks is a rep's own presses disappearing
+   * from a list they are looking at. `widget:state` is read once, at window
+   * creation, and nothing re-reads it during a recording: `session:changed`
+   * fires on transitions and a recording has none.
+   */
+  const [turns, setTurns] = useState<TranscriptSegment[]>([])
+  const [marks, setMarks] = useState<MomentMark[]>([])
+  /**
+   * **The one card this window draws over the call, and the reason there is one
+   * state for it rather than two.**
+   *
+   * There were two — a refusal and a mention — drawn from one slot by a `&&` in
+   * the JSX, under a comment stating the precedence correctly: « a refusal
+   * outranks it … the mention is one press away from being asked for again, so
+   * it is the half that yields ». The render implemented that faithfully and the
+   * *writer* undid it: `announce()` opened with `setSaid(null)`, so the guard
+   * could never fire for a refusal that existed before the press, because the
+   * press deleted it first. Measured on the shipped renderer at 1280×800 and
+   * 960×600 — « refus visible : oui » before a press on a control 32 px away,
+   * « refus visible : NON » after it. A rep marks a moment at minute 40, the
+   * write is refused, the card says so, and their next press on a *different*
+   * button deletes the only thing that said the moment they were marking is not
+   * in the record. Verbatim the harm `Refus` was added to end.
+   *
+   * So the two are one discriminated union in one state: two cards cannot
+   * coexist by construction rather than by two components agreeing, and the
+   * precedence lives where it can actually be applied — at the write, in
+   * `announce`, which yields. `setSaid(null)`'s own job survives it: a refusal
+   * *is* replaced by whatever the next press on that control produces, because
+   * that is the same gesture with the rep looking at it; what it may not do is
+   * evaporate under a press that has nothing to do with it.
+   *
+   * A mark that *worked* is not a card at all — the receipt is the counter on the
+   * pill moving, and « Moment marqué. » painted over a client's face would be a
+   * second one — so it rides `announced` below and never this slot. Which is also
+   * why a successful mark does not remove a mention card the rep may be halfway
+   * through reading aloud.
+   */
+  const [card, setCard] = useState<WidgetCard | null>(null)
+
+  /**
+   * What worked, for a screen reader and for nobody else.
+   *
+   * `meeting:mark` refuses whenever the meeting is not `recording`, which
+   * `EndOfMeetingWatch` can make true with the pill still up, and on any store
+   * failure — so a refusal is drawn (see `card`). A success is announced politely
+   * and drawn nowhere: one live region either way and never two, because
+   * `role="alert"` is itself a live region and announcing both would read the same
+   * event twice to the one rep who cannot see either of them.
+   */
+  const [announced, setAnnounced] = useState('')
+
+  /**
+   * **The sentence this window has already handed to this meeting's log** (US-11),
+   * and whether that write has landed.
+   *
+   * Two presses of the mention control for one sentence wrote **two** rows into
+   * the meeting's event log — measured on the shipped renderer at both smoke
+   * sizes, « écritures meeting:mark : 2 » — and reported the first press's refusal
+   * nowhere, because press 2's card replaced press 1's and the token guard then
+   * discarded press 1's answer. `meeting:mark` has no idempotency key and the row
+   * is read back at the gate in a list of the rep's own notes, so the duplicate is
+   * theirs to find and take back (DEC-27).
+   *
+   * The rule is one sentence: **the log write belongs to the act, not to the
+   * press.** While this window is holding a sentence it has already recorded — or
+   * is still recording — a further press re-copies it and records nothing; a press
+   * whose write was *refused* clears the entry, so the next one is a retry and the
+   * log ends with one row rather than none. Dismissing the card ends the act, and
+   * a change of meeting clears it with everything else.
+   *
+   * `landed: false` is « on the wire », which is why the card can say `logged: null`
+   * for a repeat press and still be answered: the answer updates whatever mention
+   * card is on screen for that sentence, and there is only ever one.
+   */
+  const handed = useRef<{ sentence: string; landed: boolean } | null>(null)
+
+  /**
+   * **The marks the meeting already had, applied during the render that gets
+   * measured** (R33-5).
+   *
+   * It was a `useEffect`, which runs *after* `Frame`'s measurement
+   * `useLayoutEffect` in the same commit — child effects before parent effects —
+   * so the pill the main process sized the window to carried a mark button with no
+   * count on it. Measured on the shipped renderer at 1280×800 and at 960×600:
+   * `308×78` revealed, `313×78` a hundred and sixty milliseconds later, which is
+   * 2.5 px of sideways drift over the face of the person on the call, because
+   * `placeAroundPill` holds the pill's *centre*. With no marks there was exactly
+   * one ask, so CLAUDE.md's « 3 asks → 1, at the right size » was true only of a
+   * meeting that had none — which the crash-recovered and rehydrated cases are not.
+   *
+   * A render-phase update and not a layout effect, because a layout effect *here*
+   * is still the parent's and still runs after the child's: the only place the
+   * count can be in the DOM before `Frame` measures it is the same commit. React
+   * re-runs this component before the browser sees anything, so this costs one
+   * render and no frame — and it waits on nothing, so the entrance handshake is
+   * untouched (DEC-26: a widget that does not appear is worse than one that
+   * appears wrong).
+   *
+   * Keyed on the **meeting** rather than on « the list is empty »: the seed is the
+   * one fact about a change of meeting this window has, so a second recording in
+   * one window gets its own marks instead of keeping the first call's, and
+   * `handed` is cleared with them. A later `widget:state` for the same meeting
+   * does not re-seed — the broadcast is the only thing that changes the list after
+   * that, which is the rule stated on `moment:marked` below.
+   */
+  const seeded = useRef<string | null>(null)
+  const loadedMarks = meeting?.marks
+  if (meetingId !== null && loadedMarks !== undefined && seeded.current !== meetingId) {
+    seeded.current = meetingId
+    handed.current = null
+    if (loadedMarks.length > 0 || marks.length > 0) setMarks([...loadedMarks])
+  }
+
+  /*
+   * And nothing is *asked* either. `session:changed` is the broadcast that
+   * carries the very transition dismissing this window, so the reload it fires is
+   * work done to redraw a card that is fading out — see `leaving` above.
+   */
+  useBroadcast('session:changed', () => {
+    if (gone.current) return
+    state.reload()
+  })
+
+  /*
+   * **The health of the two required channels, collected by the *window*.**
+   *
+   * It lived in `Panel` — state mounted by a press and destroyed by the next
+   * one — while `health:changed` is an **edge** broadcast. So a channel that
+   * died while the panel was shut, which is most of a call, was never reported:
+   * the rep opened the widget at minute 20 to check and it said nothing was
+   * wrong. That is the same defect as the transcript's, in the same file, under
+   * a header that states the rule — and it was worse here, because this is the
+   * one reading that says the product is failing.
+   *
+   * Seeded from the snapshot as well as the edge, which every other health
+   * surface in the app already does (`StatusControl`, the gate, the onboarding):
+   * an edge that fired before this window existed is an edge nobody heard, and
+   * a widget is created *during* a meeting.
+   */
+  const [trouble, setTrouble] = useState<string | null>(null)
+  const health = useInvoke('health:snapshot', {})
+  useEffect(() => {
+    if (health.state.status !== 'ready') return
+    const snapshot = health.state.value
+    const worst = (['capture', 'transcribe'] as const)
+      .map((connector) => snapshot[connector])
+      .find((entry) => entry !== undefined && entry.state !== 'ok')
+    setTrouble(worst?.reason ?? null)
+  }, [health.state])
+  useBroadcast('health:changed', ({ connector, health: next }) => {
+    if (gone.current) return
+    if (connector !== 'capture' && connector !== 'transcribe') return
+    setTrouble(next.state === 'ok' ? null : (next.reason ?? null))
+  })
+
+  /*
+   * The turns arrive on the broadcast nothing had ever subscribed to.
+   *
+   * `transcript:appended` has been emitted for every segment of every meeting
+   * since the orchestrator was written, and was read by no window — the session
+   * screen draws the meter instead (DEC-38) and the gate reads the stored
+   * record. A broadcast with no subscriber is a promise the product is not
+   * keeping; this is the surface that keeps it.
+   */
+  useBroadcast('transcript:appended', (payload) => {
+    if (gone.current) return
+    if (payload.meetingId !== meetingId) return
+    // Batch providers only, today — see the header. A provisional result is
+    // dropped rather than drawn: this surface shows the record.
+    if (!payload.segment.isFinal) return
+    setTurns((was) => [...was, payload.segment].slice(-KEPT_TURNS))
+  })
+
+  /*
+   * **The broadcast is the only way this list changes.**
+   *
+   * Not an optimistic insert from what `meeting:mark` returned, which is what
+   * this did: that draws a mark whose write may not have happened, and it
+   * leaves the broadcast doing nothing at all — the shape
+   * `scripts/check-surfaces.mjs` now fails the build on. One path, so the row
+   * on screen is the row in the log.
+   */
+  useBroadcast('moment:marked', (payload) => {
+    if (gone.current) return
+    if (payload.meetingId !== meetingId) return
+    setMarks((was) =>
+      was.some((mark) => mark.id === payload.mark.id) ? was : [...was, payload.mark],
+    )
+  })
+
+  useBroadcast('moment:forgotten', (payload) => {
+    if (gone.current) return
+    if (payload.meetingId !== meetingId) return
+    setMarks((was) => was.filter((mark) => mark.id !== payload.markId))
+  })
+
+  const mark = useCallback(
+    async (segmentId: string | null, text: string) => {
+      if (meetingId === null) return
+      try {
+        await invoke('meeting:mark', { meetingId, note: text, segmentId })
+        setAnnounced(text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`)
+        /*
+         * A refusal *is* spent by a press on the control it refused: same gesture,
+         * same rep, looking at the card. What it is not spent by is a press on
+         * something else — see `card`, and the mention's yield below. A mention card
+         * is deliberately untouched here: it holds a sentence the rep may be halfway
+         * through reading to a client.
+         */
+        setCard((was) => (was?.kind === 'refus' ? null : was))
+      } catch (error) {
+        setCard({
+          kind: 'refus',
+          text: error instanceof Error ? error.message : 'Impossible de marquer ce moment.',
+        })
+      }
+    },
+    [meetingId],
+  )
+
+  /**
+   * **The press that tells the client** (US-11, `mention.ts`).
+   *
+   * Two effects and no third. It copies the sentence, and it writes down that it
+   * did. There is no transport: nothing is posted into the meeting, nothing is
+   * mailed, nothing touches the Outlook event body — DEC-10, which mails every
+   * attendee and destroys the Teams join blob, is the reason that last one is
+   * named rather than merely absent. `Widget.test.tsx` asserts the *set* of
+   * channels this press reaches, because « it sends nothing » is a claim about
+   * everything that is not here and a docblock cannot hold it.
+   *
+   * **It is not a gate.** It returns nothing, it sets no flag any other control
+   * reads, and the recording is untouched whether it is pressed, refused or never
+   * found. Refusing to record a client call because a sentence was not copied is
+   * not this product's decision to make.
+   *
+   * **`meeting:mark` is the log, and reusing it is a decision with a cost worth
+   * stating.** It is the only channel that appends to a meeting's event log from
+   * this window, so the alternative is a new event type, a new channel and a new
+   * fold in three files the coordinator owns — for a row that would be drawn in
+   * exactly the same place, by `interleaveMarks`, at the gate and in *Historique*.
+   * What it costs is that `MomentMarkSchema.note` documents itself as « the rep's
+   * own words » and this note is the product's: the row the rep reads back at the
+   * gate says « Phrase d’information sur la transcription copiée. » in a list of
+   * their own notes, and the pill's counter moves by one. Both are true — a
+   * moment in the call was marked, by the rep, on purpose — and the counter moving
+   * is the second receipt the press gets. If a dedicated event is ever declared,
+   * this call is the one line that changes.
+   *
+   * **Nothing is announced politely.** A success in `announced` would read
+   * « Moment marqué » to a screen reader for a press that was not a mark, and the
+   * card below is already a live region: two would read the same event twice.
+   *
+   * **And it yields, in both directions.** A refusal the rep has not dismissed
+   * keeps the one card slot — `card`'s docblock has the measurement — and the log
+   * write happens at most once per sentence handed over, which `handed` states.
+   * What the press always does is copy: that is the half a refused mark has no
+   * opinion about.
+   */
+  const announce = useCallback(async () => {
+    /*
+     * `sentence` is null only before `widget:state` answers (US-19), which is the
+     * same instant `meetingId` is null and the control is not drawn — so this is the
+     * belt to the braces above rather than a reachable refusal. It is here because a
+     * press that copied the empty string would put a rep in front of a client with a
+     * blank card, and that is the one failure this surface must not have.
+     */
+    if (meetingId === null || sentence === null || gone.current) return
+    const copied = await copyText(sentence)
+    /*
+     * Read *after* the await, because the press that matters most for this is the
+     * one that happens while the clipboard is still deciding — a rep double-pressing
+     * a 24-pixel control over a client's face.
+     */
+    const prior = handed.current
+    const already = prior !== null && prior.sentence === sentence
+    /*
+     * **A window that has been told to go away stops taking state**, and this is
+     * the one path in this component that crosses an `await` before its first
+     * write. `copyText` is an async permission check on the clipboard, so
+     * « press the pill's control, press *Terminer* » — or the meeting ending under
+     * the rep, which is what `EndOfMeetingWatch` does — can land `widget:leave`
+     * in between. Drawing the card then is a 145-pixel box arriving *during* the
+     * fade, which grows the frame and asks for a `widget:resize` that `Overlay`
+     * refuses: the ~20 px slide measured in
+     * `scratch/r26-e2e-widget-last-frame.cjs`, reintroduced by a new card.
+     * The write to the log is still worth making — it happened — so only the
+     * drawing is dropped.
+     */
+    if (gone.current) {
+      if (!already) {
+        handed.current = { sentence, landed: false }
+        void invoke('meeting:mark', {
+          meetingId,
+          note: MENTION_NOTE(copied),
+          segmentId: null,
+        }).catch(() => undefined)
+      }
+      return
+    }
+    /*
+     * **The yield, and it is one line because there is one state.** A refusal the
+     * rep has not dismissed keeps the slot; this press has still copied the
+     * sentence, and it is one press away from being asked for again.
+     */
+    setCard((was) =>
+      was?.kind === 'refus'
+        ? was
+        : {
+            kind: 'mention',
+            sentence,
+            copied,
+            logged: already && prior.landed ? true : null,
+          },
+    )
+    // Already recorded, or still being recorded: the act is one act. See `handed`.
+    if (already) return
+    handed.current = { sentence, landed: false }
+    /*
+     * **The answer updates the card on screen for this sentence, and never mints
+     * one.** That is what keeps a dismissed card from coming back on its own — a
+     * card that returns over a client's face with nobody having pressed anything is
+     * the one thing DEC-14 forbids of this window — and it is what lets a second
+     * press inherit the first write's answer, which is the whole of the fix for the
+     * duplicate row. It replaced a press token, which could only say « not mine »
+     * and therefore threw the refusal away.
+     */
+    const answer = (logged: boolean): void => {
+      if (gone.current) return
+      setCard((was) =>
+        was?.kind === 'mention' && was.sentence === sentence ? { ...was, logged } : was,
+      )
+    }
+    try {
+      await invoke('meeting:mark', {
+        meetingId,
+        note: MENTION_NOTE(copied),
+        segmentId: null,
+      })
+      if (handed.current?.sentence === sentence) handed.current = { sentence, landed: true }
+      answer(true)
+    } catch {
+      // Nothing landed, so the act is not spent: the next press is a retry and the
+      // log ends with one row rather than none.
+      if (handed.current?.sentence === sentence) handed.current = null
+      answer(false)
+    }
+  }, [meetingId, sentence])
+
+  const forget = useCallback(
+    (markId: string) => {
+      if (meetingId === null) return
+      void invoke('meeting:forget', { meetingId, markId })
+        .then(() => {
+          setAnnounced('Moment retiré.')
+          setCard((was) => (was?.kind === 'refus' ? null : was))
+        })
+        .catch(() => setCard({ kind: 'refus', text: 'Impossible de retirer ce moment.' }))
+    },
+    [meetingId],
+  )
+
+  return (
+    <Frame
+      open={open}
+      leaving={leaving}
+      gone={gone}
+      settled={state.state.status !== 'loading'}
+    >
+      {(above, placed) => (
+        <>
+          <Pill
+            title={meeting?.clientName ?? (meeting?.title || null)}
+            startedAt={meeting?.startedAt ?? null}
+            meetingId={meetingId}
+            marks={marks.length}
+            open={open}
+            above={above}
+            placed={placed}
+            onToggle={() => setOpen((was) => !was)}
+            onMark={() => void mark(null, '')}
+            onMention={() => void announce()}
+          />
+          {/*
+            The one card, where the press was.
+
+            Between the pill and the panel in the DOM, which puts it against the
+            pill whichever way the card stacks — `flex-col-reverse` reverses the
+            paint and not the order, so it is directly under the pill when the
+            panel opens downward and directly over it when the panel opens up.
+            Never *inside* the panel: the press it answers is most often the one
+            on the pill, with no panel open at all, which is the case that had
+            nowhere to appear.
+
+            Two cards stacked over a video call is twice the window for one press,
+            and the two can genuinely coincide: a mark refused at minute 40 and a
+            mention pressed at minute 41. That is a `switch` on one state now and
+            not a conjunction of two — the precedence between them is applied where
+            they are *written*, because a render can only ever read what the writer
+            left it. See `card`, which carries the measurement.
+          */}
+          {card === null ? null : card.kind === 'refus' ? (
+            <Refus text={card.text} onDismiss={() => setCard(null)} />
+          ) : (
+            <Mention
+              sentence={card.sentence}
+              copied={card.copied}
+              logged={card.logged}
+              /*
+                Dismissing ends the act as well as the card: the next press on the
+                control is a new telling and writes its own row. See `handed`.
+              */
+              onDismiss={() => {
+                handed.current = null
+                setCard(null)
+              }}
+            />
+          )}
+          {open && meetingId !== null ? (
+            <Panel
+              meetingId={meetingId}
+              above={above}
+              heading={meeting?.clientName ?? meeting?.title ?? ''}
+              turns={turns}
+              marks={marks}
+              trouble={trouble}
+              onMark={mark}
+              onForget={forget}
+              onClose={() => setOpen(false)}
+              onAnnounce={setAnnounced}
+            />
+          ) : null}
+          {/*
+            And what worked, for a screen reader only.
+
+            The receipt a sighted rep gets for a mark that landed is the counter
+            on the pill moving, which is what that counter is for — a card
+            painted over a client's face to say « Moment marqué. » would be a
+            second one, on the surface whose whole rule is that every pixel of it
+            is a pixel of Teams the rep cannot click. A refusal is the opposite
+            case and is drawn: see `Refus` above.
+
+            A refusal is left out of *this* region rather than repeated in it.
+            `role="alert"` is itself a live region, so announcing both would read
+            the same sentence twice to the one rep who cannot see either of them.
+          */}
+          <p aria-live="polite" className="sr-only">
+            {announced}
+          </p>
+        </>
+      )}
+    </Frame>
+  )
+}
+
+/**
+ * The halo, and the measurement.
+ *
+ * Two jobs, and they are the same job. The window is transparent and always on
+ * top, so it is exactly as big as the renderer says it is — and
+ * `getBoundingClientRect` does not include a `box-shadow`, so the first version
+ * reported the card's own box and the shadow was clipped to nothing. The
+ * shadow is the only thing separating a pale card from the video call
+ * underneath (`--shadow-overlay` says so in `tokens.css`), so on a real call
+ * the rep got a white rectangle cut into the picture, while every harness
+ * screenshot showed the shadow beautifully against five hundred pixels of the
+ * app's own paper. Same blind spot as `--expand` hiding clipped textareas for
+ * thirteen rounds: the instrument was measuring the wrong box.
+ *
+ * So the frame reserves the shadow's own extent, and those pixels are given
+ * back: `widget:passThrough` turns the window's mouse off while the pointer is
+ * over the halo (`setIgnoreMouseEvents(…, { forward: true })`, which still
+ * delivers moves so it can be turned on again), so the halo is a place the rep
+ * can click *through* into Teams rather than a hole punched in the call.
+ *
+ * `ResizeObserver` and not an effect on the state that opened it: the content
+ * also changes height when a turn arrives, when a mark is made and when the
+ * health line appears, and an effect per cause is a list that will be one
+ * short.
+ */
+const HALO = 20
+
+/**
+ * How long the frame waits before reporting a size it is not happy with.
+ *
+ * The main process does not show this window until the renderer has said how big it
+ * is (`FIRST_FRAME_MS` in `Overlay.ts`), which is what stopped a card appearing
+ * clipped and sliding into place. The measurement itself then has to be worth
+ * waiting for, and there are **two** ways it is not.
+ *
+ * **The wrong face.** Measured on the shipped renderer: the first frame is laid out
+ * in the *fallback* face, so the pill reported 239 px, Inter then loaded and it
+ * became 276, and `placeAroundPill` holds the pill's *centre*, so those 37 px moved
+ * the window sideways by eighteen. Before the window was deferred that jump was the
+ * third of three; after, it would have been the only one left, and the one still
+ * visible.
+ *
+ * **The wrong content, which is worse and was the entrance's own version of the
+ * exit's defect.** The gate was on the font and never on what the pill was
+ * *drawing*: `widget:state` is a preload hop and two SQLite reads, and until it
+ * answers `Pill` draws « Aucun enregistrement » with no meter, no clock and no mark
+ * button. So the measurement the main process was holding the window off screen for
+ * could be a measurement of a pill saying the recording is not happening — and the
+ * window was then *revealed* carrying it. Measured on the shipped renderer with one
+ * line of latency on that one channel (`scratch/r26-widget-first-frame-shot.mjs`,
+ * 120 ms): « the window is created/shown at 240×78 », pill text
+ * « Enregistrement en cours / Aucun enregistrement / ▴ », settling at 281×78 — 41 px
+ * clipped and a 21 px slide, arriving with the opposite of what it means. In real
+ * Electron on the machine this is typed on, `widget:state` took 17 ms and the reveal
+ * *was* correct (`scratch/r26-e2e-widget-first-frame.cjs`: 619 ms placeholder,
+ * 636 ms the real pill; the main process shows at 276×78), so the whole defence was
+ * ~104 ms of unguarded margin at the instant `startRecording` is opening two audio
+ * devices and booting a transcriber — on a Mac, where the primary platform is
+ * Windows (HR-2). Correct by construction, not by margin.
+ *
+ * One number for both waits, and it is the **deadline** on each rather than a
+ * requirement: silence here is a pill that does not appear until the main process
+ * gives up on us, so the renderer must always answer first, with a worse number if
+ * that is all it has (DEC-26). It is measured from the **mount** and not from each
+ * arming of the effect — the content arriving re-arms the measurement, and a font
+ * deadline that restarted there would land past the moment the main process stops
+ * waiting.
+ *
+ * **And it has to be longer than the read it is waiting for, which is what made the
+ * first attempt at this useless.** At 120 ms it fired before `widget:state` answered
+ * and the placeholder was measured anyway — measured on the built bundle with the
+ * harness's own fixture, whose `LATENCY` table gives that channel 150 ms precisely so
+ * a stage can catch the pill mid-flight: « t=+181ms 240×78 « … | Aucun
+ * enregistrement | ▾ » », then the real pill at 221 ms
+ * (`scratch/r26b-prod-first-frame.mjs`). A deadline shorter than the answer is a
+ * deadline that decides every time, so the wait it guards never happens. 200 ms
+ * covers that read with room, and `FIRST_FRAME_MS` was raised to 300 so the main
+ * process still gives up **after** this side does — a handshake whose two deadlines
+ * are in the wrong order is decided by the wrong process, and what the main process
+ * reveals when it gives up is the *guess*, which is 49 px narrower than the pill.
+ *
+ * Inter is bundled (`src/font/`) and `widget:state` is two SQLite reads over a
+ * preload hop, so on an ordinary launch both waits are already over and this costs
+ * nothing: measured in the packaged app, the placeholder is in the DOM for **10 ms**
+ * (456 ms → 466 ms) and the window is revealed at 737 ms
+ * (`scratch/r26b-e2e-visible-text.cjs`).
+ */
+const MEASURE_DEADLINE_MS = 200
+
+/**
+ * How long this element's own transition will take, in milliseconds — read off
+ * the resolved style and never written down twice.
+ *
+ * `.widget-leaving` names `var(--motion)`, and `--motion` is `0ms` under
+ * `prefers-reduced-motion`. A constant here would be a second copy of a number
+ * `tokens.css` owns, and it would be the *wrong* copy for exactly the rep who
+ * asked for less motion: they would get a static pill held on screen for a fifth
+ * of a second after their call ended, which is the opposite of what the setting
+ * asks for.
+ *
+ * `duration + delay`, per property, taking the longest — the two lists are
+ * index-matched by the spec, and a shorthand `transition` with no delay resolves
+ * to `0s` rather than to nothing. A style engine that answers neither — jsdom
+ * does not — gives `0`, which is a correct answer: there is nothing to wait for.
+ */
+const transitionMs = (element: Element): number => {
+  const style = getComputedStyle(element)
+  const seconds = (raw: string): number[] =>
+    (raw || '').split(',').map((part) => {
+      const text = part.trim()
+      const value = Number.parseFloat(text)
+      if (!Number.isFinite(value)) return 0
+      return text.endsWith('ms') ? value : value * 1000
+    })
+  const durations = seconds(style.transitionDuration)
+  const delays = seconds(style.transitionDelay)
+  return Math.max(0, ...durations.map((ms, index) => ms + (delays[index] ?? 0)))
+}
+
+interface FrameProps {
+  open: boolean
+  /**
+   * The window has been asked to play its exit — see `leaving` in `Widget`.
+   *
+   * `leaving` re-renders the shell so the fade can start; `gone` is the same latch
+   * read synchronously, because React batches and a broadcast arriving beside
+   * `widget:leave` must not be allowed to see `false`.
+   */
+  leaving: boolean
+  gone: React.RefObject<boolean>
+  /**
+   * Whether the read the pill cannot draw without has landed.
+   *
+   * Settled either way, and that is the honest condition rather than « there is a
+   * meeting »: a `widget:state` that answers `{ meeting: null }` is an answer, and
+   * a window held off screen until a meeting appears would never appear at all on
+   * the one race where it does not. See `MEASURE_DEADLINE_MS`.
+   */
+  settled: boolean
+  /**
+   * `above` — which way the panel stacks — and `placed`, whether the main process
+   * has put this window on screen at a size it measured. See `reveal` below: the
+   * second is what releases the arrival (DEC-50), and the pill's own class is the
+   * only thing that reads it.
+   */
+  children: (above: boolean, placed: boolean) => React.ReactNode
+}
+
+function Frame({ open, leaving, gone, settled, children }: FrameProps) {
+  const box = useRef<HTMLDivElement>(null)
+  const [above, setAbove] = useState(false)
+
+  /**
+   * **The window is on screen, which is the one cue the arrival may start on**
+   * (DEC-50, `.widget-arrive` in `index.css`).
+   *
+   * The pill is held at `scale(0.92)` and `opacity: 0` by a *paused* animation
+   * until this flips, and the reason is arithmetic rather than taste:
+   * `getBoundingClientRect` **includes transforms**, so a pill that is mid-scale
+   * when `send()` below reads it reports a box 8% small — and the main process
+   * sizes a frameless always-on-top window to exactly that number. That is the
+   * clipped first frame `MEASURE_DEADLINE_MS`, `FIRST_FRAME_MS` and
+   * `APPEARANCE_MS` exist to end, reintroduced by the polish that was supposed to
+   * follow them. The invariant that closes it is one sentence: **the pill is
+   * measurable exactly while it is not moving**, and `paused` is both halves of
+   * that at once.
+   *
+   * **DEC-50 names `widget:measuring` and that is the wrong channel, measured.**
+   * That message is the renderer stating its own *deadline*, sent from a layout
+   * effect with no dependencies — one IPC hop from mount, before anything has
+   * been measured at all. Gating on its reply releases the animation while the
+   * font wait and the `widget:state` wait are both still outstanding, so the
+   * measurement the main process is holding the window off screen for is taken
+   * off a scaling pill: exactly the defect the bound was written to prevent. On
+   * the harness fixture that gap is ~150ms of a 150ms animation. So the gate is
+   * `widget:resize` — the message that *carries* the measurement, and whose reply
+   * `Overlay.resize` only sends after `setBounds` and `showInactive`. It is
+   * strictly later and it is the earliest instant this side can know the window
+   * is visible; starting sooner would show a fully drawn pill for an IPC hop and
+   * then snap it back to 92% to grow again, which is a flinch rather than an
+   * arrival.
+   *
+   * **Any settlement, including a refusal.** `ok: false` is « we did not place
+   * you » and normally means the meeting ended under us — but a pill that is
+   * never painted is worse than one painted early (DEC-26), and this window has
+   * no taskbar entry to come back from. Same reason the two paths out of the
+   * measurement effect that cannot measure at all release it before returning.
+   */
+  const [placed, setPlaced] = useState(false)
+
+  /*
+   * **The placement the renderer did not ask for.**
+   *
+   * `widget:resize` answers `above` on the reply, which covers every change this
+   * component *caused*. Two changes it does not cause, and the main process is
+   * the only thing that can see either: a display going away — the rescue that
+   * keeps this window recoverable at all — and a drag across the display's
+   * midline, which flips the stacking without changing the frame's size by a
+   * pixel. Both used to depend on a `widget:resize` being sent, and both are a
+   * broadcast now.
+   */
+  useBroadcast('widget:placed', ({ above: next }) => {
+    // A window that has been let go of does not relayout — `leaving` in `Widget`
+    // states the rule, and this is the one channel that would move the *card*
+    // rather than its content: `above` flips `flex-col` to `flex-col-reverse`.
+    if (gone.current) return
+    setAbove(next)
+  })
+
+  /*
+   * **The window is about to be destroyed and this is the only warning it gets.**
+   *
+   * `Overlay.dismiss()` asks, this fades, and the reply says how long the fade
+   * takes so the main process can destroy the window after it rather than
+   * during it. Nothing about the widget's *content* changes — the pill keeps its
+   * elapsed time and its counter to the last frame, because the recording did
+   * happen and a card that blanked its own numbers on the way out would be
+   * saying something about the call that is not true. That sentence was written
+   * here as a property and the product did the opposite for as long as it was
+   * written down; what makes it true is the freeze in `Widget`, which is why
+   * `leaving` arrives as a prop rather than being heard in this component.
+   *
+   * The reply is not load-bearing: `Overlay` armed a fallback timer before it
+   * asked, so a renderer that is wedged, crashed or simply slower than half a
+   * second loses its window anyway. A pill that outlives the call it reports is
+   * worse than a pill that pops.
+   */
+  const shell = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!leaving) return
+    /*
+     * A layout effect, so the answer is sent *before* the first animated frame
+     * is painted rather than after it. The main process counts from the reply, so
+     * measuring early can only make the window outlive the animation — measuring
+     * late would clip its own tail, which is the failure this whole handshake
+     * exists to avoid.
+     */
+    const element = shell.current
+    void invoke('widget:left', { afterMs: element ? transitionMs(element) : 0 }).catch(
+      () => undefined,
+    )
+  }, [leaving])
+
+  /**
+   * The last measurement that was sent, **outside the effect**.
+   *
+   * It was a `let` in the effect's closure, which is a duplicate guard that only
+   * guards within one arming of the effect — and the effect had no dependency
+   * array at all, so it re-armed on every render and the guard was reset every
+   * time. A ref is the same guard over the lifetime of the window, which is the
+   * scope the question « have I already told the main process this » actually
+   * has. It also absorbs `StrictMode`'s development double-mount, which is two
+   * byte-identical sends on every first paint and nothing to do with the product.
+   */
+  const last = useRef('')
+
+  /**
+   * Whether the box being measured is drawn in the face it will keep.
+   *
+   * A ref and not state: flipping it must not re-render, and it has to survive the
+   * effect re-arming on `above` — the question « has this window ever been legible »
+   * belongs to the window, like `last` beside it.
+   */
+  const legible = useRef(false)
+
+  /**
+   * When this frame first armed its measurement, so both deadlines are measured
+   * from the mount rather than from the arming that happens to be current — see
+   * `MEASURE_DEADLINE_MS`.
+   */
+  const armed = useRef(0)
+
+  /**
+   * The content wait, as state rather than a ref, because it is the one of the two
+   * that has to *re-arm the effect*: a size observer cannot see the placeholder
+   * being replaced by a pill of a different width until after the fact, and the
+   * whole point is to speak once, afterwards.
+   *
+   * `settled || waited` and never `settled` alone: a `widget:state` that never
+   * answers must still produce a pill (DEC-26). What that costs is the placeholder
+   * being measured, which is exactly what the rep used to get immediately.
+   */
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setWaited(true), MEASURE_DEADLINE_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  /**
+   * **Tell the main process when this clock started, because its deadline was armed
+   * from a different one.**
+   *
+   * `Overlay` arms `FIRST_FRAME_MS` (300) inside its `ready-to-show` handler; every
+   * wait in this file is absolute from *this* mount. So the hundred milliseconds
+   * between the two constants was a hundred minus the gap between those two events —
+   * measured at 81 ms and 47 ms on the machine this is written on, leaving 19 and 53,
+   * on the critical path of `startRecording` where two audio devices are opening and a
+   * transcriber is booting, for a rep on a Windows laptop (HR-2). Lose that race and
+   * the main process reveals `INITIAL_SIZE`: a card forty-nine pixels narrower than
+   * the pill, saying « Aucun enregistrement », over a live call.
+   *
+   * Sent in a layout effect with no dependencies, before the measurement effect can
+   * possibly report — one message per window, at the earliest instant this side exists.
+   * It carries `MEASURE_DEADLINE_MS` rather than agreeing it, for the reason `pillTop`
+   * is measured and `widget:left` carries `afterMs`: a number two files have to keep
+   * equal is a number that will stop being equal.
+   *
+   * Failing here costs nothing by design (DEC-26): the main process keeps the deadline
+   * it has today, `APPEARANCE_MS` is above both, and a widget that does not appear is
+   * worse than one that appears wrong.
+   */
+  useLayoutEffect(() => {
+    void invoke('widget:measuring', { withinMs: MEASURE_DEADLINE_MS }).catch(() => undefined)
+  }, [])
+  const drawable = settled || waited
+
+  useLayoutEffect(() => {
+    const element = box.current
+    /*
+     * Nothing can be measured here, so nothing is going to release the arrival —
+     * and an unreleased arrival is an invisible pill (DEC-26). This is the same
+     * « every path out ends in a `send()` » contract `speak()` below keeps, one
+     * level up: the two environments that reach it are a frame with no box and a
+     * renderer with no `ResizeObserver`, which is jsdom.
+     */
+    if (!element || typeof ResizeObserver === 'undefined') {
+      setPlaced(true)
+      return
+    }
+    if (armed.current === 0) armed.current = Date.now()
+    /**
+     * Is the pill in the middle of its own arrival?
+     *
+     * The one question that keeps « the pill is measurable exactly while it is not
+     * moving » true. A *paused* animation — the pill before the window is placed —
+     * answers `paused`, not `running`, so the first measurement goes out normally;
+     * and under `prefers-reduced-motion` the duration is `0ms` and the animation is
+     * `finished` before it is ever played, so this is never true and no branch is
+     * needed for that rep.
+     *
+     * `getAnimations` guarded because jsdom does not implement it: an environment
+     * that cannot say answers « not moving », which is the permissive direction and
+     * the one where a measurement is better than none.
+     */
+    const moving = (el: Element): boolean =>
+      typeof el.getAnimations === 'function' &&
+      el.getAnimations().some((animation) => animation.playState === 'running')
+    const send = (): void => {
+      /*
+       * **And a leaving window asks for nothing more.**
+       *
+       * `Overlay` released it before it sent `widget:leave`, so a `widget:resize`
+       * from here is answered `{ ok: false }` — which is not merely wasted work: the
+       * reply carries `above: false`, and writing that in relaid the card out
+       * mid-fade. The reply is guarded on `ok` below as well, because the same
+       * refusal happens for a measurement that was already on the wire.
+       */
+      if (gone.current) return
+      // Nothing is reported in the fallback face, and nothing is reported of a pill
+      // that is still waiting for the read it draws — see `MEASURE_DEADLINE_MS`. The
+      // observer fires on the initial observe too, so the guards have to be here and
+      // not only on the first call.
+      if (!legible.current || !drawable) return
+      const pill = element.querySelector('[data-pill]')
+      /*
+       * **And nothing is reported of a pill that is scaling** (DEC-50).
+       *
+       * `getBoundingClientRect` includes transforms, so a rect read here while the
+       * arrival is playing reports the pill 8% short — 35px on a 38px card — and
+       * `Overlay.resize` sizes the window to it and holds *that* as `pillTop` and
+       * `pillHeight` for every later placement. The measurement is not lost, it is
+       * deferred: `animationend` below asks again, and the key then decides whether
+       * anything has actually changed, so an arrival with no size change beside it
+       * is silent rather than byte-identical. See `placed` for why the two can
+       * never overlap on the *first* measurement, which is the one the window is
+       * held off screen for.
+       */
+      if (pill && moving(pill)) return
+      const frame = element.getBoundingClientRect()
+      /*
+       * The pill, found in the DOM rather than held in a ref.
+       *
+       * It was a ref on a wrapper carrying `display: contents` — which has no
+       * box at all, so every measurement came back zero and the anchor the
+       * whole placement is built on was « the top of the frame », silently. A
+       * `data-` attribute on the element that actually paints cannot be wrong
+       * in that way.
+       */
+      const anchor = pill?.getBoundingClientRect()
+      const width = Math.ceil(frame.width)
+      const height = Math.ceil(frame.height)
+      // Where the pill is inside the frame, which is what lets the main process
+      // leave *the pill* where it was rather than a window edge.
+      const pillTop = Math.max(0, Math.round((anchor?.top ?? frame.top) - frame.top))
+      /*
+       * **`pillTop` is part of the key, and leaving it out was a 382-pixel
+       * jump.**
+       *
+       * It is a function of the stacking direction, not of the size: `flex-col`
+       * puts the pill at `HALO`, `flex-col-reverse` at `height − pillH − HALO`.
+       * So dragging the widget across the display's midline with the panel open
+       * flips `above`, moves the pill by the panel's whole height — and left the
+       * frame exactly `width × height`. No message, and the main process went on
+       * holding a `pillTop` of 402 for a pill painted at 20, so the next
+       * legitimate resize placed the window as if the pill were where it no
+       * longer was.
+       */
+      const key = `${width}×${height}×${pillTop}`
+      // The observer fires on every sub-pixel change; the window may only be
+      // moved for a real one, or a resize animates against itself.
+      if (width === 0 || height === 0 || key === last.current) {
+        // A frame with no box will never produce a measurement, so nothing here
+        // would ever release the arrival — see `placed`. Fail open.
+        if (width === 0 || height === 0) setPlaced(true)
+        return
+      }
+      last.current = key
+      void invoke('widget:resize', {
+        width,
+        height,
+        pillTop,
+        pillHeight: Math.round(anchor?.height ?? height),
+      })
+        /*
+         * **`ok: false` is « we did not place you », never « you open downward ».**
+         *
+         * `Overlay.resize` answers that whenever there is no window — the meeting
+         * ended between this measurement and its arrival, which its own docblock
+         * names as the ordinary case — and `above` is then a default rather than an
+         * answer. Writing it in flipped the chevron and relaid the card out during
+         * the exit, which is half of the ~20 px slide measured in
+         * `scratch/r26-e2e-widget-last-frame.cjs` (« ▴ » → « ▾ » at +54 ms).
+         */
+        .then((placement) => {
+          if (placement.ok) setAbove(placement.above)
+        })
+        .catch(() => undefined)
+        /*
+         * The measurement has been answered, whatever the answer was: the window
+         * has been placed at this size and shown, or there is no window. Either way
+         * the pill may now be drawn and may now move — see `placed`.
+         */
+        .finally(() => setPlaced(true))
+    }
+    const observer = new ResizeObserver(send)
+    observer.observe(element)
+
+    /*
+     * **The deferred measurement, asked again the instant the pill stops moving.**
+     *
+     * `animationend` and not a timer: the duration lives in `--motion`, it is `0ms`
+     * under `prefers-reduced-motion`, and a constant here would be the second copy
+     * of a number `tokens.css` owns — which is the mistake `widget:left` exists to
+     * avoid on the other end of the same window. It bubbles, so one listener on the
+     * frame covers the pill's arrival and the panel's; the panel's costs a rect read
+     * and the key then finds nothing to say.
+     */
+    element.addEventListener('animationend', send)
+
+    /*
+     * **Speak once the type is settled, and always speak.** Both halves matter: the
+     * main process is holding the window off screen until we do, so every path out of
+     * here ends in a `send()` — a font that never arrives costs the rep a worse
+     * measurement, never a missing pill (DEC-26).
+     */
+    let deadline: ReturnType<typeof setTimeout> | null = null
+    const speak = (): void => {
+      if (legible.current) return
+      legible.current = true
+      if (deadline !== null) clearTimeout(deadline)
+      deadline = null
+      send()
+    }
+    const fonts = typeof document === 'undefined' ? undefined : document.fonts
+    if (legible.current) send()
+    else if (!fonts) speak()
+    else {
+      /*
+       * **Three of this API's four obvious answers are wrong here**, and each was
+       * measured before being discarded — the whole point of this fix is that the
+       * numbers are the argument.
+       *
+       * `fonts.status === 'loaded'` is true whenever nothing is *pending*, and a
+       * bundled face no box has asked for yet is not pending: the first attempt took
+       * that path, reported **239 px** in the fallback face and swapped to 281 exactly
+       * as before. `fonts.ready` has the same shape — it resolves when the current set
+       * of loads is done, which at this instant can be none. And `fonts.check(…)` on
+       * the computed shorthand answers **true**, correctly and uselessly: the question
+       * it asks is whether the text can be rendered with the *list*, and
+       * `-apple-system` at the end of that list always can.
+       *
+       * So the face has to be asked for by name — the family's first entry, read off
+       * the element rather than written down here — and then the set awaited, because
+       * `load('1em Inter')` triggers the family while the pill draws two weights of it
+       * (measured: two `Inter` faces, one `loaded` and one `unloaded`) and only
+       * `ready` covers the second.
+       *
+       * `speak` on rejection as well: a face that fails is a measurement in the
+       * fallback, which is the honest answer and never a reason to withhold the
+       * window (DEC-26).
+       */
+      const primary = getComputedStyle(element).fontFamily.split(',')[0]?.trim()
+      if (!primary) speak()
+      else {
+        void fonts
+          .load(`1em ${primary}`)
+          .then(() => fonts.ready)
+          /*
+           * One frame after the set settles, because `ready` resolves before the
+           * layout it caused has run: measured, the first report was 276 px and the
+           * box was 281 a frame later. Five pixels is two and a half of window x —
+           * `placeAroundPill` holds the pill's centre — which is not much, and it is
+           * the difference between a card that appears and one that appears and then
+           * twitches.
+           */
+          .then(
+            () =>
+              new Promise<void>((settled) => {
+                requestAnimationFrame(() => settled())
+              }),
+          )
+          .then(speak, speak)
+        // From the mount, not from this arming — see `MEASURE_DEADLINE_MS`.
+        deadline = setTimeout(
+          speak,
+          Math.max(0, MEASURE_DEADLINE_MS - (Date.now() - armed.current)),
+        )
+      }
+    }
+
+    return () => {
+      if (deadline !== null) clearTimeout(deadline)
+      element.removeEventListener('animationend', send)
+      observer.disconnect()
+    }
+    /*
+     * **`[above]`, and the missing array was the only thing keeping this window
+     * on the screen.**
+     *
+     * There was no dependency array at all. So the cleanup ran and the effect
+     * re-armed on *every* render of the frame, `last` — then a `let` in this
+     * closure — went back to `''`, and a byte-identical `widget:resize` went out:
+     * two measured in Chromium on the first paint alone, three with
+     * `StrictMode`'s development double-mount. The comment here argued that was
+     * free: « `send` is idempotent — the key stops a duplicate — so asking on
+     * every render of the frame costs one rect read. » The key does stop a
+     * duplicate; re-arming the effect destroyed the key. The key is a ref now, so
+     * the two halves of that sentence are finally about the same thing.
+     *
+     * And the duplicate was **load-bearing**, which is why adding the array is
+     * not the fix. `placeWindow`'s quarter-overlap rule — the defence against the
+     * one unrecoverable window in this product — ran nowhere but on the reply to
+     * this call, so a pill dragged onto a monitor that was then unplugged came
+     * back only because a re-render re-sent an unchanged measurement. Which means
+     * it came back only when a transcript segment arrived: it failed exactly when
+     * transcription is what has died, which is one of the two readings this pill
+     * is up to give. Driven against the shipped `Overlay`: pill at y=1920 with
+     * the work area ending at 877, rescued by a message the renderer had no
+     * reason to send. That rescue is `Overlay.displaysChanged()` now, on
+     * `display-removed` and `display-metrics-changed`, with no renderer
+     * involvement at all.
+     *
+     * What is left for the array to carry is the one thing a *size* observer
+     * genuinely cannot see. `above` flips `flex-col` to `flex-col-reverse`: the
+     * pill moves by the panel's whole height and the frame stays exactly
+     * `width × height`, so `ResizeObserver` never fires and the main process goes
+     * on holding a `pillTop` of 402 for a pill painted at 20. Re-arming on that
+     * one state — which a `requestAnimationFrame` per render used to do by
+     * accident, and only because there was no array — asks again with the new
+     * offset, and the ref then decides whether there is anything to say: a flip
+     * while the panel is *shut* moves the pill by nothing, because a single-child
+     * `flex-col-reverse` puts it at `HALO` exactly as `flex-col` does, and that
+     * one is now silent rather than byte-identical.
+     *
+     * `drawable` is the second entry and it is there for the same reason as the
+     * first: **it is the moment there is something worth measuring, and no size
+     * change announces it.** The placeholder pill and the real one are different
+     * widths, so the observer *would* fire — but a frame later, after the main
+     * process had already been told the placeholder's size and had shown the
+     * window at it. Re-arming here asks again on the transition itself, and the
+     * key then decides whether there is anything to say: a `widget:state` that
+     * answered before the first paint leaves the two measurements identical and
+     * this one silent. It flips at most once per window.
+     */
+  }, [above, drawable])
+
+  /*
+   * The pointer over the halo hands the mouse back to whatever is underneath.
+   *
+   * On `pointermove` rather than `mouseenter`/`mouseleave` on two elements: once
+   * the window is ignoring the mouse it receives *moves* and nothing else, so a
+   * `mouseenter` on the card would never arrive and the widget would be
+   * unclickable until it resized. One handler, one question — is the pointer
+   * over the card — asked on every move.
+   */
+  const through = useRef<boolean | null>(null)
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const cards = box.current?.querySelectorAll('[data-card]')
+    if (!cards || cards.length === 0) return
+    // Any card, not one: the pill and the panel are two rounded rectangles with
+    // a gap between them, and the gap is halo like any other edge.
+    const inside = [...cards].some((card) => {
+      const rect = card.getBoundingClientRect()
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      )
+    })
+    if (through.current === !inside) return
+    through.current = !inside
+    void invoke('widget:passThrough', { through: !inside }).catch(() => undefined)
+  }
+
+  return (
+    <div
+      ref={shell}
+      /*
+       * The exit rides on the *outer* div and never on `box`. `box` is the
+       * measured element: `ResizeObserver` watches its border box, which a
+       * transform does not change, and `pillTop` is a difference of two rects
+       * that a transform shifts equally — so the fade sends no `widget:resize`
+       * from either half. Putting the class on the measured element would have
+       * been correct by that same arithmetic and one refactor away from not
+       * being.
+       */
+      className={`flex h-full w-full items-start justify-center bg-transparent${
+        leaving ? ' widget-leaving' : ''
+      }`}
+      onPointerMove={onPointerMove}
+    >
+      {/*
+        `w-max`: the frame is measured, so it must be exactly as wide as its
+        content and never as wide as the window it is in — otherwise the first
+        measurement reports the window's own size back to the window and it
+        never shrinks again.
+
+        `flex-col-reverse` when the panel opens upward. The DOM order never
+        changes, so the tab order is always pill first, and only the paint
+        flips.
+      */}
+      <div
+        ref={box}
+        style={{ padding: `${HALO}px` }}
+        className={`flex w-max ${above && open ? 'flex-col-reverse' : 'flex-col'}`}
+      >
+        {children(above, placed)}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * **A refused mark, where a sighted rep can see it.**
+ *
+ * `meeting:mark` refuses whenever the meeting is not `recording` — which
+ * `EndOfMeetingWatch` can make true with the pill still floating over the call —
+ * and on any store failure. The sentence used to go into the `sr-only`
+ * paragraph at the bottom of this window: a 1×1 box with `clip: rect(0,0,0,0)`,
+ * measured, on a window with no `role="alert"` anywhere in it. The pill's
+ * counter — the only receipt a press without a note has — correctly did not
+ * move, because nothing was written. So the screen's answer to a refusal and its
+ * answer to a success were **the same screen**, and the second one is the one a
+ * rep would assume: they pressed, nothing changed, and the moment they were
+ * marking is the one they will look for at the gate. A mark is typed one-handed
+ * over a client's face precisely because a rep who is talking is not looking for
+ * a button; they are not going to look twice either.
+ *
+ * Three constraints from DEC-49, and each rules something out:
+ *
+ *  · **It must not take focus.** It is not a dialog, it has no autofocus and it
+ *    traps nothing — a rep is mid-sentence on a call, and the keyboard is
+ *    theirs. `role="alert"` announces without moving the caret; that is what the
+ *    role is.
+ *  · **It must not cover the call.** It is the width of the pill's own card and
+ *    two lines at most, adjacent to the control that was pressed, and the window
+ *    resizes to exactly it (`widget:resize`) rather than reserving room for it.
+ *  · **It must carry `data-card`.** Everything in this window that is not a card
+ *    is halo, and halo is handed to Teams with
+ *    `setIgnoreMouseEvents(…, { forward: true })` — so a notice that forgot the
+ *    attribute would draw a dismiss button the pointer goes straight through.
+ *
+ * Dismissed rather than timed out. A message that removes itself after four
+ * seconds is the `sr-only` paragraph again for a rep who was looking at the
+ * client: the whole failure here is a rep not looking at this window at the
+ * moment it had something to say. It cannot stack either, because there is one
+ * card state and not two (`WidgetCard`) — and « replaced by whatever the next
+ * press produces » is narrower than it sounds and had to be: a press on the
+ * control this refused replaces it, and a press on the one 32 px away does not.
+ * That sentence used to be the whole rule, and the mention control read it
+ * literally and deleted a refusal that had nothing to do with it.
+ */
+function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
+  return (
+    <div
+      data-card
+      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+    >
+      {/*
+        `--warn` and `font-semibold` together, never colour alone: `--warn`
+        against `--text-muted` is 1.0:1 in luminance, so a deuteranope and a
+        greyscale screenshot both read this as ordinary prose if the weight is
+        not carrying it too. Same rule as `⚠ faible` at the gate.
+      */}
+      <p role="alert" className="text-warn min-w-0 flex-1 text-meta font-semibold">
+        {text}
+      </p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Masquer ce message"
+        className="no-drag text-muted hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
+    </div>
+  )
+}
+
+/**
+ * **The sentence, where the rep can read it out** (US-11, `mention.ts`).
+ *
+ * The clipboard is invisible. A press that only wrote to it would be the
+ * `sr-only` paragraph `Refus` exists to replace: nothing on screen changes, and
+ * the rep — who is mid-sentence on a call and did not press this to admire it —
+ * has no way to tell it worked. Drawing the sentence is also the *other* route the
+ * story names first, and the one a rep uses more: « or reads it out, which is what
+ * a rep does anyway ». So this card is not a receipt, it is the feature's second
+ * half.
+ *
+ * Four properties, each ruling something out:
+ *
+ *  · **`data-card`.** Everything on this window that is not a card is halo, and
+ *    halo is handed to Teams with `setIgnoreMouseEvents(…, { forward: true })` — a
+ *    card that forgot the attribute would draw a dismiss button the pointer goes
+ *    straight through. Same rule, same sentence, as `Refus`.
+ *  · **`role="status"`, not `alert`.** Nothing has gone wrong. It is announced
+ *    politely, it takes no focus and it traps nothing: a rep is talking to a
+ *    client, and the keyboard is theirs.
+ *  · **Dismissed, never timed out.** The whole failure mode on this window is a
+ *    rep not looking at it at the moment it had something to say, and a sentence
+ *    they are about to read aloud is the last thing to remove on a four-second
+ *    timer. It is replaced by the next press rather than stacked — and it **yields**
+ *    to a refusal the rep has not dismissed, which is `WidgetCard`'s whole reason
+ *    for being one state: a mark that was refused is a write the rep believes
+ *    happened, and this sentence is one press away from being asked for again.
+ *  · **It states the clipboard and the log separately, and claims nothing about
+ *    the client.** There is no « le client a été informé » on this card and no
+ *    string anywhere that could become one: the product knows what it handed over
+ *    and nothing about what was said.
+ *
+ * `measure` on the sentence because it is prose and `.measure` is where prose
+ * lives in this product — `ch` resolves against the element's own size, so the
+ * class goes on the element holding the text and not on a wrapper. At 260 px the
+ * cap is not what is binding, which is exactly why it costs nothing to be right.
+ */
+function Mention({
+  sentence,
+  copied,
+  logged,
+  onDismiss,
+}: {
+  /** What was copied, carried from the press rather than re-read (US-19). */
+  sentence: string
+  copied: boolean
+  /** `null` while the log write is on the wire — see `mention` in `Widget`. */
+  logged: boolean | null
+  onDismiss: () => void
+}) {
+  return (
+    <div
+      data-card
+      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+    >
+      <div role="status" className="min-w-0 flex-1">
+        <p className="text-strong measure text-ui">{sentence}</p>
+        {/*
+          `--warn` never alone: it is 1.0:1 against `--text-muted` in luminance, so
+          a deuteranope and a greyscale screenshot both read it as ordinary prose
+          unless the weight carries it too. Same rule as `⚠ faible` at the gate.
+        */}
+        <p
+          className={`mt-1 text-meta ${copied ? 'text-muted' : 'text-warn font-semibold'}`}
+        >
+          {MENTION_COPY_STATE(copied)}
+        </p>
+        {logged === false ? (
+          <p className="text-warn mt-1 text-meta font-semibold">{MENTION_NOT_LOGGED}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Masquer cette phrase"
+        className="no-drag text-muted hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
+    </div>
+  )
+}
+
+interface PillProps {
+  title: string | null
+  startedAt: number | null
+  meetingId: string | null
+  marks: number
+  open: boolean
+  above: boolean
+  /**
+   * Whether the main process has placed this window and shown it — see `placed` in
+   * `Frame`, which is the only thing that decides it. Until then the pill is
+   * *laid out* and not *drawn*, which is what makes the first measurement a
+   * measurement of an untransformed box (DEC-50).
+   */
+  placed: boolean
+  onToggle: () => void
+  onMark: () => void
+  /** US-11 — one press, the sentence on the clipboard and on screen. */
+  onMention: () => void
+}
+
+/**
+ * The collapsed state, and the part that is always on screen.
+ *
+ * **The whole pill is the drag handle** (`drag-region` in `index.css`), which
+ * is what a frameless window has instead of a titlebar, and every control on it
+ * opts back out with `no-drag`. The two cannot be the same rectangle: a region
+ * Electron has claimed for dragging never delivers a click, so a pill that was
+ * also a button would be a control that works about half the time — and « half
+ * the time » is the worst version of the dead control DEC-26 forbids, because
+ * the rep cannot even tell it is broken.
+ */
+function Pill({
+  title,
+  startedAt,
+  meetingId,
+  marks,
+  open,
+  above,
+  placed,
+  onToggle,
+  onMark,
+  onMention,
+}: PillProps) {
+  return (
+    <div
+      data-pill
+      data-card
+      /*
+        `self-center`, and it is not cosmetic.
+
+        The frame is a `flex-col` whose `align-items` defaulted to `stretch`, so
+        opening the panel stretched the pill from its own 240 px to the panel's
+        340 and left its content packed at the left — a hundred pixels of blank
+        card to the right of the chevron. And the card's *centre* is what
+        `placeAroundPill` holds fixed, so a card that grows by a hundred grows
+        fifty each way: every control on the pill moved **50 px left, under the
+        pointer, on the press that opened the panel**. The chevron's before and
+        after rectangles were disjoint, so the reflex second press landed on
+        bare pill — which is `drag-region`, and Electron delivers no click from
+        one, so it did nothing at all.
+
+        Centred and its own width, the pill is invariant under the panel opening:
+        the centre does not move, so neither does anything measured from it.
+        `widget-ouvert` measures the chevron across the press.
+      */
+      /*
+        **The arrival** (DEC-50, `.widget-arriving` / `.widget-arrived` in
+        `index.css`). Two states and never both: until the window has been placed
+        this card is laid out and transparent — *untransformed*, which is what
+        makes the size the main process is waiting for a measurement of the real
+        pill — and `placed` swaps it for the animation. `placed` is the reply to
+        the `widget:resize` that carried that measurement, so the measurement and
+        the transform cannot overlap. That is not a nicety:
+        `getBoundingClientRect` includes transforms, and the first draft of this
+        held the pill at `scale(0.92)` before the swap and reported
+        `pillHeight: 35` for a 38px card.
+
+        No `transform-origin` here on purpose. The pill is its own anchor —
+        `placeAroundPill` holds its centre-x — so the CSS initial centre is
+        already right, and restating it would be a declaration that changes
+        nothing. The *panel* is the one that has to follow `above`.
+      */
+      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-2 self-center rounded-lg border py-1.5 pl-2.5 pr-1.5 ${
+        placed ? 'widget-arrived' : 'widget-arriving'
+      }`}
+    >
+      {/*
+        Recording, said the way the rest of the product says it: orange, which
+        VISION.md §6 gives exactly one meaning — armed or recording — and a
+        word, because colour is never the only carrier of a state here.
+      */}
+      <span className="flex shrink-0 items-center gap-1.5">
+        <span aria-hidden className="bg-accent h-2 w-2 shrink-0 rounded-full" />
+        <span className="sr-only">Enregistrement en cours</span>
+      </span>
+
+      {meetingId === null ? (
+        <span className="text-muted px-1 text-ui">Aucun enregistrement</span>
+      ) : (
+        <LevelMeter meetingId={meetingId} variant="pill" />
+      )}
+
+      <Elapsed since={startedAt} />
+
+      {/*
+        **Telling the client, in one press** (US-11, `mention.ts`).
+
+        On the pill and not in the panel, and that is the whole shape of the
+        feature: the moment it is wanted is the first thirty seconds of a call,
+        when the rep is greeting somebody and has not opened anything. A control
+        behind a 340-pixel card over the client's face is a control that gets
+        pressed after the interesting part of the conversation, or not at all.
+
+        It costs 32 px of pill — 24 of button and the row's own 8 of gap, measured,
+        240 → 272 — and every one of them is a pixel of Teams the rep cannot click.
+        That is the price of the one thing on this list with a procurement
+        consequence, and it is paid in the state that is always up rather than in a
+        surface that only exists while the rep is looking at it.
+
+        Drawn exactly when the mark button is: `meetingId === null` is the pill
+        before `widget:state` answers, which is the placeholder the main process
+        must never be shown measuring (see `MEASURE_DEADLINE_MS`). So this control
+        arrives with the real pill, inside the one measurement the window is held
+        off screen for, and adds no settling step of its own.
+      */}
+      {meetingId === null ? null : (
+        <button
+          type="button"
+          onClick={onMention}
+          aria-label={MENTION_LABEL}
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm px-1 transition"
+        >
+          <Speech />
+        </button>
+      )}
+
+      {/*
+        **Marking, without opening anything.**
+
+        Three files described this button before it existed, which is the defect
+        this repo has now been caught committing more than once: the contract
+        says « null is the other press — the button on the pill », and the pill
+        had exactly one control on it, the chevron. A rep who wanted to mark a
+        moment had to open a 340-pixel card over the client's face first, which
+        is the opposite of what a one-press bookmark is for.
+
+        The count beside it is the receipt. A press with no note produces no
+        visible change anywhere — the panel may be closed, and is — so without
+        it the rep would have pressed a button that, as far as the screen is
+        concerned, did nothing.
+      */}
+      {meetingId === null ? null : (
+        <button
+          type="button"
+          onClick={onMark}
+          aria-label={
+            marks === 0 ? 'Marquer ce moment' : `Marquer ce moment (${marks} déjà marqués)`
+          }
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-1 rounded-sm px-1 transition"
+        >
+          <Bookmark />
+          {marks > 0 ? (
+            <span aria-hidden className="tabular-nums text-meta leading-none">
+              {marks}
+            </span>
+          ) : null}
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        /*
+          Named, not decorated. « ▸ » is a shape and a screen reader reads it as
+          nothing; the check that measures every control's accessible name is
+          what caught the last one of these in this product.
+
+          The arrow points where the panel will go, which is the direction the
+          main process answered with — a chevron that always pointed up while
+          the card opened downward would be the widget lying about itself.
+        */
+        aria-label={open ? 'Replier le panneau' : `Ouvrir le panneau${title ? ` — ${title}` : ''}`}
+        className="no-drag text-muted hover:bg-subtle hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          {open === above ? '▾' : '▴'}
+        </span>
+      </button>
+    </div>
+  )
+}
+
+/** The running length of the call. Its own subscription, like the meter's. */
+function Elapsed({ since }: { since: number | null }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (since === null) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [since])
+  if (since === null) return null
+  return (
+    <span className="text-strong shrink-0 tabular-nums text-ui" aria-label="Durée d’enregistrement">
+      {formatElapsed(now - since)}
+    </span>
+  )
+}
+
+interface PanelProps {
+  meetingId: string
+  /**
+   * Which way this panel stacks, answered by `Overlay.resize` because only the
+   * main process knows which half of which display the pill is in.
+   *
+   * It decides the paint order in `Frame` and, here, the `transform-origin` the
+   * opening grows from: DEC-50's « origin-aware from the pill rather than from the
+   * card's centre ». Measured on the real window before it was: `transform-origin:
+   * 170px 102.594px` — dead centre, the CSS initial, whichever way it stacked.
+   */
+  above: boolean
+  /** The client, else the objet, else nothing — never an invented name. */
+  heading: string
+  turns: readonly TranscriptSegment[]
+  marks: readonly MomentMark[]
+  /** Collected by the window, never here — see the note on the state itself. */
+  trouble: string | null
+  onMark: (segmentId: string | null, note: string) => void
+  onForget: (markId: string) => void
+  onClose: () => void
+  /**
+   * Into the window's own `aria-live` region — the panel has none of its own,
+   * and a second one on a card this small would read every sentence twice.
+   */
+  onAnnounce: (sentence: string) => void
+}
+
+function Panel({
+  meetingId,
+  above,
+  heading,
+  turns,
+  marks,
+  trouble,
+  onMark,
+  onForget,
+  onClose,
+  onAnnounce,
+}: PanelProps) {
+  const [note, setNote] = useState('')
+  const [confirmEnd, setConfirmEnd] = useState(false)
+
+  /*
+   * Everything said, in order, with the rep's own marks in place — one helper
+   * in `core/contracts/marks.ts`, shared with the two readers in the app, so
+   * the widget and the gate cannot disagree about where a mark sits.
+   */
+  const rows = useMemo(() => interleaveMarks(turns, marks), [turns, marks])
+
+  /*
+   * Follow the conversation, unless the rep has scrolled up.
+   *
+   * Sticking to the bottom unconditionally is how a reader takes a line away
+   * from somebody who is reading it — which on this surface means taking it
+   * away mid-call, when they cannot get it back without scrolling past
+   * everything that has arrived since.
+   */
+  const scroller = useRef<HTMLDivElement>(null)
+  const stuck = useRef(true)
+
+  /*
+   * **A log that holds more than its box has to say so, at the edge it is
+   * hiding it behind.**
+   *
+   * `data-scrolls` declares that this box is *allowed* to overflow — it is a
+   * log, it sticks to the bottom, and holding more than it shows is the point.
+   * What the attribute does not do, and what it quietly bought an exemption
+   * from, is put anything **on screen** saying so. The result was a hard rule
+   * across the first visible line: « chacun. » sliced through its x-height by
+   * the panel's own border, on the one surface a rep looks at for fifty
+   * minutes. That is the *Historique* finding again — « a hard rule under the
+   * last visible line read as the end of a four-paragraph document » — arriving
+   * at the top edge instead of the bottom, on a pane the declaration had made
+   * invisible to `--scrollers`.
+   *
+   * A `ReadingColumn` is the wrong instrument here: it is prose with a page
+   * turn, and this is a log that moves under the reader. What a log needs is the
+   * cue every chat surface uses — the content receding rather than being cut —
+   * and it is conditional on both sides, which is the half that makes it read as
+   * a finish rather than as a permanent grey band. Nothing above: no top fade,
+   * so the first line of a short call is at full strength. Scrolled up to read
+   * back: the bottom fades too, which is the only thing on screen saying that
+   * newer turns have arrived below.
+   */
+  const [edges, setEdges] = useState({ top: false, bottom: false })
+  const measure = (element: HTMLDivElement) => {
+    const above = element.scrollTop > 2
+    const below = element.scrollHeight - element.scrollTop - element.clientHeight > 2
+    setEdges((was) => (was.top === above && was.bottom === below ? was : { top: above, bottom: below }))
+  }
+
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!element) return
+    if (stuck.current) element.scrollTop = element.scrollHeight
+    measure(element)
+  }, [rows.length])
+
+  return (
+    <div
+      data-card
+      /*
+        **The opening** (DEC-50). Mounted by a press, so the animation runs from
+        the mount and needs no gate — and it needs none for the measurement
+        either: a transform on this card changes neither the frame's border box
+        (a descendant's transform is not layout) nor the pill's rect, so
+        `widget:resize` reads the same numbers whether this is scaling or at rest.
+        The pill's arrival is the one that has to be held, and it is.
+
+        `data-above` rather than an inline `transform-origin`: the value is a
+        judgement about which edge the panel belongs to and it lives in the
+        stylesheet with the reasoning, not spread over two files as a string.
+      */
+      data-above={above ? 'true' : 'false'}
+      className="bg-card border-card shadow-overlay widget-panel-arrive my-1.5 w-[340px] rounded-lg border"
+    >
+      {/*
+        Which call this is.
+
+        The pill deliberately does not carry it — a name floating over a video
+        call is the one thing on this window that would be read by everybody in
+        the room if the rep is sharing their screen, and the pill is the state
+        that is always up. Here it is behind a press the rep made, and the
+        window is excluded from screen capture entirely
+        (`setContentProtection`), which is what makes putting it here defensible
+        at all.
+
+        `Réunion en cours` is the honest fallback. The objet is typed during or
+        after the call (DEC-31), so at minute two there is often nothing to
+        print, and inventing one from the calendar would be the app naming a
+        meeting the rep has not named.
+      */}
+      {/*
+        **And under it, the one fact that makes the line above defensible.**
+
+        The heading is the client's name, floating over a video call the rep may
+        well be sharing. It is here only because the window carries
+        `setContentProtection(true)` — it is excluded from the screen capture —
+        and that guarantee was documented in this file and stated nowhere a rep
+        could read it. A rep who does not know it will not put the panel up
+        during a share, which is every moment the panel is worth having.
+
+        11px, muted, and `aria-hidden` on the glyph: it is a caption on a title,
+        not a control, and it is the same sentence in all three open states
+        because it is the same guarantee.
+      */}
+      <div className="border-subtle border-b px-3 py-1.5">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-strong min-w-0 flex-1 truncate font-sans text-ui font-semibold">
+            {heading.trim() === '' ? 'Réunion en cours' : heading}
+          </h1>
+        </div>
+        <p className="text-muted mt-0.5 flex items-center gap-tight text-[11px] leading-tight">
+          <EyeOff aria-hidden size={11} strokeWidth={2} className="shrink-0" />
+          Invisible en partage d’écran
+        </p>
+      </div>
+
+      {trouble === null ? null : (
+        <p className="text-warn border-subtle border-b px-3 py-1.5 text-meta font-semibold">
+          {trouble}
+        </p>
+      )}
+
+      <div
+        ref={scroller}
+        onScroll={(event) => {
+          const element = event.currentTarget
+          stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
+          measure(element)
+        }}
+        /*
+          The mask is built here rather than as a class because it has four
+          states and three of them are a different gradient, not a different
+          colour. `FADE_PX` is the one number and it is measured against this
+          log's own line box — see the note on it, and `shot.mjs --fade`, which
+          is what holds the two to each other now.
+        */
+        style={{ maskImage: logMask(edges), WebkitMaskImage: logMask(edges) }}
+        /*
+          `data-scrolls`: declared, which is what the attribute means. A live
+          transcript is a log — it sticks to the bottom, the rep scrolls up to
+          read back, and it is *supposed* to hold more than its box. It is not
+          the « clipped and looks short » failure `--scrollers` is about.
+        */
+        data-scrolls
+        className="max-h-[220px] overflow-y-auto px-3 py-2"
+      >
+        {rows.length === 0 ? (
+          <p className="text-muted text-ui">{NOTHING_YET}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rows.map((row) =>
+              row.kind === 'mark' ? (
+                <MarkRow key={row.key} mark={row.mark} onForget={onForget} />
+              ) : (
+                <TurnRow
+                  key={row.key}
+                  segment={row.segment}
+                  onMark={() => onMark(row.segment.id, '')}
+                />
+              ),
+            )}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-subtle flex items-center gap-1.5 border-t px-3 py-2">
+        <input
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            const text = note.trim()
+            setNote('')
+            onMark(null, text)
+          }}
+          maxLength={MARK_NOTE_MAX}
+          aria-label="Noter ce moment"
+          placeholder="Noter ce moment…"
+          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-2 py-1 text-ui"
+        />
+        <Button
+          variant="nav"
+          className="no-drag px-1"
+          onClick={() => {
+            const text = note.trim()
+            setNote('')
+            onMark(null, text)
+          }}
+        >
+          Marquer
+        </Button>
+      </div>
+
+      <div className="border-subtle flex items-center justify-between gap-2 border-t px-3 py-2">
+        {/*
+          **The row asks one question at a time, and it has to fit.**
+
+          « Ouvrir Sillage » + « Arrêter l'enregistrement » + « Annuler » is
+          wider than the card, and this row has no `min-w-0`, so the two
+          confirmation controls were laid out *past the card's right edge* —
+          over the halo, which is exactly the band `widget:passThrough` hands
+          back to Teams. The most dangerous button in the product was painted
+          on the part of the window that is not supposed to be clickable.
+
+          It also moved the right edge, which is what broke the rule below:
+          right-aligned controls can only line up with each other if the row
+          they are in does not reflow.
+        */}
+        {confirmEnd ? (
+          <span />
+        ) : (
+          <span className="flex items-center gap-3">
+            <Button
+              variant="nav"
+              className="no-drag px-1"
+              onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
+            >
+              Ouvrir Sillage
+            </Button>
+
+            {/*
+              **UNWIRED — *Pause* stops nothing today, and says so rather than
+              pretending.**
+
+              `SessionCommandSchema` declares `arm · disarm · start · end ·
+              abort · extract · extractionSucceeded · extractionFailed ·
+              confirm · pushSettled` and no pause. Pausing a recording is a
+              state the machine does not have, and inventing one here would mean
+              a renderer flag that the orchestrator, the capture module and the
+              crash sweep all disagree with — a widget saying « en pause » over
+              a call that is still being written to disk is worse than no
+              control at all.
+
+              What it costs to leave it drawn: one control in the footer that
+              reports a refusal instead of acting. What it would cost to wire
+              it: a new state in `MeetingState`, a transition table entry, a
+              capture verb, and a decision about what a paused recording does to
+              the extraction — none of which is this change. So the press says
+              the one true sentence and the announcement is read by the same
+              live region every other refusal on this card uses.
+            */}
+            <Button
+              variant="text"
+              className="no-drag px-1"
+              onClick={() => onAnnounce('La pause n’est pas encore disponible.')}
+            >
+              Pause
+            </Button>
+          </span>
+        )}
+
+        {/*
+          **Two presses, and the second one is a different rectangle.**
+
+          Ending a recording cannot be undone: the state machine has no way back
+          from `ended`, and the minutes that follow a stray click are audio this
+          product never retains (DEC-12) and so can never recover. This control
+          floats over a video call, under a pointer the rep is using for
+          something else. One click is the wrong number of clicks for that.
+
+          It is the same reasoning DEC-4 states at the review gate — the one
+          control that ships is never the rectangle the rep just pressed.
+
+          **And it was stated here and done backwards.** Both clusters are
+          right-aligned in a `justify-between` row, so the 160-px danger button
+          grew *leftward* and swallowed the whole 59×24 « Terminer » box:
+
+              Terminer                 x 738  w  59
+              Arrêter l’enregistrement x 637  w 160   -> fully contains it
+
+          One double-click on « Terminer » — or two impatient clicks on a
+          control floating over a live call — ended the recording. There is no
+          way back from `ended` and the audio was never retained (DEC-12), so
+          the rest of the meeting is gone. The confirmation was theatre, and the
+          docblock claiming otherwise is how it survived.
+
+          So the **escape** takes that rectangle, not the danger. `Annuler` is
+          last in the row, right-aligned like the trigger, and wide enough to
+          cover it — a second click at the same pixel cancels, which is the
+          idempotent, harmless half. The danger button sits to its left, where
+          nothing was a moment ago, and reaching it is a deliberate movement.
+          `widget-terminer` measures both rectangles.
+        */}
+        {confirmEnd ? (
+          <span className="flex items-center gap-1.5">
+            <Button
+              variant="danger"
+              className="no-drag"
+              onClick={() => {
+                setConfirmEnd(false)
+                onClose()
+                void invoke('session:command', {
+                  meetingId,
+                  command: 'end',
+                  reason: 'terminée depuis le widget',
+                }).catch(() => undefined)
+              }}
+            >
+              Arrêter l’enregistrement
+            </Button>
+            <Button
+              variant="text"
+              className="no-drag min-w-[5rem] px-1"
+              onClick={() => setConfirmEnd(false)}
+            >
+              Annuler
+            </Button>
+          </span>
+        ) : (
+          <Button
+            variant="text"
+            className="no-drag text-danger hover:text-danger px-1"
+            onClick={() => setConfirmEnd(true)}
+          >
+            Terminer
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The mark, drawn rather than typed.
+ *
+ * A glyph would have been one character and it was wrong twice over: `⌁` is not
+ * in Inter, so it fell through to whatever the system had and rendered as an
+ * arrow — a shape that means *go* on a control that means *remember this* — and
+ * a fallback is invisible to every check in this repo, because the accessible
+ * name and the box are both correct. Sixteen pixels of path has no fallback.
+ */
+function Bookmark() {
+  return (
+    <svg aria-hidden width="10" height="12" viewBox="0 0 10 12" fill="currentColor">
+      <path d="M1 0h8a1 1 0 0 1 1 1v10.2a.5.5 0 0 1-.77.42L5 8.9l-4.23 2.72A.5.5 0 0 1 0 11.2V1a1 1 0 0 1 1-1Z" />
+    </svg>
+  )
+}
+
+/**
+ * Something said out loud, drawn rather than typed.
+ *
+ * Sixteen pixels of path for the same reason `Bookmark` is: `💬` and `🗣` are
+ * emoji, `⌨` and `☞` are not in Inter, and a glyph that falls through to whatever
+ * the system has is **invisible to every check in this repo** — the accessible
+ * name is correct, the box is correct, and the shape is whatever the font stack
+ * happened to land on. `Bookmark`'s own docblock records that failing once, with
+ * `⌁` rendering as an arrow: *go* on a control that meant *remember this*.
+ *
+ * A speech bubble and not a megaphone: the rep says a sentence to one person on a
+ * call, they do not broadcast it. Distinct from `Bookmark` in silhouette at 12 px,
+ * which is the only size either is ever drawn at.
+ */
+function Speech() {
+  return (
+    <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+      <path d="M1.4 0h9.2A1.4 1.4 0 0 1 12 1.4v5.3a1.4 1.4 0 0 1-1.4 1.4H5l-2.8 2.2a.5.5 0 0 1-.81-.4V8.1H1.4A1.4 1.4 0 0 1 0 6.7V1.4A1.4 1.4 0 0 1 1.4 0Z" />
+    </svg>
+  )
+}
+
+function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () => void }) {
+  return (
+    <li className="group flex gap-2">
+      <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
+        {/*
+          No interlocutor list here, so this says « Client » — correctly. The
+          widget reads a live broadcast and the calendar's attendees arrive with
+          the extraction, which does not exist during the call; `speakerLabel`'s
+          rule is that a name is printed only when the record settles it, and
+          here it does not (DEC-47).
+        */}
+        {speakerLabel(segment.channel, [])}
+      </span>
+      <span className="text-body measure min-w-0 flex-1 text-ui leading-relaxed">{segment.text}</span>
+      <button
+        type="button"
+        onClick={onMark}
+        aria-label="Marquer cette prise de parole"
+        /*
+          Always in the layout, only *visible* on hover and focus: an affordance
+          that appears on hover changes the width of every line under the
+          pointer, and a transcript that reflows while it is being read during a
+          call is the flicker DEC-14 forbids. Opacity, never `display`, so the
+          keyboard can still reach it — `focus-visible:opacity-100` is what
+          makes that true rather than merely intended.
+        */
+        className="no-drag text-muted hover:text-brand-700 focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+      >
+        <Bookmark />
+      </button>
+    </li>
+  )
+}
+
+/**
+ * How far the log's fade runs, in pixels, and **the number is measured against
+ * the line box rather than described as one.**
+ *
+ * It was twenty, under a comment calling that « one line's ascender … little
+ * enough that no whole line of a client's words is ever dimmed ». The line box in
+ * this log is **19.5px** — `--type-ui` is 12px and `leading-relaxed` is 1.625 —
+ * so twenty is *longer* than a whole line, and the sentence was false of the
+ * surface it was written on. Swept over every scroll position the rep can reach
+ * on the harness fixture, the worst was `scrollTop` 176, where a line box sat at
+ * the very top of the visible area entirely inside the ramp: its ink ran from
+ * alpha **0.19** at the top of the cap band to 0.79 at the bottom, on the one
+ * surface a rep reads for fifty minutes, about words a client actually said.
+ *
+ * Twelve is the same cue and it is under the line box by 7.5 pixels, which is the
+ * band of a fully-visible topmost line that stays at full strength whatever the
+ * scroll offset. Measured the same way: the worst ink alpha is 0.31 rising to 1.0
+ * across the line, and no whole line box can be inside the ramp at any scroll
+ * position — that is the property, and it is `shot.mjs --fade` that holds it
+ * rather than this comment.
+ *
+ * Nothing in this repo could see the old number. `--contrast` reads resolved
+ * colours and a mask is not one; `--scrollers` is opted out of here by
+ * `data-scrolls`, correctly, because a log is *supposed* to hold more than its
+ * box. Do not change this without re-running the check.
+ */
+const FADE_PX = 12
+
+/**
+ * The log's mask, by which edges are hiding something.
+ *
+ * `undefined` rather than `'none'` when nothing is hidden: `mask-image: none`
+ * is a paint the compositor still has to reason about, and a short call — which
+ * is every call for its first minute — should carry no mask at all.
+ */
+const logMask = (edges: { top: boolean; bottom: boolean }): string | undefined => {
+  /*
+   * **`currentColor`, and not because a token was missing.**
+   *
+   * `check:tokens` refused the `#000` this was first written with, and it was
+   * right to: a hex outside `tokens.css` is how `bg-muted/30` and `ring-card`
+   * shipped. But the answer here is not a new token — a mask is an **alpha
+   * stencil**, `mask-mode` defaults to `alpha`, and the hue of the opaque stop
+   * is discarded before it reaches a pixel. A `--mask-ink` in `tokens.css`
+   * would be a palette entry for something that is not a colour, which is worse
+   * than the literal: the next reader would try to theme it.
+   *
+   * `currentColor` says the only thing that is actually being asserted — fully
+   * opaque — in a value the check has no reason to object to, because it is not
+   * a colour choice at all.
+   */
+  const from = `transparent 0, currentColor ${FADE_PX}px`
+  const to = `currentColor calc(100% - ${FADE_PX}px), transparent 100%`
+  if (edges.top && edges.bottom) return `linear-gradient(to bottom, ${from}, ${to})`
+  if (edges.top) return `linear-gradient(to bottom, ${from})`
+  if (edges.bottom) return `linear-gradient(to bottom, ${to})`
+  return undefined
+}
+
+function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
+  return (
+    <li className="group flex gap-2">
+      {/*
+        **A mark is an aside, and it was louder than the call.**
+
+        The gutter carried a bookmark glyph *and* the word « marqué » in
+        `brand-700` semibold, against a two-pixel `brand-500` rule, beside a
+        client's own sentence set in `text-muted` with a grey label. Three
+        brand-coloured elements on the rep's own note and none on the thing the
+        note is about: on a fifty-minute call the eye went to the annotations
+        and skated past the words. It reversed the hierarchy of the surface —
+        the transcript is the record, the mark is a finger pointing at it.
+
+        Same ink, same rule, one glyph. The bookmark alone says « marked » —
+        it is the same glyph as the pill's own counter and the *Marquer*
+        control, so it is already the word's meaning on this window — and the
+        `aria-label` keeps the word for a reader that cannot see the shape.
+        The note stays `text-strong`, because the rep wrote it on purpose.
+      */}
+      <span
+        aria-label="Moment marqué"
+        className="text-muted flex w-12 shrink-0 items-start justify-end pt-px text-meta leading-relaxed"
+      >
+        <Bookmark />
+      </span>
+      <span className="text-strong border-subtle min-w-0 flex-1 border-l pl-2 text-ui leading-relaxed">
+        {mark.note === '' ? 'Moment marqué.' : mark.note}
+      </span>
+      {/*
+        **A mark can be taken back.**
+
+        It is typed one-handed, into a box floating over a client's face, and
+        sent on `Enter` — so a mistake is made here more easily than anywhere
+        else in the product, and until this control existed there was no way to
+        correct one: no channel, no event, nothing. It would have sat in the
+        reader at the gate, in the rep's own words, permanently.
+
+        A removal is an **event**, not a delete (DEC-27 leaves exactly one
+        delete in this codebase and it is the diagnostics purge): `moment.forgotten`
+        is appended and the fold drops the pair, so the log still says what
+        happened and when.
+      */}
+      <button
+        type="button"
+        onClick={() => onForget(mark.id)}
+        aria-label="Retirer ce moment marqué"
+        className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+      >
+        <span aria-hidden className="text-ui leading-none">
+          ×
+        </span>
+      </button>
+    </li>
+  )
+}

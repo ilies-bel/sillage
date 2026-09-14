@@ -48,7 +48,23 @@ interface RestProviderConfig {
   uploadType: 'multipart' | 'binary'
   /** Multipart only. */
   fields?: Record<string, string>
-  extractTranscript: (data: unknown) => string
+  /**
+   * The transcript, or **null when the body is not one this adapter knows**.
+   *
+   * The distinction is the whole of it. These four providers all answer `200`
+   * with a JSON envelope, and every one of them can answer `200` with an
+   * envelope that is *not* a transcript: a quota message, an error object, a
+   * field renamed in a new API version, an HTML interstitial from a corporate
+   * proxy. This used to return `''` for all of that, which is exactly what a
+   * genuinely silent chunk returns — so the session emitted nothing, recorded
+   * nothing, and left `transcribe` health `ok`. A rep got a meeting with no
+   * transcript and an app that said everything was fine, which is the one
+   * failure a notetaker cannot have.
+   *
+   * `''` still means « understood, and nothing was said », because silence is
+   * ordinary and must not raise anything.
+   */
+  extractTranscript: (data: unknown) => string | null
 }
 
 interface RestProviderBuild {
@@ -61,13 +77,34 @@ interface RestProviderBuild {
   }) => RestProviderConfig
 }
 
-const text = (data: unknown): string => {
-  if (typeof data === 'string') return data
+/**
+ * The OpenAI-shaped body: `{ text: "…" }`.
+ *
+ * A `text` key that is present and a string is the answer, empty included — a
+ * chunk of silence is an ordinary thing to send. Anything else is a body this
+ * adapter does not recognise and says so, rather than passing silence off as a
+ * transcription.
+ */
+const text = (data: unknown): string | null => {
+  /*
+   * **A string is not a transcript, whatever it says.**
+   *
+   * This line answered `data` directly, under a docblock promising the opposite
+   * — and axios hands back the raw string for *any* non-JSON 200. So a corporate
+   * proxy's HTML interstitial, a gateway's plain-text error, a login page: all of
+   * it was emitted verbatim as something the client had said, into the transcript
+   * the compte-rendu is folded from and `[source ▸]` reads. The fix one commit
+   * earlier closed every object-shaped case and left the one its own reasoning
+   * named, which made the failure louder rather than quieter.
+   *
+   * These three providers all set `response_format: json` and answer an object.
+   * A string body is not this API answering.
+   */
   if (data && typeof data === 'object' && 'text' in data) {
     const value = (data as { text?: unknown }).text
-    return typeof value === 'string' ? value : ''
+    return typeof value === 'string' ? value : null
   }
-  return ''
+  return null
 }
 
 export const PROVIDERS: Record<RestProviderId, RestProviderBuild> = {
@@ -79,12 +116,20 @@ export const PROVIDERS: Record<RestProviderId, RestProviderBuild> = {
         `/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(language)}`,
       authHeader: { 'Ocp-Apim-Subscription-Key': apiKey },
       uploadType: 'binary',
+      /*
+       * Azure answers `{ RecognitionStatus, DisplayText }`, and `NoMatch` comes
+       * back with **no** `DisplayText` at all — which is a real, ordinary
+       * answer meaning « nothing intelligible in this chunk ». So the envelope
+       * is what is recognised, not the field: a body carrying
+       * `RecognitionStatus` is understood whether or not it carries text, and a
+       * body carrying neither is not this API answering.
+       */
       extractTranscript: (data) => {
-        if (data && typeof data === 'object' && 'DisplayText' in data) {
-          const value = (data as { DisplayText?: unknown }).DisplayText
-          return typeof value === 'string' ? value : ''
-        }
-        return ''
+        if (!data || typeof data !== 'object') return null
+        if (!('RecognitionStatus' in data)) return null
+        const value = (data as { DisplayText?: unknown }).DisplayText
+        if (value === undefined) return ''
+        return typeof value === 'string' ? value : null
       },
     }),
   },
@@ -186,8 +231,14 @@ export interface RestSttOptions extends SttSessionOptions {
    * once and nothing afterwards — is a behaviour, not a shape. The version this
    * was ported from could only be checked by grepping its own source for a
    * guard, which is how it kept a guard that discarded the tail.
+   *
+   * It answers the provider's **body**, not a transcript, so the seam sits
+   * where the network does and every test goes through the same body-reading
+   * the product does. It returned the finished string for a while, and that put
+   * `extractTranscript` outside every test in the repo — which is where the
+   * « a 200 that is not a transcription reads as silence » defect lived.
    */
-  upload?: (wav: Buffer) => Promise<string>
+  upload?: (wav: Buffer) => Promise<unknown>
 }
 
 export class RestSttSession extends EventEmitter implements SttSession {
@@ -195,7 +246,7 @@ export class RestSttSession extends EventEmitter implements SttSession {
 
   #config: RestProviderConfig
   #diagnostics: DiagRecorder
-  #uploadOverride: ((wav: Buffer) => Promise<string>) | null = null
+  #uploadOverride: ((wav: Buffer) => Promise<unknown>) | null = null
   #chunks: Buffer[] = []
   #bufferedBytes = 0
   #sampleRate = TARGET_RATE
@@ -295,6 +346,7 @@ export class RestSttSession extends EventEmitter implements SttSession {
           severity: 'error',
           code: 'transcribe.upload.failed',
           module: 'transcribe',
+          origin: 'foreign',
           message: error instanceof Error ? error.message : String(error),
           detail: { provider: this.providerId, bytes: wav.length },
         })
@@ -314,13 +366,13 @@ export class RestSttSession extends EventEmitter implements SttSession {
   }
 
   async #upload(wav: Buffer): Promise<string> {
-    if (this.#uploadOverride) return this.#uploadOverride(wav)
+    if (this.#uploadOverride) return this.#read(await this.#uploadOverride(wav))
     if (this.#config.uploadType === 'binary') {
       const response = await axios.post(this.#config.endpoint, wav, {
         headers: { ...this.#config.authHeader, 'Content-Type': 'audio/wav' },
         timeout: REQUEST_TIMEOUT_MS,
       })
-      return this.#config.extractTranscript(response.data)
+      return this.#read(response.data)
     }
 
     const form = new FormData()
@@ -331,7 +383,37 @@ export class RestSttSession extends EventEmitter implements SttSession {
       headers: { ...this.#config.authHeader, ...form.getHeaders() },
       timeout: REQUEST_TIMEOUT_MS,
     })
-    return this.#config.extractTranscript(response.data)
+    return this.#read(response.data)
+  }
+
+  /**
+   * **A 200 that is not a transcription is a failure, not a silence.**
+   *
+   * Every provider here can answer `200` with something that is not a
+   * transcript — a quota or moderation envelope, an error object, a field
+   * renamed between API versions, a corporate proxy's HTML interstitial. The
+   * adapters used to answer `''` to all of it, which is exactly what a silent
+   * chunk answers, so nothing was emitted, nothing was recorded, and
+   * `transcribe` health stayed `ok`: the rep got a meeting with no transcript
+   * from an app that said everything was fine. There is no worse outcome for a
+   * notetaker.
+   *
+   * Throwing puts it on the path that already exists — the caller's `catch`
+   * records `transcribe.upload.failed`, the consecutive-error count moves the
+   * connector's health, and a run of them fails the provider over. The message
+   * carries the body's **top-level keys** and nothing else: that is what
+   * identifies « the API changed » versus « the key is out of quota » in a
+   * diagnostics bundle, and it is a property of the vendor's envelope rather
+   * than anything the client said.
+   */
+  #read(data: unknown): string {
+    const transcript = this.#config.extractTranscript(data)
+    if (transcript !== null) return transcript
+    const shape =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? Object.keys(data).slice(0, 6).join(', ')
+        : typeof data
+    throw new Error(`réponse inattendue de ${this.providerId} (${shape || 'objet vide'})`)
   }
 }
 

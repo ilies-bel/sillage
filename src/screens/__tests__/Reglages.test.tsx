@@ -27,6 +27,7 @@ import {
   OPTIONAL_CONNECTORS,
   REQUIRED_CONNECTORS,
 } from '../../../electron/core/contracts/status.ts'
+import { MENTION_SENTENCE_DEFAULT } from '../../../electron/core/contracts/mention.ts'
 import type { SettingsSnapshot } from '../../../electron/core/contracts/settings.ts'
 import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
@@ -36,6 +37,8 @@ let bridge: FakeBridge
 let uninstall: () => void
 
 const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
+  offlineOnly: false,
+  mentionSentence: MENTION_SENTENCE_DEFAULT,
   stt: {
     rows: [
       {
@@ -43,7 +46,6 @@ const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
         label: 'Whisper (local)',
         tier: 'local',
         residency: 'local',
-        streaming: false,
         cost: 'free',
         auth: 'none',
         credential: { stored: false, hint: null },
@@ -58,7 +60,6 @@ const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
         label: 'Deepgram',
         tier: 'cloud',
         residency: 'remote',
-        streaming: true,
         cost: 'metered',
         auth: 'apiKey',
         credential: { stored: false, hint: null },
@@ -79,7 +80,6 @@ const snapshot = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
         label: 'Mistral AI',
         tier: 'cloud',
         residency: 'remote',
-        streaming: true,
         cost: 'metered',
         auth: 'apiKey',
         credential: { stored: false, hint: null },
@@ -214,7 +214,9 @@ const updateStatus = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
 const open = async (section: string) => {
   const rail = await screen.findByRole('navigation', { name: 'Sections des réglages' })
   await act(async () => {
-    within(rail).getByRole('button', { name: section }).click()
+    // By prefix: a rail item that has something wrong inside it carries the
+    // count in its accessible name (« Connecteurs, 3 connecteurs en défaut »).
+    within(rail).getByRole('button', { name: new RegExp(`^${section}`) }).click()
   })
 }
 
@@ -236,14 +238,22 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     mount()
     const rail = await screen.findByRole('navigation', { name: 'Sections des réglages' })
 
-    const labels = [...rail.querySelectorAll('button')].map((b) => b.textContent)
+    // The label itself, not the whole button: an item may also carry a count
+    // and the sentence that count reads as.
+    const labels = [...rail.querySelectorAll('button')].map((b) => b.firstElementChild?.textContent)
     expect(labels).toEqual([
       'Transcription',
       'Modèle de langage',
       'Connecteurs',
+      'Raccourcis clavier',
       'Mise à jour',
       'Diagnostics',
     ])
+
+    // The fixture's connectors that are not `ok`, counted — the rail says so
+    // where the choice is made rather than only inside the section.
+    const connecteurs = within(rail).getByRole('button', { name: /^Connecteurs/ })
+    expect(connecteurs.textContent).toContain('2 connecteurs en défaut')
 
     // One current section, announced rather than merely tinted.
     const current = rail.querySelectorAll('[aria-current="page"]')
@@ -256,34 +266,55 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     // first section would make that one click cost a second one.
     mount()
     expect(await screen.findByText('Requis')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Connecteurs' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('button', { name: /^Connecteurs/ }).getAttribute('aria-current')).toBe(
       'page',
     )
   })
 
-  test('choosing a section swaps the right pane, and nothing overlays anything (HR-10)', async () => {
+  test('choosing a section swaps the right pane, and nothing overlays the pane (HR-10)', async () => {
     const { container } = mount()
     await open('Diagnostics')
 
     expect(screen.getByText(/conservés 90 jours/)).toBeTruthy()
     // The connectors pane is gone, not hidden behind something.
     expect(screen.queryByText('Facultatifs')).toBeNull()
+
+    /*
+      **One dialog, and it is the sheet itself** (V2).
+
+      Réglages is a drawer over the calendar now rather than a screen beside it,
+      so `[role="dialog"]` is no longer proof of a popover — it is the frame. The
+      rule HR-10 is about survives intact and is what is asserted here: the
+      sections rail *swaps* the pane, and nothing inside the sheet overlays
+      anything else. So exactly one dialog, and no second layer of chrome.
+    */
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(container.querySelector('dialog')).toBeNull()
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
   })
 })
 
 describe('DEC-32: Requis / Facultatifs, from the contract the header aggregates over', () => {
-  test('the sentence at the top says what the header control means', async () => {
-    mount()
+  /*
+   * The rule that was broken here was not a missing sentence, it was three of
+   * them: a preamble on what the header indicator tracks, then a caption under
+   * *Requis*, then one under *Facultatifs* — about sixty words of reasoning
+   * standing between a rep who came here because VerySwing broke and the red
+   * row they came for. The facts are load-bearing and stay; the paragraph in
+   * front of the first control does not.
+   */
+  test('nothing stands between the screen and its first control', async () => {
+    const { container } = mount()
+    await screen.findByText('Requis')
 
-    const lede = await screen.findByText(/L’indicateur d’état, en haut de l’écran/)
-    const text = lede.textContent ?? ''
-    // What moves it…
-    expect(text).toContain('les trois connecteurs requis')
-    // …and, said out loud, what does not (DEC-26).
-    expect(text).toContain('ne rendent jamais l’application indisponible')
+    // The old preamble, gone…
+    expect(screen.queryByText(/L’indicateur d’état, en haut de l’écran/)).toBeNull()
+
+    // …and what is left between « Connecteurs » and the first connector row is
+    // one line, not three paragraphs.
+    const html = container.innerHTML
+    const between = html.slice(html.indexOf('Requis'), html.indexOf('Analyse'))
+    expect(between.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).length).toBeLessThan(35)
   })
 
   test('the two groups hold exactly what the contract puts in them', async () => {
@@ -315,12 +346,16 @@ describe('DEC-32: Requis / Facultatifs, from the contract the header aggregates 
 
   test('each group states, in French, what it costs when it is down', async () => {
     mount()
-    expect(
-      await screen.findByText(/Sans eux, une réunion ne peut pas être enregistrée/),
-    ).toBeTruthy()
-    expect(
-      screen.getByText(/Une réunion s’enregistre, se transcrit et s’analyse sans eux/),
-    ).toBeTruthy()
+    // One line per heading, and between them they still carry both halves of
+    // DEC-32: what moves the header indicator, and what never does (DEC-26).
+    const required = await screen.findByText(
+      /sans eux une réunion ne peut pas être enregistrée/,
+    )
+    expect(required.textContent).toContain('les seuls à faire changer l’indicateur d’état')
+    const optional = screen.getByText(
+      /Une réunion s’enregistre, se transcrit et s’analyse sans eux/,
+    )
+    expect(optional.textContent).toContain('jamais dans l’indicateur d’état')
   })
 })
 
@@ -387,7 +422,11 @@ describe('DEC-33: every provider is listed, with where it runs and its reason', 
     // carries the fact to the person deciding. The row used to claim a
     // jurisdiction too; DEC-37 removed that, because the app cannot keep it
     // true and a stale badge is worse than no badge.
-    expect(screen.getByText(/hors machine/)).toBeTruthy()
+    //
+    // Exact, not a substring: « hors machine » is now also a phrase inside the
+    // « cette machine uniquement » switch above the table, and a loose match
+    // would pass on that sentence while the row itself said nothing at all.
+    expect(screen.getAllByText('hors machine').length).toBeGreaterThan(0)
   })
 
   test('the tiers are named, and the selected provider is marked', async () => {
@@ -596,7 +635,6 @@ describe('DEC-34: the credential is entered here, and never comes back out', () 
             label: 'ElevenLabs Scribe',
             tier: 'cloud',
             residency: 'remote',
-            streaming: false,
             cost: 'metered',
             auth: 'apiKey',
             credential: { stored: false, hint: null },
@@ -769,6 +807,46 @@ describe('DEC-35: the models are managed under Transcription', () => {
     expect(pane().getByRole('button', { name: 'Annuler' })).toBeTruthy()
   })
 
+  test('the percentage arrives — the row is moved by the broadcast, not by a re-read', async () => {
+    /*
+     * **The test above proves the row can render a number. It never asked
+     * whether one arrives**, and for the life of this feature none did.
+     *
+     * `main.ts` broadcasts `models:progress` on every change, under a comment
+     * naming the bug it exists to fix. The renderer subscribed to eleven
+     * channels and this was not one of them — so a rep who pressed *Télécharger*
+     * on a 1.5 GB model watched « téléchargement · 0 % » beside an *Annuler*
+     * button, unchanged, **including after it finished**. The row only ever
+     * moved when some unrelated write happened to re-read the whole snapshot.
+     */
+    const starting = snapshot()
+    starting.models.rows[1] = { ...starting.models.rows[1]!, status: 'downloading', progress: 0 }
+    mount(starting)
+    await open('Transcription')
+    expect(pane().getByText(/téléchargement · 0 %/)).toBeTruthy()
+
+    await act(async () => {
+      bridge.emit('models:progress', {
+        id: starting.models.rows[1]!.id,
+        status: 'downloading',
+        progress: 61,
+        reason: null,
+      })
+    })
+    expect(pane().getByText(/téléchargement · 61 %/)).toBeTruthy()
+
+    // And completion is visible too — the row said « téléchargement » for ever.
+    await act(async () => {
+      bridge.emit('models:progress', {
+        id: starting.models.rows[1]!.id,
+        status: 'ready',
+        progress: 100,
+        reason: null,
+      })
+    })
+    expect(pane().queryByText(/téléchargement/)).toBeNull()
+  })
+
   test('a failed download says why, in French, on the row', async () => {
     const failed = snapshot()
     failed.models.rows[1] = {
@@ -792,7 +870,6 @@ describe('DEC-36: the ChatGPT row is a session, not a key', () => {
             label: 'ChatGPT (abonnement)',
             tier: 'cloud',
             residency: 'remote',
-            streaming: true,
             cost: 'included',
             auth: 'oauth',
             credential: { stored: false, hint: null },
@@ -855,7 +932,6 @@ describe('DEC-34: the settings that are not secrets', () => {
             label: 'Modèle local',
             tier: 'self-hosted',
             residency: 'local',
-            streaming: true,
             cost: 'free',
             auth: 'apiKey',
             credential: { stored: false, hint: null },
@@ -900,7 +976,7 @@ describe('DEC-34: the settings that are not secrets', () => {
     await act(async () => {
       pane().getByRole('button', { name: 'Ajouter une clé' }).click()
     })
-    const field = pane().getByLabelText(/^Modèle/)
+    const field = pane().getByLabelText('Modèle *')
     fireEvent.change(field, { target: { value: 'llama3.1:8b' } })
     await act(async () => {
       within(field.closest('form')!).getByRole('button', { name: 'Enregistrer' }).click()
@@ -1083,5 +1159,137 @@ describe('mise à jour', () => {
     // Without this line the same download appears to restart itself, which
     // reads as the app being broken rather than as the app coping.
     expect(pane().getByText(/reprise du téléchargement \(essai 2 sur 3\)/)).toBeTruthy()
+  })
+})
+
+/**
+ * **The sentence a rep reads to a client is the ESN's, and this pane is where it is
+ * theirs** (US-11, US-19, `core/contracts/mention.ts`).
+ *
+ * US-11 shipped the wording as a constant in the renderer, which is the
+ * `SILLAGE_STT_OFFLINE_ONLY` mistake DEC-37 has already paid for once: a legal
+ * sentence nobody deploying this product can change without a build.
+ *
+ * What is asserted here is the four properties that keep it honest — the field shows
+ * what the *pill* will hand over rather than what is stored; an empty save is how you
+ * return to the default and there is a control that says so; the box cannot clip its
+ * own sentence; and nothing in the pane claims the client agreed to anything.
+ */
+describe('the sentence the client hears (US-19)', () => {
+  const LABEL = 'Ce que vous dites au client'
+  const field = () => pane().getByLabelText(LABEL) as HTMLTextAreaElement
+  /*
+   * Scoped to its own `<section>`: the Transcription pane also holds a provider's
+   * *Enregistrer*, and a query that matched both would be asserting about whichever
+   * one the tree happened to yield first.
+   */
+  const box = () => within(field().closest('section') as HTMLElement)
+  const save = () => box().getByRole('button', { name: 'Enregistrer la phrase' }) as HTMLButtonElement
+  const restore = () =>
+    box().getByRole('button', { name: 'Rétablir la phrase par défaut' }) as HTMLButtonElement
+
+  test('the pane shows the sentence the pill will hand over', async () => {
+    mount()
+    await open('Transcription')
+    expect(field().value).toBe(MENTION_SENTENCE_DEFAULT)
+    // The explanation says what the press does and, more importantly, what it does
+    // not: no send, and no record of what the client said.
+    expect(box().getByText(/n’envoie rien/)).toBeTruthy()
+  })
+
+  test('a deployment that wrote its own wording sees its own wording', async () => {
+    /*
+     * The whole of US-19 in one assertion. The snapshot is the only source: a field
+     * that fell back to the default when a value was stored would show every ESN our
+     * sentence while the pill handed over theirs, or the reverse — and either way the
+     * pane would be lying about what happens on the call.
+     */
+    const own = 'Cet échange est transcrit par un outil interne. Dites-le si cela vous gêne.'
+    mount({ mentionSentence: own })
+    await open('Transcription')
+    expect(field().value).toBe(own)
+    expect(field().value).not.toBe(MENTION_SENTENCE_DEFAULT)
+  })
+
+  test('saving sends what was typed, and saves nothing until it differs', async () => {
+    mount()
+    let sent: string | null = null
+    bridge.when('settings:setMentionSentence', ({ value }) => {
+      sent = value
+      return snapshot({ mentionSentence: value.trim() === '' ? MENTION_SENTENCE_DEFAULT : value })
+    })
+    await open('Transcription')
+
+    // Dead exactly when pressing it would do nothing — the `SettingField` rule.
+    expect(save().disabled).toBe(true)
+
+    const own = 'Je vous signale que cet appel est transcrit pour le compte-rendu.'
+    await act(async () => {
+      fireEvent.change(field(), { target: { value: own } })
+    })
+    expect(save().disabled).toBe(false)
+    await act(async () => {
+      save().click()
+    })
+    await waitFor(() => expect(sent).toBe(own))
+  })
+
+  test('coming back to the default is a control, not a trick', async () => {
+    /*
+     * « Empty the box and save » is how the store deletes the row, and a rep is not
+     * going to guess that. The control is live exactly when the wording is not the
+     * default, and what it sends is the empty string — which `setMentionSentence`
+     * reads as « forget it » and the snapshot answers as the default.
+     */
+    mount({ mentionSentence: 'Nous enregistrons cet appel.' })
+    let sent: string | null = null
+    bridge.when('settings:setMentionSentence', ({ value }) => {
+      sent = value
+      return snapshot({ mentionSentence: MENTION_SENTENCE_DEFAULT })
+    })
+    await open('Transcription')
+
+    expect(restore().disabled).toBe(false)
+    await act(async () => {
+      restore().click()
+    })
+    await waitFor(() => expect(sent).toBe(''))
+    await waitFor(() => expect(field().value).toBe(MENTION_SENTENCE_DEFAULT))
+  })
+
+  test('and it is dead when the wording already is the default', async () => {
+    mount()
+    await open('Transcription')
+    expect(restore().disabled).toBe(true)
+    // DEC-26: disabled is never silent.
+    expect(box().getByText(/déjà la phrase par défaut/)).toBeTruthy()
+  })
+
+  test('nothing in the pane claims the client agreed', async () => {
+    /*
+     * The same sweep `Widget.test.tsx` runs over the card, on the surface that
+     * *describes* the feature — which is where somebody would be tempted to write
+     * « le client a été informé » and turn a record of what was handed over into a
+     * claim about what was said.
+     */
+    mount()
+    await open('Transcription')
+    const claim = /consentement|a accept|a donn[ée]|autoris|accord du client|le client a été/i
+    expect((screen.getByRole('main').textContent ?? '').match(claim)).toBeNull()
+  })
+
+  test('the box grows with its content rather than clipping it', async () => {
+    /*
+     * jsdom measures every box as zero, so what is asserted is the *declaration* —
+     * `field-sizing: content` and no scroller. The measurement is
+     * `shot.mjs reglages --scrollers`, which is where the eleven clipped textareas at
+     * the gate were found; a four-line sentence in a three-line box is that defect on
+     * a field whose content is, by construction, four lines.
+     */
+    mount()
+    await open('Transcription')
+    expect(field().className).toContain('[field-sizing:content]')
+    expect(field().className).toContain('measure')
+    expect(field().className).toContain('resize-none')
   })
 })

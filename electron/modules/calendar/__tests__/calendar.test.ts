@@ -279,7 +279,9 @@ test('the last fold is readable without touching the network', async () => {
 test('a throttled calendar is degraded, an expired session is down', () => {
   const throttled = calendarHealth(new GraphError({ status: 429, message: 'slow down', retryable: true, retryAfterMs: 30_000 }), 1)
   assert.equal(throttled.state, 'degraded')
-  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30 s/)
+  // U+00A0: a number and its unit are one word, and a connector reason wraps
+  // in a 300px column in Réglages — « dans 30 / s » is the break this prevents.
+  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30\u00a0s/)
 
   const expired = calendarHealth(new InteractionRequiredError(), 1)
   assert.equal(expired.state, 'down')

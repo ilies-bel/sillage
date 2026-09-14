@@ -18,6 +18,7 @@ use ringbuf::traits::Consumer;
 pub mod audio_config;
 pub mod echo_canceller;
 pub mod echo_reference;
+pub mod mic_apps;
 pub mod microphone;
 pub mod resampler;
 pub mod silence_suppression;
@@ -765,4 +766,28 @@ pub fn get_output_devices() -> Vec<AudioDeviceInfo> {
 #[napi]
 pub fn get_default_output_device_id() -> String {
     speaker::default_output_device_uid()
+}
+
+/// The default **render** device on the `eCommunications` role, or `""` where
+/// the platform has no such role (macOS) or the lookup fails.
+///
+/// This is the one measurement that can explain the most common way this product
+/// fails on its primary platform. The WASAPI loopback tap binds `eConsole` —
+/// `wasapi`'s `get_default_device` hardcodes the role, and
+/// `get_default_output_device_id` above reads the same one — while Teams, Zoom
+/// and Meet render to `eCommunications`, which Windows lets a rep configure
+/// separately in one checkbox. When the two differ the tap records an endpoint
+/// nothing is playing to: no chunks at all, not even keepalives, because the
+/// suppressor is only consulted once a full buffer exists.
+///
+/// The watchdog already says « Rien n'arrive depuis l'audio de votre
+/// ordinateur ». What it could not say is *why*, and « votre application d'appel
+/// utilise un autre périphérique de sortie » is the difference between a rep who
+/// fixes it in one checkbox and a rep who files a bug.
+///
+/// `""` is « we did not measure it » and is never reported as a finding
+/// (DEC-45) — which is also what macOS returns, because it has no such role.
+#[napi]
+pub fn get_default_communications_device_id() -> String {
+    speaker::default_communications_device_uid()
 }

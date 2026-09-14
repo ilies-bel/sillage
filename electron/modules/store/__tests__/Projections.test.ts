@@ -7,6 +7,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../index.ts'
 import type { PushIntent } from '../../../core/contracts/push.ts'
+import { meetingAnchor } from '../../../core/contracts/meeting.ts'
+import { adHocContext, adHocMeetingId, adHocTitle } from '../../../core/domain/adHoc.ts'
+import { AD_HOC_ID_PREFIX } from '../Projections.ts'
 import {
   sampleExtraction,
   sampleSegment,
@@ -101,8 +104,19 @@ test('draining a dependency unblocks its dependant and records the remote id', (
   store.close()
 })
 
-test('a failed dependency blocks its dependants and nothing else', () => {
+test('a settled dependency releases its dependants — decided, either way', () => {
+  /*
+   * `blocked` means « a dependency has not settled yet », and it used to mean
+   * « or has failed » — a terminal state with no exit. `drainable()` is
+   * `state = 'pending'`, so no boot re-drain named the row again and the
+   * compte-rendu task was never attempted, ever, while the meeting sat in
+   * `pushing` for the life of the database and `updateReadiness` refused every
+   * installer. One 503 on an *enrichment* permanently cost the product's
+   * primary deliverable.
+   */
   const store = seeded()
+  assert.equal(stateOf(store, 'i-task'), 'blocked', 'en vol : la dépendance n’est pas décidée')
+
   store.append('m1', { type: 'push.attempted', intentId: 'i-oppy', attempt: 1 })
   store.append('m1', {
     type: 'push.settled',
@@ -110,9 +124,20 @@ test('a failed dependency blocks its dependants and nothing else', () => {
   })
 
   assert.equal(stateOf(store, 'i-oppy'), 'failed')
-  assert.equal(stateOf(store, 'i-task'), 'blocked')
+  assert.equal(stateOf(store, 'i-task'), 'pending', 'décidée : la dépendante repart')
   // DEC-26: a VSA outage must never stop the Outlook draft from shipping.
   assert.equal(stateOf(store, 'i-mail'), 'pending')
+  store.close()
+})
+
+test('a dependency still in flight keeps its dependants blocked', () => {
+  // The half the rule above exists for, and the half that is untouched: a task
+  // sent before its opportunity is decided would carry no reference when one
+  // was about to exist.
+  const store = seeded()
+  store.append('m1', { type: 'push.attempted', intentId: 'i-oppy', attempt: 1 })
+  assert.equal(stateOf(store, 'i-oppy'), 'draining')
+  assert.equal(stateOf(store, 'i-task'), 'blocked')
   store.close()
 })
 
@@ -239,4 +264,248 @@ test('a choice belongs to its own meeting', () => {
   assert.equal(store.projections.recipe('m1'), 'libre')
   assert.equal(store.projections.recipe('m2'), 'besoin-commercial')
   store.close()
+})
+
+/**
+ * **The list is ordered by the day a meeting belongs on, newest first.**
+ *
+ * It used to be `ORDER BY updated_at DESC`, which is not a date — it is the last
+ * time the event log touched the row. A call validated late had been *edited*
+ * more recently than a call held two days after it, so it sorted above it, and
+ * *Historique*, whose only organising principle is recency, printed 10/09,
+ * 09/09, 07/09, **01/09, 03/09**, 27/08. That is the defect a rep notices in the
+ * first minute and never trusts again, and it took five screenshot reviews to
+ * find because the harness fixture was a hand-written array in its own order.
+ *
+ * The anchor is `meetingAnchor` and the SQL has to agree with it, so this test
+ * asserts against the function rather than restating the coalesce.
+ */
+test('meetings list by the day they belong on, not by when they were last touched', () => {
+  const store = new Store(':memory:', clock)
+
+  // Held first, and touched last — which is what the old ordering rewarded.
+  store.append('old', {
+    type: 'meeting.created',
+    title: 'Lefort',
+    context: null,
+    scheduledStart: 1_000_000_000_000,
+  })
+  store.append('recent', {
+    type: 'meeting.created',
+    title: 'Nordis',
+    context: null,
+    scheduledStart: 1_700_000_000_000,
+  })
+  // Any later event on the older meeting: renaming it is the cheapest one, and
+  // it is exactly what a rep does when they come back to a call to file it.
+  store.append('old', { type: 'meeting.renamed', title: 'Groupe Lefort', clientName: null })
+
+  const listed = store.projections.listMeetings()
+  assert.deepEqual(
+    listed.map((meeting) => meeting.id),
+    ['recent', 'old'],
+  )
+  // And the order is the anchor's, so the two cannot drift apart.
+  assert.deepEqual(
+    [...listed].sort((a, b) => meetingAnchor(b) - meetingAnchor(a)).map((m) => m.id),
+    listed.map((m) => m.id),
+  )
+  store.close()
+})
+
+/*
+ * ── the compte-rendu the rep validated ──────────────────────────────────────
+ *
+ * `edits.compteRendu` used to reach `draftIntents` and nothing else, so the
+ * string VerySwing received and the string *Historique* drew were two different
+ * documents from the moment a rep corrected a sentence at the gate. The fold is
+ * where the correction now lives; the two cases below are the whole of its
+ * contract, and the second is what makes every meeting confirmed before the
+ * field existed read exactly as it always has.
+ */
+test('the confirmed compte-rendu is folded out of the confirmation, last one winning', () => {
+  const store = new Store(':memory:', clock)
+  store.append('m1', { type: 'meeting.created', title: 'Acme', context: null })
+
+  // Nothing confirmed yet: an absence, so the caller renders the extraction.
+  assert.equal(store.projections.confirmedCompteRendu('m1'), null)
+
+  store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: ['i-1'],
+    at: 5_000,
+    compteRendu: '# Acme\n\nCorrigé par le commercial.',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('m1'), '# Acme\n\nCorrigé par le commercial.')
+
+  store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: ['i-2'],
+    at: 6_000,
+    compteRendu: '# Acme\n\nCorrigé deux fois.',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('m1'), '# Acme\n\nCorrigé deux fois.')
+  store.close()
+})
+
+test('a confirmation written before the field existed is an absence, and « » is not', () => {
+  const store = new Store(':memory:', clock)
+
+  // Exactly the shape every meeting confirmed before this field existed has:
+  // no key at all. It must replay — and answer « nobody recorded this », so the
+  // caller falls back to the stored extraction, which is what those meetings
+  // have always shown.
+  store.append('old', { type: 'meeting.created', title: 'Lefort', context: null })
+  store.append('old', { type: 'confirmation.recorded', intentIds: ['i-1'], at: 5_000 })
+  assert.equal(store.projections.confirmedCompteRendu('old'), null)
+
+  // And the empty string is a *value*: a rep who selected the document, deleted
+  // it and validated anyway did something `reviewGate.ts` deliberately allows,
+  // and the record says so rather than reinstating the model's draft over it.
+  store.append('vidé', { type: 'meeting.created', title: 'Nordis', context: null })
+  store.append('vidé', {
+    type: 'confirmation.recorded',
+    intentIds: [],
+    at: 5_000,
+    compteRendu: '',
+  })
+  assert.equal(store.projections.confirmedCompteRendu('vidé'), '')
+  store.close()
+})
+
+/*
+ * ── an offer nobody accepted is not a meeting the rep had ────────────────────
+ *
+ * The detector calls `create()` at the moment it makes an *offer* (DEC-46), so
+ * every false positive used to write a permanent row into the rep's own record —
+ * drawn in the day grid with an *Ouvrir* button onto an empty meeting, indexed by
+ * the search, and with no delete verb anywhere in the product. A browser tab
+ * holding the microphone for a Loom recording is enough.
+ *
+ * The predicate is *provenance plus never started*, and the three rows below are
+ * the reason it is not the structural « no event, no start, idle »: two of them
+ * look exactly like the residue and both are meetings the rep asked for.
+ */
+const declineAnAdHocOffer = (store: Store, heldSince: number): string => {
+  const id = adHocMeetingId(heldSince)
+  store.append(id, {
+    type: 'meeting.created',
+    title: adHocTitle('Navigateur'),
+    context: adHocContext('Navigateur', heldSince),
+  })
+  store.append(id, {
+    type: 'session.transition',
+    from: 'idle',
+    to: 'armed',
+    command: 'arm',
+    reason: 'appel Navigateur hors calendrier',
+  })
+  store.append(id, {
+    type: 'session.transition',
+    from: 'armed',
+    to: 'idle',
+    command: 'disarm',
+    reason: 'l’appel s’est terminé sans enregistrement',
+  })
+  return id
+}
+
+test('an unscheduled call that was offered and never accepted leaves no row to read', () => {
+  const store = new Store(':memory:', clock)
+  const declined = declineAnAdHocOffer(store, 1_700_000_000_000)
+
+  assert.deepEqual(store.projections.listMeetings(null), [])
+  // The log keeps it: that is genuine history, and DEC-27 leaves exactly one
+  // delete in this codebase. Only the *view* drops it — and `getMeeting` still
+  // answers, because the orchestrator rehydrates by id.
+  assert.ok(store.log.read(declined).some((stored) => stored.event.type === 'meeting.created'))
+  assert.ok(store.projections.getMeeting(declined))
+  store.close()
+})
+
+test('and every unscheduled call the rep did something about is still listed', () => {
+  const store = new Store(':memory:', clock)
+  declineAnAdHocOffer(store, 1_700_000_000_000)
+
+  // Accepted and recorded: `started_at` is set, which is half the predicate.
+  const accepted = adHocMeetingId(1_700_000_060_000)
+  store.append(accepted, {
+    type: 'meeting.created',
+    title: adHocTitle('Teams'),
+    context: adHocContext('Teams', 1_700_000_060_000),
+  })
+  store.append(accepted, {
+    type: 'session.transition',
+    from: 'armed',
+    to: 'recording',
+    command: 'start',
+    reason: null,
+  })
+
+  // Still standing: `armed`, never withdrawn. That one wants attention.
+  const standing = adHocMeetingId(1_700_000_120_000)
+  store.append(standing, {
+    type: 'meeting.created',
+    title: adHocTitle('Zoom'),
+    context: adHocContext('Zoom', 1_700_000_120_000),
+  })
+  store.append(standing, {
+    type: 'session.transition',
+    from: 'idle',
+    to: 'armed',
+    command: 'arm',
+    reason: 'appel Zoom hors calendrier',
+  })
+
+  assert.deepEqual(
+    store.projections.listMeetings(null).map((meeting) => meeting.id).sort(),
+    [accepted, standing].sort(),
+  )
+  store.close()
+})
+
+test('a meeting the rep created by hand is never residue, whatever state it sits in', () => {
+  const store = new Store(':memory:', clock)
+
+  /*
+   * **The two rows the structural predicate would have taken with it**, and the
+   * reason this one tests the id rather than the shape. Both are `idle`, both
+   * have no `event_id` and no `started_at` — which is exactly what the residue
+   * looks like — and both are meetings the rep asked for: « Ajouter au jeudi »
+   * (DEC-31, a rep may place a call on any day) and « Démarrer une réunion »
+   * between `meeting:create` and a `start` that was refused. Hiding the first
+   * empties the calendar cell the rep put it in; hiding the second strands them
+   * on a session screen with no row anywhere to reach it by again.
+   */
+  store.append('man-jeudi', {
+    type: 'meeting.created',
+    title: 'Sodexial — point staffing',
+    context: null,
+    clientName: 'Sodexial',
+    scheduledStart: 1_789_628_400_000,
+  })
+  store.append('man-maintenant', {
+    type: 'meeting.created',
+    title: '',
+    context: null,
+    clientName: null,
+    scheduledStart: null,
+  })
+
+  assert.deepEqual(
+    store.projections.listMeetings(null).map((meeting) => meeting.id).sort(),
+    ['man-jeudi', 'man-maintenant'],
+  )
+  store.close()
+})
+
+test('the prefix the exclusion matches on is the one adHoc.ts mints', () => {
+  // Source as evidence, the `preloadUnwrap.test.ts` shape: the id convention
+  // lives in `core/domain/adHoc.ts` and the SQL above restates its stem. The day
+  // the convention moves, this fails — rather than the predicate quietly
+  // matching nothing and the residue coming back.
+  assert.ok(adHocMeetingId(0).startsWith(AD_HOC_ID_PREFIX))
+  assert.ok(adHocMeetingId(1_700_000_000_000).startsWith(AD_HOC_ID_PREFIX))
+  assert.equal(AD_HOC_ID_PREFIX.includes('%'), false, 'un joker dans un LIKE élargirait la règle')
+  assert.equal(AD_HOC_ID_PREFIX.includes('_'), false)
 })

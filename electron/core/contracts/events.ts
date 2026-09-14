@@ -13,6 +13,7 @@ import { z } from 'zod'
 import { MeetingContextSchema, MeetingStateSchema, TimestampSchema } from './meeting.ts'
 import { RecipeIdSchema } from './recipes.ts'
 import { TranscriptSegmentSchema } from './transcript.ts'
+import { MomentMarkSchema } from './marks.ts'
 import { SignalSchema } from './signals.ts'
 import { ExtractionESNSchema, VerificationReportSchema } from './extraction.ts'
 import { PushIntentSchema, PushResultSchema } from './push.ts'
@@ -128,6 +129,28 @@ export const MeetingEventSchema = z.discriminatedUnion('type', [
   /** Read-only, rail only. Never enters the document (DEC-14). */
   z.object({ type: z.literal('signal.appended'), signal: SignalSchema }),
 
+  /**
+   * The rep's own bookmark, made during the call (`core/contracts/marks.ts`).
+   *
+   * The opposite direction through the same screen as `signal.appended`: that
+   * one is what the model heard and is read-only to the rep, this one is the
+   * rep pressing a button on the widget floating over Teams. Recorded as an
+   * event rather than as a projection column because there is no ceiling on how
+   * many a rep may make and because `at` is the whole of it — a mark is a
+   * moment, and the log is already a list of moments.
+   */
+  z.object({ type: z.literal('moment.marked'), mark: MomentMarkSchema }),
+
+  /**
+   * A mark the rep took back.
+   *
+   * An event and not a delete — DEC-27 leaves exactly one delete in this
+   * codebase and it is the diagnostics purge. The fold drops the pair, so every
+   * reader stops showing it, and the log still says that a moment was marked at
+   * 14:32 and unmarked at 14:33, which is a true thing about the call.
+   */
+  z.object({ type: z.literal('moment.forgotten'), markId: z.string().min(1) }),
+
   z.object({ type: z.literal('extraction.started'), attempt: z.number().int().positive() }),
   z.object({
     type: z.literal('extraction.completed'),
@@ -144,6 +167,34 @@ export const MeetingEventSchema = z.discriminatedUnion('type', [
     type: z.literal('confirmation.recorded'),
     intentIds: z.array(z.string()),
     at: TimestampSchema,
+    /**
+     * **The compte-rendu the rep actually validated**, corrections and all.
+     *
+     * `edits.compteRendu` reached `draftIntents` and nothing else, so the
+     * string VerySwing received and the string *Historique* drew were two
+     * different documents from the moment a rep corrected a sentence at the
+     * gate. Measured: a rep who fixes a wrong client statement and validates
+     * cannot find that call afterwards by the phrase they are certain of — and
+     * the row offers, as its evidence, the sentence they specifically struck
+     * out. CLAUDE.md's invariant is « VerySwing receives the string the rep
+     * read »; this is its converse, and the archive is owed it too.
+     *
+     * It rides on the confirmation rather than on an event of its own because
+     * it is the same fact: this is what was on screen when *Valider* was
+     * pressed. Two events could be written apart and read apart.
+     *
+     * `nullish`, not `nullable().default('')`, for the reason `clientName` is
+     * one on `meeting.created` and `recipe` is one on `LlmInterpretation`:
+     * every confirmation written before this field existed has no key at all
+     * and must replay unchanged. Absent means « nobody recorded what was
+     * validated », and every reader falls back to rendering the stored
+     * extraction, which is exactly what those meetings have always shown.
+     * The empty string is **not** absent — it is a rep who selected the
+     * document, deleted it and validated anyway, which `reviewGate.ts`
+     * deliberately allows, and the record says so rather than quietly
+     * reinstating the model's draft over it.
+     */
+    compteRendu: z.string().nullish(),
   }),
 
   z.object({ type: z.literal('push.intent.created'), intent: PushIntentSchema }),

@@ -421,29 +421,22 @@ mod tests {
         10.0 * (num / den).log10()
     }
 
-    /// Runs `mic` through a canceller fed `far`, exactly as the microphone DSP
-    /// thread does: 20 ms chunks, reference published ahead of each one.
-    fn run(far: &[f32], mic: &[f32], high_pass: bool) -> Vec<i16> {
+    /// Runs `mic` through **the shipped canceller** fed `far`, exactly as the
+    /// microphone DSP thread does: 20 ms chunks, reference published ahead of
+    /// each one.
+    ///
+    /// `EchoCanceller::new()`, not a pipeline assembled here. This used to build
+    /// its own — same three flags, written out a second time — and assemble the
+    /// struct literal around it, so **every one of the three invariants could be
+    /// deleted from the product and the whole suite stayed green**, including
+    /// the regression test named after one of them. It measured the crate; it
+    /// never measured what ships. `high_pass` is gone with it: there is nothing
+    /// left for a caller to vary, which is the point.
+    fn run(far: &[f32], mic: &[f32]) -> Vec<i16> {
         let reference = EchoReference::detached();
         let generation = reference.open();
 
-        let format = AudioFormat::ten_ms(REFERENCE_RATE, 1);
-        let pipeline = aec3::pipelines::linear::builder(format, format)
-            .enable_high_pass_filter(high_pass)
-            .enable_noise_suppression(false)
-            .enable_gain_controller2(false)
-            .export_metrics(true)
-            .build()
-            .expect("pipeline builds");
-        let mut canceller = EchoCanceller {
-            pipeline,
-            render: vec![0.0; FRAME],
-            capture: vec![0.0; FRAME],
-            output: vec![0.0; FRAME],
-            generation: None,
-            frames: 0,
-            failed: false,
-        };
+        let mut canceller = EchoCanceller::new(REFERENCE_RATE).expect("the shipped canceller builds");
 
         let far_i16 = to_i16(far);
         let mut out = to_i16(mic);
@@ -483,7 +476,7 @@ mod tests {
     #[test]
     fn cancels_the_far_end_out_of_the_microphone() {
         let (far, echo) = far_end_with_a_pause();
-        let out = run(&far, &echo, true);
+        let out = run(&far, &echo);
 
         let first = erle(&echo, &out, 2.0, 7.0);
         let after_pause = erle(&echo, &out, 11.0, 17.0);
@@ -496,30 +489,65 @@ mod tests {
     }
 
     /// The finding that is in no documentation, and the reason
-    /// `enable_high_pass_filter(true)` above is not a stylistic choice: the same
-    /// signal, the same canceller, that one stage removed.
+    /// `enable_high_pass_filter(true)` above is not a stylistic choice.
+    ///
+    /// **It is asserted of the shipped canceller now.** It used to build its own
+    /// pipeline with the flag as a parameter and compare on against off — which
+    /// measures the *crate*, and stayed green with all three flags flipped in
+    /// `EchoCanceller::new()`. The signal is what discriminates, so the shipped
+    /// filter is simply required to survive it: speech with pauses and a low
+    /// first formant, which is what makes a filter without the high-pass stage
+    /// cancel 66 dB and then permanently diverge. Continuous speech at 520 Hz
+    /// hides it completely, and a draft of this test passed with the stage off.
     ///
     /// If a version bump ever makes the high-pass filter unnecessary this test
-    /// fails — which is the right outcome, because it is the only way we would
-    /// find out.
+    /// still passes — and the one below, which asserts the flag itself, is what
+    /// makes the removal a decision rather than a slip.
     #[test]
-    fn does_not_cancel_without_the_high_pass_filter() {
+    fn cancels_the_signal_that_needs_the_high_pass_filter() {
         let (far, echo) = far_end_with_a_pause();
-
-        let with = erle(&echo, &run(&far, &echo, true), 11.0, 17.0);
-        let without = erle(&echo, &run(&far, &echo, false), 11.0, 17.0);
-        println!("high-pass on {with:.1} dB, off {without:.1} dB");
+        let erle_db = erle(&echo, &run(&far, &echo), 11.0, 17.0);
+        println!("shipped canceller, after the pause: {erle_db:.1} dB");
 
         assert!(
-            without < 10.0,
-            "the high-pass filter may no longer be load-bearing — {without:.1} dB with the \
-             stage off. Re-measure the stage matrix in this file's docblock before relaxing \
-             anything."
+            erle_db > 30.0,
+            "the shipped canceller diverged on the signal the high-pass filter exists for — \
+             {erle_db:.1} dB. Check `enable_high_pass_filter` in `EchoCanceller::new`, and \
+             re-measure the stage matrix in this file's docblock before relaxing anything."
         );
-        assert!(
-            with - without > 20.0,
-            "expected the stage to be worth tens of dB; got {with:.1} on and {without:.1} off"
-        );
+    }
+
+    /// **The three flags, read off the shipped constructor.**
+    ///
+    /// A behavioural test cannot see `enable_noise_suppression` and
+    /// `enable_gain_controller2`: they reshape the amplitude that
+    /// `inputLevel.ts`, the VAD and DEC-40's too-quiet detector all measure
+    /// downstream, which is a property of the *rest of the product* and not of
+    /// this file. So the source is the evidence, and it is asserted as source —
+    /// which is the `preloadUnwrap.test.ts` shape, and the only thing that
+    /// would have caught all three being deleted at once.
+    #[test]
+    fn the_three_flags_are_what_the_docblock_says() {
+        let source = include_str!("echo_canceller.rs");
+        let ship = source
+            .split("let pipeline = aec3::pipelines::linear::builder(format, format)")
+            .nth(1)
+            .expect("the shipped builder is still here");
+        let ship = &ship[..ship.find(".build()").expect("the builder still ends in build()")];
+
+        for expected in [
+            ".enable_high_pass_filter(true)",
+            ".enable_noise_suppression(false)",
+            ".enable_gain_controller2(false)",
+        ] {
+            assert!(
+                ship.contains(expected),
+                "`{expected}` is not in `EchoCanceller::new` — see the stage matrix above. \
+                 Without the high-pass filter the graph cancels 66 dB and then permanently \
+                 diverges; noise suppression and AGC2 reshape the amplitude every instrument \
+                 downstream measures."
+            );
+        }
     }
 
     /// Double-talk: both of them speaking at once. The canceller is allowed to
@@ -542,7 +570,7 @@ mod tests {
         let rep = voice(7, REP_FORMANTS, total, |n| n > total / 2);
         let mic: Vec<f32> = echo.iter().zip(rep.iter()).map(|(e, r)| e + r).collect();
 
-        let out = run(&far, &mic, true);
+        let out = run(&far, &mic);
 
         let (lo, hi) = ((RATE as f32 * 5.0) as usize, (RATE as f32 * 8.0) as usize);
         let rep_level = rms_i16(&to_i16(&rep[lo..hi]));

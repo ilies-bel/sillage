@@ -57,14 +57,23 @@ const BLOCKING: Readonly<Partial<Record<MeetingState, string>>> = {
    * thing the review gate exists to preserve.
    */
   awaiting_confirmation: 'un compte-rendu attend votre validation',
-  /*
-   * The worst of them, and the least visible. `POST /v1/crm/tasks` has no
-   * idempotency key; the outbox drains an intent and persists the returned id
-   * in one transaction. Killing the process between the POST and that commit
-   * is how a VerySwing task gets created twice.
-   */
-  pushing: 'un envoi vers VerySwing est en cours',
 }
+
+/**
+ * **And the one that is not a state at all.**
+ *
+ * `POST /v1/crm/tasks` has no idempotency key; the outbox drains an intent and
+ * persists the returned id in one transaction, so killing the process between
+ * the POST and that commit is how a VerySwing task gets created twice. That
+ * danger lasts exactly as long as a request is on the wire — and this was keyed
+ * on the meeting being in `pushing`, which lasts until every intent settles and
+ * can last for ever: an intent whose connector is absent is never attempted, so
+ * on the demo build (DEC-28, no VerySwing tenant) one press of *Valider*
+ * refused every future update, permanently, with a sentence that was false.
+ *
+ * Asked of the outbox instead, which is the thing that knows.
+ */
+const PUSH_IN_FLIGHT = 'un envoi vers VerySwing est en cours'
 
 export interface UpdateReadiness {
   /** Whether `quitAndInstall` may be called right now. */
@@ -84,7 +93,12 @@ export interface UpdateReadiness {
  * and `idle` are absent from `BLOCKING`, which is what makes the common case —
  * an app sitting between meetings — safe.
  */
-export const updateReadiness = (states: readonly MeetingState[]): UpdateReadiness => {
+export const updateReadiness = (
+  states: readonly MeetingState[],
+  /** Whether a push is on the wire *right now* — `Outbox.settledSynchronously()`. */
+  draining = false,
+): UpdateReadiness => {
+  if (draining) return { safe: false, reason: PUSH_IN_FLIGHT }
   /*
    * First match wins, and the order is the array's, not a severity ranking.
    * With two sessions in blocking states any reason is true and any of them

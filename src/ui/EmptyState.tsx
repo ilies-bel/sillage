@@ -22,11 +22,26 @@ export interface EmptyStateProps {
   reason?: ReactNode
   /** A last line for what the rep can do instead. */
   hint?: ReactNode
+  /**
+   * The control that gets the rep out of here, drawn *inside* the panel.
+   *
+   * A sentence is not a way out. An empty state whose only action sits
+   * elsewhere on the screen is the dead end DEC-26 forbids — the rep reads that
+   * there is nothing, and the panel offers them nothing to do about it.
+   */
+  action?: ReactNode
   grain?: boolean
   className?: string
 }
 
-export function EmptyState({ children, reason, hint, grain = true, className }: EmptyStateProps) {
+export function EmptyState({
+  children,
+  reason,
+  hint,
+  action,
+  grain = true,
+  className,
+}: EmptyStateProps) {
   return (
     <div
       className={cn(
@@ -35,9 +50,17 @@ export function EmptyState({ children, reason, hint, grain = true, className }: 
         className,
       )}
     >
-      <p className="text-body text-copy">{children}</p>
-      {reason ? <p className="text-muted mt-1.5 text-ui">{reason}</p> : null}
+      {/*
+        `.measure` on both, because an empty state is prose and some of these
+        sentences are long: « Ces jours sont hors de la période synchronisée… »
+        rendered eighty-nine characters a line before this, and the class goes on
+        the element that holds the text — `ch` resolves against its own font
+        size, so the two here need it separately.
+      */}
+      <p className="measure text-body text-copy">{children}</p>
+      {reason ? <p className="measure text-muted mt-1.5 text-ui">{reason}</p> : null}
       {hint ? <p className="text-muted mt-4 text-ui">{hint}</p> : null}
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   )
 }

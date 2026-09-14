@@ -136,7 +136,257 @@
   }
 }
 
+/*
+ * **The four lengths the two fading scrollers ramp over, registered so they can
+ * be animated — because `mask-image` cannot be.**
+ *
+ * `.fade-below` and `.filter-scroller` each had three rules: one gradient for a
+ * cut at the start of the axis, one for a cut at the end, and a four-stop one for
+ * both, « not optional: two `mask-image` declarations do not compose ». They are
+ * selected by `data-above` / `data-below` / `data-fade`, which the components
+ * measure and rewrite as the rep scrolls — so crossing the first twelve pixels of
+ * a reading column swapped the *whole* declaration from the two-stop form to the
+ * four-stop one **between two frames**, and a 12px ramp appeared at the top edge
+ * in one paint. On the pane where a rep meets the compte-rendu that is a hard
+ * edge arriving under their eyes at the exact moment they start reading, and the
+ * `fade-below` block below already records that a hard edge there « reads as a
+ * rendering fault rather than as *keep going* » — which is the whole reason the
+ * fade exists.
+ *
+ * Interpolating the declaration is not available: `mask-image` between two
+ * gradients with different stop counts is not animatable, and even matched stop
+ * counts are interpolated discretely by Chromium. What *is* animatable is a
+ * registered custom property with a `<length>` syntax — an unregistered one is a
+ * token stream and also interpolates discretely, which is why these four have to
+ * be declared here rather than simply written in the rule.
+ *
+ * So there is **one** gradient per scroller, always four-stop, always applied,
+ * and only these lengths change: 0 at an edge with nothing behind it, the ramp at
+ * an edge with content. A zero-length ramp paints nothing away, so the resting
+ * mask is fully opaque and a column that fits is not dimmed — which is the rule
+ * `[data-below]` was there to keep.
+ *
+ * They collapse with `--motion` under `prefers-reduced-motion` (`tokens.css`), so
+ * the rep who asked for less motion gets the old instant swap and not a ramp that
+ * lingers.
+ *
+ * `shot.mjs --fade` measures every ramp this produces and its own self-test
+ * (`SILLAGE_FADE_ATTACK=1`) attacks these very rules through the shipped class
+ * rather than through a copy, so the rule and the check moved together: the
+ * attack still reports seven ramps over a line and exits 11.
+ */
+@property --fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-row-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-row-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer components {
+  /*
+   * **The frameless window's titlebar, which is the whole window.**
+   *
+   * The in-meeting widget has no frame — it is a pill floating over a video
+   * call — so `-webkit-app-region` is the only thing that lets a rep move it.
+   * Two rules and they are a pair: the surface drags, and every control on it
+   * opts back out. A region Electron has claimed for dragging never delivers a
+   * click, so a control that forgets `.no-drag` is not a control at all, and
+   * one that looks pressable and is not is the worst kind of dead control
+   * (DEC-26) — the rep cannot tell it is broken, only that the app is.
+   *
+   * `user-select: none` with it: dragging a window by a rectangle that is also
+   * selectable text leaves the pointer highlighting the elapsed time.
+   */
+  .drag-region {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+    user-select: auto;
+  }
+
+  /*
+   * **The widget leaving the screen, which is the one exit that is seen.**
+   *
+   * Everything else in this product arrives and leaves inside a window the rep
+   * chose to look at. The pill is drawn *over another application* — over the
+   * face of the person on the call — and it was destroyed between two frames at
+   * the one moment the rep is certainly watching it, because the ordinary way it
+   * ends is the rep pressing its own *Terminer*.
+   *
+   * The tokens and nothing else: `--motion`, `--ease-in`, opacity plus a 3px
+   * translate, which is `riseIn` run backwards. No scale — a card scaling away
+   * over a video call is the kind of motion VISION.md §6 rules out, and this one
+   * is on top of everything on every Space.
+   *
+   * **`--ease-in`, and it shipped as `--ease-out` for one round.** There was one
+   * curve and VISION.md §6 said « ease-out » flat, so the exit wore the entering
+   * curve — `cubic-bezier(0.22, 1, 0.36, 1)`, an expo-out, which spends 73% of its
+   * change in the first 35ms. That is precisely right for something arriving and a
+   * **blink** for something leaving: measured on this element, opacity above 0.05
+   * for 62 of the 150ms, the translate spent entirely below 25% opacity, and then
+   * 88ms of a fully transparent always-on-top window still over the call. The
+   * reasoning that shipped it was « the curve difference is imperceptible at
+   * 150ms », which is what reasoning instead of measuring looks like on a project
+   * whose method is to measure the shipped box.
+   *
+   * `will-change` is deliberately absent. It would promote the layer for the
+   * hundred and fifty milliseconds this class exists, and this window is
+   * transparent, always on top and composited over a video call that wants the
+   * GPU rather more than the fade does.
+   *
+   * The duration is read back off this rule by the renderer and sent to the main
+   * process (`widget:left`), which is what makes the window outlive its own
+   * animation instead of guessing at it — and what makes
+   * `prefers-reduced-motion` mean « go now » rather than « wait 150ms for
+   * nothing ». So the value here is the one in the token, never a constant
+   * repeated in TypeScript.
+   */
+  .widget-leaving {
+    opacity: 0;
+    transform: translateY(3px);
+    transition:
+      opacity var(--motion) var(--ease-in),
+      transform var(--motion) var(--ease-in);
+  }
+
+  /*
+   * **The widget arriving, which is the other half of the one motion a rep
+   * watches** (DEC-50).
+   *
+   * The exit above was measured, argued and fixed twice. The *entrance* was
+   * never decided at all: measured on the real window, the 340×205 panel had
+   * `transitionDuration: 0s`, `animationName: none` and a `transform-origin` at
+   * the CSS initial centre regardless of which way it stacks. It appeared
+   * between two frames over another application's video call, at the instant the
+   * rep presses *Enregistrer*.
+   *
+   * DEC-50 is narrow and every clause of it is a mechanism here.
+   *
+   * **`scale` and opacity, no translate.** §6's « 2–4px translate only » still
+   * governs every row and pane in the product; what DEC-50 carves out is this
+   * card, and it carves out `scale` specifically because that is the only
+   * property an overshoot is visible on — `--ease-overshoot`'s peak on a 3px
+   * translate is 0.15px. Adding the exit's 3px translate on top would be a
+   * second thing to keep consistent for no measured gain.
+   *
+   * **One `@keyframes`, run twice, and deliberately not a transition.** A
+   * transition from a resting state would put the *whole* motion behind an
+   * `opacity: 0` style rule, and `shot.mjs --motion` reads an `opacity: 0`
+   * selector as a **departure** — so the entrance would join the direction rule
+   * as a blink on an arrival curve. A keyframes whose progression ends *less*
+   * transparent than it starts reads as the arrival it is, by the same census,
+   * with no exemption asked for.
+   *
+   * **Two states, and the first one is not the start of the motion — which took
+   * a measurement to learn.** The pill may not be *drawn* before the main
+   * process has placed the window, and it may not carry a transform while the
+   * measurement is being taken, because `getBoundingClientRect` includes
+   * transforms. The first version of this collapsed the two into one paused
+   * animation with `both` fill, on the reasoning that a paused animation holds
+   * its own `from` frame and « not yet » and « the start of the motion » are
+   * therefore the same state. They are not, and the difference is the whole
+   * defect: `from` carries `scale: 0.92`, so the held frame is **transformed**,
+   * and the first `widget:resize` went out reporting
+   * `pillTop: 22, pillHeight: 35` against a resting 20 and 38 — measured on the
+   * shipped renderer, DEC-50's fourth bound broken by the construction written
+   * to keep it. So `.widget-arriving` declares transparency and **nothing else**:
+   * no scale, no duration, no transition. It is measurable because it has no
+   * geometry of its own, and it is invisible to `--motion` because an element
+   * with no live duration is never judged — which is also why nothing may give
+   * the pill card a `transition`, and why `widget-entree` asserts the pill's
+   * `animationDuration` and `transitionDuration` are both zero before the
+   * handshake answers rather than leaving that in this comment.
+   *
+   * Under `prefers-reduced-motion` the durations are `0ms`, so `.widget-arrived`
+   * lands on the `to` frame in the same paint the class arrives in: the rep who
+   * asked for less motion gets the pill at full opacity and scale 1 the instant
+   * the window is placed, and every intermediate value is skipped rather than
+   * rushed. Measured: zero animated frames, widest sample 240.28 — the resting
+   * width exactly.
+   *
+   * **The origin follows `above`, from the pill.** The panel grows out of the
+   * edge the pill is on, which is the whole of DEC-50's « origin-aware from the
+   * pill rather than from the card's centre »: `Overlay.resize` answers `above`
+   * and the renderer needs it before it lays the panel out, so it arrives as a
+   * reply and is written here as an attribute rather than an inline style. The
+   * *pill* keeps the initial centre and says so by not restating it — the pill
+   * is its own anchor, `placeAroundPill` holds its centre-x, and a
+   * `transform-origin: 50% 50%` here would be a declaration that changes
+   * nothing.
+   *
+   * **The exit is untouched.** `.widget-leaving` above is a transition whose
+   * duration the renderer reads back and sends to the main process
+   * (`widget:left`); a `scale` on the way out would be a new negotiation with
+   * `Overlay.dismiss()`, not a flourish. `widget-sortie` is the stage that holds
+   * that, and `widget-entree` is this one's.
+   *
+   * `will-change` is absent for the reason it is absent above: this window is
+   * transparent, always on top, and composited over a video call that wants the
+   * GPU more than 150ms of polish does.
+   */
+  @keyframes widget-arrive {
+    from {
+      opacity: 0;
+      /*
+       * 0.92 and not 0.8: the travel is what the overshoot is a fraction of, so
+       * it sets the amplitude — 1.54px on the pill, 2.18px on the panel, at this
+       * curve's 1.0800 peak. It is also 19px of pill width and 27px of panel
+       * width of growth, which at 150ms is a card settling in; measured at 0.85
+       * it is a card unfolding, which is a different and louder claim than
+       * DEC-50 makes.
+       */
+      scale: 0.92;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+
+  /*
+   * Laid out, not drawn. Transparency and nothing else — see the paragraph on the
+   * two states above: a `scale` here is the clipped first frame, and a duration
+   * here is a departure as far as `--motion` is concerned.
+   */
+  .widget-arriving {
+    opacity: 0;
+  }
+
+  /* The window is on screen, at a size measured off this box untransformed. */
+  .widget-arrived {
+    animation: widget-arrive var(--motion) var(--ease-overshoot) both;
+  }
+
+  .widget-panel-arrive {
+    animation: widget-arrive var(--motion) var(--ease-overshoot) both;
+    /* Stacked below the pill: it grows downward out of the control just pressed. */
+    transform-origin: 50% 0;
+  }
+
+  .widget-panel-arrive[data-above='true'] {
+    transform-origin: 50% 100%;
+  }
+
   /*
    * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
    * muted label. Used by every pane header, which is why it is a component
@@ -158,7 +408,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 10px;
+    /* The token, not a literal — this rule is `--type-label`'s only consumer
+       that had its own copy of the number, and the two had to be changed
+       together to move it off the 10px legibility floor. */
+    font-size: var(--type-label);
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -174,14 +427,290 @@
   }
 
   /*
+   * **One reading measure, and this is it.**
+   *
+   * Every surface in this product that holds prose a rep *reads* — their own
+   * notes, the compte-rendu on three screens, the follow-up draft, Réglages'
+   * explanations — was setting its own width, and each one was set by what fit
+   * rather than by what reads: 736px of 14px Inter is ninety-eight characters a
+   * line, 1000px is a hundred and thirty. Nothing is clipped and nothing
+   * overlaps, which is why it survived every screenshot review: an unreadably
+   * long line is invisible in a picture and obvious in use.
+   *
+   * **`ch`, not `rem`** — a measure is a count of characters and it has to hold
+   * at whatever size the text is set at. It was `38rem`, and the comment above
+   * claimed that was « about eighty characters at the body size ». Measured, it
+   * is eighty-seven at `--type-copy` and a hundred and eleven at `--type-meta`,
+   * because a fixed pixel width is a different measure for every font size that
+   * lands in it — so the one class written to end this problem was reintroducing
+   * it one size down, on the caption under the compte-rendu and on Réglages'
+   * explanations.
+   *
+   * `58ch` is ~487px at the body size — within a few pixels of the column
+   * Granola sets a note in — and it stays sixty-six characters at 11px, at 12px
+   * and at 14px, which is the whole point. Stated once here so a new pane cannot
+   * quietly pick its own.
+   *
+   * Applied to a wrapper, `ch` resolves against the *wrapper's* font size, so a
+   * wrapper holding prose at one size is exactly right and a wrapper holding
+   * three sizes is right for its own. Prose that is not in a `.measure` wrapper
+   * wears the class itself, where its own size settles it.
+   *
+   * It is a *maximum*. A pane narrower than this keeps its own width; the class
+   * never widens anything.
+   */
+  /*
+   * **`58ch`, and the number was measured rather than chosen.**
+   *
+   * It was `66ch`, on the reasoning that a measure is a count of characters. It
+   * is — but `ch` is the advance of the digit *zero*, and in Inter that is about
+   * 9.4px while the average advance of French lowercase is about 7.7. So `66ch`
+   * rendered **eighty-one** characters a line, on every surface and at every
+   * size, and the rule written to end lines of ninety-eight and a hundred and
+   * thirty had been quietly fifteen over its own number since the day it was
+   * written, because nothing counted. `shot.mjs --prose` counts now, and
+   * `smoke.mjs` runs it on every stage.
+   *
+   * `58ch` lands at seventy-one — inside the classic 45–75 band rather than at
+   * the top of it. `ch` stays the unit, because it is the one that scales with
+   * the element's own size: that is what stopped the caption under the
+   * compte-rendu from being a different measure from the compte-rendu.
+   */
+  .measure {
+    max-width: 58ch;
+  }
+
+  /*
+   * **The slate, when the column it lives in runs out of room.**
+   *
+   * At 960px — the window's declared minimum, `main.ts` — the three session
+   * columns are all at their floor and the signal rail gets 210px. A 64px label
+   * beside the value leaves about 110px, and « 2 × Data Engineer confirmé —
+   * Databricks, Airflow, dbt » wrapped to *seven* lines: two fields filled the
+   * pane, and DEC-14's whole argument is that the rep judges the document
+   * against the slate in one glance.
+   *
+   * A container query rather than a viewport one, because the rail's width is
+   * not the window's — it is a percentage of it with a floor and a ceiling, and
+   * the same pane appears at three different widths on three screens. This asks
+   * the only question that matters: is *this pane* too narrow to set a label
+   * beside a value.
+   */
+  /*
+   * The page turn's own ground.
+   *
+   * It is pinned to the bottom of a scroller, so without one it floats over
+   * whatever line happens to be under it — the recipients of the Outlook draft,
+   * in the rail's case, which is the last thing on this screen that should be
+   * read through a button. A gradient rather than a fill: a hard edge two lines
+   * above the fold reads as a panel that has ended, and the column has not.
+   *
+   * `transparent` to the column's own colour, and the two columns differ, so the
+   * token is a variable the caller sets — `--turn-ground`, defaulting to the
+   * card.
+   */
+  .turn-ground {
+    background-image: linear-gradient(
+      to bottom,
+      transparent,
+      var(--turn-ground, var(--bg-card)) 40%
+    );
+  }
+
+  .slate {
+    container-type: inline-size;
+  }
+
+  /*
+   * Two classes each, deliberately. Tailwind's utilities layer is emitted after
+   * `components`, so a single-class rule here loses to the `flex` and `w-16` on
+   * the same element — the rule matched, computed, and was overridden, which is
+   * the same silent-no-op class of failure as `bg-muted/30`.
+   */
+  /*
+   * **The suggestions are scaffolding, and a narrow column cannot afford them.**
+   *
+   * At 960 — the window's own minimum — the compte-rendu column is 542px tall
+   * and *Demander* takes 250 of it: an input, two captions, and three suggested
+   * questions that wrap to two rows at that width. The document was left with
+   * 292px of a 2046px scroll, which is fourteen per cent of the thing the
+   * screen exists to show. The chips answer « what can I ask it », which is a
+   * question a rep has once; the document is the deliverable, every time.
+   *
+   * A container query, for the reason the slate's is one: this panel is a
+   * different width on the session screen, at the gate and on the reader, and
+   * the question is whether *this* instance has the room.
+   */
+  .ask {
+    container-type: inline-size;
+  }
+
+  /*
+   * **The recording pill, when the header runs out of room.**
+   *
+   * Measured at 960 — the window's own minimum — the pill took **404 of 960
+   * pixels**, and the meeting's own title group got sixty-six: the objet and the
+   * client both hit their floors, overflowed the box they were in, and the
+   * client input ended up painted over the « Modèle » label beside it. The rep
+   * was on a call with a client whose name the header could not show.
+   *
+   * What goes is the *wording*, never the instrument. « ENREGISTREMENT » is a
+   * fourteen-character uppercase label beside an orange dot and a running clock,
+   * both of which say the same thing and neither of which is prose; the meter's
+   * key (« moi », « client », « non transcrit ») is a legend for twenty bars
+   * whose two halves are already mirrored about a baseline. The bars, the dot
+   * and the clock — the three things DEC-38 calls proof of life — all stay.
+   *
+   * A container query on the header, because the pill's room is the header's
+   * room and nothing else's.
+   */
+  .session-header {
+    container-type: inline-size;
+  }
+
+  /*
+   * Below 1080px the header keeps its instruments and drops its legends.
+   *
+   * `.pill-word` — « ENREGISTREMENT » beside the clock — is gone from the
+   * product entirely, so the selector went with it. What is left is the meter's
+   * channel key and `.header-legend`, which is the « FR » chip: both are labels
+   * on something that is still drawn, and at the app's own minimum window
+   * (960px, `main.ts`) their 50px was the meeting's own title truncating —
+   * measured at 25px of « Néovia Santé — cadrage renfort da… » hidden inside
+   * `MeetingTitle`'s own box, which is the one thing in this header a rep
+   * cannot do without.
+   */
+  @container (max-width: 1080px) {
+    .session-header .header-legend,
+    .session-header .meter-key {
+      display: none;
+    }
+  }
+
+  @container (max-width: 430px) {
+    .ask .ask-suggestions {
+      display: none;
+    }
+  }
+
+  @container (max-width: 250px) {
+    .slate .slate-row {
+      display: block;
+    }
+
+    .slate .slate-label {
+      width: auto;
+      display: block;
+      margin-bottom: 0.125rem;
+    }
+  }
+
+  /*
    * The notepad. It opens nearly empty (DEC-6) — a title, the resolved client,
    * and a cursor — so the typography has to carry the whole surface.
    */
   .notepad .ProseMirror {
     outline: none;
-    min-height: 100%;
-    max-width: 46rem;
+    /*
+     * **The box takes the click, not just the text — and on both axes.**
+     *
+     * The vertical half first. This was `min-height: 100%`, and it drew nothing
+     * for as long as it existed: the percentage resolves against the mount
+     * element in `Notepad.tsx`, whose *specified* height was `auto`, and a
+     * percentage min-height against an auto height is treated as `auto`
+     * (CSS 2.1 §10.7). Measured on an empty notepad: the editable was **26px**
+     * tall inside a 676px wrapper in a 724px pane at 1280×800 — 698 of 724
+     * pixels, 96% of the surface DEC-11 calls « why the app is open », did not
+     * take a caret; 476 of 502, 95%, at 960×600. The same class of invisible
+     * defect as `bg-muted/30`: a property that is spelled right, resolves to
+     * nothing, and shows up in no screenshot.
+     *
+     * The mount is a column flex container with `h-full` now — a definite height,
+     * resolved against a pane that has one — and this is the item that grows into
+     * it. `1 0 auto` and never `1 1 auto`: shrinking is what would clip the rep's
+     * own text once the notes are longer than the pane, and growing *past* the
+     * container is exactly right, because `.notepad` is the scroller.
+     */
+    flex: 1 0 auto;
+    /*
+     * **The measure is cut out of the padding, because a `margin-inline: auto`
+     * moved the defect one axis over rather than fixing it.**
+     *
+     * The first version of this rule set `max-width: 58ch` and centred the box
+     * with `margin-inline: auto`. An auto margin on the cross axis of a flex
+     * container **cancels `align-items: stretch`** (CSS Flexbox §8.5: auto
+     * margins absorb the free space first, and an item with one is never
+     * stretched), so the editable's *width* fell back to fit-content — the width
+     * of the rep's longest line, and on an empty document the width of nothing
+     * at all. Measured, 1280×800, the pane 998px wide:
+     *
+     *     as delivered (fixture notes)   editable 612px   386px dead (39%)
+     *     empty, a call just started     editable  64px   934px dead (94%)
+     *     after typing the title line    editable 274px   724px dead (73%)
+     *
+     * — and clicking a 25×5 grid over the pane, asking after each click whether
+     * ProseMirror took the caret: **5 of 125 on an empty notepad at 1280×800,
+     * 15 of 125 at 960×600**, and 15 and 25 of 125 in the three-column layout
+     * after the call. Vertically it was 19 of 19. So the fix for the dead pane
+     * had left the pane dead in the state it opens in, which is the state of
+     * every call at the moment it starts (DEC-6) — and the worst state of the
+     * three, because an empty document is exactly as wide as its widest line.
+     *
+     * The click target and the reading measure are two different boxes, and the
+     * rule above conflated them. Here the editable is stretched — no width, no
+     * max-width, no auto margin, nothing to cancel the stretch — so its border
+     * box **is** the pane, and the measure is what the padding leaves in the
+     * middle: `(100% - 58ch) / 2` on each side is exactly `58ch` of content,
+     * centred, at any pane width. `max()` holds the page margin at `2rem` on a
+     * pane too narrow to spend more — which is the *three-column* layout after
+     * the call, where the notepad sits near its 380px floor, and never the
+     * during-call pane: 1280×800 leaves 225px a side and 960×600 leaves 100,
+     * the same x the text sat at before, so nothing moved.
+     *
+     * `max-width: 58ch` is deliberately **gone** rather than kept as a belt,
+     * and the reason was measured rather than reasoned about. A max-width
+     * clamps a stretched flex item too — against Tailwind's global
+     * `border-box`, it clamps the *border* box — so the editable went back to
+     * 548px of a 998px pane with 98px of text inside it: **70 of 125 clicks at
+     * 1280×800, 90 of 125 at 960×600**, the same defect one third of the way
+     * back. The padding already caps the content at `58ch` and can never let it
+     * exceed it, so the second cap bought nothing and cost the pane. One
+     * number, in one place, doing both jobs.
+     *
+     * After: **125 of 125 at both sizes, empty, typed and as delivered**, and
+     * 125 of 125 in the three-column layout where the pane is 486px at 1280×800
+     * and 309 at 960×600. The text did not move, and `shot.mjs --prose` reads
+     * the same 58 characters it read before.
+     *
+     * The measure is still measured and not chosen, and still in `ch` at the
+     * element's own font size: see `.measure` above, and re-run
+     * `shot.mjs --prose` before touching the 58.
+     *
+     * The page margin lives here and not on `.notepad`, where it was `px-8
+     * py-6`: padding on the *scroller* is 48 pixels of pane that is not the
+     * editor, at the top and bottom edges a rep clicks toward when they come
+     * back from the call — the same defect one box out.
+     */
+    padding-block: 1.5rem;
+    padding-inline: max(2rem, (100% - 58ch) / 2);
     color: var(--ink-rep);
+  }
+
+  /*
+   * « Vos notes… » is drawn where the caret will land, not at the pane's edge.
+   *
+   * It was `left-8 top-6` — the page margin as it would be if the text were
+   * flush left — and the text has not been flush left since it was centred: on
+   * an empty notepad at 1280×800 the placeholder sat at x=32 and the caret
+   * appeared at x=225, so the first character a rep typed jumped two hundred
+   * pixels away from the prompt that had invited it. The same expression as the
+   * editable's own padding, resolved against the same box at the same inherited
+   * font size, is what keeps the two in the same place by construction rather
+   * than by two numbers somebody has to keep equal.
+   */
+  .notepad .notepad-placeholder {
+    top: 1.5rem;
+    inset-inline-start: max(2rem, (100% - 58ch) / 2);
   }
 
   .notepad .ProseMirror p {
@@ -207,6 +736,24 @@
 
   .notepad .ProseMirror h3 {
     font-size: 16px;
+  }
+
+  /*
+   * h4–h6 exist because the schema parses them out of *pasted* HTML — an Outlook
+   * mail, a Confluence page, a client's own brief — and Tailwind's preflight
+   * resets every heading to the paragraph's size and weight, so without this a
+   * pasted `<h4>` was a heading drawn as prose. The keyboard stops at three
+   * levels on purpose (`note/keymap.ts`), and these are deliberately not a fourth
+   * step down: below 16px the difference from body text stops being legible, so
+   * what separates them is the weight.
+   */
+  .notepad .ProseMirror h4,
+  .notepad .ProseMirror h5,
+  .notepad .ProseMirror h6 {
+    margin: 1.1em 0 0.4em;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
   }
 
   .notepad .ProseMirror ul,
@@ -339,40 +886,150 @@
    * `data-fade` is measured in the component, so an axis that fits is not
    * dimmed at an edge it does not have.
    */
+  /*
+   * A column that has more under the fold, said in the one way a scroller can
+   * say it without a control: the last two lines fade out.
+   *
+   * The review rail is the case. It cut « régie » through the middle of its
+   * rounded box against the pinned footer, which reads as a rendering fault
+   * rather than as « keep going » — and the fold is exactly the information the
+   * rep needs, because *Valider* is refusing until they do.
+   *
+   * `[data-below]` rather than always on: a column that fits must not be dimmed
+   * along its last two lines to suggest content that is not there. Same rule the
+   * filter row's horizontal fade follows below, and the same `black`/`transparent`
+   * mask — those are mask coverage, not colours, so no token applies.
+   */
+  /*
+   * **How far a reading column's fade ramps — and why it is no longer 28px.**
+   *
+   * It was 28, and `shot.mjs --fade` measured what that costs: the line boxes
+   * this ramps over are **17.1 to 25 pixels** on `review`, `review-garde`,
+   * `review-transcription` and `historique` at both smoke sizes, so a *whole
+   * line* sat inside the ramp at alpha 0.05–0.2. On the review gate that is a
+   * line of the compte-rendu at a fifth strength under a caption reading « tout
+   * ce qui part doit avoir été affiché » — the document that goes to VerySwing,
+   * dimmed while it is being shown, which is the one thing this screen promises
+   * cannot happen.
+   *
+   * Twelve is under the smallest line box by five pixels and is the number the
+   * widget's live log arrived at independently against a 19.5px line. The fade
+   * still says « there is more below »; what it no longer does is say it by
+   * hiding a sentence.
+   *
+   * One custom property rather than eight copies: the ramp appears in four rules
+   * × two prefixes, and the previous value was written out every time, which is
+   * how a single measurement turns into eight numbers that drift apart. The
+   * horizontal fade on the filter row deliberately does **not** use it — it hides
+   * the ends of a row rather than a line, so a line box is not its constraint.
+   */
+  /*
+   * **One gradient, four stops, always applied** — see the `@property` block
+   * above this layer for why the three rules this replaced could not be made to
+   * cross-fade. The two lengths are 0 at an edge with nothing behind it, so the
+   * resting mask paints nothing away and a column that fits is not dimmed.
+   *
+   * One curve, `--ease-out`, in both directions. §6's rule is ease-out on the way
+   * in and ease-in on the way out, and that rule is about a *surface* arriving or
+   * leaving; this is one continuous length that grows and shrinks as the rep
+   * scrolls, and nothing arrives or leaves. Giving the two directions different
+   * curves would also mean two `transition` shorthands on one element, where the
+   * second silently drops the first property.
+   */
+  .fade-below {
+    --fade-reading: 12px;
+    --fade-top: 0px;
+    --fade-bottom: 0px;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black var(--fade-top),
+      black calc(100% - var(--fade-bottom)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black var(--fade-top),
+      black calc(100% - var(--fade-bottom)),
+      transparent
+    );
+    transition:
+      --fade-top var(--motion) var(--ease-out),
+      --fade-bottom var(--motion) var(--ease-out);
+  }
+
+  .fade-below[data-below="true"] {
+    --fade-bottom: var(--fade-reading);
+  }
+
+  /*
+   * The same sentence at the other edge, and the review rail is why it exists.
+   *
+   * The gate scrolls to the first `⚠ faible` row on open (DEC-21), which on a
+   * 1280×800 laptop lands the rail ninety-four per cent of the way down its own
+   * scroll. Seven rows are then above the fold with nothing saying so, and the
+   * top edge cuts a value box clean through — a floating « début septembre 2026 »
+   * with the label that names it sheared off above it. That reads as a rendering
+   * fault, which is precisely what `fade-below` was written to stop the *other*
+   * edge doing.
+   *
+   * The combined rule is not optional: two `mask-image` declarations do not
+   * compose, so a column with content above *and* below needs the four-stop
+   * gradient or one of the two fades silently wins. It is now the *only* form,
+   * for the reason stated above the layer — the swap between the two forms was
+   * itself a hard edge arriving in one paint.
+   */
+  .fade-below[data-above="true"] {
+    --fade-top: var(--fade-reading);
+  }
+
   .filter-scroller {
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
+    /*
+     * The same construction as `.fade-below`, and here the snap was on a row of
+     * chips that scrolls sideways under the rep's own trackpad flick — the edge
+     * the mask is about is the one they are moving.
+     *
+     * The ramp is deliberately **not** `--fade-reading`: that number is measured
+     * against a *line box*, and this hides the ends of a row rather than a line,
+     * which the block above records and `shot.mjs --fade` exempts by axis.
+     */
+    --fade-row: 28px;
+    --fade-row-start: 0px;
+    --fade-row-end: 0px;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-row-start),
+      black calc(100% - var(--fade-row-end)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-row-start),
+      black calc(100% - var(--fade-row-end)),
+      transparent
+    );
+    transition:
+      --fade-row-start var(--motion) var(--ease-out),
+      --fade-row-end var(--motion) var(--ease-out);
   }
 
   .filter-scroller::-webkit-scrollbar {
     display: none;
   }
 
-  .filter-scroller[data-fade="end"] {
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-  }
-
-  .filter-scroller[data-fade="start"] {
-    -webkit-mask-image: linear-gradient(to right, transparent, black 28px);
-    mask-image: linear-gradient(to right, transparent, black 28px);
-  }
-
+  .filter-scroller[data-fade="end"],
   .filter-scroller[data-fade="both"] {
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 28px,
-      black calc(100% - 28px),
-      transparent
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 28px,
-      black calc(100% - 28px),
-      transparent
-    );
+    --fade-row-end: var(--fade-row);
+  }
+
+  .filter-scroller[data-fade="start"],
+  .filter-scroller[data-fade="both"] {
+    --fade-row-start: var(--fade-row);
   }
 }

@@ -16,6 +16,14 @@
  */
 import type { CalendarEvent } from '../contracts/calendar.ts'
 import type { ArmingDecision, MeetingContext, Sensitivity } from '../contracts/meeting.ts'
+/*
+ * Re-exported, not redeclared. It moved to `contracts` because `src/*` may import
+ * nothing else and `screens/agenda/entries.ts` has to apply the same grace — see
+ * the constant's own docblock. Callers that already import it from here keep
+ * working, and there is still exactly one number.
+ */
+export { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
+import { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
 
 /**
  * How early the window opens. Five minutes is the interval between "I am about
@@ -23,6 +31,134 @@ import type { ArmingDecision, MeetingContext, Sensitivity } from '../contracts/m
  * on screen: a rep who is talking is not looking for a button.
  */
 export const ARM_LEAD_MS = 5 * 60_000
+
+/**
+ * **How early a scheduled call may be joined and still be that call.**
+ *
+ * The calendar's *claim* on a conversation is wider than its readiness to *arm* one,
+ * and conflating the two is how « one conversation, one offer » was broken for a
+ * fourth round. `ARM_LEAD_MS` answers « should the offer be on screen yet »;
+ * this answers « is the microphone I can hear the scheduled call ». They are
+ * different questions and the second has a longer reach.
+ *
+ * Measured on the shipped `Agenda`: a rep joining their own 14:30 Teams call
+ * **5 min 25 s** early — `ARM_LEAD_MS + AD_HOC_DWELL_MS`, so anything from five and
+ * a half minutes — got a *second* offer, « Appel non planifié — Teams », because the
+ * ad-hoc detector saw a held microphone that no calendar rule had claimed yet. Take
+ * that offer, which is the one the OS notification points at, and at 14:25 the
+ * calendar arms the same conversation a second time: `liveStates` becomes
+ * `["recording","armed"]`, two rows sit on the day and the second notification's
+ * click navigates the rep off their own live recording. Joining early is not an edge
+ * case; it is what a sales rep does before a call that matters.
+ *
+ * Thirty minutes, and the number is chosen from the **asymmetry of being wrong**
+ * rather than from a study of behaviour. Too wide and a genuinely unscheduled call
+ * taken in the half hour before a meeting gets no offer — a cost with a remedy the
+ * rep already has and which is the *fast* route anyway (« Démarrer une réunion »).
+ * Too narrow and the product creates a duplicate meeting whose push to VerySwing has
+ * no idempotency key and no delete verb. One of those is a missing convenience and
+ * the other is a row in a client's system of record.
+ *
+ * It deliberately does **not** widen `ARM_LEAD_MS`. Arming *on* a held microphone is
+ * a claim that this call is that event, and the further from the slot, the weaker it
+ * is: a rep on an unrelated call twenty minutes early would be offered the wrong
+ * client's objet. So the calendar stays silent until its own lead, and what this
+ * changes is only that the ad-hoc detector stops speaking over it.
+ */
+export const CALENDAR_CLAIM_MS = 30 * 60_000
+
+/**
+ * Does the calendar already account for a call happening **now**?
+ *
+ * The one fact `decideAdHoc` cannot work out for itself, and the reason it is here
+ * rather than in `adHoc.ts` is that it is a statement about *events* — cancelled and
+ * all-day entries are not calls to record, and that rule is already written down in
+ * `nextArmable` one screen below. Returning the events rather than a boolean so the
+ * caller can take the **horizon** from one: the offer the rep should get is the
+ * calendar's, and it becomes available at `scheduledStart - ARM_LEAD_MS`.
+ *
+ * **All of them, earliest first, and returning only the earliest was the arbitration
+ * rule's sixth consecutive round.** This answered one event — « the conversation the
+ * rep is in is the one whose slot they reached first » — and the caller that has to
+ * finish the question, `Agenda.#calendarOffersAt`, can only finish it for the event it
+ * is given: it asks whether that meeting is over and, if it is, concludes the calendar
+ * accounts for nothing. Which throws away every *other* event that also claims the
+ * conversation. Measured (`scratch/r28-claim-earliest.mjs`): a 14:00 call recorded and
+ * ended at 14:20, the rep joining their own 15:00 Teams call at 14:50 — the thing round
+ * 26 established as what a sales rep does before a call that matters — and at 14:50:25
+ * « Appel non planifié — Teams » is armed with the DEC-46 notification behind it; take
+ * it, and at 15:00:25 `liveStates` is `["recording","armed"]` with two rows on the day
+ * and a second notification whose click navigates the rep off their live recording.
+ *
+ * The window is twenty-five minutes wide per adjacent pair of slots and needs nothing
+ * unusual — on the demo build DEC-28 ships first, *every* recorded call is `ended` for
+ * ever (DEC-39), so every slot following one is exposed. What it costs is the whole
+ * value of the calendar being consulted at all: the conversation is recorded as
+ * unscheduled, so no attendees, no objet, no `speakerLabel` (« Client » rather than the
+ * person's name), no account resolution — therefore no opportunity — and the VerySwing
+ * task ships as an orphan titled « Appel non planifié — Teams », with no idempotency
+ * key and no delete verb.
+ *
+ * `calendarClaim` is kept as « the first of these » for the tests and for any caller
+ * that genuinely wants one event, so the two can never disagree about the filter.
+ */
+export const calendarClaims = (
+  events: readonly CalendarEvent[],
+  now: number,
+): readonly CalendarEvent[] => {
+  const claims: CalendarEvent[] = []
+  for (const event of events) {
+    if (event.isCancelled || event.isAllDay) continue
+    /*
+     * **Only an entry the calendar could actually arm may silence the detector.**
+     *
+     * This filtered on `isCancelled` and `isAllDay` and nothing else, while
+     * `decideArming` refused on three more — and those three are precisely the
+     * shapes an ordinary calendar is full of: the block a rep wrote for
+     * themselves, the private slot, the day-long entry that is not flagged
+     * all-day. Claiming them handed a veto to two thirds of the day. See
+     * `isCallLike`.
+     */
+    if (!isCallLike(event.context).ok) continue
+    const { scheduledStart, scheduledEnd } = event.context
+    if (now < scheduledStart - CALENDAR_CLAIM_MS) continue
+    if (now >= scheduledEnd + OVERRUN_GRACE_MS) continue
+    claims.push(event)
+  }
+  // Earliest first, for the same reason `nextArmable` prefers it: the conversation the
+  // rep is in is the one whose slot they reached first. The caller walks the rest.
+  return claims.sort((a, b) => a.context.scheduledStart - b.context.scheduledStart)
+}
+
+/** The earliest claimant, which is what a caller wanting one event means. */
+export const calendarClaim = (
+  events: readonly CalendarEvent[],
+  now: number,
+): CalendarEvent | null => calendarClaims(events, now)[0] ?? null
+
+/**
+ * How often to re-ask, once the window is open and no conferencing app is up
+ * yet.
+ *
+ * This exists because the second signal is a **poll**, not a subscription:
+ * `modules/capture/MeetingApps.ts` shells out to `ps`/`tasklist`, and nothing
+ * anywhere calls `Agenda.tick` when that list changes. A horizon further out
+ * than this is a promise to notice something at an instant when nothing will
+ * have been looked at.
+ *
+ * Twenty seconds against a five-minute lead: a rep who opens Teams at the last
+ * moment still gets the offer with four and a half minutes to spare, and the
+ * cost is one short-lived process every twenty seconds for at most the length of
+ * the slot — which `MeetingApps`'s own fifteen-second cache then damps, a cache
+ * that until now could never hit because its only caller ran every five minutes.
+ *
+ * It is deliberately **not** the sleep ceiling's job. `MAX_SLEEP_MS` exists for a
+ * suspended laptop and must stay a ceiling; a decision that wants to be asked
+ * again sooner has to say so itself, or every future caller inherits whatever
+ * the ceiling happens to be.
+ */
+export const ARM_POLL_MS = 20_000
+
 
 /**
  * Longer than this and it is a working block, not a call.
@@ -55,33 +191,123 @@ export interface ArmingInput {
   event: ArmableEvent
   now: number
   /**
-   * The conferencing application whose audio is on the system loopback right
-   * now, or null. Supplied by `modules/capture/` — this file must not know how
-   * that is detected, only that it is a name or nothing.
+   * The conferencing application that is *running* right now, or null. Supplied
+   * by `modules/capture/` — this file must not know how that is detected, only
+   * that it is a name or nothing.
+   *
+   * Weak by construction: Teams starts with Windows and stays open all day, so
+   * on most machines this is a constant. It is nonetheless the only signal that
+   * exists **before** a call begins, which is what `ARM_LEAD_MS` is for.
    */
   meetingAudio: string | null
+  /**
+   * The conferencing application *holding a microphone* right now, or null — a
+   * call that is actually happening, rather than an application that is open.
+   *
+   * Optional because a binary built before `mic_apps.rs` existed cannot answer
+   * it, and the absence has to mean « we did not measure it » rather than « no
+   * call » (DEC-45). Every rule below that reads it therefore only ever *adds*
+   * arming; none withholds it on a null.
+   */
+  micHeldBy?: string | null
 }
 
-export const decideArming = (input: ArmingInput): ArmingDecision => {
-  const { event, now, meetingAudio } = input
-
+/**
+ * **Is this entry a call this product would ever record?** — asked of the entry
+ * alone, never of the clock.
+ *
+ * Extracted because it was written twice and applied unevenly, which cost the
+ * detector two thirds of a working day. `decideArming` refused an entry on five
+ * grounds; `calendarClaim` — added one round earlier to stop the ad-hoc detector
+ * speaking over a scheduled call — filtered on **two** of them. Every entry in
+ * that gap was claimed by one function and refused by the other, so the detector
+ * was told « cet appel est au calendrier » about an event the calendar would never
+ * offer, for the claim's whole width: thirty minutes before the slot to twenty
+ * minutes after it.
+ *
+ * Measured on the shipped `Agenda` over an ordinary French sales day — two real
+ * invites and four blocks the rep wrote for themselves — the detector could speak
+ * for **70 of 660 minutes**, and the longest silence, two and a half hours, was
+ * claimed by a block named « Prospection téléphonique »: the block during which a
+ * rep makes unscheduled calls. « Déjeuner » took four hours, because its thirty
+ * minutes of pre-claim ran into the next self-written block's.
+ *
+ * A single predicate is the fix rather than copying the missing clauses across,
+ * and the distinction is the whole lesson: this is the **third** time in this repo
+ * that a rule written in one place and applied in another has diverged. Two
+ * callers, one function, no way to add a refusal to one and not the other.
+ *
+ * The *time-dependent* refusals stay in `decideArming` where they belong — a slot
+ * that has not opened yet and one that ended too long ago are answers about
+ * `now`, and `calendarClaim` has its own, wider window for exactly that reason.
+ */
+export const isCallLike = (event: ArmableEvent): { ok: true } | { ok: false; reason: string } => {
+  /*
+   * **Private suppresses *arming*, and deliberately not *detection*.**
+   *
+   * A rep who marks a slot private in Outlook is saying the calendar entry is not
+   * for tooling, and the product honours that: it will not create a meeting from
+   * it, name it, or read its attendees. It is not saying « record nothing for the
+   * next hour » — so the ad-hoc detector still offers, and what it offers names no
+   * client and nothing from the entry: « Appel non planifié — Teams ».
+   *
+   * Stated here because the alternative was happening by accident and was worse.
+   * With `calendarClaim` filtering on two grounds instead of five, a private slot at
+   * 16:30 silenced the detector from 16:00 — so it was suppressing a **different
+   * client's** call, in the half hour before an entry it refuses to touch, with
+   * nothing on any screen saying why.
+   */
   if (PRIVATE.has(event.sensitivity)) {
-    return { action: 'skip', reason: 'événement marqué privé dans Outlook' }
+    return { ok: false, reason: 'événement marqué privé dans Outlook' }
   }
-
   // A block with nobody in it and nowhere to join is a reminder the rep wrote
   // for themselves. Transcribing it is noise, and worse, it would consume the
   // one meeting the rep expected to be armed for.
   if (event.attendees.length === 0 && !event.onlineMeetingJoinUrl) {
-    return { action: 'skip', reason: 'aucun participant ni lien de réunion' }
+    return { ok: false, reason: 'aucun participant ni lien de réunion' }
   }
-
   if (event.scheduledEnd - event.scheduledStart > MAX_ARMABLE_DURATION_MS) {
-    return { action: 'skip', reason: 'plage trop longue pour être une réunion' }
+    return { ok: false, reason: 'plage trop longue pour être une réunion' }
   }
+  return { ok: true }
+}
 
+export const decideArming = (input: ArmingInput): ArmingDecision => {
+  const { event, now, meetingAudio, micHeldBy = null } = input
+
+  const callLike = isCallLike(event)
+  if (!callLike.ok) return { action: 'skip', reason: callLike.reason }
+
+  /*
+   * **A call that runs over has not finished, and this used to say it had.**
+   *
+   * DEC-9 says in as many words that sales calls overrun constantly. The rule
+   * here was `now >= scheduledEnd → skip`, so auto-arming stopped at the
+   * scheduled minute — and `DayPane` gates its manual control on the same
+   * instant, so at 14:31 on a 14:00–14:30 slot a rep had neither. What they had
+   * instead was « Démarrer une réunion », which creates a meeting with no
+   * `eventId`: no attendees, no « Interlocuteurs » on the header, no chance for
+   * `speakerLabel` to name the far channel after a person rather than « Client »,
+   * and the strongest signal account resolution has, all dropped — at the moment
+   * the conversation is going *well enough to run late*.
+   *
+   * The microphone signal is what makes this safe to relax. « The slot ended »
+   * is a schedule; « a conferencing app is holding a microphone » is the call
+   * still happening. Extending on a clock alone would arm the 14:00 event over
+   * the 15:00 one; extending only while the evidence says a call is live cannot.
+   *
+   * Bounded all the same: a rep who leaves Teams in a call over lunch is not in
+   * this meeting, and the grace is deliberately shorter than a slot.
+   */
   if (now >= event.scheduledEnd) {
-    return { action: 'skip', reason: 'événement terminé' }
+    const overrunning = micHeldBy !== null && micHeldBy !== undefined
+    if (!overrunning) {
+      return { action: 'skip', reason: 'événement terminé' }
+    }
+    if (now >= event.scheduledEnd + OVERRUN_GRACE_MS) {
+      return { action: 'skip', reason: 'événement terminé depuis trop longtemps' }
+    }
+    return { action: 'arm', reason: `${micHeldBy} émet du son après l’heure prévue` }
   }
 
   const opensAt = event.scheduledStart - ARM_LEAD_MS
@@ -89,19 +315,55 @@ export const decideArming = (input: ArmingInput): ArmingDecision => {
     return { action: 'wait', untilMs: opensAt, reason: 'la fenêtre n’est pas encore ouverte' }
   }
 
-  // Inside the window and still silent. Nothing *time-based* will change this
-  // before the event ends — the next input is an audio event — so the horizon
-  // handed back is the end of the event, at which point the answer becomes
-  // `skip` rather than a timer that fired for nothing.
+  /*
+   * **Inside the window and still silent — and this is where the five-minute
+   * lead was being thrown away.**
+   *
+   * This used to hand back `event.scheduledEnd`, on the argument that « nothing
+   * *time-based* will change this before the event ends — the next input is an
+   * audio event ». **There is no audio event.** Nothing anywhere calls
+   * `Agenda.tick` on a change in the process list; the only callers outside
+   * tests are the loop itself and two rep-initiated IPC handlers. So the horizon
+   * named an instant an hour away at which, by construction, the answer would
+   * already be `skip` — and the only thing left choosing the delay was
+   * `Agenda`'s `MAX_SLEEP_MS` ceiling, five minutes, which is the whole of
+   * `ARM_LEAD_MS`.
+   *
+   * Measured over a simulated day: Teams launched at 14:26 for a 14:30 call, the
+   * window open since 14:25, and the offer arrived at **14:30:00** — 240 seconds
+   * late, worst case 299. DEC-46 and `ARM_LEAD_MS` above both exist to put the
+   * offer on screen *before* the rep joins, because « a rep who is talking is
+   * not looking for a button », and it was arriving as they said hello.
+   *
+   * The signal being waited on is **polled, not pushed**, so the horizon has to
+   * be a poll interval. That is the honest statement of what this branch knows:
+   * not « wake me when the event ends », but « ask again shortly, because the
+   * thing that decides this is a process list nobody will tell us about ».
+   */
+  /*
+   * Either signal satisfies the conjunction, and the strong one is named first.
+   *
+   * `micHeldBy` non-null implies a conferencing app is running, so this is not a
+   * new case so much as a better *sentence*: « Teams est ouvert » and « Teams
+   * émet du son » are different facts, and the reason string is read by a rep in
+   * the agenda's empty state. It also covers the `micOnly` applications — a
+   * browser tab, a Slack huddle, Aircall — which `matchMeetingApp` refuses to
+   * report by name because they are open all day, and which therefore never
+   * produce `meetingAudio` at all.
+   */
+  if (micHeldBy) {
+    return { action: 'arm', reason: `${micHeldBy} émet du son` }
+  }
+
   if (!meetingAudio) {
     return {
       action: 'wait',
-      untilMs: event.scheduledEnd,
+      untilMs: now + ARM_POLL_MS,
       reason: 'aucune application de réunion n’émet de son',
     }
   }
 
-  return { action: 'arm', reason: `${meetingAudio} émet du son` }
+  return { action: 'arm', reason: `${meetingAudio} est ouvert` }
 }
 
 /** Which event the app is offering to record, and why — or why it is offering none. */
@@ -126,8 +388,20 @@ export const nextArmable = (
   events: readonly CalendarEvent[],
   now: number,
   meetingAudio: string | null,
+  micHeldBy: string | null = null,
 ): ArmingChoice => {
   let armed: ArmingChoice | null = null
+  /*
+   * An event armed only by `OVERRUN_GRACE_MS` is kept apart and loses to any
+   * event whose slot actually contains `now`.
+   *
+   * Without the split, a 14:00–15:00 call running over to 15:05 would beat the
+   * 15:00–16:00 call on « the earlier start wins », and the rep would be offered
+   * the conversation they have just left instead of the one they are in. The
+   * microphone is held either way, so the signal cannot separate them — only the
+   * clock can, and this is the one place that knows both slots.
+   */
+  let overrun: ArmingChoice | null = null
   let waiting: ArmingChoice | null = null
 
   for (const event of events) {
@@ -135,10 +409,14 @@ export const nextArmable = (
     // neither is ever a call to record.
     if (event.isCancelled || event.isAllDay) continue
 
-    const decision = decideArming({ event: event.context, now, meetingAudio })
+    const decision = decideArming({ event: event.context, now, meetingAudio, micHeldBy })
     if (decision.action === 'arm') {
-      if (!armed || event.context.scheduledStart < (armed.event?.context.scheduledStart ?? Infinity)) {
-        armed = { event, decision }
+      const isOverrun = now >= event.context.scheduledEnd
+      const slot = isOverrun ? 'overrun' : 'current'
+      const held = slot === 'overrun' ? overrun : armed
+      if (!held || event.context.scheduledStart < (held.event?.context.scheduledStart ?? Infinity)) {
+        if (slot === 'overrun') overrun = { event, decision }
+        else armed = { event, decision }
       }
       continue
     }
@@ -151,6 +429,7 @@ export const nextArmable = (
   }
 
   if (armed) return armed
+  if (overrun) return overrun
   if (waiting) return waiting
   return { event: null, decision: { action: 'skip', reason: 'aucune réunion dans la fenêtre' } }
 }

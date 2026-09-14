@@ -10,7 +10,9 @@
  * If a behaviour is hard to place, it belongs here or in `core/domain/` —
  * never in an IPC handler.
  */
+import type { PushIntentKind } from '../../core/contracts/push.ts'
 import {
+  STATE_REASON,
   type MeetingContext,
   type MeetingId,
   type MeetingState,
@@ -138,6 +140,33 @@ export const replayState = (events: Iterable<StoredEvent>): MeetingState => {
 export interface MeetingSessionOptions {
   diagnostics?: DiagRecorder
   clock?: () => number
+  /**
+   * **Whether this kind of intent has a connector behind it at all**, asked of
+   * the app rather than guessed here.
+   *
+   * `pushSettled` moves to `done` when every intent is terminal, and an intent
+   * whose port is `null` is neither: `Outbox.#attempt` abandons it without an
+   * attempt event — deliberately, so it ships the day the connector is
+   * configured — and the row stays `pending` for ever. On the **demo build**,
+   * which DEC-28 calls the first deliverable and which has no VerySwing tenant,
+   * that is the ordinary path: the rep presses *Valider* once and the meeting
+   * reads « Envoi… » on the calendar for the life of the database,
+   * `allIntentsSettled` is false for ever, and because the boot re-drain
+   * rehydrates the session on every launch, `liveStates()` carries `pushing`
+   * and **every future update is refused**, with a sentence that is false —
+   * nothing is in flight and nothing ever will be.
+   *
+   * The same trap as `blocked`, one layer up: a state whose exit depends on
+   * something that may never happen. An intent nobody can attempt is settled as
+   * far as *this meeting* is concerned; the outbox keeps the queue, *Historique*
+   * shows the row, and the day VerySwing is configured the boot re-drain ships
+   * it. A real outage is untouched — the connector exists, the row is retryable,
+   * and the meeting stays visibly mid-flight, which is DEC-26's reading.
+   *
+   * Defaulted to « everything is routable », so a session built without the app
+   * behaves as it always did.
+   */
+  routable?: (kind: PushIntentKind) => boolean
 }
 
 export class MeetingSession {
@@ -146,6 +175,7 @@ export class MeetingSession {
   #state: MeetingState
   #diagnostics: DiagRecorder
   #clock: () => number
+  #routable: (kind: PushIntentKind) => boolean
 
   private constructor(
     store: Store,
@@ -158,6 +188,7 @@ export class MeetingSession {
     this.#state = state
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
     this.#clock = options.clock ?? Date.now
+    this.#routable = options.routable ?? (() => true)
   }
 
   static create(
@@ -213,11 +244,16 @@ export class MeetingSession {
         severity: 'warn',
         code: 'session.transition.rejected',
         module: 'session',
+        // `${command} is not legal from ${from}` — two members of two unions.
+        origin: 'authored',
         message,
         detail: { from, command },
         meetingId: this.id,
       })
-      return { ok: false, state: from, reason: message }
+      // The log gets the transition identifier; the rep gets a sentence.
+      // `session:command`'s and `review:confirm`'s refusals are both rendered
+      // verbatim, the second in a `role="alert"` at the confirmation gate.
+      return { ok: false, state: from, reason: STATE_REASON[from] }
     }
 
     this.#store.append(
@@ -236,9 +272,8 @@ export class MeetingSession {
 
   #guards(): Guards {
     const intents = this.#store.projections.outboxFor(this.id)
-    return {
-      allIntentsSettled:
-        intents.length > 0 && intents.every((i) => i.state === 'drained' || i.state === 'failed'),
-    }
+    const settled = (entry: (typeof intents)[number]): boolean =>
+      entry.state === 'drained' || entry.state === 'failed' || !this.#routable(entry.kind)
+    return { allIntentsSettled: intents.length > 0 && intents.every(settled) }
   }
 }

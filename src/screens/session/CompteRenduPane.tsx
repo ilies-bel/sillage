@@ -33,47 +33,125 @@
  * surface that says « · modifiable » precisely because a borderless textarea is
  * indistinguishable from a preview. This one is a preview, so it is typed as
  * prose and takes no cursor.
+ *
+ * ## And it carries no caption and no manual
+ *
+ * It had both, on the screen a rep has open while a client is talking. The
+ * caption read « COMPTE-RENDU » over a document whose own first line is
+ * `# <objet>` at `--type-copy` — 479 px of eyebrow above 1 930 px of document
+ * saying the same word, and the document says it larger. The manual read « Les
+ * marques # ## - ** font partie du texte … » and explained this product's
+ * typesetting convention to somebody who cannot act on it here: the text is
+ * read-only and the line above it already says where the correction goes.
+ * `CompteRenduMarkersNote` is drawn at the gate, which is the surface where the
+ * document is editable and where the press that sends it to VerySwing lives —
+ * see the rule in `ui/SectionHeader.tsx` and the component's own docblock.
+ *
+ * Measured on the shipped renderer, `session-compte-rendu` at both smoke sizes:
+ * the reading column gained **65 px at each** — 458 → 523 of a 1 930 px document
+ * at 1280×800, and 321 → 386 of 2 203 at 960×600, which is 14% and 20% more of
+ * the document on screen. 29 of those pixels are the eyebrow (17 of ink and the
+ * `mb-3` under it) and 36 are the manual, which wrapped to two lines in this
+ * column at both sizes.
  */
-import { SectionHeader } from '../../ui/index.ts'
+import { ReadingColumn } from '../../ui/index.ts'
+import { AskPanel } from './AskPanel.tsx'
+import { useFollowUpAction } from './askActions.ts'
+import { CompteRenduDocument } from './CompteRenduDocument.tsx'
 
 interface CompteRenduPaneProps {
   /** The rendered markdown, as `renderCompteRendu` produced it. */
   compteRendu: string
+  /** Which call *Demander* asks about. */
+  meetingId: string
+  /**
+   * Whether this meeting came from the calendar (`eventId !== null`).
+   *
+   * Not a detail of the document: it is half of « can a follow-up draft exist
+   * for this call », because the recipients are the invite's attendees and
+   * nothing else (DEC-7). See `askActions.ts` for the other half and for why
+   * the offer is withheld rather than shown refusing.
+   */
+  fromCalendar: boolean
 }
 
-export function CompteRenduPane({ compteRendu }: CompteRenduPaneProps) {
+export function CompteRenduPane({
+  compteRendu,
+  meetingId,
+  fromCalendar,
+}: CompteRenduPaneProps) {
+  const followUp = useFollowUpAction({ fromCalendar })
+
   return (
     <div className="flex h-full flex-col overflow-hidden px-row py-row">
-      <SectionHeader className="shrink-0">Compte-rendu</SectionHeader>
+      {/*
+        Typeset, and not a markdown renderer — `CompteRenduDocument` keeps every
+        `#` and every `- ` on screen, muted, in a gutter. This is the exact text
+        that lands in the CRM task description and in the gate's textarea, so a
+        pane that *hid* a marker would show the rep something the CRM will not
+        receive, on the one surface whose job is to let them check it before it
+        goes. Drawing it as one raw block was honest and unreadable: beside the
+        rep's own typeset notes it read as a log dump of something the machine
+        had produced rather than as the document the product exists to write.
+      */}
+      {/*
+        `ReadingColumn`, and not a bare `overflow-y-auto`, because this pane was
+        hiding 73% of the document at 1280×800 with nothing on screen saying so —
+        see the component. The fade and the page turn are the gate's own two
+        instruments, on the surface where the rep meets the compte-rendu first.
+      */}
+      <ReadingColumn subject={{ determiner: 'le', noun: 'compte-rendu' }}>
+        <CompteRenduDocument text={compteRendu} />
+      </ReadingColumn>
 
       {/*
-        `whitespace-pre-wrap` and not a markdown renderer. This is the exact text
-        that lands in the CRM task description and in the gate's textarea, and a
-        pane that prettified it would show the rep something the CRM will not
-        receive — on the one surface whose job is to let them check it before it
-        goes. The headings read as headings because the recipe writes them that
-        way (DEC-13).
+        **And no note under it.**
+
+        « Lecture seule — corrigez-le à l'étape « Relire et valider ». » sat
+        pinned under the document on its own rule, which is a sentence about the
+        *next* screen taking a line of the column on this one. The pane is prose
+        with no cursor in it and takes no keystrokes, which is the whole of what
+        « lecture seule » was telling the rep; and the way to the gate is the one
+        filled button in this screen's header, saying « Relire et valider » in
+        the words this note was quoting. The promise is not dropped, it is made
+        by the control rather than by a caption above it.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <p className="text-body whitespace-pre-wrap text-ui leading-relaxed">{compteRendu}</p>
-      </div>
 
       {/*
-        The way out, stated once. The rep reading this pane is one step from the
-        gate, and the gate is where the editable copy lives — saying so here is
-        cheaper than letting them discover that this text cannot be corrected.
+        *Demander*, pinned under the document — which is where a general-purpose
+        notetaker puts its « ask anything », and the placement is right for the
+        same reason: the question a rep has is about the thing they are reading.
 
-        `border-t` and not just a margin. This line is pinned under a scroller,
-        and with only `mt-2` between them the document's last visible line was
-        clipped hard against it: at the app's minimum window the compte-rendu
-        ended mid-sentence one line above « Lecture seule », and the two read as
-        one run of text — the caption looked like the document's closing line
-        rather than a note about it. A rule is what says the scroll ended and
-        something else began.
+        Under the read-only note rather than above it, because the document is
+        what the rep came for and the question is what they have *after* reading
+        it. And pinned rather than scrolling with the document, so it is reachable
+        from any point of a long compte-rendu.
+
+        No `onLocate`: this pane has no transcript beside it. The citations are
+        still drawn — a quoted sentence with its timestamp is worth reading on its
+        own — they simply do not open, which the panel states rather than
+        offering a control that goes nowhere (DEC-26). The gate is where a
+        citation is followable, because that is where the reader lives.
       */}
-      <p className="text-muted border-subtle mt-2 shrink-0 border-t pt-2 text-meta">
-        Lecture seule — corrigez-le à l’étape « Relire et valider ».
-      </p>
+      {/*
+        `pinned`, and `max-h-[45%]` is the share it may take. Unbounded, one
+        answer pushed the document down to its heading and one line of
+        « Résumé » — asking a question cost the rep the thing they were asking
+        about. The document keeps the majority of the column in every case.
+      */}
+      {/*
+        And the one suggested action, which is this pane's and not the panel's:
+        the note is where a rep asks « et maintenant, je fais quoi de ça ? », and
+        the answer this product has is the follow-up draft it composes at the
+        gate. Offered only where that draft can exist — `askActions.ts` holds
+        the rule and the two reasons `draftIntents` gives.
+      */}
+      <AskPanel
+        meetingId={meetingId}
+        pinned
+        action={followUp}
+        className="border-subtle mt-3 max-h-[45%] shrink-0 border-t pt-3"
+      />
     </div>
   )
 }

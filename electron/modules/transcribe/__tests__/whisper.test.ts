@@ -18,6 +18,7 @@ import { filterHallucination } from '../whisper/hallucinations.ts'
 import { MODELS, DEFAULT_MODEL_ID, expectedOnnxFiles, isModelCached, modelById } from '../whisper/catalog.ts'
 import { resolveInferenceConfig, buildInitMessage } from '../whisper/inference.ts'
 import { ProgressAggregator } from '../whisper/progress.ts'
+import { resolveModelsDir } from '../whisper/paths.ts'
 import { claimLoad, clearSentinel, readSentinel, writeSentinel } from '../whisper/sentinel.ts'
 import { workerCandidates, resolveWorkerPath } from '../whisper/paths.ts'
 
@@ -393,4 +394,57 @@ test('the resolver returns a path even when nothing exists, so the error names i
     exists: () => false,
   })
   assert.match(resolved, /dist-electron.*worker\.js$/)
+})
+
+// ── Where a downloaded model actually lives ────────────────────────────────
+
+test('the directory is chosen by the checkpoint, not by whether it has content', () => {
+  /*
+   * **A model downloaded after install was never found.**
+   *
+   * `resolveModelsDir` took the first candidate that held *anything*, and its
+   * own docblock named the hazard it then failed to avoid — « not point at an
+   * empty bundled directory when the real cache is in `userData` ». In a
+   * packaged build the bundled directory is never empty: it ships the default
+   * model. So it always won, the 1.5 GB the rep downloaded sat in `userData`,
+   * and with `allowRemoteModels: false` the load failed telling them to download
+   * the thing they had just downloaded.
+   *
+   * The predicate is supplied by the caller rather than imported, so `paths.ts`
+   * stays free of the catalog and the dtype — the caller is the one that knows
+   * which checkpoint it wants and at what quantization.
+   */
+  const env = {
+    resourcesPath: '/app/Resources',
+    appPath: '/app',
+    userData: '/home/rep/Library/Sillage',
+    // Both exist. That is the packaged reality and the reason the old rule lost.
+    exists: () => true,
+  }
+  const bundled = '/app/Resources/whisper-models'
+  const userData = '/home/rep/Library/Sillage/whisper-models'
+
+  // The bundled default: taken from `resources`, which is the point of shipping it.
+  assert.equal(
+    resolveModelsDir(env, (dir) => dir === bundled),
+    bundled,
+  )
+
+  // A model the rep downloaded: only `userData` holds it, and that is where the
+  // engine has to look — the old rule returned the bundled directory here.
+  assert.equal(
+    resolveModelsDir(env, (dir) => dir === userData),
+    userData,
+  )
+
+  // Nothing holds it yet: the **writable** candidate, so the download lands
+  // where the next resolve will look for it.
+  assert.equal(
+    resolveModelsDir(env, () => false),
+    userData,
+  )
+
+  // No predicate at all degrades to the old rule, which is right for a caller
+  // with no model in hand.
+  assert.equal(resolveModelsDir(env), bundled)
 })

@@ -38,8 +38,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Meeting } from '../../../electron/core/contracts/meeting.ts'
 import { invoke } from '../../app/bridge.ts'
+import { useShortcuts } from '../../app/shortcuts.ts'
 import { atParis, noonOf, parseClock, type DayKey } from '../../app/calendar.ts'
-import { formatDayMedium } from '../../app/format.ts'
+import { formatDayMedium, upperFirst } from '../../app/format.ts'
 import { Button, unavailable } from '../../ui/index.ts'
 
 interface NewMeetingProps {
@@ -54,12 +55,55 @@ interface NewMeetingProps {
    * remove.
    */
   onCreated: (meeting: Meeting) => void | Promise<void>
+  /**
+   * True when the day list is drawing an armed row — the call starting now.
+   *
+   * The screen's one filled control is then that row, and this one steps down
+   * to an outline. Passed in rather than derived here: which rows are armed is
+   * the calendar's question and this component has no business asking it.
+   */
+  armedElsewhere?: boolean
+  /**
+   * Where this instance is drawn.
+   *
+   * `header` is the permanent control described above — *Démarrer une réunion*
+   * plus, on any other day, *Ajouter au …*.
+   *
+   * `empty` is the same scheduling half, drawn a second time **inside** the
+   * empty day panel, and only the scheduling half: an empty day is a rep
+   * looking at nothing and asking « et maintenant ? », and the answer was a
+   * grey text link at the far end of the header, some seventeen hundred pixels
+   * away and between *Réglages* and the blue button. An empty state whose
+   * action is off-screen is a dead end with a sentence in it (DEC-26).
+   *
+   * A second *Démarrer une réunion* is deliberately not drawn: there is one
+   * indispensable action in this product and putting it on screen twice makes
+   * a rep choose between two identical buttons.
+   */
+  variant?: 'header' | 'empty'
+  /**
+   * `false` while the day pane is drawing its own *Ajouter une réunion*.
+   *
+   * An empty day offered three creation controls — *Ajouter au 31 août* and
+   * *Démarrer une réunion* in the header, *Ajouter une réunion* in the panel
+   * — for two intentions. The panel's is the one the rep is looking at, so on
+   * an empty day the header keeps only *Démarrer*, which always means *now* and
+   * is the product's one indispensable action.
+   */
+  showSchedule?: boolean
 }
 
 /** The hour a working day is assumed to start at, when the rep does not say. */
 const DEFAULT_CLOCK = '09:00'
 
-export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
+export function NewMeeting({
+  day,
+  today,
+  onCreated,
+  variant = 'header',
+  showSchedule = true,
+  armedElsewhere = false,
+}: NewMeetingProps) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [client, setClient] = useState('')
@@ -142,9 +186,36 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
    * *Ajouter au …* is the second control and appears beside it, never instead of
    * it: scheduling is a different intention and reads as one (DEC-31).
    */
+  /*
+   * `Ctrl/⌘ N`, on the control itself rather than on the screen above it.
+   *
+   * `create` is where the busy guard, the failure sentence and `onCreated`
+   * live, so the shortcut is the button — not a second path to the same IPC
+   * that would have to be kept in step with it. Only the header instance
+   * claims the key: the empty-day panel draws a second `NewMeeting`, and two
+   * handlers on one window would start two recordings from one press.
+   */
+  useShortcuts(
+    variant === 'header'
+      ? { nouvelle: () => void create({ title: '', clientName: null, scheduledStart: null }) }
+      : {},
+  )
+
   const start = (
     <Button
-      variant="primary"
+      /*
+        **Never the second filled blue on the screen.**
+
+        Measured at 1280×800: « Démarrer une réunion » at x=1099 and the armed
+        row's « Enregistrer » at x=1140, both `--brand-700`, 172px apart and
+        horizontally overlapping. « One primary per view » (VISION.md §6) was two
+        — and the wrong one was louder: the top one creates an *untitled* meeting
+        for right now, the bottom one records the client call that has already
+        started. When the calendar is offering that row, this steps down; it is
+        still the way in on every other day, and on a day with nothing armed it
+        is the only fill on screen.
+      */
+      variant={armedElsewhere ? 'bordered' : 'primary'}
       onClick={() => void create({ title: '', clientName: null, scheduledStart: null })}
       {...unavailable(busy, 'Démarrage de la réunion…')}
     >
@@ -158,7 +229,9 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
     </span>
   ) : null
 
-  if (forNow) {
+  const inEmptyState = variant === 'empty'
+
+  if ((forNow || !showSchedule) && !inEmptyState) {
     return (
       <div className="flex items-center gap-inline">
         {alert}
@@ -169,16 +242,42 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
 
   if (!open) {
     return (
-      <div className="flex items-center gap-inline">
+      <div className="flex items-center justify-center gap-inline">
         {alert}
         {/*
-          `text`, not `primary`. Two filled buttons side by side make the rep
-          choose between them; only one of these is the thing they came to do.
+          `text` in the header, not `primary`: two filled buttons side by side
+          make the rep choose between them, and only one of them is the thing
+          they came to do. In the empty panel there is no competing button, and
+          the whole point of drawing it there is that it can be seen — so it is
+          the panel's own action and looks like one.
         */}
-        <Button variant="text" onClick={() => setOpen(true)}>
-          {`Ajouter au ${formatDayMedium(noonOf(day))}`}
+        <Button variant={inEmptyState ? 'bordered' : 'text'} onClick={() => setOpen(true)}>
+          {/*
+            « Ajouter une réunion » in the panel, « Ajouter au … » in the
+            header: one verb, two positions, and never both on screen at once.
+            The header control has to name the day because nothing near it does;
+            the panel sits directly under « Lundi 31 Août », so repeating the
+            date there buys nothing and would put two buttons with the *same
+            accessible name* on one screen, which is a rep — and a screen reader
+            — being asked to tell apart two things that read identically.
+
+            Two verbs in the whole product: *Démarrer* is now, *Ajouter* is any
+            other day, forward or back.
+          */}
+          {/*
+            « Ajouter », not « Planifier ».
+            
+            DEC-31 lets a rep put a meeting on *any* day, and a past one is a
+            real case: a call the calendar never carried, filed on the day it
+            happened. « Planifier une réunion » on lundi 31 août, ten days
+            behind today, promises to schedule something into the past — the
+            screen already knows the day is past, and said so in the line above.
+            « Ajouter » is true in both directions, and *Démarrer* is still the
+            only word that means now.
+          */}
+          {inEmptyState ? 'Ajouter une réunion' : `Ajouter au ${formatDayMedium(noonOf(day))}`}
         </Button>
-        {start}
+        {inEmptyState ? null : start}
       </div>
     )
   }
@@ -217,7 +316,7 @@ export function NewMeeting({ day, today, onCreated }: NewMeetingProps) {
       />
 
       <label className="text-muted flex items-center gap-2 text-ui">
-        <span className="capitalize">{formatDayMedium(noonOf(day))}</span>
+        <span>{upperFirst(formatDayMedium(noonOf(day)))}</span>
         <input
           type="time"
           value={clock}

@@ -102,6 +102,15 @@ describe('the compte-rendu appears where the rep already is', () => {
 
     expect(screen.queryByText(/Compte-rendu/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Compte-rendu' })).toBeNull()
+    /*
+      *Demander* included, and it is the reason this assertion is worth adding.
+      A question box beside a live meeting is a second thing to look at while
+      somebody is talking, and the transcript it would answer from is by
+      definition the part that has already happened. It rides on the
+      compte-rendu pane, so it is absent for free — which is exactly the kind of
+      thing that stops being true the day the pane moves.
+    */
+    expect(screen.queryByLabelText('Poser une question sur cet appel')).toBeNull()
   })
 
   /*
@@ -119,15 +128,28 @@ describe('the compte-rendu appears where the rep already is', () => {
     open({ state: 'awaiting_confirmation' }, COMPTE_RENDU)
     await screen.findByText(/Cadrage du renfort data/)
 
-    // Both are on screen together, unasked.
-    expect(screen.getByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeTruthy()
+    /*
+     * Both are on screen together, unasked — and the rail is named by the one
+     * thing in it that is not the document: a slate row. It used to be found by
+     * « Rien ne migre dans vos notes. », the sentence at the foot of the rail,
+     * which has been deleted (see the test below and `SignalRail.tsx`). A slate
+     * label is the better landmark for the same reason the caption went: it is
+     * what the rail *is*.
+     */
+    expect(screen.getByText('Démarrage')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Panneau' }))
+    // Putting them away is a verb inside the thing it closes.
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer' }))
 
     expect(screen.queryByText(/Cadrage du renfort data/)).toBeNull()
-    expect(screen.queryByText(/Ne se réordonne pas|Se remplit à mesure/)).toBeNull()
+    expect(screen.queryByText('Démarrage')).toBeNull()
     // The surface the rep owns is untouched by any of it (DEC-5).
     expect(document.querySelector('.ProseMirror')).toBeTruthy()
+
+    // And the way back is in the header, spelled out, where there is now a
+    // notepad's width to spell it in.
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les volets' }))
+    expect(screen.getByText(/Cadrage du renfort data/)).toBeTruthy()
   })
 })
 
@@ -139,6 +161,65 @@ describe('the compte-rendu appears where the rep already is', () => {
  * exists a click only *arms* the gesture — because the second one spends a model
  * call and replaces a document the rep may be reading.
  */
+/**
+ * **Nothing on this screen talks about the screen** (`ui/SectionHeader.tsx`).
+ *
+ * A rep has this open while a client is talking, and it carried four things that
+ * were about the product rather than about the call: « COMPTE-RENDU » over a
+ * document whose own first line is `# <objet>`, « SIGNAUX » over seven boxes each
+ * reading « TJM », « Profil », « Démarrage », a manual for this product's
+ * typesetting convention, and a promise about a thing that does not happen.
+ *
+ * Two of the four are deletions with no home elsewhere — the content names
+ * itself. The other two moved: the markers sentence to the gate, where the
+ * document is editable and the press that sends it to VerySwing lives
+ * (`Review.test.tsx`), and DEC-5's promise to first run, where a rep is reading
+ * rather than talking (`Onboarding.test.tsx`).
+ *
+ * Measured on the shipped renderer rather than argued: the document's reading
+ * column went 458 → 523 px at 1280×800 and 321 → 386 px at 960×600 — 65 px, the
+ * same at both sizes, of a document 1 930 px long — and the rail gave back 33 px
+ * of content, which at 960×600 is 197 → 164 px of slate below the fold. The two
+ * captions cost **no** vertical pixels: each shared a baseline row with a control
+ * taller than itself, which is precisely why a screenshot review kept them.
+ */
+describe('nothing on the session screen is about the session screen', () => {
+  test('no caption over the document and none over the rail', async () => {
+    open({ state: 'awaiting_confirmation' }, COMPTE_RENDU)
+    await screen.findByText(/Cadrage du renfort data/)
+
+    // Asked of the heading role: « compte-rendu » is in this screen's prose in
+    // places that are doing work — the document's own title line, the way out.
+    expect(screen.queryByRole('heading', { name: 'Compte-rendu' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Signaux' })).toBeNull()
+
+    // And what names each column instead is its content: the document's own
+    // `#` line, and the slate's seven labelled slots (DEC-14).
+    expect(screen.getByText(/Cadrage du renfort data/)).toBeTruthy()
+    for (const label of ['TJM', 'Profil', 'Démarrage', 'Durée', 'Mode', 'Objection', 'Étape']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+  })
+
+  test('no manual for the typesetting, and no promise about what never happens', async () => {
+    open({ state: 'awaiting_confirmation' }, COMPTE_RENDU)
+    await screen.findByText(/Cadrage du renfort data/)
+
+    expect(screen.queryByText(/font partie du texte/)).toBeNull()
+    expect(screen.queryByText(/VerySwing reçoit exactement ce qui est affiché/)).toBeNull()
+    expect(screen.queryByText('Rien ne migre dans vos notes.')).toBeNull()
+  })
+
+  test('no note under the document says where the correction goes', async () => {
+    // It was a sentence about the *next* screen taking a line of the column on
+    // this one. The door to the gate is the filled button in the header, and it
+    // says « Relire et valider » in the words the note was quoting.
+    open({ state: 'awaiting_confirmation' }, COMPTE_RENDU)
+    await screen.findByText(/Cadrage du renfort data/)
+    expect(screen.queryByText(/Lecture seule/)).toBeNull()
+  })
+})
+
 describe('choosing what the compte-rendu will be', () => {
   test('mid-call, switching is one click and nothing is at stake', async () => {
     open({ state: 'recording' }, null)

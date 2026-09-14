@@ -116,8 +116,17 @@
    * Times, durations and money are `font-variant-numeric: tabular-nums` at any
    * of these sizes — a column of figures that reflows as it updates is a column
    * nobody can scan.
+   *
+   * `--type-label` and `--type-meta` are both 11px and that is not a duplicate
+   * step: they are one size worn two ways — uppercase, tracked and 600 for a
+   * section header, sentence case and regular for a meta line. The label was
+   * 10px, which is below the legibility floor for functional text, and it is
+   * the eyebrow on *every* pane in the product — the word that tells a rep
+   * which of three columns they are reading. Uppercase at 10px on a 1080p
+   * Windows laptop is the one place the design was asking a rep to squint at
+   * navigation.
    */
-  --type-label: 10px;
+  --type-label: 11px;
   --type-meta: 11px;
   --type-ui: 12px;
   --type-copy: 14px;
@@ -128,7 +137,48 @@
   --radius: 12px;
   --radius-lg: 14px;
   --border-width: 1px;
+  /*
+   * VISION §6's « Shadows barely there », and **nothing in the product draws it
+   * today**. It was mapped as Tailwind's `shadow-card` and worn by zero elements
+   * under `src/`, so that mapping is gone (`tailwind.config.js` says why); the
+   * value stays here because §6 names it and because `--shadow-overlay` below is
+   * defined as this shadow one order of elevation up, which is the sentence that
+   * lets the widget wear the product's light palette over a video call. Do not
+   * read this as « cards have a shadow »: they have a 1px `--border-card`.
+   */
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
+  /*
+   * The one surface that is not on the app's own paper: the in-meeting widget,
+   * floating over somebody else's window (`src/widget/Widget.tsx`).
+   *
+   * `--shadow-card` is 8 % of one pixel, which is a card lying on `--bg-canvas`
+   * and is invisible against a video call — the pill would read as a white
+   * rectangle *cut into* the call rather than as something above it. This is
+   * the same shadow one order of elevation up, and it is the only reason the
+   * widget can wear the product's own light palette instead of growing a second
+   * dark one: separation comes from the shadow, not from a second theme.
+   */
+  /*
+   * The extent has to fit the halo the widget reserves for it (`HALO = 20` in
+   * `src/widget/Widget.tsx`), or the shadow is clipped by the window and the
+   * separation it exists to give is a straight horizontal edge across the video
+   * instead. `0 8px 28px` reached 36px below and 28px sideways and was measured
+   * spilling 16px past the frame; `0 4px 14px` reaches 18 and 14. Darker to pay
+   * for the smaller spread, so it still reads as elevation over a dark call.
+   */
+  --shadow-overlay: 0 4px 14px rgb(0 0 0 / 38%);
+
+  /*
+   * The veil behind the one sheet in this product (Réglages, V2).
+   *
+   * A token rather than `bg-strong/40`, for the reason the naming rules above
+   * give twice: an opacity modifier on a colour token is the shape that compiles
+   * to nothing and shows up as an element that is silently unstyled. It is the
+   * ink colour at 32% — enough that the calendar behind it is legibly *behind*,
+   * light enough that the rep can still see which screen they left, which is the
+   * whole argument for a sheet over a screen.
+   */
+  --veil: rgb(15 25 34 / 32%);
 
   /* type faces */
   --font-display: "Fraunces", ui-serif, Georgia, serif;
@@ -141,10 +191,131 @@
    * Motion: ≤150ms, ease-out, opacity and 2–4px translate only. Nothing
    * bounces. The signal rail in particular never animates at all (DEC-14) —
    * a chip that moves during a call is a chip that steals a glance.
+   *
+   * **The ladder is two rungs and each one names the event it is for, because a
+   * rung nobody spends is the fourth shape on `CLAUDE.md`'s list.** Measured on
+   * the shipped renderer across six stages — 311 live declarations — the product
+   * spent **one** duration and **one** curve on **one** property: 307 colour
+   * transitions at 150ms/`--ease-out` and four `riseIn` animations at the same.
+   * `--motion-fast` was declared here, mapped in `tailwind.config.js` as
+   * `duration-fast`, and **written by nothing**: `duration-fast` had zero
+   * occurrences under `src/`, so the file that says « two durations » shipped one.
+   * Same for `animate-fade-in`, declared beside `animate-rise-in` and used by no
+   * element in the product.
+   *
+   *   --motion-fast   the pointer's own feedback — a hover tint, a focus ring,
+   *                   the press. Met hundreds of times a day, which is the
+   *                   frequency table's « reduce » row.
+   *   --motion        a surface arriving or leaving. Met once or twice.
+   *
+   * **90ms is measured, not chosen.** Sampled one reading per animation frame on
+   * a probe carrying the product's own colours and `--ease-out`, asking how much
+   * of the change has landed:
+   *
+   *            2nd frame   3rd frame   settled
+   *   150ms       44%         60%       ~110ms   ← what every control shipped with
+   *    90ms       79%         92%        ~43ms
+   *    70ms       85%         95%        ~42ms
+   *
+   * 150 → 90 is the step that matters: at the second frame after the pointer
+   * lands the tint goes from not-quite-half-done to nearly there. 70 buys six
+   * points over 90 and costs a token nobody can defend, so the value stays where
+   * it was declared — what changes is that something now draws with it.
+   *
+   * **There is no third rung, and that is the finding rather than a shortfall.**
+   * The published standard's four bands are press 100–160, tooltip 125–200,
+   * dropdown 150–250, modal and drawer 200–500. HR-10 gives this product one
+   * window and no modal chrome, so the last band has nothing to spend itself on,
+   * and VISION.md §6's ceiling closes the third. A twelve-rung ladder copied off
+   * a competitor with modals, drawers, a sidebar and a video pane would be ten
+   * dead declarations here.
    */
   --motion-fast: 90ms;
   --motion: 150ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /*
+   * **The other end of the motion, and it took a measurement to earn.**
+   *
+   * There was one curve, and VISION.md §6 said « ease-out » flat, so the one exit
+   * in this product wore the entering curve. `--ease-out` is an expo-out: it spends
+   * 73% of its change in the first 35ms, which is exactly what makes something
+   * *arriving* feel instant and then settle. Run backwards on something *leaving* it
+   * is a blink — measured on the shipped `.widget-leaving` element in Chromium,
+   * opacity stayed above 0.05 for **62 of the 150ms**, and the 3px translate was
+   * spent entirely below 25% opacity, where there is nothing left to see moving —
+   * followed by 88ms of a fully transparent, frameless, always-on-top window still
+   * holding its place over the rep's call.
+   *
+   * Mirrored deliberately rather than chosen: `cubic-bezier(0.64, 0, 0.78, 0)` is
+   * `--ease-out` **rotated 180° about (0.5, 0.5)** — `(x1, y1, x2, y2)` becomes
+   * `(1−x2, 1−y2, 1−x1, 1−y1)` — so the two are one curve read in two directions
+   * and there is no second piece of taste to keep consistent. `--ease-out` is the
+   * taste; this follows it. It collapses under `prefers-reduced-motion` with
+   * everything else, because the durations are what collapse and a curve over 0ms
+   * is not applied.
+   *
+   * This comment said « reflected through the diagonal » for a round, which is a
+   * *different* operation — the reflection is the inverse function,
+   * `(y1, x1, y2, x2)`, and on `(0.22, 1, 0.36, 1)` it gives `(1, 0.22, 1, 0.36)`,
+   * not this. The intent was right and the geometry was not, and nothing could
+   * tell, because the file asserting this palette held the durations to ≤150ms and
+   * contained no easing at all: redefining this token to
+   * `cubic-bezier(0.22, 1, 0.36, 0.99)` restored the blink exactly — measured on
+   * the shipped `.widget-leaving` element in Chromium, opacity 0.768 at 9ms, 0.278
+   * at 35ms, 0.018 at 93ms, against 0.999 / 0.998 / 0.909 here — and every check
+   * in the repo passed. `tokens.test.ts` asserts the **relation** rather than the
+   * literal (so `--ease-out` stays free to be retuned and this has to follow it),
+   * and, independently, that this curve's mean progress is under 0.45 while
+   * `--ease-out`'s is over 0.55. `shot.mjs --motion` measures the same shape on
+   * whatever curve actually reaches a departing element.
+   */
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+
+  /*
+   * **The one overshoot, licensed by DEC-50, and it draws on exactly two
+   * elements.**
+   *
+   * The round before this one refused to declare it, and the refusal was right
+   * at the time: the arithmetic said an overshoot could not be seen. « opacity
+   * and 2–4px translate only » was the whole vocabulary, and on a 3px translate
+   * the competitor's three springs are worth 0.04px, 0.01px and 0.29px —
+   * sub-pixel, measured. A token that draws nothing is the shape `--motion-fast`
+   * was in, and declaring one to satisfy an acceptance line is the thing that
+   * acceptance line exists to prevent.
+   *
+   * DEC-50 moved the clause, narrowly: `scale` is allowed on the widget's
+   * arrival, and on nothing else in the product. That is the surface the
+   * frequency table puts on the « once or twice a day → delight » row, it is
+   * drawn over another application's video, and it had `transitionDuration: 0s`
+   * and `animationName: none` — it popped between two frames over the face of
+   * the person on the call. With a carrier, the overshoot is worth pixels: this
+   * curve's peak is **1.0800**, so from `scale(0.92)` it is **1.54px** on the
+   * pill's 240px card and **2.18px** on the panel's 340px one, and it is above 1
+   * from 39ms to 145ms of the 150. Not a lot. Enough to read as a settle rather
+   * than a stop, which is the whole difference DEC-50 is buying.
+   *
+   * **It is `--ease-out` with `y1` lifted past the endpoint, and that is the
+   * point.** `(0.22, 1, 0.36, 1)` → `(0.22, 1.5, 0.36, 1)`: same control
+   * abscissae, same taste, one nudge past 1 and back. `--ease-in` is the same
+   * curve rotated and this is the same curve overshot, so there is still exactly
+   * **one** piece of taste in this file and two derivations of it — which is the
+   * argument `--ease-in`'s own comment makes and the reason a competitor's
+   * `(.34, 1.56, .64, 1)` was not lifted wholesale. Measured against the three
+   * candidates and against `y1` from 1.2 to 1.8; 1.2 and 1.3 are sub-pixel on
+   * the pill (0.24px, 0.57px) and 1.8 overshoots 3.4px, which on a card over a
+   * video call is a bounce rather than a settle.
+   *
+   * **Pinned by its shape and not its string** (`tokens.test.ts`): « progress
+   * exceeds 1 somewhere in its span », which is the `--ease-in` lesson — that
+   * token was redefined to `cubic-bezier(0.22, 1, 0.36, 0.99)`, restored the
+   * blink exactly, and passed every check in the repo because nothing asked what
+   * the curve *did*. Every other `--ease*` in this file is held to the opposite
+   * assertion, so « nothing bounces » is still enforced everywhere §6 means it.
+   *
+   * Drawn by `.widget-arrive` and `.widget-panel-arrive` in `index.css`, and by
+   * nothing else — grep it before adding a third.
+   */
+  --ease-overshoot: cubic-bezier(0.22, 1.5, 0.36, 1);
 
   /*
    * Paper grain, for quiet surfaces only — the splash, an empty transcript pane,
@@ -164,6 +335,15 @@
  * Respect the OS setting rather than asserting our motion is tasteful enough to
  * be exempt. The durations collapse; nothing else changes, because nothing else
  * depends on the animation having run.
+ *
+ * **Every `--motion*` declared above has to appear here, and that is asserted
+ * rather than remembered** (`tokens.test.ts`, « the OS setting reaches every
+ * rung »). This block is a hand-written list of a set declared somewhere else,
+ * which is the `check:ports` `PORTS`-was-one-entry shape: a rung added above and
+ * forgotten here keeps running for the rep who asked their machine for less
+ * motion, and `shot.mjs --motion` only notices it on a stage that happens to use
+ * it. The test reads both lists off this file and compares them, so the omission
+ * fails at the source instead of waiting for a stage.
  */
 @media (prefers-reduced-motion: reduce) {
   :root {

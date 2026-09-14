@@ -74,6 +74,7 @@ export const createIdentity = (options: CreateIdentityOptions): MsalIdentity => 
             severity: 'warn',
             code: `identity.vault.${stage}Failed`,
             module: 'identity',
+            origin: 'foreign',
             message: error instanceof Error ? error.message : String(error),
             detail: {},
           }),

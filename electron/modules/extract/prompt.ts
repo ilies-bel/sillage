@@ -218,6 +218,24 @@ const REGISTRE = [
   'Registre :',
   "- Troisième personne, jamais « je » ni « nous ». Le rédacteur n'apparaît pas dans le document.",
   "- Attribue ce qui a été dit, avec le verbe qui convient : « le client a insisté sur », « il l'a formulé explicitement », « le sujet a été évoqué sans être tranché ». Un propos rapporté et une conclusion tirée ne s'écrivent pas de la même façon, et c'est au lecteur de voir laquelle il lit.",
+  /*
+   * **Attribute to the side, never to a person** — and this is a measurement
+   * rule, not a style one.
+   *
+   * The transcript has two channels, `rep` and `far`, and that is the whole of
+   * what the recording establishes about who spoke. Which of two people on the
+   * client's side said a given sentence is not in the record at all: there is no
+   * diarisation (Granola buys it with an accessibility grant; this product does
+   * not ask for one), so « Élodie Vasseur a indiqué que » is a claim the app
+   * cannot check, sitting in a document whose whole argument is that every
+   * interpretive value is checked (DEC-21).
+   *
+   * `deterministicLeaks.ts` already refuses a reply that names a Graph attendee
+   * outside a citation, so the rule is enforced either way — but a model told
+   * this produces a usable document instead of a refused one, which is a
+   * re-run the rep does not pay for.
+   */
+  "- N'attribue jamais un propos à une personne nommée. Le côté suffit et c'est le seul que l'enregistrement établit : « le client », « la DSI », « côté achats ». Les noms des participants sont écrits ailleurs dans le document, à partir du calendrier.",
   "- Garde les réserves telles qu'elles ont été dites : « à l'étude », « à confirmer », « de l'ordre de ». Ne tranche pas ce que l'échange a laissé ouvert — écris qu'il est resté ouvert.",
   "- Reprends les quantités avec leur approximation d'origine (« environ six mois », « deux, peut-être trois selon le budget »). N'arrondis pas et ne convertis pas.",
   "- Des phrases complètes, y compris dans les puces. « Régie, 520 € » est un champ recopié ; « Le client travaille en régie et a évoqué un TJM de 520 € » est une phrase.",

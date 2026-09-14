@@ -46,13 +46,15 @@ const LABEL: Record<BootStepId, string> = {
 }
 
 /**
- * `none` for `pending`: an unanswered question is not a green light and not a
- * red one. `selected` (brand blue) for the download, because orange has exactly
+ * `pending` for `pending`: an unanswered question is not a green light and not
+ * a red one — but it is not *nothing* either. `none` draws no dot at all, so on
+ * a splash whose two other rows have one, the row still being waited on read as
+ * a rendering fault. An outline is the slot, present and empty. `selected` (brand blue) for the download, because orange has exactly
  * one meaning in this product — armed or recording — and a first-run model
  * fetch is neither.
  */
 const TONE: Record<BootStep['state'], StateDotProps['tone']> = {
-  pending: 'none',
+  pending: 'pending',
   ready: 'ok',
   downloading: 'selected',
   failed: 'down',
@@ -111,8 +113,17 @@ export function Splash({ state }: SplashProps) {
                     `text-right` and `min-w-0` so a long refusal — « module
                     audio natif indisponible — … » — wraps under itself instead
                     of pushing the label off the line.
+
+                    The download says its size and its remaining time, and that
+                    sentence is too long for a right-hand column on a 384px
+                    panel: it wrapped to « environ 1 / min », which is a number
+                    split from its unit on the one screen a rep stares at while
+                    waiting. It goes under the bar instead, where there is a
+                    line's width for it and where the bar it describes is.
                   */}
-                  <span className="text-muted min-w-0 text-right text-ui">{valueOf(step)}</span>
+                  <span className="text-muted min-w-0 text-right text-ui">
+                    {step.state === 'downloading' ? `${step.percent} %` : valueOf(step)}
+                  </span>
                 </div>
 
                 {step.state === 'downloading' ? (
@@ -138,6 +149,9 @@ export function Splash({ state }: SplashProps) {
                       owed the fact that it happens once.
                     */}
                     <p className="text-muted mt-tight text-meta">
+                      {step.value}
+                    </p>
+                    <p className="text-muted text-meta">
                       Téléchargement unique — le modèle reste ensuite sur cette machine.
                     </p>
                   </>

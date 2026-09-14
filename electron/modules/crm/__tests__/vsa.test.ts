@@ -14,11 +14,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { VsaCrm } from '../vsa/VsaCrm.ts'
 import { crmHealth } from '../index.ts'
-import { VsaError, type FetchLike } from '../vsa/http.ts'
+import { VsaError, vsaError, type FetchLike } from '../vsa/http.ts'
 import { ReferentialCache, pick, PICK_HINTS, normalise, REFERENTIALS } from '../vsa/referentials.ts'
 import { VsaSession } from '../vsa/http.ts'
 import type { VsaConfig } from '../vsa/config.ts'
 import type { CompteRenduPayload, OpportunityPayload } from '../../../core/contracts/push.ts'
+import { COMPTE_RENDU_SECTIONS } from '../../../core/contracts/recipes.ts'
 import type { DiagEvent, DiagInput, DiagRecorder } from '../../../core/contracts/diagnostics.ts'
 import {
   REFERENTIAL_BODIES,
@@ -118,9 +119,81 @@ const defaults: Route = (call) => {
   return undefined
 }
 
+/*
+ * **The compte-rendu VerySwing receives, as `renderCompteRendu` composes it.**
+ *
+ * This was `'## Besoin\n\nDeux développeurs Java senior.'` — forty characters,
+ * one heading, no list, no emphasis, no quotation, no `⚠ faible`, no trailing
+ * newline — and the assertion beside it (« the rendered compte-rendu is the
+ * description ») is the one thing in the repo holding VerySwing to the string
+ * the rep read. A fixture simpler than the product bounds how much of that
+ * promise can be checked, and this one bounded it to « a `##` survives ».
+ *
+ * Measured on the shipped adapter with the old fixture: giving the `TEXT` codec
+ * `toColumn: (value) => value.replace(/[ \t]+$/gm, '').trim()` — the whitespace
+ * tidy-up somebody adds when a CRM column complains — passed **all forty**
+ * adapter tests, while stripping the trailing newline off every compte-rendu
+ * this product pushes. `renderCompteRendu` ends every document with exactly one
+ * (`return `${document}${legend}\n``), so that mutation changes the real
+ * document on every call and could not change the fixture.
+ *
+ * Faithful in *constructs* rather than in paragraphs — the six `## ` sections
+ * come from `COMPTE_RENDU_SECTIONS` so they cannot drift from the recipe, and
+ * the guard below refuses the fixture if any construct goes missing. Length is
+ * what a layout fixture needs; what crosses this boundary is characters.
+ */
+const COMPTE_RENDU_BODY = [
+  '# Néovia Santé — cadrage renfort data',
+  '',
+  'Client : Néovia Santé',
+  'Date : mardi 5 août 2026, 14:30 – 15:30',
+  'Interlocuteurs : Élodie Vasseur (elodie.vasseur@neovia-sante.fr)',
+  'Commercial : julien.marchand@synapse-it.fr',
+  '',
+  COMPTE_RENDU_SECTIONS[0],
+  '',
+  'Néovia Santé a voté ce matin le budget de sa plateforme data et cherche un renfort pour sortir ses pipelines Talend avant la fin de l’année.',
+  '',
+  COMPTE_RENDU_SECTIONS[1],
+  '',
+  'Le budget a été voté ce matin en comité d’investissement. L’équipe interne est décrite comme « trois personnes, dont deux à mi-temps sur le sujet ».',
+  '',
+  COMPTE_RENDU_SECTIONS[2],
+  '',
+  'Le client indique qu’« il nous manque deux data engineers » sur la migration.',
+  '',
+  COMPTE_RENDU_SECTIONS[3],
+  '',
+  'Databricks et Airflow en place, dbt en cours de généralisation.',
+  '',
+  COMPTE_RENDU_SECTIONS[4],
+  '',
+  'La grille achats plafonne à 550 € sur un profil confirmé.',
+  '',
+  COMPTE_RENDU_SECTIONS[5],
+  '',
+  'Envoi de trois CV avec les TJM associés avant vendredi.',
+  '',
+  '## Éléments retenus',
+  '',
+  '- **Besoin** : Renforcer l’équipe plateforme pour la migration des pipelines Talend.',
+  '- **TJM évoqué** : 550 €',
+  '',
+  '### Profils recherchés',
+  '',
+  '- 2 × Data Engineer — confirmé (Databricks, Airflow, dbt)',
+  '',
+  '### Objections et points de vigilance',
+  '',
+  '- La grille achats plafonne à 550 € — _sans réponse apportée_ ⚠ faible',
+  '',
+  '⚠ faible : la citation de cette valeur n’a pas été retrouvée dans la transcription. À confirmer auprès du client.',
+  '',
+].join('\n')
+
 const COMPTE_RENDU: CompteRenduPayload = {
   title: 'Aura Technologies — cadrage',
-  body: '## Besoin\n\nDeux développeurs Java senior.',
+  body: COMPTE_RENDU_BODY,
   accountId: 'AURA',
   opportunityRef: null,
   contactIds: ['11'],
@@ -156,6 +229,48 @@ const recorder = (): { events: DiagEvent[]; diagnostics: DiagRecorder } => {
 const posts = (calls: Call[], path: string): Call[] => calls.filter((c) => c.method === 'POST' && c.path === path)
 
 // ── the compte-rendu ───────────────────────────────────────────────────────
+
+test('the fixture carries every construct the composer writes, or it measures nothing', () => {
+  const lines = COMPTE_RENDU_BODY.split('\n')
+  const has = (predicate: (line: string) => boolean): boolean => lines.some(predicate)
+
+  // The recipe's own headings, read from the recipe. One renamed there and not
+  // here is a fixture that has stopped being the document the product writes.
+  for (const heading of COMPTE_RENDU_SECTIONS) {
+    assert.ok(lines.includes(heading), `${heading} is missing — the fixture is not the composer's document`)
+  }
+  assert.ok(
+    has((l) => l.startsWith('# ')),
+    'no `#` title',
+  )
+  assert.ok(
+    has((l) => l.startsWith('### ')),
+    'no `###` subsection',
+  )
+  assert.ok(
+    has((l) => l.startsWith('- ')),
+    'no `- ` list line',
+  )
+  assert.ok(
+    has((l) => l.includes('**')),
+    'no `**gras**` inside a line',
+  )
+  assert.ok(
+    has((l) => /_[^_]+_/.test(l)),
+    'no `_italique_` inside a line',
+  )
+  assert.ok(COMPTE_RENDU_BODY.includes('«') && COMPTE_RENDU_BODY.includes('»'), 'no « … » quotation')
+  assert.ok(COMPTE_RENDU_BODY.includes('’'), 'no typographic apostrophe')
+  assert.ok(COMPTE_RENDU_BODY.includes('⚠ faible'), 'no `⚠ faible` marker')
+  assert.ok(
+    has((l) => l.startsWith('⚠ faible : ')),
+    'no legend line — the composer appends one whenever that marker appears',
+  )
+  // The character a `.trim()` eats, and the only one on this list that nothing
+  // else here would notice missing. See the fixture's own comment.
+  assert.ok(COMPTE_RENDU_BODY.endsWith('\n'), 'the composer ends every document with a newline')
+  assert.ok(!COMPTE_RENDU_BODY.endsWith('\n\n'), 'exactly one trailing newline, as the composer writes it')
+})
 
 test('the compte-rendu is one POST, built from the tenant’s own referentials', async () => {
   const { calls, fetch } = sandbox()
@@ -556,22 +671,55 @@ test('a forbidden account is down with no retry, and a throttle names the wait',
     NOW,
   )
   assert.equal(throttled.state, 'degraded')
-  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30 s/)
+  // U+00A0 — see the same assertion in calendar.test.ts.
+  assert.match(throttled.state === 'degraded' ? throttled.reason : '', /30\u00a0s/)
 })
 
 test('an unknown failure is down but retryable, and never silent', () => {
   const health = crmHealth(new Error('socket coupé'), NOW)
   assert.equal(health.state, 'down')
   assert.equal(health.state === 'down' && health.retryable, true)
-  assert.equal(health.state === 'down' ? health.reason : '', 'socket coupé')
+  // The cause is kept and it is not the whole sentence: VerySwing's own
+  // `message` field reaches here, and nothing promises it is in French.
+  assert.equal(health.state === 'down' ? health.reason : '', 'VerySwing indisponible — socket coupé')
 })
 
 test('a push failure is settled, never thrown — the Outlook draft must still ship', async () => {
+  /*
+   * **And a 5xx on a *create* is terminal, which this test used to deny.**
+   *
+   * It asserted `retryable: true` three lines above another that says « there is
+   * no idempotency key to retry behind » — the suite carried both halves of the
+   * contradiction. A 502/503/504 on a POST is the canonical case where the
+   * upstream did the write and the answer was lost on the way back, so nobody
+   * knows whether the task exists. `Outbox.#ready` is deliberately not gated on
+   * `attempts` and `main.ts` re-drains every pending row at boot: measured, that
+   * was three identical POSTs per drain and three more per relaunch, unbounded,
+   * into the client's system of record.
+   *
+   * What the *name* of this test is about still holds and is the load-bearing
+   * half: it is **settled, not thrown**, so `Outbox` records a reason and the
+   * Outlook draft beside it still ships (DEC-26).
+   */
   const { fetch } = sandbox((call) =>
     call.path === '/v1/crm/tasks' ? { ok: false, status: 500, body: { message: 'boom' } } : undefined,
   )
   const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok, false)
+  assert.equal(result.ok === false && result.retryable, false)
+  assert.match(result.ok === false ? result.reason : '', /boom/)
+})
+
+test('a throttle is retryable on a create, because the server refused before doing anything', async () => {
+  /*
+   * The asymmetry is the whole point. A 429 is a refusal to process, stated by
+   * the server *before* it wrote anything — a fact about the request. A 5xx is a
+   * failure after it started — a guess about the write.
+   */
+  const { fetch } = sandbox((call) =>
+    call.path === '/v1/crm/tasks' ? { ok: false, status: 429, body: { message: 'trop de requêtes' } } : undefined,
+  )
+  const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok === false && result.retryable, true)
 })
 
@@ -590,4 +738,13 @@ test('a create with no id is terminal — there is no idempotency key to retry b
   const result = await new VsaCrm({ config: CONFIG, fetch }).pushCompteRendu(COMPTE_RENDU)
   assert.equal(result.ok, false)
   assert.equal(result.ok === false && result.retryable, false)
+})
+
+test('a read that fails with a 5xx is still retryable — nothing was written', () => {
+  // The method is what separates them: a GET that fails created nothing, so
+  // asking again is free. `vsaError` defaults to GET for the same reason.
+  assert.equal(vsaError(503, '{}', 'GET').retryable, true)
+  assert.equal(vsaError(503, '{}', 'POST').retryable, false)
+  assert.equal(vsaError(429, '{}', 'POST').retryable, true)
+  assert.equal(vsaError(400, '{}', 'GET').retryable, false)
 })

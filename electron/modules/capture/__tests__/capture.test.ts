@@ -25,6 +25,7 @@ import {
   type NativeCapture,
 } from '../nativeModule.ts'
 import type { AudioFrame } from '../index.ts'
+import type { ConnectorHealth } from '../../../core/contracts/health.ts'
 
 /** Lets the deferred `setImmediate` teardown bodies run. */
 const settle = () => new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
@@ -385,4 +386,251 @@ test('a frame arriving after stop is dropped', async () => {
   // must not reach the transcript, or finalize() cannot see a clean audio-end.
   for (const capture of live) capture.onData?.(null, Buffer.from([9]))
   assert.deepEqual(frames, [])
+})
+
+// ── A channel that produces nothing ────────────────────────────────────────
+
+/** One frame with real amplitude, so the classifier sees a meaningful signal. */
+const audible = (): Buffer => {
+  const pcm = Buffer.alloc(640)
+  for (let i = 0; i < 320; i += 1) pcm.writeInt16LE(i % 2 === 0 ? 6_000 : -6_000, i * 2)
+  return pcm
+}
+
+
+test('a channel that never produces a frame says so, per side', async () => {
+  /*
+   * **`SystemAudioHealthClassifier` was constructed only in its own test file.**
+   *
+   * 137 lines written for exactly this — a twelve-second no-chunk watchdog and a
+   * sustained-zero detector — and nothing in the product asked it anything. So
+   * the failure this whole product is built around could happen in silence: on
+   * Windows the loopback taps the *multimedia* default while Teams routes to the
+   * communications default (`speaker/windows.rs` documents that hole itself), a
+   * route change mid-call leaves the tap on an endpoint no longer playing, a
+   * microphone is muted in hardware. In every case the channel yields nothing,
+   * `#onFrame` returns early on keepalives so `#measure` is never reached, no
+   * `InputLevelWatch` is ever created, and `capture.level.tooQuiet` cannot fire.
+   * The header said « Tout fonctionne » and the compte-rendu described a
+   * monologue.
+   *
+   * Per channel, because the two have opposite fixes (DEC-45): nothing on `rep`
+   * is a microphone, nothing on `far` is the system tap, and the sentence has to
+   * say which. `degraded`, never `down` — the meeting is recording and half of
+   * it is arriving (DEC-32).
+   */
+  let now = 0
+  const session = new CaptureSession({ clock: () => now, tickMs: 2 })
+  const health: ConnectorHealth[] = []
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+
+  await session.start()
+  // Twelve seconds of the meeting, with nothing arriving on either channel.
+  for (let i = 0; i < 4; i += 1) {
+    now += 4_000
+    await new Promise((resolve) => setTimeout(resolve, 8))
+  }
+
+  const said = health.filter((h) => h.state === 'degraded').map((h) => (h.state === 'degraded' ? h.reason : ''))
+  assert.ok(
+    said.some((reason) => reason.includes('votre micro')),
+    'le canal du commercial doit être nommé',
+  )
+  assert.ok(
+    said.some((reason) => reason.includes('l’audio de votre ordinateur')),
+    'le canal du client doit être nommé',
+  )
+  await session.stop()
+})
+
+test('a channel that is producing audio says nothing at all', async () => {
+  // The other half, and the reason the watchdog is fed before the keepalive
+  // guard rather than after: a tap that is delivering is a tap nobody should
+  // hear about (DEC-26 — this path may not grow a rule that costs a meeting).
+  let now = 0
+  const session = new CaptureSession({ clock: () => now, tickMs: 2 })
+  const health: ConnectorHealth[] = []
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+
+  await session.start()
+  for (let i = 0; i < 4; i += 1) {
+    now += 4_000
+    // The fake calls back the way the native binding does: `(err, chunk)`.
+    for (const capture of trace.live) capture.onData?.(null, audible())
+    await new Promise((resolve) => setTimeout(resolve, 8))
+  }
+
+  assert.deepEqual(health.filter((h) => h.state !== 'ok'), [])
+  await session.stop()
+})
+
+/** `ConnectorHealth` carries no reason when it is `ok`, so narrow before reading one. */
+const reasonOf = (health: ConnectorHealth | undefined): string =>
+  health && health.state !== 'ok' ? health.reason : ''
+const routeChanged = (health: ConnectorHealth): boolean => /sortie audio/.test(reasonOf(health))
+
+/**
+ * Runs a meeting in which the far channel produces nothing at all, and returns
+ * the sentence the rep is given. The clock is injected past the classifier's
+ * twelve-second window rather than waited out — a check nobody runs is a check
+ * that does not exist.
+ */
+const silentFarChannel = async (options: {
+  defaultOutputDeviceId: () => string | null
+  defaultCommunicationsDeviceId: () => string | null
+}): Promise<string> => {
+  let now = 0
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 2, clock: () => (now += 900), ...options })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+  /*
+   * Waited *for the event*, not for a duration. A fixed sleep passed alone and
+   * failed inside the full suite: the watchdog is a real `setInterval`, and on a
+   * loaded machine it fires a handful of times in eighty milliseconds rather
+   * than forty. A test whose verdict depends on how busy the machine is has no
+   * verdict at all.
+   */
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (health.some((h) => /Rien n’arrive depuis l’audio de votre ordinateur/.test(reasonOf(h)))) {
+      break
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  await session.stop()
+  // The far channel's, specifically: `rep` is the microphone and this sentence
+  // is only ever about the system tap (DEC-45).
+  return (
+    health
+      .map(reasonOf)
+      .find((reason) => /Rien n’arrive depuis l’audio de votre ordinateur/.test(reason)) ?? ''
+  )
+}
+
+/**
+ * **The default output route changed while the tap was open.**
+ *
+ * `getDefaultOutputDeviceId` existed for months with a docblock saying « polled
+ * during a meeting: when it changes, the system capture has to be rebuilt or the
+ * tap keeps recording the old device — which is silence, not an error », and
+ * nothing polled it. Plugging in a headset mid-call, or Teams moving itself to
+ * the communications device, silences the far channel for the rest of the
+ * meeting. The watchdog notices the silence four seconds later; only this can
+ * say why, and « rien n'arrive » and « la sortie a changé » lead a rep to two
+ * different actions.
+ */
+test('a change of output route during the call is reported once, and named', async () => {
+  let route = 'speakers'
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, defaultOutputDeviceId: () => route })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+
+  route = 'casque-bluetooth'
+  await new Promise((resolve) => setTimeout(resolve, 40))
+
+  const changed = health.filter(routeChanged)
+  assert.equal(changed.length, 1, 'dit une fois, pas à chaque tick')
+  assert.equal(changed[0]?.state, 'degraded')
+  // Never `down`: the microphone is still arriving and the meeting is still
+  // being recorded (DEC-32).
+  assert.ok(/le son du client/.test(reasonOf(changed[0])))
+
+  // And back again is not a second sentence — it says nothing the first did not.
+  route = 'speakers'
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(health.filter(routeChanged).length, 1)
+
+  await session.stop()
+})
+
+test('a call app on the other Windows output route is named, and only when it is', async () => {
+  /*
+   * **The hole `speaker/windows.rs` has documented since it was written.**
+   *
+   * The loopback binds `eConsole`; Teams, Zoom and Meet render to
+   * `eCommunications`, which Windows lets a rep set separately in one checkbox.
+   * When the two differ the tap records an endpoint nothing is playing to and
+   * `SystemAudioCapture` produces no chunks at all — which the watchdog reports
+   * as « rien n'arrive », a sentence that sends a rep to look at their
+   * microphone. `default_communications_device_uid` has existed all along,
+   * measured this exactly, and had no `#[napi]`: its one caller appended a label
+   * to a row in the device picker.
+   */
+  const split = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => 'casque-usb',
+  })
+  assert.match(split, /un autre périphérique de sortie/)
+
+  // Same route: the silence has some other cause and this sentence would send
+  // the rep to a checkbox that is already right.
+  const same = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => 'haut-parleurs',
+  })
+  assert.doesNotMatch(same, /un autre périphérique de sortie/)
+
+  // macOS has no such role, and an older binary cannot answer. « We did not
+  // measure it » is never a finding (DEC-45).
+  const unknown = await silentFarChannel({
+    defaultOutputDeviceId: () => 'haut-parleurs',
+    defaultCommunicationsDeviceId: () => null,
+  })
+  assert.doesNotMatch(unknown, /un autre périphérique de sortie/)
+})
+
+test('a binary that cannot answer is never reported as a change', async () => {
+  // `null` is « we cannot tell », which DEC-45 says is not a finding. An older
+  // native module answers that way for the whole meeting.
+  const health: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, defaultOutputDeviceId: () => null })
+  session.on('health', (h: ConnectorHealth) => health.push(h))
+  await session.start()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(health.filter(routeChanged).length, 0)
+  await session.stop()
+})
+
+// ── the Bluetooth headset that halves the transcript ────────────────────────
+
+test('a microphone on a narrowband link is said out loud, once', async () => {
+  /*
+   * **`get_native_sample_rate` was declared, `#[napi]`-exposed, wrapped in both
+   * TS capture classes, and called by nobody.** Its own docblock says it exists
+   * « for diagnostics and HFP/Bluetooth-degradation detection », and nothing in
+   * the product detected that degradation.
+   *
+   * A Bluetooth headset that negotiates HFP « call mode » drops the microphone
+   * to 8 kHz narrowband for the length of the meeting. The audio still arrives,
+   * the meter still moves, and the transcript comes back materially worse — a
+   * failure with no symptom a rep can see, which is the shape this file exists
+   * to end.
+   */
+  const narrow: ConnectorHealth[] = []
+  const session = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 8_000 })
+  session.on('health', (h: ConnectorHealth) => narrow.push(h))
+  await session.start()
+  await session.stop()
+  const said = narrow.map(reasonOf).filter((r) => /mode « communication »/.test(r))
+  assert.equal(said.length, 1, 'dit une fois')
+  assert.match(said[0] ?? '', /8\u00a0kHz/)
+
+  // A real wideband microphone says nothing.
+  const wide: ConnectorHealth[] = []
+  const ok = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 48_000 })
+  ok.on('health', (h: ConnectorHealth) => wide.push(h))
+  await ok.start()
+  await ok.stop()
+  assert.equal(wide.map(reasonOf).filter((r) => /communication/.test(r)).length, 0)
+
+  // And `0` is « we could not tell » — an older binary — which DEC-45 says is
+  // never reported as a finding.
+  const unknown: ConnectorHealth[] = []
+  const old = new CaptureSession({ tickMs: 5, nativeSampleRate: () => 0 })
+  old.on('health', (h: ConnectorHealth) => unknown.push(h))
+  await old.start()
+  await old.stop()
+  assert.equal(unknown.map(reasonOf).filter((r) => /communication/.test(r)).length, 0)
 })

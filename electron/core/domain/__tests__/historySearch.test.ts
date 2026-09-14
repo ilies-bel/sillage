@@ -23,6 +23,9 @@ import {
 } from '../historySearch.ts'
 
 const record = {
+  meeting: 'Sodexial — comité de staffing\nSodexial',
+  /** The rep's own marks, typed from the widget during the call (DEC-49). */
+  marks: 'prix : ils bloquent à 550',
   transcript:
     'alors sur le budget, on est plutôt sur un TJM de 520 euros par jour, et il faudra que Camille valide avant la fin du mois',
   notes: 'penser au démarrage septembre',
@@ -36,10 +39,58 @@ test('an empty query matches nothing and is not a search', () => {
   assert.deepEqual(matchesFor(record, '   '), [])
 })
 
+test('the call’s own name is searchable, which is what a rep types first', () => {
+  /*
+   * **This surface was missing, and it is the one the screen advertises.**
+   *
+   * The other three are all *contents* of a call, so « Sodexial » — the client
+   * name Historique offers as a filter chip one row above the search box —
+   * returned nothing unless somebody had said the word aloud and the
+   * transcriber had spelled it that way. A call that had not reached the gate
+   * was unreachable by name at all: no transcript, no notes, no compte-rendu,
+   * and the search replaces the day list while it is active, so the row was not
+   * on screen either. Four French strings and VISION §6 all said this worked,
+   * and the enum's own comment said « four surfaces » over three values.
+   */
+  assert.deepEqual(
+    matchesFor(record, 'Sodexial').map((m) => m.where),
+    ['meeting'],
+  )
+  // The objet too — « comité de staffing » is how a rep remembers the call.
+  assert.deepEqual(
+    matchesFor(record, 'staffing').map((m) => m.where),
+    ['meeting'],
+  )
+})
+
+test('the call’s name leads the excerpts, because it is the strongest answer', () => {
+  // One excerpt per surface, in a fixed order: a hit on the call's own name
+  // answers « which call was that » outright, a hit in four hundred lines of
+  // transcript barely narrows it.
+  const both = matchesFor(
+    {
+      meeting: 'Sodexial — point TJM',
+      marks: '',
+      transcript: 'le TJM reste ouvert',
+      notes: '',
+      compteRendu: '',
+    },
+    'TJM',
+  )
+  assert.deepEqual(
+    both.map((m) => m.where),
+    ['meeting', 'transcript'],
+  )
+})
+
 test('each surface is searched, and the match says which one it came from', () => {
   assert.deepEqual(
     matchesFor(record, 'TJM').map((m) => m.where),
     ['transcript'],
+  )
+  assert.deepEqual(
+    matchesFor(record, 'bloquent').map((m) => m.where),
+    ['marks'],
   )
   assert.deepEqual(
     matchesFor(record, 'septembre').map((m) => m.where),
@@ -53,7 +104,13 @@ test('each surface is searched, and the match says which one it came from', () =
 
 test('one query can match several surfaces, in a fixed order', () => {
   const both = matchesFor(
-    { transcript: 'on démarre en septembre', notes: 'septembre, à confirmer', compteRendu: '' },
+    {
+      meeting: '',
+      marks: '',
+      transcript: 'on démarre en septembre',
+      notes: 'septembre, à confirmer',
+      compteRendu: '',
+    },
     'septembre',
   )
   assert.deepEqual(
@@ -69,10 +126,173 @@ test('accents and case are folded — a rep who types `demarrage` means `démarr
   assert.equal(matchesFor(record, 'tjm').length, 1)
 })
 
+test('the apostrophe is folded, in both directions — a Windows keyboard types U+0027', () => {
+  /*
+   * Everything stored carries U+2019: `check:french` enforces it in repo prose,
+   * `terms.fr-esn.ts` ships « appel d’offres » as a Whisper boost term, and both
+   * the STT and the composer write it. A Windows AZERTY keyboard — the primary
+   * platform (HR-2) — emits U+0027. So the product's only route back into a past
+   * call answered « Aucun appel ne correspond. » about calls sitting in the
+   * store, for every French contraction there is.
+   */
+  const curly = {
+    meeting: 'Néovia — appel d’offres',
+    marks: '',
+    transcript: 'Le client n’a pas validé l’offre aujourd’hui.',
+    notes: '',
+    compteRendu: '',
+  }
+  for (const query of ["appel d'offres", 'appel d’offres', "l'offre", 'l’offre', "aujourd'hui"]) {
+    assert.ok(matchesFor(curly, query).length > 0, `« ${query} » ne trouve rien`)
+  }
+  // And the other direction: a record written with a straight quote, searched
+  // with the curly one the app itself would produce.
+  const straight = { ...curly, transcript: "Le client n'a pas validé l'offre." }
+  assert.ok(matchesFor(straight, 'l’offre').length > 0)
+
+  // Ligatures, for the same reason and with the same shape: NFD leaves `œ`
+  // alone and `Cœur` is one word to a rep.
+  assert.ok(matchesFor({ ...curly, notes: 'Groupe Cœur de Ville' }, 'coeur').length > 0)
+  assert.ok(matchesFor({ ...curly, notes: 'Groupe Coeur de Ville' }, 'cœur').length > 0)
+})
+
 test('the match is a substring, because ESN vocabulary is compound and inflected', () => {
   // A word-boundary matcher would miss the plural of the most searched term in
   // the product.
   assert.equal(matchesFor({ ...record, notes: 'comparer les TJMs' }, 'TJM').length, 2)
+})
+
+/**
+ * **The one thing a rep can type from inside the call, and no search reached it.**
+ *
+ * A mark (`core/contracts/marks.ts`) is pressed on the widget floating over
+ * Teams — the only Sillage surface a rep can see while the client is talking —
+ * and its note is typed one-handed, capped at 280 characters. The widget drew
+ * it, both readers drew it, `Projections.marks` folded it, and `searchableRecord`
+ * folded four surfaces of which this was not one: « prix : ils bloquent à 550 »
+ * was in the record and `550` did not find it. The product's answer to « a rep
+ * who is talking is not looking for a button » was write-only.
+ */
+test('the rep’s own marks are searchable — the one surface they can write in the call', () => {
+  assert.deepEqual(
+    matchesFor(record, '550').map((m) => m.where),
+    ['marks'],
+  )
+  // Typed one-handed, so found the way it was typed: folded like everything else.
+  assert.deepEqual(
+    matchesFor(record, 'BLOQUENT').map((m) => m.where),
+    ['marks'],
+  )
+  // Second in the order, above the rep's own notes and above the transcript: a
+  // mark is one sentence the rep chose to type *while the client was talking*.
+  const everywhere = matchesFor(
+    {
+      meeting: 'Sodexial — point TJM',
+      marks: 'TJM bloqué à 550',
+      transcript: 'le TJM reste ouvert',
+      notes: 'TJM à revoir',
+      compteRendu: 'Le TJM retenu est de 550 euros.',
+    },
+    'TJM',
+  )
+  assert.deepEqual(
+    everywhere.map((m) => m.where),
+    ['meeting', 'marks', 'transcript', 'notes', 'compteRendu'],
+  )
+})
+
+/**
+ * **One « œ » used to destroy every excerpt on the surface.**
+ *
+ * The index was found in a folded copy and applied to the original only after
+ * both were checked to be the same length; when they were not, the excerpt fell
+ * back to the first eighty characters of the surface — which is true, readable,
+ * and **not an excerpt**: the row exists to say which surface matched *and
+ * where*. The justification named `ﬁ` as the character that folds to two, and
+ * `ﬁ` does not — its decomposition is a compatibility one, so `NFD` leaves it
+ * alone. The two that do are the two this fold writes itself, and « mise en
+ * œuvre », « cœur de métier » and « nœud » are ordinary ESN French.
+ */
+test('the excerpt finds the hit even when the fold is not length-preserving', () => {
+  // Executed, not asserted from a docblock: `ﬁ` is length-preserving here and
+  // the ligatures this fold writes are not.
+  assert.equal(fold('ﬁ').length, 'ﬁ'.length)
+  assert.equal(fold('œ'), 'oe')
+  assert.equal(fold('æ'), 'ae')
+  assert.ok(fold('œ').length > 'œ'.length)
+
+  const transcript =
+    'Alors, sur la mise en œuvre : on démarre le lot 1 en septembre, avec deux ' +
+    'ingénieurs sur site. Le cœur de métier reste la plateforme de facturation. ' +
+    'Côté budget, leur grille achats plafonne le TJM à 520 euros sur un profil ' +
+    'confirmé, et Camille doit valider avant la fin du mois.'
+  const oeuvre = { meeting: '', marks: '', transcript, notes: '', compteRendu: '' }
+
+  for (const query of ['TJM', 'Camille', 'facturation']) {
+    const [match] = matchesFor(oeuvre, query)
+    assert.ok(match, `« ${query} » ne trouve rien`)
+    assert.ok(
+      match.excerpt.includes(query),
+      `l’extrait de « ${query} » ne contient pas ce qui a été trouvé : ${match.excerpt}`,
+    )
+  }
+
+  // And the window is the same one the ligature-free spelling produces, because
+  // the offsets are mapped rather than abandoned.
+  const plain = transcript.replace(/œ/g, 'oe')
+  assert.equal(
+    matchesFor({ ...oeuvre, transcript }, 'TJM')[0]?.excerpt,
+    matchesFor({ ...oeuvre, transcript: plain }, 'TJM')[0]?.excerpt,
+  )
+
+  // The hit itself can be the ligature. « nœud » typed either way finds the
+  // other, and the excerpt still opens on the word rather than on the call.
+  const nodes =
+    'On garde le nœud de routage actuel pendant toute la phase 1, ' +
+    'et on bascule ensuite sur la nouvelle plateforme de facturation en juin.'
+  for (const query of ['nœud', 'noeud']) {
+    const [match] = matchesFor({ ...oeuvre, transcript: nodes }, query)
+    assert.ok(match, `« ${query} » ne trouve rien`)
+    assert.match(match.excerpt, /nœud de routage/)
+  }
+})
+
+/**
+ * **The property the excerpt has, proved over every window of real French.**
+ *
+ * The two length-changing characters were found by reading; the guard they broke
+ * was justified with a third that does not have the property at all. So the rule
+ * is stated once and checked exhaustively instead of by example: whatever a rep
+ * types, if it is found, the window that comes back contains it. Whitespace is
+ * collapsed on both sides because `ellipsise` collapses it in the excerpt.
+ */
+test('whatever is found is inside the excerpt — every window, not a chosen one', () => {
+  const corpus = [
+    'Sur la mise en œuvre du lot 2, le cœur de métier reste la facturation, et le nœud de routage ne bouge pas.',
+    'Leur grille achats plafonne le TJM à 520 euros ; Camille valide avant la fin du mois.',
+    'Le client n’a pas validé l’offre aujourd’hui — l’appel d’offres part en février.',
+    'Deux profils Java confirmés, démarrage septembre, astreinte à cadrer avec les achats.',
+    'Ex æquo sur les deux candidats : on part sur celui qui connaît déjà la plateforme.',
+  ]
+  const flat = (value: string): string => fold(value).replace(/\s+/g, ' ').trim()
+  let windows = 0
+  for (const text of corpus) {
+    for (const length of [3, 7, 14, 31]) {
+      for (let start = 0; start + length <= text.length; start += 1) {
+        const needle = text.slice(start, start + length)
+        if (needle.trim() === '') continue
+        const [match] = matchesFor({ meeting: '', marks: '', transcript: text, notes: '', compteRendu: '' }, needle)
+        assert.ok(match, `« ${needle} » ne trouve rien dans un texte qui le contient`)
+        assert.ok(
+          flat(match.excerpt).includes(flat(needle)),
+          `l’extrait ne contient pas « ${needle} » : ${match.excerpt}`,
+        )
+        windows += 1
+      }
+    }
+  }
+  // A check that measures nothing is worse than no check.
+  assert.ok(windows > 1000, `seulement ${windows} fenêtres mesurées`)
 })
 
 test('the excerpt is a window around the hit, not the surface it was cut from', () => {
@@ -87,7 +307,10 @@ test('the excerpt is a window around the hit, not the surface it was cut from', 
 })
 
 test('a hit at the very start is not elided at the front', () => {
-  const [match] = matchesFor({ transcript: 'TJM évoqué', notes: '', compteRendu: '' }, 'TJM')
+  const [match] = matchesFor(
+    { meeting: '', marks: '', transcript: 'TJM évoqué', notes: '', compteRendu: '' },
+    'TJM',
+  )
   assert.equal(match?.excerpt, 'TJM évoqué')
 })
 
@@ -102,6 +325,82 @@ test('the excerpt is cut from the original text, accents intact', () => {
 test('whitespace is collapsed, so a markdown excerpt is one readable line', () => {
   const [match] = matchesFor(record, 'Contexte')
   assert.equal((match?.excerpt ?? '').includes('\n'), false)
+})
+
+/*
+ * ── the space nobody can see ────────────────────────────────────────────────
+ *
+ * The apostrophe's failure, one character further out and found the same way.
+ * French typography puts U+00A0 before `: ; ! ?` and U+202F inside « … »; Word
+ * and Outlook insert them by autocorrect, so a note pasted out of a mail thread
+ * carries both, and a keyboard emits U+0020 and nothing else. What made it worse
+ * than the apostrophe is that it could not be *diagnosed*: `ellipsise` collapses
+ * every run of whitespace, so an excerpt of that same note renders with ordinary
+ * spaces — there was nothing on any screen to notice.
+ */
+test('the no-break spaces are folded, so a note pasted out of Outlook is findable', () => {
+  const pasted = {
+    meeting: '',
+    marks: '',
+    transcript: '',
+    // Exactly what lands in the notepad: U+202F before the colon (Outlook),
+    // U+00A0 between two words (Word's autocorrect on « profil senior »).
+    notes: 'Le client bloque à 550\u202f: il faut un profil\u00a0senior.',
+    compteRendu: '',
+  }
+
+  for (const query of ['550 :', 'bloque à 550 :', 'profil senior']) {
+    assert.equal(matchesFor(pasted, query).length, 1, `« ${query} » doit trouver l’appel`)
+  }
+
+  // And the other direction: a rep who pastes the phrase *back* into the box
+  // finds a note typed with ordinary spaces.
+  const typed = { meeting: '', marks: '', transcript: '', notes: 'un profil senior', compteRendu: '' }
+  assert.equal(matchesFor(typed, 'profil\u00a0senior').length, 1)
+
+  // One character in, one character out, which is what leaves `foldMapped`'s
+  // index map — and therefore every excerpt offset on this screen — untouched.
+  assert.equal(fold('a\u00a0b'), 'a b')
+  assert.equal(fold('a\u202fb'), 'a b')
+  assert.equal(fold('a\u00a0b').length, 3)
+})
+
+test('a zero-width character is left alone: this fold never deletes', () => {
+  // The line the rule is drawn on. Folding U+200B away would make the fold
+  // change length in a *second* way, and no French input method puts one
+  // between two words a rep means to search for.
+  assert.equal(fold('a\u200bb'), 'a\u200bb')
+})
+
+/*
+ * ── half a character is not a character ─────────────────────────────────────
+ *
+ * `CONTEXT` is counted in UTF-16 units and the slice is taken in them, so a
+ * window edge can land *between the halves of one character*: an emoji in a
+ * rep's note, a rare ideograph in a client's name. What shipped was a lone
+ * surrogate, which no font can draw — the row's evidence opened on `<?>`, on the
+ * screen whose whole job is to say where a call was found.
+ */
+test('an excerpt never carries half a surrogate pair', () => {
+  const lone = (text: string): boolean =>
+    [...text].some((c) => {
+      const point = c.codePointAt(0) as number
+      return point >= 0xd800 && point <= 0xdfff
+    })
+
+  // Every offset of the astral character relative to the window edge, because
+  // exactly one of them splits it and the others must stay untouched.
+  for (let pad = 0; pad < 4; pad += 1) {
+    const transcript = `${'x'.repeat(pad)}\u{1f44d}${'y'.repeat(40 - pad - 1)}TJM de 520 euros`
+    const [match] = matchesFor(
+      { meeting: '', marks: '', transcript, notes: '', compteRendu: '' },
+      'TJM',
+    )
+    assert.ok(match, `pad=${pad}`)
+    assert.equal(lone(match.excerpt), false, `pad=${pad}: ${JSON.stringify(match.excerpt)}`)
+    // Nudged outward, so the character is kept rather than half-dropped.
+    assert.ok(match.excerpt.includes('\u{1f44d}'), `pad=${pad}`)
+  }
 })
 
 // ── The filter chips (DEC-25, DEC-31) ───────────────────────────────────────

@@ -78,13 +78,35 @@ const messageOf = (body: string, status: number): string => {
   return `VerySwing a répondu ${status}`
 }
 
-export const vsaError = (status: number, body: string): VsaError =>
+/**
+ * **Whether this failure may be tried again — and it depends on the method.**
+ *
+ * 429 and 5xx are weather. A 4xx we caused is not, and retrying it forever is
+ * how an outbox jams (`core/contracts/push.ts`). That was the whole rule, shared
+ * by reads and writes, and for a **create** it is the wrong one.
+ *
+ * `POST /v1/crm/tasks` has no idempotency key — an invariant this repo states
+ * twice — and a 502/503/504 on a create is the canonical case where the upstream
+ * *did* the write and the answer was lost on the way back. `Outbox.#ready` is
+ * deliberately not gated on `attempts` and `main.ts` re-drains every pending row
+ * at boot, so classifying that retryable meant three identical POSTs per drain
+ * and three more on every relaunch, unbounded, into the client's system of
+ * record, with no merge on the remote side. Measured: 6 POSTs across two drains.
+ *
+ * So a 5xx on a POST is terminal, and that is exactly what CLAUDE.md reserves
+ * `failed` for: the attempt threw, nobody knows whether the record exists, and a
+ * *Réessayer* would be a duplicate one click away. The cause lands on the row.
+ *
+ * **429 stays retryable on both**, and the asymmetry is the point: a throttle is
+ * a refusal to process, stated by the server before it did anything. A 5xx is a
+ * failure *after* it started. One is a fact about the request, the other a guess
+ * about the write.
+ */
+export const vsaError = (status: number, body: string, method: 'GET' | 'POST' = 'GET'): VsaError =>
   new VsaError({
     status,
     message: messageOf(body, status),
-    // 429 and 5xx are weather. A 4xx we caused is not, and retrying it forever
-    // is how an outbox jams (`core/contracts/push.ts`).
-    retryable: status === 429 || status >= 500,
+    retryable: status === 429 || (status >= 500 && method !== 'POST'),
     retryAfterMs: null,
     notFound: status === 404,
   })
@@ -212,7 +234,7 @@ export class VsaSession {
   ): Promise<unknown> {
     const body = await response.text().catch(() => '')
     if (!response.ok) {
-      const error = vsaError(response.status, body)
+      const error = vsaError(response.status, body, request.method)
       throw new VsaError({
         status: error.status,
         message: `${error.message} (${request.method} ${request.operationPath})`,

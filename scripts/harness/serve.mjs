@@ -31,6 +31,7 @@ import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { pinnedNow } from './pinnedNow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const UPSTREAM = process.env.SILLAGE_URL ?? 'http://localhost:5180'
@@ -79,20 +80,6 @@ const frozenClock = (now) => `
       }
       window.Date.parse = Pinned.parse
       window.Date.UTC = Pinned.UTC`
-
-/** Today at 14:35 Paris — the same instant `shot.mjs` pins to. */
-const pinnedNow = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const read = Object.fromEntries(parts.map((p) => [p.type, p.value]))
-  const guess = Date.UTC(Number(read.year), Number(read.month) - 1, Number(read.day), 14, 35)
-  const shown = new Date(guess).toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false })
-  return guess - (new Date(shown).getHours() - 14) * 3_600_000
-}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)

@@ -232,6 +232,7 @@ export class ReferentialCache {
         severity: 'warn',
         code: 'crm.referential.unavailable',
         module: 'crm',
+        origin: 'authored',
         message: `référentiel « ${spec.label} » indisponible`,
         detail: { referential: spec.id, reason: error instanceof Error ? error.message : String(error) },
       })

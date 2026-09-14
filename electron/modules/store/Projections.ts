@@ -11,6 +11,7 @@ import type { EventLog } from './EventLog.ts'
 import type { Meeting, MeetingContext, MeetingState } from '../../core/contracts/meeting.ts'
 import type { OutboxEntry, PushIntent } from '../../core/contracts/push.ts'
 import type { Signal } from '../../core/contracts/signals.ts'
+import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { TranscriptSegment } from '../../core/contracts/transcript.ts'
 import type { ExtractionESN, VerificationReport } from '../../core/contracts/extraction.ts'
 import { DEFAULT_RECIPE, type RecipeId } from '../../core/contracts/recipes.ts'
@@ -78,6 +79,17 @@ const toOutbox = (r: OutboxRow): OutboxEntry => ({
   remoteId: r.remote_id,
   updatedAt: r.updated_at,
 })
+
+/**
+ * The prefix `core/domain/adHoc.ts` mints an unscheduled call's id with.
+ *
+ * Restated here rather than imported because `adHocMeetingId` builds a whole id
+ * and this needs the stem — and held to that function by a unit test, the way
+ * `preloadUnwrap.test.ts` holds a shape it cannot import: the day the convention
+ * moves, the test fails instead of this quietly matching nothing and the residue
+ * coming back.
+ */
+export const AD_HOC_ID_PREFIX = 'adhoc-'
 
 export class Projections {
   #log: EventLog
@@ -252,10 +264,38 @@ export class Projections {
   }
 
   /**
-   * Re-evaluates the DAG (DEC-20). An intent is drainable once every dependency
-   * has drained; a dependency that failed terminally blocks its dependants and
-   * **nothing else** — which is what keeps the Outlook draft shipping while VSA
-   * is down (DEC-26).
+   * Re-evaluates the DAG (DEC-20). `blocked` means **a dependency has not
+   * settled yet** — and it used to mean « or has failed », which was a terminal
+   * state with no exit and no sentence.
+   *
+   * One VSA 500 on the opportunity left the compte-rendu task `blocked` for the
+   * life of the database. Driven end to end:
+   *
+   *     OUTBOX: [['i-task','blocked',null], ['i-opp','failed','VSA: 500']]
+   *     MEETING STATE: pushing
+   *     updateReadiness: { safe: false, reason: 'un envoi vers VerySwing est en cours' }
+   *     --- next launch ---
+   *     drainable(): []   interrupted(): []   -> nothing ever names it again
+   *
+   * `drainable()` is `state = 'pending'`, so no boot re-drain reached it; there
+   * was no path from `blocked` at all. The compte-rendu — the product's primary
+   * deliverable into the client's CRM — was **never attempted, ever**, while
+   * *Historique* drew « en attente d'un autre envoi », which was false and
+   * quieter than the `failed` row beside it. `allIntentsSettled` counts only
+   * `drained`/`failed`, so the meeting never reached `done`; and because
+   * `Orchestrator.session()` caches the rehydrated session, `liveStates()`
+   * carried `pushing` from boot onwards and **the app could never install an
+   * update again**, on the primary platform.
+   *
+   * So a dependency that has settled — either way — releases its dependants.
+   * The ordering exists to carry the opportunity's remote id into the task
+   * (`#withDependencyRef`), and that function already handles a dependency that
+   * did not drain: the reference stays null, and `VsaCrm.link()` falls through
+   * to the company. A compte-rendu linked to the account is worth incomparably
+   * more than no compte-rendu at all, and DEC-26 says in as many words that
+   * nothing downstream may cost the thing upstream. What blocking was written
+   * to protect is untouched: a dependant is never sent *before* its dependency
+   * is decided, and an intent whose dependency is still in flight still waits.
    */
   #recomputeBlocked(meetingId: string, ts: number): void {
     const log = this.#log
@@ -265,7 +305,10 @@ export class Projections {
     for (const row of rows) {
       if (row.state === 'drained' || row.state === 'failed' || row.state === 'draining') continue
       const deps = JSON.parse(row.depends_on) as string[]
-      const ready = deps.every((d) => byId.get(d)?.state === 'drained')
+      const ready = deps.every((d) => {
+        const state = byId.get(d)?.state
+        return state === 'drained' || state === 'failed'
+      })
       const next = ready ? 'pending' : 'blocked'
       if (next !== row.state) {
         log.run(
@@ -293,33 +336,92 @@ export class Projections {
   // ── Reads ────────────────────────────────────────────────────────────────
 
   /**
-   * The meetings, newest-updated first, optionally bounded by the day they
-   * belong on (DEC-31).
+   * The meetings, newest first, optionally bounded by the day they belong on
+   * (DEC-31).
    *
-   * `COALESCE(scheduled_start, started_at, created_at)` is the anchor, and it is
-   * the same order `core/domain/historySearch.ts` and the calendar's own
-   * `entries.ts` place a row by. It is computed in SQL rather than filtered in
+   * `COALESCE(scheduled_start, started_at, created_at)` is the anchor —
+   * `meetingAnchor` in `core/contracts/meeting.ts`, the same order the calendar
+   * grid and *Période* place a row by — and it now orders the list as well as
+   * bounding it. It used to `ORDER BY updated_at DESC`, which is the last time
+   * the event log touched the row and not a date: a call validated late sorted
+   * above a call held two days after it, and Historique, whose only organising
+   * principle is recency, printed its rows out of order. `id DESC` breaks the
+   * tie so a page boundary is stable. It is computed in SQL rather than filtered in
    * JavaScript for the reason the range exists at all: a month grid paged back
    * a year must not have to read — and ship — every meeting since, only to throw
    * away all but six weeks of them.
    *
    * A null bound is unbounded on that side, so `listMeetings(500)` still means
    * what it always meant.
+   *
+   * **An unscheduled call that was offered and never accepted is not a meeting
+   * the rep had, and it is the one thing this list leaves out.** The detector
+   * calls `orchestrator.create()` at the moment it makes an *offer* (DEC-46) —
+   * it has to, because arming needs a session — so every false positive wrote a
+   * permanent row into the rep's own record: measured, one 90-second browser
+   * microphone hold with the offer ignored left « Appel non planifié —
+   * Navigateur » in `idle`, drawn in the day grid with an *Ouvrir* button onto an
+   * empty meeting, indexed by `searchableRecord`, and with no delete verb
+   * anywhere in the product (DEC-27). The false positives are not exotic: Loom or
+   * Vidyard in a browser tab, a Slack clip — any of them holds the microphone
+   * past the dwell.
+   *
+   * It is excluded **here**, in the projection, and not at the four call sites
+   * (`entries.ts`, *Historique*, `searchableRecord`, `PendingGates`) so there is
+   * one rule rather than four that drift. The `meeting.created` stays in the log:
+   * that is genuine history and DEC-27 leaves exactly one delete in this
+   * codebase. The projection is the *view*, and this view should not carry a
+   * meeting that never started.
+   *
+   * **Three things the predicate deliberately does not say**, each measured
+   * against the real store rather than reasoned about:
+   *
+   *  · Not « no `event_id` and no `started_at` and `idle` », which is what the
+   *    residue looks like structurally — because that is *also* exactly what
+   *    « Ajouter au jeudi » looks like (DEC-31: a rep can create and record a
+   *    meeting on any day) and what « Démarrer une réunion » looks like between
+   *    `meeting:create` and a `start` that was refused. Measured, that predicate
+   *    hid three rows and only one of them was residue: a call the rep had
+   *    deliberately placed on Thursday would have vanished from the calendar,
+   *    and a meeting whose immediate start failed would have vanished from under
+   *    the rep while they were looking at its session screen, with no row
+   *    anywhere to reach it by again.
+   *  · So the test is *provenance*, and provenance is in the id. `adhoc-`,
+   *    `man-` and `evt-` exist precisely so that « where did this session come
+   *    from » is answerable from the id alone months later in a diagnostics
+   *    bundle; `AD_HOC_ID_PREFIX` names the one this needs and a test holds it to
+   *    `adHocMeetingId` so the two cannot drift apart silently.
+   *  · Not `state != 'idle'`. An offer still standing is `armed` and stays
+   *    listed — that one genuinely wants attention — and an accepted call has a
+   *    `started_at`, which is the second half of the test and what makes a call
+   *    that was recorded, abandoned mid-recording, or crashed out of `recording`
+   *    at boot impossible to hide.
+   *
+   * **A null `limit` is unbounded too**, and it is what `history:search` asks
+   * for. DEC-25's promise is every call ever captured, and a search that reads
+   * the five hundred most recent meetings cannot keep it: the five hundred and
+   * first was unfindable and the screen said « Aucun appel ne correspond. »
+   * Unbounded here is one `SELECT` over a projection table — the cost of a
+   * search is the *per-meeting* fold the caller does next, which is why that
+   * caller runs the cheap axes first.
    */
-  listMeetings(limit = 50, range?: MeetingRange | null): Meeting[] {
+  listMeetings(limit: number | null = 50, range?: MeetingRange | null): Meeting[] {
     const from = range?.from ?? null
     const to = range?.to ?? null
     const rows = this.#log.all<MeetingRow>(
       `SELECT * FROM meetings
-         WHERE (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) >= ?)
+         WHERE NOT (id LIKE '${AD_HOC_ID_PREFIX}%' AND state = 'idle' AND started_at IS NULL)
+           AND (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) >= ?)
            AND (? IS NULL OR COALESCE(scheduled_start, started_at, created_at) <= ?)
-         ORDER BY updated_at DESC
+         ORDER BY COALESCE(scheduled_start, started_at, created_at) DESC, id DESC
          LIMIT ?`,
       from,
       from,
       to,
       to,
-      limit,
+      // SQLite reads a negative `LIMIT` as no limit at all, which is the one
+      // spelling of « everything » that needs no second query.
+      limit ?? -1,
     )
     return rows.map(toMeeting)
   }
@@ -341,6 +443,34 @@ export class Projections {
   drainable(): OutboxEntry[] {
     const rows = this.#log.all<OutboxRow>(
       `SELECT * FROM outbox WHERE state = 'pending' ORDER BY updated_at ASC`,
+    )
+    return rows.map(toOutbox)
+  }
+
+  /**
+   * **Every row a previous process was still POSTing, across every meeting.**
+   *
+   * `draining` means `push.started` was appended and no `push.settled` followed:
+   * the request is on the wire, or the process that sent it is gone. Live, the
+   * first is the only possibility and this answers nothing useful. **At boot the
+   * second is the only possibility**, and it is the one state in the outbox with
+   * no recovery of its own — `Outbox.#reclaim` settles exactly these rows, and
+   * it runs as the first line of `#drain`, which `main.ts` calls once per
+   * meeting named by `drainable()`. `drainable()` is `state = 'pending'`. So a
+   * meeting whose *only* non-terminal row is `draining` was never passed to
+   * `drain()`, `#reclaim` never ran, and the row stayed `draining` for the life
+   * of the database: « envoi en cours » on the Historique row for ever, no
+   * reason, no `pushSettled`, and — because `updateGate.ts` refuses an installer
+   * while a push is in flight — no updates either. `POST /v1/crm/tasks` has no
+   * idempotency key, so the rep could not safely check by sending it again.
+   *
+   * The trigger is not a crash. The confirmation handler fires the drain without
+   * awaiting it, deliberately, so a rep is never made to wait — and closing the
+   * window on Windows quits the app.
+   */
+  interrupted(): OutboxEntry[] {
+    const rows = this.#log.all<OutboxRow>(
+      `SELECT * FROM outbox WHERE state = 'draining' ORDER BY updated_at ASC`,
     )
     return rows.map(toOutbox)
   }
@@ -370,6 +500,28 @@ export class Projections {
       if (event.type === 'transcript.segment') out.push(event.segment)
     }
     return out
+  }
+
+  /**
+   * The rep's own bookmarks (`core/contracts/marks.ts`), oldest first.
+   *
+   * A fold over the log and not a table, for the reason `intents` and
+   * `signals` are: a handful per meeting, read only when a screen that draws
+   * this call is open, and `at` is the whole of the ordering — there is no
+   * query here that SQL would answer better, and a projection table would be a
+   * schema version and a refold bought for nothing.
+   */
+  marks(meetingId: string): MomentMark[] {
+    const out: MomentMark[] = []
+    const forgotten = new Set<string>()
+    for (const { event } of this.#log.read(meetingId)) {
+      if (event.type === 'moment.marked') out.push(event.mark)
+      // A mark taken back (`moment.forgotten`). Collected in the same pass and
+      // applied after it, so the order of the two events in the log cannot
+      // matter — a re-marked id would otherwise come back from the dead.
+      if (event.type === 'moment.forgotten') forgotten.add(event.markId)
+    }
+    return out.filter((mark) => !forgotten.has(mark.id)).sort((a, b) => a.at - b.at)
   }
 
   signals(meetingId: string): Signal[] {
@@ -426,6 +578,33 @@ export class Projections {
     let latest: { revision: number; doc: unknown } | null = null
     for (const { event } of this.#log.read(meetingId)) {
       if (event.type === 'document.snapshot') latest = { revision: event.revision, doc: event.doc }
+    }
+    return latest
+  }
+
+  /**
+   * The compte-rendu as the rep validated it, or null if nobody ever did.
+   *
+   * Folded on demand and not a column, for the reason `recipe()` is not one:
+   * it is read one meeting at a time, by the screen showing that meeting.
+   *
+   * The last confirmation wins, which is the same rule `extraction()` applies
+   * to the last extraction — a meeting can only be confirmed once today, but
+   * the fold must not depend on that staying true.
+   *
+   * **`''` is a value and `null` is an absence**, and the two say opposite
+   * things: the first is a rep who deleted the document and validated anyway
+   * (`reviewGate.ts` allows exactly that), the second is a confirmation
+   * written before the field existed — or no confirmation at all — where the
+   * caller falls back to rendering the stored extraction. Testing the key for
+   * `!= null` rather than for truthiness is the whole of that distinction.
+   */
+  confirmedCompteRendu(meetingId: string): string | null {
+    let latest: string | null = null
+    for (const { event } of this.#log.read(meetingId)) {
+      if (event.type === 'confirmation.recorded' && event.compteRendu != null) {
+        latest = event.compteRendu
+      }
     }
     return latest
   }

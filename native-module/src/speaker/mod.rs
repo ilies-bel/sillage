@@ -14,6 +14,8 @@ pub use macos::SpeakerInput;
 pub use macos::SpeakerStream;
 #[cfg(target_os = "macos")]
 pub use sck::default_output_device_uid;
+#[cfg(target_os = "macos")]
+pub use sck::default_communications_device_uid;
 
 #[cfg(target_os = "windows")]
 pub mod windows;
@@ -25,6 +27,8 @@ pub use windows::SpeakerInput;
 pub use windows::SpeakerStream;
 #[cfg(target_os = "windows")]
 pub use windows::default_output_device_uid;
+#[cfg(target_os = "windows")]
+pub use windows::default_communications_device_uid_or_empty as default_communications_device_uid;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub mod fallback {
@@ -77,6 +81,10 @@ pub mod fallback {
     pub fn default_output_device_uid() -> String {
         String::new()
     }
+
+    pub fn default_communications_device_uid() -> String {
+        String::new()
+    }
 }
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub use fallback::list_output_devices;
@@ -86,3 +94,5 @@ pub use fallback::SpeakerInput;
 pub use fallback::SpeakerStream;
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub use fallback::default_output_device_uid;
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub use fallback::default_communications_device_uid;

@@ -7,7 +7,18 @@ The ordered task list. Read [CLAUDE.md](./CLAUDE.md) first for the rules,
 VerySwing records and an Outlook draft. Every step below is built to demo depth. Anything
 marked *deferred* is designed for but not built yet.
 
-Mark steps done by ticking them here. This file is the progress record.
+Mark steps done by ticking them here. This file is the progress record — **of the ten
+steps**, and of nothing else. Everything since round 23 lives in
+[docs/STORIES.md](./docs/STORIES.md): the stories, the adversarial rounds, the lane table and
+the eight recurring defect shapes. Two backlogs is one too many, so a step that is complete is
+ticked *with how it was verified*, and work that is not a step is a story there rather than a
+new row here.
+
+**And a tick is not evidence.** Step 10 carried « None of it is in the code yet » over seven
+shipped features, on the file CLAUDE.md tells a new reader to start with — the same failure as
+the harness README's « known fixture debt », which spent three rounds disarming reviewers
+against judgements that had become sound. `check:french` reads this file for apostrophes, not
+for claims. Measure before trusting a sentence here.
 
 ---
 
@@ -500,28 +511,54 @@ The screen the demo is watched on.
   - [x] `note/schema.ts` — adapted: upstream's eight custom node views are down to zero.
         `taskList`/`taskItem`, `image`/`fileAttachment`, `appLink`, `mention-@`, `session` and
         `clip` are their product, and every node type the document can contain is a shape
-        `modules/extract/` has to read. Node *names* kept exactly (`codeBlock`, `bulletList`,
+        `core/domain/documentText.ts` has to flatten for `modules/extract/`. Node *names* kept exactly (`codeBlock`, `bulletList`,
         `listItem`, `hardBreak`) so a document written by either tree parses in the other.
-  - [x] `note/title-layout.ts`, `note/trailing-empty-line-click.ts`, `transaction-guard.ts` —
-        verbatim, with their tests.
+  - [x] `note/trailing-empty-line-click.ts`, `transaction-guard.ts` — verbatim, with their
+        tests, and **wired**: the click plugin is in `Notepad.tsx`'s plugin list and the guard
+        is its `dispatchTransaction`. They were ported, tested and called by nobody, which is
+        the failure this list has recorded four times elsewhere — `[x]` next to a file is not
+        `[x]` next to a behaviour. The pane under « Vos notes… » did not take a click over 96%
+        of its height (measured: a 26px editable in a 724px pane at 1280×800, 476 of 502 dead
+        at 960×600), and a throw out of `applyTransaction` could not reach the error boundary,
+        because it happens in a DOM handler React never sees.
+  - [x] ~~`note/title-layout.ts`~~ — **deleted**, with its test and with `note/keymap.ts`'s
+        `onNavigateToTitle` parameter and the three handlers that hung off it. It forced the
+        document's first block to be an `h1` because upstream's note had a title *line*; here a
+        meeting's title is the calendar's objet, drawn in the session header, and DEC-5 forbids
+        anything writing into the rep's document during a call. Nothing ever passed the
+        callback, and there is nothing for it to reach.
   - [x] Renderer test harness: **vitest + jsdom**, driven from `scripts/run-tests.mjs` so
         `npm test` is still one command. A second framework, for one reason — the ported code
         keeps its upstream tests and those tests are vitest. Rewriting them into `node --test`
         would be rewriting the thing that made the port worth doing.
   - [x] `scripts/lib/boundaries.mjs` fix: the renderer rule denied `src/` importing *itself*.
         It is about what the renderer may reach into `electron/` for, not one import path and
-        no other; `src/editor/note/title-layout.ts` needs `./schema`. Regression test added.
+        no other; `src/editor/note/keymap.ts` needs `./schema`. Regression test added.
   - [x] `note/keymap.ts` — adapted: upstream's Enter/Backspace/Tab handlers special-case
         `taskItem` before falling through to `listItem`; with the node gone the special cases
         went and the `listItem` paths they sat in front of are what remain.
-  - [x] `markdown.ts` + `markdown/{parser,schema,serializer}.ts`. **One deliberate behaviour
-        change:** upstream catches everything in both directions, so an unserialisable
-        document becomes `""`. Its own test file calls that out as a known hazard. Here
-        `json2md` throws `MarkdownSerializationError` instead, because its output is what
-        step 8 writes into the VSA task's `taskDescription` — a silent `""` means the rep
-        clicks *Valider*, the push succeeds, and the CRM records a meeting whose compte-rendu
-        is empty. `md2json` still falls back, because unparseable markdown degrades to the
-        same text as one paragraph and loses nothing.
+  - [x] ~~`markdown.ts` + `markdown/{parser,schema,serializer}.ts`~~ — **deleted**, with
+        `markdown.test.ts`, and with `markdown-it` and `prosemirror-markdown` out of
+        `dependencies` (2.5 MB of `node_modules`, shipped inside every installer because
+        `build.files` takes it whole). The behaviour change that used to be argued here —
+        `json2md` throwing where upstream returned `""` — was justified by « its output is what
+        step 8 writes into the VSA task's `taskDescription` ». **It is not**: the rep's notes
+        reach the recipe as plain text through `core/domain/documentText.ts`, which says in its
+        own docblock why the flattening lives there, and the import rule makes the claim
+        structurally impossible — `src/*` may import `core/contracts/` only, so nothing outside
+        the renderer can call a function in `src/editor/`. 1147 lines and 48 green tests
+        excused by a comment; `vendor/anarlog-editor/` still holds all four files, so the port
+        costs an hour on the day a caller exists.
+  - [x] **`buildInputRules()` wired into `Notepad.tsx`**, and the block vocabulary given keys
+        (`NOTE_SHORTCUTS`, printed in Réglages). The function had eight green tests and no
+        caller, so in the shipped editor `# Titre` was a paragraph containing a hash, `- point`
+        a paragraph containing a dash, `**gras**` two pairs of asterisks and `l'appel d'offres`
+        kept U+0027 — while `check:french` enforces U+2019 in the repo's own prose,
+        `history:search` folds on it and `terms.fr-esn.ts` ships that very phrase as a Whisper
+        boost term. `index.css` has styled `h1 h2 h3 ul ol blockquote pre code hr` for that pane
+        since it was written and the keyboard could reach none of it; there is no toolbar and
+        there must not be one (HR-10). Heading levels stop at three, because Tailwind's
+        preflight draws an `h4` exactly like the paragraph it replaced.
   - [x] `editor-error-boundary.tsx` — French, and it says **« L'enregistrement continue. »**
         That sentence is the point: the capture path has no dependency on the renderer
         (DEC-26), so a dead editor costs the notepad and nothing else, but a rep who does not
@@ -730,7 +767,15 @@ Read `docs/reference/vsa-api.md` before starting. It has the real shapes and thr
       outage into a dropped compte-rendu. `available: false` is a different thing and still
       disables: it means there is nothing to send at all (no opportunity in the extraction, no
       recipient for a draft), which no amount of reconnecting fixes.
-- [x] Attach the raw transcript via `POST /v1/crm/tasks/{id}/attach`.
+- [ ] Attach the raw transcript via `POST /v1/crm/tasks/{id}/attach`. **Implemented on
+      the adapter, deliberately not wired** — `attachTranscript` exists and is tested,
+      and nothing calls it. Putting the verbatim transcript of a client call into a
+      shared VerySwing task is a *disclosure*, not an enhancement: the transcript is
+      the evidence this product keeps (DEC-12 discards only the audio), and pushing it
+      into the client's CRM changes who can read it. That earns a fourth intent in the
+      gate's list — visible, uncheckable, never checked by default (DEC-4, DEC-20) —
+      and the decision has not been taken. `npm run check:ports` holds the claim to the
+      call site so this cannot silently read as done again.
 
 **Done when:** *Valider* produces a visible task, opportunity and contacts in the sandbox plus
 a draft in Outlook — and killing VSA mid-push still ships the draft and leaves the row
@@ -850,11 +895,40 @@ Neither of these is in the step list and both are needed for VISION.md §8.1.
 
 ---
 
-## Step 10 — The redesign (DEC-30, DEC-31, DEC-32)
+## Step 10 — The redesign (DEC-30, DEC-31, DEC-32) — **all seven shipped**
 
-The design is settled in `../design/untitled.pen` and the palette and screens are written into
-VISION.md §6. **None of it is in the code yet.** This step is the port, and it is larger than a
-restyle because two of the three decisions add surface area rather than repaint it.
+**Read this paragraph before the table.** For as long as step 10 existed the sentence under
+its heading was « The design is settled in `../design/untitled.pen` … **None of it is in the
+code yet** », and CLAUDE.md points at this file as « the ordered task list. **Start here.** »
+All seven items had shipped. So the first thing a new reader of this repo was told is that
+seven features they can see on screen do not exist — which is the `scripts/harness/README.md`
+defect this project has already recorded once: three rounds spent describing debt that had
+been fixed, « disarming the next reviewer against judgements that had become sound ».
+
+Verified item by item on the tree, not read off a tick:
+
+| # | Verified how |
+|---|---|
+| 10a | `tokens.css` is the brand ramp, and every colour that holds text carries its measured ratio in a comment beside it — `#4dc2fb` is `2.01:1 on #ffffff — large fills ONLY, never text`, which is the line the ramp exists for. `tokens.test.ts` is the drift check the step predicted would fail on landing. |
+| 10b | `src/screens/Splash.tsx`, 168 lines, three lines fed from `BOOT_STEPS` rather than retyped, and the progress bar renders only for `downloading` — which nothing emits, stated in the file rather than faked with a timer. |
+| 10c | `'repli sur la transcription locale'` is gone. The two remaining `dégradé` strings in `modules/transcribe/index.ts` are per-channel (« transcription du micro dégradée ») and are not about local being a downgrade; Réglages' own occurrence is the comment forbidding it. |
+| 10d | `Agenda.tsx` declares `View = 'jour' \| 'semaine' \| 'mois' \| 'liste'`, day selection, and a past-meeting list. `DayPane`'s empty state is keyed correctly on each half of the day — the defect that took to fix, recorded in CLAUDE.md. |
+| 10e | Search plus `HistoryFilter`, running in the main process, with the chips in a `.filter-scroller`; the `Historique` nav link is gone from `Agenda.tsx` and Réglages. |
+| 10f | `HealthStrip.tsx` is not on disk. The header control reads `capture`, `transcribe` and `llm` only, and `check:reasons` counts 49 composed health states across the rest. |
+| 10g | Two panes. `Reglages.test.tsx`'s first describe block is « two panes: the section list left, its content right (VISION.md §6) », and `SECTIONS` is the rail. |
+
+What was true when the step was written and is worth keeping, because it is the only part the
+table above does not cover: two of the three decisions **added surface area** rather than
+repainting it, which is why 10d and 10e were the large pieces and why the calendar and the
+search have needed six rounds of defect work between them since.
+
+The work the step list does not reach any more is in `docs/STORIES.md`, which is where every
+story and every adversarial finding since round 23 lives. **Two backlogs is one too many**: if
+a step here is complete, tick it and say how it was verified; if it is not, it is a story
+there, not a table row here.
+
+<details>
+<summary>The original table, kept because it is the record of what was planned</summary>
 
 | # | Work | Settles |
 |---|---|---|
@@ -868,6 +942,8 @@ restyle because two of the three decisions add surface area rather than repaint 
 
 The CI check that matters here: a grep for *dégradé* near the transcription strings, and the
 existing `tokens.test.ts` drift check — which will fail the moment 10a lands and is the point.
+
+</details>
 
 ## Known open items
 

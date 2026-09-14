@@ -19,14 +19,23 @@ let bridge: FakeBridge
 let uninstall: () => void
 
 const booted = (steps: Partial<BootState> = {}): BootState => ({
-  store: { state: 'ready', value: 'sillage.db · schéma v3' },
+  store: { state: 'ready', value: 'ouverte · sur cette machine' },
   devices: { state: 'ready', value: 'moteur de capture chargé' },
   transcription: { state: 'ready', value: 'Whisper (local)' },
   version: '0.1.0',
   ...steps,
 })
 
-const downloading: BootStep = { state: 'downloading', value: '37 %', percent: 37 }
+/*
+ * The value is the sentence beside the bar, not the percentage: the percentage
+ * is `percent`, and the renderer draws it once, on the right of the row. A
+ * fixture that put « 37 % » in both made the two indistinguishable.
+ */
+const downloading: BootStep = {
+  state: 'downloading',
+  value: 'modèle Whisper — 196 Mo sur 466 Mo · environ 1 min',
+  percent: 37,
+}
 
 beforeEach(() => {
   bridge = fakeBridge()
@@ -74,7 +83,7 @@ describe('the three lines', () => {
     // does not hold.
     render(<Splash state={booted()} />)
 
-    expect(screen.getByText('sillage.db · schéma v3')).toBeTruthy()
+    expect(screen.getByText('ouverte · sur cette machine')).toBeTruthy()
     expect(screen.getByText('moteur de capture chargé')).toBeTruthy()
     expect(screen.getByText('Whisper (local)')).toBeTruthy()
   })
@@ -144,7 +153,7 @@ describe('what the splash holds the window for', () => {
   const openApp = () => {
     // Whatever Aujourd'hui needs once the splash lets go.
     bridge
-      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, armed: null, reason: '' }))
+      .when('agenda:snapshot', () => ({ events: [], syncedAt: 0, window: { from: 0, to: 0 }, armed: null, reason: '' }))
       .when('auth:state', () => ({ status: 'signedOut' as const }))
       .when('meeting:list', () => [])
       .when('health:snapshot', () => ({
@@ -163,7 +172,7 @@ describe('what the splash holds the window for', () => {
     render(<App />)
 
     expect(await screen.findByText('en cours…')).toBeTruthy()
-    expect(screen.queryByText('Aujourd’hui')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull()
   })
 
   test('a download holds it', async () => {
@@ -172,7 +181,7 @@ describe('what the splash holds the window for', () => {
     render(<App />)
 
     expect(await screen.findByRole('progressbar')).toBeTruthy()
-    expect(screen.queryByText('Aujourd’hui')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull()
   })
 
   test('a failed step does NOT hold it', async () => {
@@ -184,7 +193,7 @@ describe('what the splash holds the window for', () => {
     )
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
     expect(screen.queryByText('Base locale')).toBeNull()
   })
 
@@ -193,7 +202,7 @@ describe('what the splash holds the window for', () => {
     bridge.when('boot:state', () => booted())
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
   })
 
   test('a boot:changed broadcast releases it, with no poll', async () => {
@@ -206,7 +215,7 @@ describe('what the splash holds the window for', () => {
       bridge.emit('boot:changed', booted())
     })
 
-    await waitFor(() => expect(screen.getByText('Aujourd’hui')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeTruthy())
   })
 
   test('a rejected boot:state does not trap the rep behind the splash', async () => {
@@ -216,6 +225,6 @@ describe('what the splash holds the window for', () => {
     openApp()
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
   })
 })

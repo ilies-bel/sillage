@@ -105,6 +105,14 @@ fn resolve_input_device(host: &cpal::Host, device_id: Option<&str>) -> Result<cp
                 1 => "case-insensitive",
                 _ => "fuzzy",
             };
+            /*
+             * Deliberately still names the matched device, and deliberately a
+             * `println!` rather than an error: this goes to the developer console
+             * of a debug run, not into `error.message`, so it never reaches the
+             * bundle the way the `Err` below used to. If this line is ever moved
+             * into a returned error or a diagnostics record, it has to lose the
+             * name first — see the reasoning there.
+             */
             println!(
                 "[Microphone] Using {} match for input device: requested='{}' matched='{}'",
                 label, requested_id, matched_name
@@ -112,10 +120,41 @@ fn resolve_input_device(host: &cpal::Host, device_id: Option<&str>) -> Result<cp
             return Ok(device);
         }
 
+        /*
+         * **The device list is counted, never named.**
+         *
+         * This message becomes `error.message`, which `main.ts` records as
+         * `capture.rep.error` — and that lands in the diagnostics bundle whose
+         * own button reads « Sans contenu de conversation. Peut être envoyé au
+         * support. » Enumerating the devices put every audio endpoint name on the
+         * machine into it, and on both platforms a Bluetooth device is named
+         * after its owner by default:
+         *
+         *     Input device [quoted] not found. Available devices:
+         *     Microphone (Realtek(R) Audio), Écouteurs de Jean-Pierre,
+         *     Casque JP Dupont
+         *
+         * That is the rep's own given name and surname, in the bundle, from an
+         * ordinary failure — a headset unplugged between two calls. No rule in
+         * `redactDiagnostics.ts` can reach it either: a device name is an
+         * ordinary capitalised noun phrase, indistinguishable from « Windows
+         * Defender », which is exactly why that file's `message` half is a
+         * denylist that cannot be made airtight. The fix belongs here, at the
+         * source, where the difference between a count and a name is known.
+         *
+         * A count is what the sentence was actually for: « the id we were asked
+         * for is not among the N this machine has » tells a support reader the
+         * device went away, which is the whole diagnosis. The names themselves
+         * are already in front of the rep — `get_input_devices()` feeds the
+         * picker in Réglages.
+         *
+         * `requested_id` stays: it is our own stored preference, it is what makes
+         * the sentence actionable, and `redactDetail` sees it as one identifier.
+         */
         return Err(anyhow::anyhow!(
-            "Input device '{}' not found. Available devices: {}",
+            "Input device '{}' not found among the {} available",
             requested_id,
-            available_devices.join(", ")
+            available_devices.len()
         ));
     }
 

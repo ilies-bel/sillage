@@ -23,13 +23,22 @@
  */
 import type { HistoryFilter } from '../../electron/core/contracts/history.ts'
 import type { MeetingId } from '../../electron/core/contracts/meeting.ts'
+import type { SectionId } from '../screens/Reglages.tsx'
 
 export type Route =
   | { screen: 'agenda' }
   | { screen: 'session'; meetingId: MeetingId }
   | { screen: 'review'; meetingId: MeetingId }
   | { screen: 'historique'; query: string; filter: HistoryFilter }
-  | { screen: 'reglages' }
+  /**
+   * `section` is where to open, when the caller knows which pane it is sending
+   * the rep to — the header status control lands on *Connecteurs* (DEC-32), the
+   * rail's « Mise à jour prête » on *Mise à jour*. It is part of *where the app
+   * is* for the same reason `historique` carries its query: the rep pressed
+   * something that named a pane, and coming back to this route without it would
+   * land them somewhere they did not ask for.
+   */
+  | { screen: 'reglages'; section?: SectionId }
 
 export const AGENDA: Route = { screen: 'agenda' }
 export const REGLAGES: Route = { screen: 'reglages' }

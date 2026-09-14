@@ -115,8 +115,30 @@ const COLOUR_UTILITIES =
   'bg|text|border|divide|ring|ring-offset|outline|fill|stroke|from|via|to|decoration|shadow|accent|caret|placeholder'
 const ALPHA = new RegExp(`\\b(?:${COLOUR_UTILITIES})-([a-z0-9-]+)\\/\\d+`, 'g')
 
+/**
+ * **A utility that silently cancels another one on the same element.**
+ *
+ * Third instance of the family this file already guards. `bg-muted/30` compiled
+ * to no rule; `ring-card` named a colour `ringColor` did not have; and
+ * `line-clamp-2 block` resolved *both* — the clamp needs `display: -webkit-box`
+ * and `block` overwrote it, so the element drew nine lines under a class that
+ * says two. Every one of them reads correctly in the source and is invisible in
+ * a screenshot, which is exactly the shape this check exists for.
+ *
+ * The pair is one-directional and ordering is irrelevant: Tailwind emits both
+ * rules and the later *declaration* wins, not the later class name.
+ */
+const CANCELS = [
+  {
+    utility: /\bline-clamp-(?!none\b)[a-z0-9]+\b/,
+    by: /\b(?:block|flex|grid|inline-block|inline-flex|inline-grid|table|contents)\b/,
+    why: 'line-clamp needs `display: -webkit-box`; a display utility beside it wins',
+  },
+]
+
 const violations = []
 const deadAlpha = []
+const cancelled = []
 let checked = 0
 let exempted = 0
 
@@ -136,7 +158,21 @@ for (const file of files) {
       if (!tokenNames.has(match[1])) continue
       deadAlpha.push(`${file}:${i + 1}: ${match[0]}  ${line.trim()}`)
     }
+    for (const { utility, by, why } of CANCELS) {
+      const hit = utility.exec(line)
+      if (!hit) continue
+      const other = by.exec(line)
+      if (!other) continue
+      cancelled.push(`${file}:${i + 1}: ${hit[0]} + ${other[0]} — ${why}\n      ${line.trim()}`)
+    }
   })
+}
+
+if (cancelled.length > 0) {
+  console.error(`\nutilities that cancel each other — the class is right and the rule never applies (${cancelled.length}):\n`)
+  for (const v of cancelled) console.error(`  ${v}`)
+  console.error('\nDrop the display utility, or drop the clamp — the two cannot both be meant.\n')
+  process.exit(1)
 }
 
 if (deadAlpha.length > 0) {
@@ -161,6 +197,7 @@ if (violations.length > 0) {
 // The exempted count is printed on purpose, the way check-boundaries.mjs prints
 // its skipped count: an exemption you cannot see is an exemption that grows.
 console.log(
-  `tokens ok — ${checked} files scanned for hex literals and dead /NN modifiers ` +
-    `on ${tokenNames.size} tokens, ${exempted} exempt (${EXEMPT.map((e) => e.prefix).join(', ')})`,
+  `tokens ok — ${checked} files scanned for hex literals, dead /NN modifiers ` +
+    `on ${tokenNames.size} tokens and ${CANCELS.length} cancelling utility pair(s), ` +
+    `${exempted} exempt (${EXEMPT.map((e) => e.prefix).join(', ')})`,
 )

@@ -22,6 +22,7 @@ import type { Signal } from '../../core/contracts/signals.ts'
 import type { Store } from '../../modules/store/index.ts'
 import { MeetingSession, type TransitionOutcome } from './MeetingSession.ts'
 import { Recording, type RecordingDeps, type RecordingOptions } from './Recording.ts'
+import type { PushIntentKind } from '../../core/contracts/push.ts'
 import { EndOfMeetingWatch } from './EndOfMeetingWatch.ts'
 
 export type Broadcaster = <C extends BroadcastChannel>(
@@ -42,6 +43,28 @@ export interface OrchestratorOptions {
     clear: (handle: unknown) => void
   }
   broadcast?: Broadcaster
+  /**
+   * Whether a kind of push intent has a connector behind it at all. See
+   * `MeetingSessionOptions.routable` — this is the one place the app knows.
+   */
+  routable?: (kind: PushIntentKind) => boolean
+  /**
+   * **Whether the twenty-second dry run currently holds the devices** (DEC-45).
+   *
+   * `capture:essai` refuses while a meeting is recording, and nothing refused
+   * the other way: `essaiRunning` was read at its own guard and nowhere else in
+   * the repo. `EssaiAudio.tsx` disables only the *Essai* button, so *Terminer*,
+   * *Passer* and *Retour* stay live — a rep can leave the onboarding six seconds
+   * into a twenty-second trial, press *Démarrer une réunion*, and the trial's
+   * own `finally` then runs `session.stop()` under the live meeting fourteen
+   * seconds later.
+   *
+   * The justification for the one-sided guard was that « opening a second handle
+   * on the same devices is exactly the failure `CaptureSession.start` guards
+   * against internally », and that is false across instances: `#running` is a
+   * per-instance private field and these are two independent constructions.
+   */
+  essaiRunning?: () => boolean
   /** Passed through to `Recording`, which is where the module factories are injected. */
   recording?: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   /**
@@ -133,19 +156,86 @@ const initialHealth = (since: number): HealthSnapshot => {
   }
 }
 
+/**
+ * How long a quit waits for a tail already being flushed. See
+ * `Orchestrator.settleRecordings`, which states why it is not the transcriber's
+ * own thirty seconds and not the outbox's eight.
+ */
+const FLUSH_TIMEOUT_MS = 10_000
+
 export class Orchestrator {
   #store: Store
   #diagnostics: DiagRecorder
   #clock: () => number
   #broadcast: Broadcaster
   #sessions = new Map<MeetingId, MeetingSession>()
+  /**
+   * The meetings this process has **acted on** — created, or dispatched a command
+   * into — as distinct from the ones it merely looked up.
+   *
+   * `liveStates()` used to be `#sessions`, and `#sessions` is a *cache*: `session()`
+   * is lazily rehydrated from the log, so **asking** a question about a meeting made
+   * it live for the rest of the process. `liveStates()`'s own docblock stated the
+   * property that breaks — « a meeting finished last week sits in the log and blocks
+   * nothing » — and it was false of every read path in the product. Measured
+   * (`scratch/r28-readonly-poison.mjs`): a second launch boots at `[]` and
+   * `{ safe: true }`, one `stateOf` of a call that ended yesterday takes it to
+   * `["ended"]` and « un compte-rendu est en cours de rédaction », for ever. So
+   * *opening Historique on a past call refused every installer for the rest of the
+   * session*, on the primary platform, with a French sentence that is false — and on
+   * the demo build DEC-28 ships first that is every call ever recorded, because
+   * `ended` persists indefinitely with no model (DEC-39).
+   *
+   * Round 27 then made it certain rather than merely likely: `Agenda.#calendarOffersAt`
+   * asks `stateOf` on the thirty-second tick, so one tick of an ordinary morning — no
+   * conferencing audio, nothing armed — was enough (`scratch/r28-rehydrate-updategate.mjs`).
+   * That is the *third* instance in this repo of « the app could never install an
+   * update again, on the primary platform », and the first caused by the fix for the
+   * previous one.
+   *
+   * The cache has to stay a cache: a `MeetingSession` is the writer for its own log
+   * and two instances of one meeting would be two objects appending to it. What was
+   * wrong is reading the cache as an answer to a different question. Dispatch is the
+   * only thing that moves a state and `create` the only thing that mints one, so
+   * those two are exactly « work in flight in this process » — which covers the boot
+   * re-drain (it dispatches), a crash-recovered `recording` (the boot sweep ends it,
+   * which dispatches) and `before-quit`'s search for the live call, and excludes a
+   * screen that read a row.
+   */
+  #touched = new Set<MeetingId>()
   #health: HealthSnapshot
+  /**
+   * What each module last *claimed*, before `#truthful` stripped a `retryable`
+   * nobody had registered a way to act on. `registerRetry` re-asks the question
+   * against this, so the order of two statements in `main.ts` cannot decide
+   * whether a rep gets a button.
+   */
+  #claimed: Partial<HealthSnapshot> = {}
   #retries = new Map<ConnectorId, () => Promise<ConnectorHealth>>()
   #recordings = new Map<MeetingId, Recording>()
+  /**
+   * The flush each meeting is still in the middle of — see `stopRecording`, which
+   * is where R32-1 lived, and `flushing()`, which is what `before-quit` asks.
+   */
+  #stopping = new Map<MeetingId, Promise<void>>()
+
+  /**
+   * Whether any meeting currently holds the audio devices.
+   *
+   * Asked by the onboarding dry run (`core/contracts/essai.ts`), which opens the
+   * same devices and must refuse rather than race a live call for them: the
+   * guarantee that a meeting keeps recording (DEC-26) is not one to test against
+   * an onboarding screen.
+   */
+  recording(): boolean {
+    return this.#recordings.size > 0
+  }
   /** DEC-16's grace countdown, one per meeting that is actually recording. */
   #endWatch = new Map<MeetingId, EndOfMeetingWatch>()
   #recordingDeps: Pick<RecordingDeps, 'createCapture' | 'createTranscribe'>
   #signals = new Map<MeetingId, SignalProducer>()
+  #routable: OrchestratorOptions['routable']
+  #essaiRunning: OrchestratorOptions['essaiRunning']
   #createSignals: OrchestratorOptions['createSignals']
   #onEnded: OrchestratorOptions['onEnded']
   #onEnding: OrchestratorOptions['onEnding']
@@ -180,6 +270,7 @@ export class Orchestrator {
               severity: 'warn',
               code: 'app.broadcast.failed',
               module: 'app',
+              origin: 'foreign',
               message: error instanceof Error ? error.message : 'diffusion impossible',
               detail: { channel },
             })
@@ -188,6 +279,8 @@ export class Orchestrator {
       : () => {}
     this.#health = initialHealth(this.#clock())
     this.#recordingDeps = options.recording ?? {}
+    this.#routable = options.routable
+    this.#essaiRunning = options.essaiRunning
     this.#createSignals = options.createSignals
     this.#onEnded = options.onEnded
     this.#onEnding = options.onEnding
@@ -209,8 +302,10 @@ export class Orchestrator {
     const session = MeetingSession.create(this.#store, input, {
       diagnostics: this.#diagnostics,
       clock: this.#clock,
+      ...(this.#routable ? { routable: this.#routable } : {}),
     })
     this.#sessions.set(session.id, session)
+    this.#touched.add(session.id)
     return session
   }
 
@@ -221,6 +316,7 @@ export class Orchestrator {
     const loaded = MeetingSession.load(this.#store, meetingId, {
       diagnostics: this.#diagnostics,
       clock: this.#clock,
+      ...(this.#routable ? { routable: this.#routable } : {}),
     })
     if (loaded) this.#sessions.set(meetingId, loaded)
     return loaded
@@ -235,6 +331,49 @@ export class Orchestrator {
     if (!session) {
       return { ok: false, state: 'idle', reason: `réunion inconnue: ${meetingId}` }
     }
+    // Acting on it, whatever the transition table answers — see `#touched`. A refused
+    // command is still this process taking an interest, and `start` is refused below
+    // on the strength of exactly this set.
+    this.#touched.add(meetingId)
+
+    /*
+     * **One recording at a time, and this is the only place that can say so.**
+     *
+     * `MeetingSession`'s transition table is per meeting, so `idle → recording` is
+     * legal for every session independently and nothing above it asked whether
+     * another was already capturing. Measured on the shipped orchestrator:
+     * `liveStates = ["recording","recording"]`. That is two `startRecording` calls,
+     * **two microphone and two system-audio handles on the same devices**, two
+     * transcribers, two compte-rendus and two pushes to VerySwing — where
+     * `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb —
+     * for one conversation. The widget adopts whichever `widget:state`'s `.find()`
+     * returns and silently re-points at the other on the next `session:changed`,
+     * carrying a different `startedAt` and a different mark list, so the one surface
+     * that exists to prove the rep is being heard cannot say which call it means.
+     *
+     * `Orchestrator.recording()` already answered this question and had exactly one
+     * caller — the onboarding dry run, which asks so it can refuse to open a second
+     * handle on the same devices. The state machine never asked it.
+     *
+     * Here rather than in `MeetingSession`: this is a fact about the *process*, not
+     * about a meeting, and `dispatch` is the one chokepoint every route goes through
+     * — the IPC handler, `Agenda`, `Enhancement`, the boot re-drain. A refusal and
+     * never a silent no-op, because DEC-26 wants a sentence the rep can act on, and
+     * the sentence names the other call rather than the rule.
+     */
+    if (command === 'start') {
+      const other = this.liveIds().find(
+        (id) => id !== meetingId && this.stateOf(id) === 'recording',
+      )
+      if (other !== undefined) {
+        return {
+          ok: false,
+          state: session.state,
+          reason: 'une autre réunion est déjà en cours d’enregistrement',
+        }
+      }
+    }
+
     const outcome = session.dispatch(command, reason)
     if (outcome.ok) this.#broadcast('session:changed', { meetingId, state: outcome.to })
 
@@ -323,6 +462,7 @@ export class Orchestrator {
         severity: 'error',
         code: 'enhancement.unhandled',
         module: 'app',
+        origin: 'foreign',
         message: error instanceof Error ? error.message : 'fin de réunion incomplète',
         detail: { meetingId },
       })
@@ -343,6 +483,33 @@ export class Orchestrator {
     await this.#enhance(meetingId)
   }
 
+  /**
+   * **The rep has the review gate open on this meeting.**
+   *
+   * `awaiting_confirmation` blocks an installer because, in `updateGate.ts`'s own words,
+   * « the rep is at the one human gate (DEC-4) with edits on screen that have not been
+   * confirmed. Restarting discards their corrections — the single thing the review gate
+   * exists to preserve. » Nothing dispatches when a gate *opens*: `review:get` reads the
+   * projection and asks `stateOf`. So once `liveStates()` stopped answering from the
+   * rehydration cache, a meeting that reached the gate **last launch** — which on the
+   * demo build DEC-28 ships first is every meeting until somebody validates it — no
+   * longer blocked anything. Measured (`scratch/r29-gate-update.mjs`): launch 1 refuses
+   * with « un compte-rendu attend votre validation »; launch 2 opens the same gate and
+   * answers `{ safe: true }`. A rep who records at 17:00, quits, comes back Friday
+   * morning, corrects the compte-rendu and three of the eleven fields — `PENDING_EDITS`
+   * is deliberately in memory — is then offered « Installer et redémarrer », and
+   * `updateTick` downloads the installer while they stand there.
+   *
+   * Round 28 traded a permanent false refusal for a silent permission, and only the
+   * first half had a test. The honest trigger is not the stored state, which is stale
+   * for ever with no model: it is **this** — the gate was opened, in this process, by
+   * this rep. It stays marked, because the drafts it protects do: `PENDING_EDITS` holds
+   * them for the life of the window and only a confirmation clears them.
+   */
+  atGate(meetingId: MeetingId): void {
+    if (this.session(meetingId) !== null) this.#touched.add(meetingId)
+  }
+
   stateOf(meetingId: MeetingId): MeetingState {
     return this.session(meetingId)?.state ?? 'idle'
   }
@@ -350,14 +517,27 @@ export class Orchestrator {
   /**
    * Every session the app is holding in memory, for `core/domain/updateGate.ts`.
    *
-   * In-memory only, and that is the correct scope rather than a shortcut: a
-   * session is here because it was created or rehydrated this run, so anything
-   * with work genuinely in flight — recording, extracting, awaiting the rep's
-   * confirmation, draining the outbox — is necessarily in this map. A meeting
-   * finished last week sits in the log and blocks nothing.
+   * In-memory only, and **created or dispatched into rather than merely looked up**
+   * — see `#touched`. The distinction is the whole property: this used to read the
+   * rehydration cache, so a screen *reading* a past meeting made it live and « a
+   * meeting finished last week sits in the log and blocks nothing », two lines above
+   * where it was written, was false of every read path in the product.
    */
   liveStates(): readonly MeetingState[] {
-    return [...this.#sessions.values()].map((session) => session.state)
+    return this.liveIds().map((id) => this.#sessions.get(id)?.state ?? 'idle')
+  }
+
+  /**
+   * The meetings this process is holding, by id.
+   *
+   * `liveStates` answers « is anything happening » — enough to refuse an
+   * installer — and `before-quit` needs the other half: *which* meeting is
+   * recording, so it can be ended properly rather than abandoned when the window
+   * closes. In memory only, and **acted on** rather than looked up, for the reason
+   * `#touched` states at length.
+   */
+  liveIds(): readonly MeetingId[] {
+    return [...this.#touched].filter((id) => this.#sessions.has(id))
   }
 
   /** Debounced from the editor at ~500ms (DEC-12). */
@@ -383,6 +563,11 @@ export class Orchestrator {
     if (this.#recordings.has(meetingId)) return
     const session = this.session(meetingId)
     if (!session) throw new Error(`réunion inconnue: ${meetingId}`)
+    // The other half of `capture:essai`'s guard — see `essaiRunning` above. The
+    // trial is twenty seconds and always stops; waiting is the whole remedy.
+    if (this.#essaiRunning?.()) {
+      throw new Error('Un essai audio est en cours — il se termine dans quelques secondes.')
+    }
 
     // Built before the devices open, and seeded from whatever the log already
     // holds so a resumed session neither restarts `seq` nor re-announces a chip
@@ -413,6 +598,7 @@ export class Orchestrator {
               severity: 'warn',
               code: 'signals.push.failed',
               module: 'app',
+              origin: 'foreign',
               message: error instanceof Error ? error.message : 'signal rail indisponible',
               detail: { meetingId },
             })
@@ -440,7 +626,10 @@ export class Orchestrator {
       this.#stopSignals(meetingId)
       this.setHealth('capture', {
         state: 'down',
-        reason: err instanceof Error ? err.message : 'capture indisponible',
+        // Capture is the one required connector and this fires on *Enregistrer*,
+        // so this sentence is read at the worst possible moment. The native
+        // module's own text is English; it follows ours rather than replacing it.
+        reason: err instanceof Error ? `capture indisponible — ${err.message}` : 'capture indisponible',
         since: this.#clock(),
         retryable: true,
       })
@@ -449,15 +638,139 @@ export class Orchestrator {
     }
   }
 
-  /** Resolves once both providers have flushed — the tail of a call is the part with the next steps in it. */
+  /**
+   * Resolves once both providers have flushed — the tail of a call is the part
+   * with the next steps in it.
+   *
+   * **One flush per recording, and every caller awaits the same one.**
+   *
+   * This used to delete the `Recording` and then await it, which reads as
+   * defensive and was the whole of R32-1. `dispatch(id, 'end')` fires
+   * `void this.#enhance(id)`; `#enhance` is `async`, so its body runs
+   * synchronously to its first `await` — which is `await this.stopRecording(id)`,
+   * and *evaluating that call* runs this body synchronously to its own first
+   * await, `#recordings.delete(meetingId)` already executed. So one line later
+   * `before-quit`'s own `await orchestrator.stopRecording(meetingId)` returned at
+   * `if (!recording) return`: it waited for nothing, having been told by its own
+   * docblock that both providers had flushed. Measured on the real `Store` and
+   * this class, with a transcriber that emits a tail segment inside `stop()` the
+   * way `LocalWhisperSession.#shutdown()` and every REST provider do
+   * (`scratch/r32-1-drive.ts`):
+   *
+   *     onEnded injected: no    flushed? true   tail segments in the log: 1
+   *     onEnded injected: YES   flushed? false  tail segments in the log: 0
+   *
+   * and `onEnded` is injected by `main.ts` on every launch, so the second row is
+   * the product. On Windows — the primary platform (HR-2) — `window-all-closed`
+   * quits, so « get the app out of the way at the end of a call » is a quit: the
+   * last utterance, up to `GAP_FLUSH_MS` of held speech plus whatever is queued
+   * in the model, never reached the log. It is therefore missing from the
+   * transcript the compte-rendu is folded from, from what `[source ▸]` reads, and
+   * from what VerySwing receives.
+   *
+   * So the in-flight flush is memoised **per meeting** and a second caller awaits
+   * the first. Three things about the memo, each measured rather than reasoned:
+   *
+   *  · It is **set synchronously**, before the first await, because that is the
+   *    only way `before-quit` can find it: it dispatches and calls this one line
+   *    later, with no tick in between.
+   *  · It is **cleared when the flush settles**, not kept. `enhance()` — the
+   *    retry path, and a first attempt once a model finally exists — calls this on
+   *    a meeting that stopped minutes ago and expects a no-op; a memo kept for the
+   *    life of the process would hand it a *rejected* promise for ever if that
+   *    one flush had failed.
+   *  · A rejection reaches **every** awaiter. `#enhance` records
+   *    `enhancement.unhandled` and `before-quit` records `app.quit.endFailed`, and
+   *    two rows for one failed flush is the honest reading: two callers needed it.
+   */
   async stopRecording(meetingId: MeetingId): Promise<void> {
+    const inFlight = this.#stopping.get(meetingId)
+    if (inFlight) {
+      await inFlight
+      return
+    }
     this.#stopSignals(meetingId)
     this.#endWatch.get(meetingId)?.stop()
     this.#endWatch.delete(meetingId)
     const recording = this.#recordings.get(meetingId)
     if (!recording) return
     this.#recordings.delete(meetingId)
-    await recording.stop()
+    const flush = (async () => {
+      try {
+        await recording.stop()
+      } finally {
+        this.#stopping.delete(meetingId)
+      }
+    })()
+    this.#stopping.set(meetingId, flush)
+    await flush
+  }
+
+  /**
+   * **Is this process still owed a tail?**
+   *
+   * Asked by `before-quit` *before* it decides whether to defer the quit, and it
+   * is not the same question as « is a meeting recording ». `PowerWatch` ends a
+   * live recording synchronously inside the OS handler — it has to, because the
+   * machine may never come back — and that dispatch starts the flush. By the time
+   * `before-quit` runs, the meeting is `ended`, so the predicate it had found
+   * nothing, it did not even `preventDefault()`, and `store.close()` landed a few
+   * microtasks later while the local engine was still draining on a thirty-second
+   * budget. Measured before this existed: `defers the quit? false`, and the tail
+   * segment arrived at a closed database.
+   *
+   * That made Windows shutdown and « Se déconnecter » — `session-end`, the one
+   * branch a rep on the primary platform can actually reach — strictly worse
+   * after `b2cc981` than before it, which is why this is a question the
+   * orchestrator answers rather than something `PowerWatch` was asked to do: the
+   * handler cannot wait, so what it can do is leave something to wait for.
+   */
+  flushing(): boolean {
+    return this.#stopping.size > 0
+  }
+
+  /**
+   * **Waits for every flush in flight, bounded.** The one caller is `before-quit`.
+   *
+   * Bounded for the reason `Outbox.settle` is: a rep who pressed close is owed a
+   * window that goes away, and an unbounded wait on a provider that never answers
+   * is a process the rep kills — which loses the tail as well and looks broken
+   * doing it. The asymmetry runs the other way from the outbox's, though, and
+   * that is why this number is larger than a POST's: an interrupted push is
+   * reclaimed on the next launch by `Projections.interrupted()`, and **a lost tail
+   * has no recovery at all** — the audio is gone (DEC-12), so whatever expiry
+   * discards here is discarded for good.
+   *
+   * Ten seconds rather than the transcriber's own thirty: that budget is sized
+   * for a *cold* model, and a quit during a recording cannot be cold — the engine
+   * has been transcribing this call for the length of it. What ten seconds covers
+   * is a warm model with a couple of queued finals, which is what the end of a
+   * call actually is.
+   *
+   * `false` means the wait expired, and the caller says so in the log rather than
+   * quitting silently (DEC-26). The loop re-reads the map because a flush can
+   * start while this is waiting — `#enhance` on a second meeting, the widget's own
+   * *Terminer* — and `allSettled` because one provider failing must not abandon
+   * the other one's tail.
+   */
+  async settleRecordings(timeoutMs = FLUSH_TIMEOUT_MS): Promise<boolean> {
+    if (this.#stopping.size === 0) return true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs)
+      timer.unref?.()
+    })
+    const drained = (async () => {
+      while (this.#stopping.size > 0) {
+        await Promise.allSettled([...this.#stopping.values()])
+      }
+      return true
+    })()
+    try {
+      return await Promise.race([drained, expired])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /**
@@ -474,7 +787,31 @@ export class Orchestrator {
    */
   #startEndWatch(meetingId: MeetingId): void {
     if (this.#endWatch.has(meetingId)) return
-    const scheduledEnd = this.#store.projections.context(meetingId)?.scheduledEnd ?? null
+    /*
+     * **A synthesised end is not a scheduled end.**
+     *
+     * `graceFor` shortens the end-of-meeting grace from 75 s to 25 s once the
+     * silence starts past `scheduledEnd`, and the reasoning for that is entirely
+     * about a *calendar* slot: the invite said 15:00, it is 15:02, a pause is far
+     * more likely to be the end. A meeting with no invite has no such instant,
+     * and both paths that create one invent a number:
+     *
+     *   `adHocContext`   `heldSince + 1h`, whose own docblock says « it is not a
+     *                    claim about when the call will end » — and `graceFor`
+     *                    read it as exactly that claim, so a 25-second pause at
+     *                    minute 61 of an unscheduled call ended the recording.
+     *   `manualContext`  `endedAt ?? updatedAt`, which for a live meeting is
+     *                    roughly *now* — the short grace from the first second.
+     *
+     * `eventId === null` is the fact that separates them, and it is the same fact
+     * `MeetingContextSchema` documents: « Null for a manually started session with
+     * no calendar entry ». CLAUDE.md already states the rule this restores — « a
+     * session with no calendar entry always gets the full grace » — and there is a
+     * test named for it, which passed because it supplies a null *context*, not a
+     * context with a synthesised end.
+     */
+    const context = this.#store.projections.context(meetingId)
+    const scheduledEnd = context && context.eventId !== null ? context.scheduledEnd : null
     this.#endWatch.set(
       meetingId,
       new EndOfMeetingWatch({
@@ -488,6 +825,7 @@ export class Orchestrator {
             severity: 'info',
             code: 'session.autoEnded',
             module: 'app',
+            origin: 'authored',
             message: reason,
             detail: { meetingId, scheduledEnd },
           })
@@ -533,21 +871,96 @@ export class Orchestrator {
   }
 
   setHealth(connector: ConnectorId, health: ConnectorHealth): void {
-    this.#health = { ...this.#health, [connector]: health }
-    this.#broadcast('health:changed', { connector, health, at: this.#clock() })
+    // What the module claimed, kept unstripped — see `registerRetry`, which has
+    // to be able to re-ask the question when a retry arrives after a health.
+    this.#claimed = { ...this.#claimed, [connector]: health }
+    this.#health = { ...this.#health, [connector]: this.#truthful(connector, health) }
+    this.#broadcast('health:changed', {
+      connector,
+      health: this.#health[connector],
+      at: this.#clock(),
+    })
+  }
+
+  /**
+   * **`retryable` means the app can actually retry it.**
+   *
+   * A module decides whether *its* failure is transient, and it has no idea
+   * whether anybody registered a way to act on that. Three did not — capture on
+   * a device error, transcription on a provider error, and Outlook on an expired
+   * token all reported `retryable: true`, and `retry()` below quietly returned
+   * the unchanged health for every one of them. So Réglages drew a live
+   * *Réessayer*, a rep pressed it, the row said « Vérification… » and came back
+   * saying exactly what it said before. Forever.
+   *
+   * That is the dead button DEC-26 forbids, and the docblock on `registerRetry`
+   * six lines down says so — which is how long the rule had been wrong in the
+   * one file that states it. Onboarding's *Autoriser* inherited it whole.
+   *
+   * The claim is corrected **here**, at the single point where both facts are
+   * known, rather than in each of the three modules. A module that grows a retry
+   * gets the button back by registering it; a module that loses one loses the
+   * button the same day, with no screen to update.
+   *
+   * The reason survives untouched. « micro indisponible — … » is worth reading
+   * whether or not there is a control beside it, and stripping it would trade a
+   * dead button for a bare red dot.
+   */
+  #truthful(connector: ConnectorId, health: ConnectorHealth): ConnectorHealth {
+    if (health.state === 'ok' || !health.retryable) return health
+    return this.#retries.has(connector) ? health : { ...health, retryable: false }
   }
 
   /**
    * A module registers how to retry itself when it registers as a connector.
-   * Without one, a `down` connector renders a disabled control with no way
-   * back — the exact dead button DEC-26 forbids.
+   *
+   * Without one, the connector's `retryable` is cleared on the way in
+   * (`#truthful`) and no screen draws a control — rather than drawing one that
+   * cannot work, which is the exact dead button DEC-26 forbids.
    */
   registerRetry(connector: ConnectorId, retry: () => Promise<ConnectorHealth>): void {
+    const first = !this.#retries.has(connector)
     this.#retries.set(connector, retry)
+
+    /*
+     * **And the health already published is re-truthed, because `#truthful` runs
+     * at write time and registration order is not a thing anyone can see.**
+     *
+     * `main.ts` published the capture health twenty-two lines before it
+     * registered capture's retry. `#truthful` had therefore already stripped
+     * `retryable: true` down to `false` and *stored the stripped value* — so on
+     * macOS first run, the one permission that cannot be repaired after the call
+     * drew « Réglages › » instead of « Autoriser », on both the onboarding step
+     * and the *Requis* row it sends the rep to. Verbatim the failure
+     * `capturePermission.ts` was written to close, reopened by two statements in
+     * the wrong order, with nothing on screen or in any test able to show it —
+     * and the harness fixture asserted the opposite in prose, twice.
+     *
+     * Re-publishing here makes the order irrelevant rather than correct-by-luck,
+     * and it re-truths **the module's own claim** rather than guessing: a
+     * connector whose health genuinely says `retryable: false` — `restricted`, a
+     * managed device where nothing will ever change — must not be handed a retry
+     * it never asked for. That is why `#claimed` exists beside `#health`: one is
+     * what the module said, the other is what the app can honestly offer.
+     * Only on the first registration, and only when the answer actually changes,
+     * so a re-registration does not re-broadcast an unchanged row.
+     */
+    const claimed = this.#claimed[connector]
+    if (!first || !claimed) return
+    const upgraded = this.#truthful(connector, claimed)
+    const stored = this.#health[connector]
+    const offers = (health: ConnectorHealth | undefined): boolean =>
+      health !== undefined && health.state !== 'ok' && health.retryable
+    if (offers(upgraded) === offers(stored)) return
+    this.#health = { ...this.#health, [connector]: upgraded }
+    this.#broadcast('health:changed', { connector, health: upgraded, at: this.#clock() })
   }
 
   async retry(connector: ConnectorId): Promise<ConnectorHealth> {
     const retry = this.#retries.get(connector)
+    // Unreachable through the UI now that `#truthful` clears the claim — kept
+    // as the answer to a channel called directly, and it is the honest one:
+    // nothing was retried, so nothing changed.
     if (!retry) return this.#health[connector] ?? { state: 'ok' }
     try {
       const health = await retry()
@@ -556,7 +969,7 @@ export class Orchestrator {
     } catch (err) {
       const health: ConnectorHealth = {
         state: 'down',
-        reason: err instanceof Error ? err.message : 'échec inconnu',
+        reason: err instanceof Error ? `nouvelle tentative échouée — ${err.message}` : 'échec inconnu',
         since: this.#clock(),
         retryable: true,
       }

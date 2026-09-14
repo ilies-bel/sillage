@@ -153,12 +153,21 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
         onChange={(event) => setClient(event.target.value)}
         onBlur={() => void save()}
         onKeyDown={keys}
-        // `w-36` is the ceiling it wants, not what it keeps: `min-w-0` lets it
-        // give ground to the objet, which is the field with the longer value and
-        // the one a rep is more often reading. `field-sizing: content` for the
-        // same reason as the objet — a one-word client in a 144px box leaves a
-        // hole between the two halves of what is meant to read as one title.
-        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-0 truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-ui outline-none [field-sizing:content]"
+        /*
+          `max-w-36` is the ceiling it wants and `min-w-[4rem]` the floor it
+          keeps. It gives ground to the objet — the field with the longer value
+          and the one a rep is more often reading — but it was `min-w-0`, and at
+          960px, the window's own minimum, it surrendered to **fourteen pixels**:
+          a text field too narrow to show a character, too narrow to click, and
+          holding the client's name on the screen where the rep is on the call
+          with them. Four rem clears WCAG 2.2's target size with room and still
+          lets the objet win every pixel above it (`shot.mjs --targets`).
+
+          `field-sizing: content` for the same reason as the objet — a one-word
+          client in a 144px box leaves a hole between the two halves of what is
+          meant to read as one title.
+        */
+        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-[4rem] truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-ui outline-none [field-sizing:content]"
       />
     </div>
   )

@@ -4,7 +4,16 @@
  * What is asserted here is the set of rules that belong to neither module and
  * would therefore be nobody's job to keep: the start/stop ordering, the fact
  * that only final segments reach the log, and that a transcription failure
- * leaves capture running.
+ * leaves capture running. *
+ * **The orchestrators here carry no `onEnded`, which is the product's own axis
+ * missing.** `main.ts` injects one on every launch, and with it
+ * `dispatch(id, 'end')` fires `#enhance`, which calls `stopRecording` itself — so
+ * a later caller used to find nothing left to flush (R32-1). Nothing below asks
+ * that question: these drive `stopRecording` directly and assert the module
+ * ordering and the dry-run guard. The tail of a call on the way out of the process
+ * is measured in `app/session/__tests__/orchestrator.test.ts` over
+ * `recordingFakes.ts`, which injects `onEnded` because that is the only shape the
+ * product has.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -148,6 +157,51 @@ test('stop is idempotent', async () => {
   assert.deepEqual([...trace], ['capture.stop', 'transcribe.stop'])
 })
 
+test('a meeting will not start on top of the dry run (DEC-45)', async () => {
+  /*
+   * **The guard was one-directional.** `capture:essai` refuses while a meeting
+   * is recording; nothing refused the other way. `essaiRunning` was read at its
+   * own guard and nowhere else in the repo, and `EssaiAudio.tsx` disables only
+   * the *Essai* button — *Terminer*, *Passer* and *Retour* stay live. So a rep
+   * leaves the onboarding six seconds into a twenty-second trial, presses
+   * *Démarrer une réunion*, and the trial's own `finally` runs `session.stop()`
+   * under the live meeting fourteen seconds later.
+   *
+   * The justification for the one-sided guard was that « opening a second handle
+   * on the same devices is exactly the failure `CaptureSession.start` guards
+   * against internally », which is false across instances: `#running` is a
+   * per-instance private field and these are two independent constructions.
+   */
+  const store = openMemoryStore()
+  let trial = true
+  const capture = new FakeCapture()
+  const orchestrator = new Orchestrator(store, {
+    essaiRunning: () => trial,
+    recording: {
+      createCapture: () => capture as never,
+      createTranscribe: () => new FakeTranscribe() as never,
+    },
+  })
+  orchestrator.create({ id: 'm-essai', title: 'Point ACME' })
+  orchestrator.dispatch('m-essai', 'start')
+
+  await assert.rejects(
+    orchestrator.startRecording('m-essai', {
+      transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
+    }),
+    /essai audio est en cours/,
+  )
+
+  // Twenty seconds, and it always stops: waiting is the whole remedy.
+  trial = false
+  await orchestrator.startRecording('m-essai', {
+    transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
+  })
+  assert.equal(orchestrator.stateOf('m-essai'), 'recording')
+  await orchestrator.stopRecording('m-essai')
+  store.close()
+})
+
 test('a meeting whose devices will not open is aborted, not left claiming to record', async () => {
   const store = openMemoryStore()
   const capture = new FakeCapture()
@@ -174,3 +228,127 @@ test('a meeting whose devices will not open is aborted, not left claiming to rec
   assert.ok(health && health.state === 'down')
   assert.match(health.reason, /micro indisponible/)
 })
+
+/**
+ * **`retryable` means the app can actually retry it** (DEC-26).
+ *
+ * A module decides whether *its* failure is transient. It has no idea whether
+ * anybody registered a way to act on that, and for a long time nobody had:
+ * capture on a device error, transcription on a provider error and Outlook on an
+ * expired token all reported `retryable: true`, and `Orchestrator.retry` quietly
+ * returned the unchanged health for every one of them.
+ *
+ * So Réglages drew a live *Réessayer*, a rep pressed it, the row said
+ * « Vérification… » and came back saying exactly what it had said before —
+ * forever. The onboarding's *Autoriser* inherited the same bug the day it was
+ * written, on the one screen whose whole job is to get a permission granted.
+ *
+ * The claim is corrected where both facts are known. These two tests are the
+ * rule in both directions, because only having the first would let somebody
+ * "fix" it by clearing `retryable` everywhere.
+ */
+test('a connector with no registered retry never claims to be retryable', () => {
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+
+  orchestrator.setHealth('capture', {
+    state: 'degraded',
+    reason: 'micro indisponible — périphérique occupé',
+    since: 1,
+    retryable: true,
+  })
+
+  const health = orchestrator.health().capture
+  // `assert.equal` narrows the union, so `retryable` is reachable below it.
+  assert.equal(health.state, 'degraded')
+  assert.equal(health.retryable, false)
+  // The reason survives untouched: it is worth reading whether or not there is
+  // a control beside it, and stripping it would trade a dead button for a bare
+  // red dot.
+  assert.match(health.reason, /périphérique occupé/)
+  store.close()
+})
+
+test('a retry registered *after* the health still gives the control back', async () => {
+  /*
+   * **The order of two statements in `main.ts` decided whether a rep got a
+   * button, and nothing could see it.**
+   *
+   * `#truthful` strips `retryable` at *write* time and stores the stripped
+   * value, so a health published before its retry was registered stayed
+   * `retryable: false` for the life of the process. `main.ts` published capture
+   * health twenty-two lines before registering capture's retry — so on macOS
+   * first run the one permission that cannot be repaired after the call drew
+   * « Réglages › » instead of « Autoriser », on the onboarding step *and* on the
+   * *Requis* row it sends the rep to. Verbatim the failure
+   * `core/domain/capturePermission.ts` exists to close.
+   *
+   * The test above registers the retry first, which is the order the product
+   * does not use. This is the other one.
+   */
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+
+  orchestrator.setHealth('capture', {
+    state: 'degraded',
+    reason: 'l’audio système n’est pas autorisé — le client ne sera pas enregistré',
+    since: 1,
+    retryable: true,
+  })
+  // Stripped, correctly: at this instant nobody can act on the claim.
+  const before = orchestrator.health().capture
+  assert.equal(before.state !== 'ok' && before.retryable, false)
+
+  orchestrator.registerRetry('capture', async () => ({ state: 'ok' }))
+
+  const health = orchestrator.health().capture
+  assert.equal(health.state, 'degraded')
+  assert.ok(health.state === 'degraded' && health.retryable, 'le bouton n’est jamais revenu')
+  store.close()
+})
+
+test('and a module that genuinely cannot be retried is not handed one', () => {
+  /*
+   * The re-truth reads the module's **own claim**, never the stripped value —
+   * guessing `retryable: true` there would invent a button for `restricted`, a
+   * managed device where nothing a rep does will ever change the answer, which
+   * is the dead control DEC-26 forbids in the other direction.
+   */
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+
+  orchestrator.setHealth('capture', {
+    state: 'down',
+    reason: 'l’enregistrement est désactivé par votre organisation',
+    since: 1,
+    retryable: false,
+  })
+  orchestrator.registerRetry('capture', async () => ({ state: 'ok' }))
+
+  const after = orchestrator.health().capture
+  assert.equal(after.state !== 'ok' && after.retryable, false)
+  store.close()
+})
+
+test('registering a retry gives the control back, with no screen to update', async () => {
+  const store = openMemoryStore()
+  const orchestrator = new Orchestrator(store, {})
+  orchestrator.registerRetry('capture', async () => ({ state: 'ok' }))
+
+  orchestrator.setHealth('capture', {
+    state: 'degraded',
+    reason: 'micro indisponible — périphérique occupé',
+    since: 1,
+    retryable: true,
+  })
+
+  const health = orchestrator.health().capture
+  assert.equal(health.state, 'degraded')
+  assert.equal(health.retryable, true)
+
+  // And it does something: the point of the claim is that pressing it can change
+  // the answer.
+  assert.deepEqual(await orchestrator.retry('capture'), { state: 'ok' })
+  store.close()
+})
+

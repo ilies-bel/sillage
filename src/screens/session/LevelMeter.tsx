@@ -32,10 +32,19 @@
  * hues, because they are the same kind of measurement and neither is a status:
  * a loud client is not a warning, so no semantic colour may be spent here.
  *
- * The direction is what identifies the channel and the colour reinforces it.
- * The `title` names them for anyone the convention does not reach; there is no
- * room in the pill for a legend, and a meter that needs a key beside it is not
- * an instrument.
+ * The direction is what identifies the channel and the colour reinforces it —
+ * and the two halves are **named on screen**, in two words, at the left of the
+ * bars.
+ *
+ * That key used to be a `title` attribute, on the argument that a meter needing
+ * a legend is not an instrument. The argument holds for a single-channel meter
+ * and stops holding the moment there are two: « up » and « down » is a
+ * convention, and a convention a rep has not been told is a coin toss on the one
+ * reading whose whole value is knowing *which side* is not being heard. A
+ * tooltip is not being told — it is hover-only, so it never reaches a keyboard,
+ * never reaches a rep mid-call with their hand off the mouse, and is invisible
+ * in every screenshot anyone reviews. Two 11px words cost 34px of a header and
+ * are true without being pointed at.
  *
  * **It owns its own subscription.** The samples arrive ten times a second, and
  * `Session` holds a live ProseMirror view with the rep's caret in it — lifting
@@ -92,9 +101,34 @@ const SILENT: Sample[] = new Array(HISTORY).fill({ rep: 0, far: 0 })
 
 interface LevelMeterProps {
   meetingId: string
+  /**
+   * **The same instrument, at the size the surface has** — never a second one.
+   *
+   * `pill` is the in-meeting widget's collapsed state (`src/widget/Widget.tsx`),
+   * which is two hundred and twenty pixels wide in total and floats over the
+   * call. It drops the key and halves the window, for the reason `index.css`
+   * already drops `.meter-key` at the app's minimum width: two 11px words are
+   * worth thirty-four pixels of a header and are not worth a sixth of a pill.
+   * Everything that carries the *reading* is untouched — the same scale, the
+   * same floor, the same two tones, the same mirroring about a baseline — so a
+   * rep reads grey on the pill exactly as they read it in the header.
+   *
+   * Ten bars rather than twenty, at seven pixels each rather than three and a
+   * half. The comment on `HISTORY` is the rule being applied and not broken: a
+   * bar has to be a bar, so when the width halves it is the *history* that
+   * gives way, never the bar.
+   */
+  variant?: 'header' | 'pill'
 }
 
-export function LevelMeter({ meetingId }: LevelMeterProps) {
+/** Bars on screen, and how wide the strip they sit in is, per variant. */
+const SHAPE = {
+  header: { bars: HISTORY, width: 148, height: 'h-7' },
+  pill: { bars: 10, width: 76, height: 'h-6' },
+} as const
+
+export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
+  const shape = SHAPE[variant]
   const [samples, setSamples] = useState<Sample[]>(SILENT)
   const [floor, setFloor] = useState(0)
 
@@ -115,10 +149,50 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
        * « niveau d'entrée trop faible pour être transcrit » with the measurement
        * in it. The meter is the glance; the diagnostic is the statement.
        */
-      title="En haut votre micro, en bas le client — en gris, trop faible pour être transcrit"
-      className="flex h-6 w-[128px] shrink-0 items-stretch gap-[2px]"
+      /*
+       * A column, not a row.
+       *
+       * The instrument has three things to say — which channel is which, what
+       * it is reading, and what the grey means — and the header has a hundred
+       * and eighty horizontal pixels to spare, not three hundred. Laid out
+       * across, the key cost ninety of them and the meeting's own title
+       * truncated to « Néovia Santé — ca… » on a 1280 laptop, which is the
+       * screen telling a rep less about the call they are in so that it can
+       * tell them more about the microphone. Stacked, the key costs fifteen
+       * pixels of header height, on the axis this screen has to spare.
+       */
+      className="flex shrink-0 flex-col items-end gap-0.5"
     >
-      {samples.map((sample, index) => (
+      <div className="flex items-stretch gap-1.5">
+      {/*
+        The key. Two words, one per half, on the same baselines the bars grow
+        from — so the label is not describing the meter, it is *on* the row it
+        names. `leading-none` and a fixed half each, or the two words drift off
+        the channels they belong to as the meter's height changes.
+
+        `.meter-key`: dropped by `index.css` when the header runs out of room at
+        the window's minimum width, and dropped here for the same reason on the
+        widget's pill, which is narrower than the key and the bars together.
+      */}
+      {variant === 'pill' ? null : (
+        <span className="meter-key text-muted flex w-8 shrink-0 flex-col justify-between text-right text-meta leading-none">
+          <span>moi</span>
+          <span>client</span>
+        </span>
+      )}
+
+      {/*
+        148×28 rather than 128×24. This is the whole of DEC-38's proof of life —
+        the surface that answers « est-ce qu'il m'entend ? » — and at 2.3px per
+        bar over two 11px halves it read as a small blue icon that happened to
+        change rather than as a reading. The bar count is unchanged; the bars
+        are simply wide enough and tall enough to be a bar.
+      */}
+      <span
+        className={`flex ${shape.height} shrink-0 items-stretch gap-[2px]`}
+        style={{ width: `${shape.width}px` }}
+      >
+      {samples.slice(samples.length - shape.bars).map((sample, index) => (
         /*
          * The 1px gutter between the halves is the baseline, and it is drawn by
          * absence rather than by a rule: a 1px line across a 24px strip in a
@@ -130,6 +204,34 @@ export function LevelMeter({ meetingId }: LevelMeterProps) {
           <Bar rms={sample.far} floor={floor} channel="far" />
         </div>
       ))}
+      </span>
+      </div>
+
+      {/*
+        What grey means. The third and last thing this instrument has to say.
+
+        The channels are named and the floor was not: a rep watching half the
+        strip go pale had no way to know whether that was a reading or a style.
+        It is the reading DEC-38 exists for — audio the transcriber will drop.
+        It was explained in a `title`, which is to say nowhere: hover-only, out
+        of reach of a keyboard, out of reach of a rep mid-call with their hand
+        off the mouse, and invisible in every screenshot anyone reviews.
+
+        Permanent, and not drawn only while grey is on screen. Speech has gaps,
+        so a below-floor reading is on the strip most seconds of most calls, and
+        a caption that came and went with it would flicker in the header during a
+        client call — which is the one thing DEC-14 says a surface here may not
+        do. A key is part of an instrument; it does not blink.
+
+        The swatch is the token the bars use, so the key cannot drift from what
+        it names.
+      */}
+      {variant === 'pill' ? null : (
+        <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
+          <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
+          non transcrit
+        </span>
+      )}
     </div>
   )
 }
@@ -175,6 +277,31 @@ function Bar({ rms, floor, channel }: BarProps) {
          *
          * `bg-meter-dropped` and not `bg-muted/30`, which is what stood here
          * and drew nothing at all — see the token's own comment.
+         */
+        /*
+         * Two tones per channel and no threshold line — a 1px dashed rule
+         * across a strip this size in a header is invisible at the distance
+         * this is read from, whereas colour survives it, and a channel that is
+         * too quiet turns grey along its *whole* length, which is a harder
+         * thing to miss than bars sitting under a line.
+         *
+         * Two shades of the one blue *between* channels, because they measure
+         * the same thing on two sides of a call. Grey is shared: audio the
+         * transcriber drops is the same fact whoever said it, and two different
+         * greys would imply a distinction the threshold does not make.
+         *
+         * `bg-meter-dropped` and not `bg-muted/30`, which is what stood here
+         * and drew nothing at all — see the token's own comment.
+         *
+         * **And the cap stays square.** A round one was tried, on the argument
+         * that every voice instrument a rep has used looks like that and their
+         * eye would read it without being taught. It does not survive this
+         * geometry: the bars are wider than they are tall — five and a half
+         * pixels across a twelve pixel half — so a full radius turns each one
+         * into a *circle*, and ten circles over ten circles is a dot matrix.
+         * The reading was lost, not softened. This is an instrument (DEC-38),
+         * and a square edge is what lets a rep see which bars are grey; a
+         * lozenge is decoration wearing a measurement's clothes.
          */
         className={`w-full rounded-[1px] ${
           audible ? (rep ? 'bg-brand-500' : 'bg-brand-700') : 'bg-meter-dropped'

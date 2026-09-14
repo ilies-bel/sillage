@@ -35,9 +35,19 @@ const tracked = (...globs) =>
     .split('\n')
     .filter(Boolean)
 
-const rebuilt = tracked('electron/core', 'electron/modules', 'electron/app').filter((f) =>
-  f.endsWith('.test.ts'),
-)
+/*
+ * `electron/__tests__` is in the list because `preload.ts` is: it is the third
+ * live file outside the three layers (ARCHITECTURE.md §5.B calls it a generated
+ * half of the bridge), its test has to sit beside it, and a test the suite does
+ * not run is a test that rots. Without this line `preloadUnwrap.test.ts` passed
+ * standalone and never once in `npm test`.
+ */
+const rebuilt = tracked(
+  'electron/core',
+  'electron/modules',
+  'electron/app',
+  'electron/__tests__',
+).filter((f) => f.endsWith('.test.ts'))
 const tooling = tracked('scripts').filter((f) => f.endsWith('.test.mjs'))
 const legacy = tracked('electron').filter((f) => f.endsWith('.test.mjs'))
 

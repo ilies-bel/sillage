@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { MeetingSession, TRANSITIONS, nextState, replayState } from '../MeetingSession.ts'
 import { Store } from '../../../modules/store/index.ts'
 import type { MeetingState, SessionCommand } from '../../../core/contracts/meeting.ts'
-import type { PushIntent } from '../../../core/contracts/push.ts'
+import type { PushIntent, PushIntentKind } from '../../../core/contracts/push.ts'
 import { sampleContext, sampleExtraction, sampleVerification } from '../../../core/contracts/fixtures.ts'
 
 let now = 1000
@@ -21,9 +21,13 @@ const clock = () => now++
 const exercised = new Set<string>()
 const edge = (from: MeetingState, command: SessionCommand) => `${from}--${command}`
 
-const open = (id = 'm1') => {
+const open = (id = 'm1', routable?: (kind: PushIntentKind) => boolean) => {
   const store = new Store(':memory:', clock)
-  const session = MeetingSession.create(store, { id, title: 'Acme', context: sampleContext }, { clock })
+  const session = MeetingSession.create(
+    store,
+    { id, title: 'Acme', context: sampleContext },
+    { clock, ...(routable ? { routable } : {}) },
+  )
   return { store, session }
 }
 
@@ -245,4 +249,44 @@ test('every edge in the transition table is exercised above', () => {
   }
   const missing = declared.filter((e) => !exercised.has(e))
   assert.deepEqual(missing, [], `untested transitions: ${missing.join(', ')}`)
+})
+
+test('an intent nobody can route settles the meeting — the demo build', () => {
+  /*
+   * **DEC-28's first deliverable has no VerySwing tenant**, so `crm` is null and
+   * every `crm.*` intent a rep confirms is queued rather than attempted — which
+   * is right, and which left the meeting in `pushing` for ever: the row is
+   * neither `drained` nor `failed`, so `allIntentsSettled` was false for the
+   * life of the database. The calendar read « Envoi… » on that call for ever,
+   * and because the boot re-drain rehydrates the session on every launch,
+   * `liveStates()` carried `pushing` and every future update was refused, with
+   * a sentence that was false — nothing was in flight and nothing ever would be.
+   *
+   * The same trap as `blocked`, one layer up: a state whose exit depends on
+   * something that may never happen.
+   */
+  const seedPush = (session: MeetingSession) => {
+    drive(session, 'start')
+    drive(session, 'end')
+    drive(session, 'extract')
+    drive(session, 'extractionSucceeded')
+    session.emit({ type: 'push.intent.created', intent: intent('i-task', 'crm.task') })
+    session.emit({ type: 'confirmation.recorded', intentIds: ['i-task'], at: clock() })
+    drive(session, 'confirm')
+    assert.equal(session.state, 'pushing')
+    drive(session, 'pushSettled')
+  }
+
+  // VerySwing wired: the intent is genuinely waiting, and the meeting says so.
+  const wired = open('m-wired')
+  seedPush(wired.session)
+  assert.equal(wired.session.state, 'pushing', 'un envoi réellement en attente reste en vol')
+  wired.store.close()
+
+  // The demo build: nothing can be attempted, so nothing is in flight. The
+  // outbox keeps the queue and ships it the day VerySwing is configured.
+  const demo = open('m-demo', (kind) => kind === 'mail.draft')
+  seedPush(demo.session)
+  assert.equal(demo.session.state, 'done', 'rien à tenter : la réunion est réglée')
+  demo.store.close()
 })

@@ -22,6 +22,8 @@ import {
   type InvokeResponse,
 } from '../../../core/contracts/ipc.ts'
 import { Store } from '../../../modules/store/index.ts'
+import { ONBOARDING_KEY } from '../../../core/contracts/onboarding.ts'
+import { MENTION_SENTENCE_DEFAULT } from '../../../core/contracts/mention.ts'
 import { Diagnostics } from '../../../modules/diagnostics/index.ts'
 import { Orchestrator } from '../../session/Orchestrator.ts'
 import type { DiagEnvironment } from '../../../core/contracts/diagnostics.ts'
@@ -61,6 +63,31 @@ class FakeIpcMain implements IpcMainLike {
     const route = this.routes.get(channel)
     if (!route) throw new Error(`canal non enregistré: ${channel}`)
     return (await route(null, payload)) as InvokeResponse<C>
+  }
+}
+
+/**
+ * A rep who is signed into Microsoft.
+ *
+ * `open()` deliberately leaves `identity` null — that is the build the first
+ * demo ships in (DEC-28) and every channel has to answer in it. But an Outlook
+ * draft genuinely cannot be created without an account, so a test that expects
+ * one has to say the rep has one. It used to not need saying, and the gate
+ * offered a draft it could not create.
+ */
+const signIn = (deps: IpcDeps) => {
+  deps.identity = {
+    account: () => ({
+      homeAccountId: 'a-1',
+      username: 'julien.marchand@synapse-it.fr',
+      name: 'Julien Marchand',
+      tenantId: 't-1',
+    }),
+    signIn: async () => {
+      throw new Error('jamais appelé ici')
+    },
+    signOut: async () => {},
+    token: async () => 'jeton',
   }
 }
 
@@ -117,12 +144,38 @@ test('a request is parsed at the boundary, defaults and all', async () => {
   cleanup()
 })
 
-test('a handler failure is recorded before it is rethrown', async () => {
+/*
+ * ── a refusal is not a failure ──────────────────────────────────────────────
+ *
+ * Every rejection is logged (DEC-27), and every *stated reason* is a rejection:
+ * DEC-26 fills this app with sentences composed on purpose for a rep to read,
+ * and each crosses the boundary as a thrown `Error` because that is how a
+ * promise says no. Logged at `error` they wrote red lines into the diagnostics
+ * bundle beside « le module audio natif ne se charge pas », and a bundle where
+ * the product working and the product broken look the same is the evidence
+ * nobody can read on a support call. The end-to-end run found two on a clean
+ * first launch, both of them the app behaving exactly as designed.
+ */
+test('a stated reason is recorded as one, and still rejects', async () => {
   const { ipc, deps, cleanup } = open()
   await assert.rejects(() => Promise.resolve(ipc.invoke('meeting:get', { meetingId: 'inconnu' })))
   const recent = deps.diagnostics.recent()
-  assert.equal(recent[0]?.code, 'ipc.handler.failed')
+  assert.equal(recent[0]?.code, 'ipc.handler.refused')
+  assert.equal(recent[0]?.severity, 'info')
   assert.equal(recent[0]?.detail.channel, 'meeting:get')
+  cleanup()
+})
+
+test('a fault the app did not compose stays an error', async () => {
+  const { ipc, deps, cleanup } = open()
+  // A payload the contract refuses: nothing in the app wrote this sentence, so
+  // it is not a sentence for a rep and the severity has to say so.
+  await assert.rejects(() =>
+    Promise.resolve(ipc.invoke('meeting:get', { meetingId: 42 } as never)),
+  )
+  const recent = deps.diagnostics.recent()
+  assert.equal(recent[0]?.code, 'ipc.handler.failed')
+  assert.equal(recent[0]?.severity, 'error')
   cleanup()
 })
 
@@ -138,10 +191,26 @@ test('session:command drives the machine and broadcasts the new state', async ()
   })
 
   // A rejected transition is a response, not an exception — the renderer needs
-  // to render it, not catch it.
-  const illegal = await ipc.invoke('session:command', { meetingId: 'm1', command: 'confirm' })
+  // to render it, not catch it. And the response is a *sentence*: it is drawn
+  // verbatim, and « confirm is not legal from pushing » was what a second press
+  // of *Valider* put in a role="alert" at the confirmation gate.
+  const illegal = await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
   assert.equal(illegal.ok, false)
   assert.equal(illegal.state, 'recording')
+  assert.equal(illegal.ok === false && illegal.reason, 'Réunion en cours.')
+
+  /*
+   * **And `confirm` is not on this channel at all.** It dispatched the state
+   * machine with nothing behind it: `{ok:true,state:'pushing'}` with zero
+   * intents, and `pushSettled`'s guard needs one, so the meeting could never
+   * leave `pushing` and `abort` is illegal from there. It is also a second path
+   * past the one confirmation (DEC-4) — the write belongs to `review:confirm`.
+   */
+  await assert.rejects(() =>
+    Promise.resolve(
+      ipc.invoke('session:command', { meetingId: 'm1', command: 'confirm' } as never),
+    ),
+  )
 
   // The renderer cannot fabricate a command only a module may report.
   await assert.rejects(() =>
@@ -195,7 +264,10 @@ test('health:retry runs the registered retry and broadcasts the result', async (
   })
   const failed = await ipc.invoke('health:retry', { connector: 'mail' })
   assert.ok(failed.state === 'down', 'a throwing retry leaves the connector down')
-  assert.equal(failed.reason, 'jeton expiré')
+  // The clause is ours; the throw's own text follows it. A retry that fails
+  // against Graph throws Microsoft's English, and this reason is drawn verbatim
+  // on the onboarding rows and Réglages' connector cards.
+  assert.equal(failed.reason, 'nouvelle tentative échouée — jeton expiré')
   assert.ok(failed.retryable, 'and offers another attempt — never a dead button')
   cleanup()
 })
@@ -391,6 +463,7 @@ test('DEC-23: confirming mid-call is refused before a single event is written', 
 
 test('the open gate pre-fills every field and cites a source for the interpretive ones', async () => {
   const { ipc, deps, cleanup } = open()
+  signIn(deps)
   atGate(deps, 'm1')
 
   const panel = await editsFor(ipc, 'm1')
@@ -824,8 +897,72 @@ test('the search happens in the main process: no transcript crosses the boundary
   cleanup()
 })
 
+/**
+ * **A disabled row names the blocker that is actually in the way** (DEC-26).
+ *
+ * « Aucun destinataire au calendrier. » was the only sentence the Outlook row
+ * had, and on the build the first demo ships in (DEC-28) it is a true statement
+ * about the wrong thing: there is no Entra registration, so there is no calendar
+ * for a meeting to have attendees in *and* no account to draft from. A rep reads
+ * it and goes looking for people to add to the invitation — a search that cannot
+ * succeed, because adding ten attendees would change nothing.
+ *
+ * Both causes are real and they have different remedies, so the deeper one is
+ * named first.
+ */
+test('with no Microsoft account the Outlook row says so, not that nobody is invited', async () => {
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+
+  const panel = await editsFor(ipc, 'm1')
+  const mail = panel.intents.find((intent) => intent.kind === 'mail.draft')
+
+  assert.equal(mail?.available, false)
+  assert.equal(mail?.reason, 'Aucun compte Microsoft connecté.')
+
+  // And the two VerySwing intents are untouched by it — the CRM does not go
+  // through Microsoft, and an optional connector never disables another (DEC-26).
+  assert.ok(panel.intents.filter((i) => i.kind !== 'mail.draft').every((i) => i.available))
+  cleanup()
+})
+
+/**
+ * First run (`core/contracts/onboarding.ts`).
+ *
+ * Two properties, and the second is the one worth a test: a preference that
+ * cannot be read must not be able to hold the window shut. `JSON.parse` throws
+ * before any schema sees the string, so one corrupt row is the whole distance
+ * between « show the onboarding again » and « the app does not open ».
+ */
+test('onboarding is unseen on a fresh install and stays seen once recorded', async () => {
+  const { ipc, cleanup } = open()
+
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+  assert.deepEqual(await ipc.invoke('onboarding:seen', {}), { seen: true })
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: true })
+
+  cleanup()
+})
+
+test('a corrupt preference shows the onboarding again rather than throwing', async () => {
+  const { ipc, deps, cleanup } = open()
+  deps.store.appState.set(ONBOARDING_KEY, 'pas du json')
+
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+
+  // And valid JSON of the wrong shape lands in the same place, through the
+  // schema rather than through the throw.
+  deps.store.appState.set(ONBOARDING_KEY, '{"seen":"oui"}')
+  assert.deepEqual(await ipc.invoke('onboarding:state', {}), { seen: false })
+
+  cleanup()
+})
+
 test('a row carries the push status of each intent', async () => {
   const { ipc, deps, cleanup } = open()
+  // The mail draft is one of the three statuses this row reports, and it is only
+  // drafted when there is an account to draft from.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
   await ipc.invoke('review:confirm', {
@@ -869,6 +1006,40 @@ test('an expanded row is the four sections of DEC-25', async () => {
   const besoin = record.fields.find((f) => f.key === 'besoin')
   assert.equal(besoin?.span?.quote, 'on est plutôt sur un TJM de 520 euros')
   assert.equal(record.fields.find((f) => f.key === 'account')?.span, null)
+  cleanup()
+})
+
+/*
+ * `review:transcript` — the reader behind `source ▸` at the gate (DEC-21).
+ *
+ * It is the same rows `spanVerification.ts` checked the quote against, which is
+ * the whole warrant for the affordance: a citation a rep follows has to land in
+ * the text the app verified, not in a second, prettier copy of it.
+ */
+test('the gate can read the transcript its citations were verified against', async () => {
+  const { ipc, deps, cleanup } = open()
+  captured(deps, 'm1', 'on est plutôt sur un TJM de 520 euros', 'à rappeler jeudi', true)
+
+  const view = await ipc.invoke('review:transcript', { meetingId: 'm1' })
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+
+  // The same segments, and every one of them final — an interim is never
+  // persisted and can never be cited.
+  assert.deepEqual(view.segments, record.segments)
+  assert.ok(view.segments.every((segment) => segment.isFinal))
+
+  // And the citation really occurs in what came back — which is the whole
+  // point of the affordance: following `source ▸` lands in the text the app
+  // checked the quote in, not in a second, prettier copy of it.
+  const quote = record.fields.find((f) => f.key === 'besoin')?.span?.quote
+  assert.ok(quote)
+  assert.ok(view.segments.some((segment) => segment.text.includes(quote)))
+  cleanup()
+})
+
+test('a meeting nobody has heard of is refused rather than answered with nothing', async () => {
+  const { ipc, cleanup } = open()
+  await assert.rejects(() => ipc.invoke('review:transcript', { meetingId: 'nope' }))
   cleanup()
 })
 
@@ -1173,15 +1344,15 @@ test('a provider that cannot be used is listed with the reason, never hidden (DE
   })
 
   const snapshot = await ipc.invoke('settings:snapshot', {})
-  const deepgram = snapshot.stt.rows.find((row) => row.id === 'deepgram')
+  const unusable = snapshot.stt.rows.find((row) => row.id === 'elevenlabs')
 
-  assert.ok(deepgram, 'the unusable provider is in the table, not dropped from it')
-  assert.equal(deepgram.configured, false)
-  assert.equal(deepgram.selectable, false)
-  assert.match(deepgram.reason ?? '', /clé/)
+  assert.ok(unusable, 'the unusable provider is in the table, not dropped from it')
+  assert.equal(unusable.configured, false)
+  assert.equal(unusable.selectable, false)
+  assert.match(unusable.reason ?? '', /clé/)
   // It still says where the audio would go, which is the half the screen
   // carries now that the row refuses nothing.
-  assert.equal(deepgram.residency, 'remote')
+  assert.equal(unusable.residency, 'remote')
   cleanup()
 })
 
@@ -1320,13 +1491,13 @@ test('the shipped registries all declare a tier and survive the row builder', ()
   // runs on this machine, including the hosted ones, which is what makes the
   // choice informed now that it is no longer made here.
   const rows = providerRows(STT_PROVIDERS, {
-    configured: ['deepgram'],
-    selected: 'deepgram',
+    configured: ['elevenlabs'],
+    selected: 'elevenlabs',
     reason: null,
   })
-  const deepgram = rows.find((row) => row.id === 'deepgram')
-  assert.equal(deepgram?.residency, 'remote')
-  assert.equal(deepgram?.selectable, true, 'a configured provider is one someone chose')
+  const cloud = rows.find((row) => row.id === 'elevenlabs')
+  assert.equal(cloud?.residency, 'remote')
+  assert.equal(cloud?.selectable, true, 'a configured provider is one someone chose')
   assert.ok(
     rows.every((row) => ['local', 'remote'].includes(row.residency)),
     'every row states where the audio would go',
@@ -1486,6 +1657,685 @@ test('switching after a compte-rendu exists regenerates it', async () => {
   })
   assert.equal(again.regenerating, false)
   assert.equal(runs, 1)
+
+  cleanup()
+})
+
+test('a model download is refused while a meeting is recording, with the reason', async () => {
+  /*
+   * `ModelDownloads.start` posts `init` straight to its own worker, bypassing
+   * `acquireLoadSlot` and `memoryVerdict` — the two guards `engine.ts` describes
+   * as the reason an ONNX session that cannot allocate « does not fail politely,
+   * it takes the process with it ». So *Télécharger* mid-call built a second
+   * ONNX session beside the meeting's, on a laptop already running a recording,
+   * a transcriber and Teams.
+   *
+   * The app already refuses a ten-second installer while a call is live
+   * (`updateReadiness`); a multi-gigabyte download that spawns a model runtime is
+   * the same question with a bigger answer. Stated, never silent (DEC-26).
+   */
+  const h = open()
+  let started = 0
+  h.deps.models = {
+    start: async () => {
+      started += 1
+    },
+    cancel: async () => {},
+    section: () => ({ rows: [], selected: null }),
+  }
+  const meetingId = 'm-live'
+  h.deps.orchestrator.create({ id: meetingId, title: 'Appel', context: null })
+  h.deps.orchestrator.dispatch(meetingId, 'start', null)
+
+  await assert.rejects(
+    () => h.ipc.invoke('models:download', { modelId: 'Xenova/whisper-small' }),
+    /réunion est en cours/,
+  )
+  assert.equal(started, 0, 'rien ne doit avoir été lancé')
+
+  // And it is a refusal, not a wall: once the call is over the download runs.
+  h.deps.orchestrator.dispatch(meetingId, 'end', null)
+  await h.ipc.invoke('models:download', { modelId: 'Xenova/whisper-small' })
+  assert.equal(started, 1)
+  h.cleanup()
+})
+
+/**
+ * The rep marking a moment of their own call (`core/contracts/marks.ts`).
+ *
+ * Two windows can press this — the session screen and the widget floating over
+ * Teams — so the id and the instant are minted here rather than in either of
+ * them. The refusal is the interesting half: « ce moment » has no referent once
+ * the call is over.
+ */
+test('meeting:mark records a moment, and refuses one outside a recording', async () => {
+  const { ipc, deps, cleanup } = open()
+  const marked: Array<{ meetingId: string; mark: unknown }> = []
+  deps.broadcastMark = (meetingId, mark) => marked.push({ meetingId, mark })
+  deps.orchestrator.create({ id: 'm1', title: 'Acme', context: sampleContext })
+
+  // Before the recording starts there is no moment to mark, and the answer is a
+  // sentence rather than an exception nobody composed (DEC-26).
+  await assert.rejects(
+    () => ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'trop tôt', segmentId: null }),
+    /Aucun enregistrement en cours/,
+  )
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
+  const mark = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'plafond achats',
+    segmentId: null,
+  })
+  assert.equal(mark.note, 'plafond achats')
+  assert.equal(mark.segmentId, null)
+  assert.ok(mark.id.length > 0)
+
+  // In the log, and therefore in every reader that folds it.
+  assert.deepEqual(deps.store.projections.marks('m1'), [mark])
+  // And on its way to the other window: a rep who marks from the widget and
+  // then opens the app must not find a list one short.
+  assert.deepEqual(marked, [{ meetingId: 'm1', mark }])
+
+  // A mark made *on a turn* keeps the turn, because the rep pointed at it.
+  const pinned = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: '',
+    segmentId: 'far-3',
+  })
+  assert.equal(pinned.segmentId, 'far-3')
+
+  // The transcript view carries them, which is what the two readers draw.
+  const view = await ipc.invoke('review:transcript', { meetingId: 'm1' })
+  assert.deepEqual(view.marks.map((m) => m.id), [mark.id, pinned.id])
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
+  await assert.rejects(
+    () => ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'trop tard', segmentId: null }),
+    /Aucun enregistrement en cours/,
+  )
+  cleanup()
+})
+
+/**
+ * What the widget reads on open.
+ *
+ * The live orchestrator and not the projection, and that distinction is the
+ * whole test: a meeting the projection still calls `recording` after a crash is
+ * the stranded row `main.ts`'s boot sweep ends, and a widget drawn over one
+ * would be a pill floating over somebody's screen announcing a recording that
+ * no device is behind.
+ */
+test('widget:state answers the meeting that is really recording, or null', async () => {
+  const { ipc, deps, cleanup } = open()
+  /*
+   * **The sentence rides every answer, including the ones with no meeting** (US-19).
+   *
+   * It is not a property of the meeting: `MEASURE_DEADLINE_MS` treats a
+   * `{ meeting: null }` answer as settled either way, and that is the frame the pill
+   * is measured on. Attached to the meeting instead, the sentence — and therefore the
+   * control that hands it over — would arrive only when there is one, which is the
+   * 32 px of width appearing after the measurement that DEC-50 closed.
+   *
+   * `deps.preferences` is unset here, which is the configuration of every run that
+   * has never opened Réglages: the resolved default, not an empty string.
+   */
+  const noMeeting = { meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
+
+  deps.orchestrator.create({ id: 'm1', title: 'Néovia Santé — cadrage', context: sampleContext })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
+  await ipc.invoke('meeting:mark', { meetingId: 'm1', note: 'noté', segmentId: null })
+  const live = await ipc.invoke('widget:state', {})
+  assert.equal(live.meeting?.meetingId, 'm1')
+  assert.equal(live.meeting?.title, 'Néovia Santé — cadrage')
+  assert.equal(live.meeting?.marks.length, 1)
+  assert.equal(live.mentionSentence, MENTION_SENTENCE_DEFAULT)
+
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
+  assert.deepEqual(await ipc.invoke('widget:state', {}), noMeeting)
+  cleanup()
+})
+
+/**
+ * **What Réglages saved is what the pill hands to the client** (US-19).
+ *
+ * The whole of the story on the main-process side, and it is asserted through both
+ * channels because two readers resolving « what does a blank mean » separately is how
+ * two defaults start disagreeing. What is stored is raw; what either channel answers is
+ * resolved, by the one function in `core/contracts/mention.ts`.
+ *
+ * The blank case is the one worth driving: `setMentionSentence('')` is how a rep returns
+ * to the default, and a snapshot that answered `''` would put a control on the pill that
+ * copies emptiness — the dead control DEC-26 forbids, on the one surface a rep uses in
+ * front of a client.
+ */
+test('the sentence Réglages saved is what widget:state and the snapshot answer', async () => {
+  const { ipc, deps, cleanup } = open()
+  let stored: string | null = null
+  deps.preferences = {
+    selectProvider: async () => {},
+    selectModel: async () => {},
+    setField: async () => {},
+    setOfflineOnly: async () => {},
+    mentionSentence: () => stored,
+    setMentionSentence: async (value) => {
+      stored = value.trim() === '' ? null : value.trim()
+    },
+  }
+
+  const own = 'Cet échange est transcrit par un outil interne.'
+  const saved = await ipc.invoke('settings:setMentionSentence', { value: own })
+  assert.equal(saved.mentionSentence, own, 'la sonde ne renvoie pas ce qui vient d’être écrit')
+  assert.equal((await ipc.invoke('widget:state', {})).mentionSentence, own)
+
+  // Emptying it is the request to come back to the default, on both channels.
+  const cleared = await ipc.invoke('settings:setMentionSentence', { value: '   ' })
+  assert.equal(cleared.mentionSentence, MENTION_SENTENCE_DEFAULT)
+  assert.equal((await ipc.invoke('widget:state', {})).mentionSentence, MENTION_SENTENCE_DEFAULT)
+  assert.equal(stored, null, 'une phrase vide laisse une ligne qui veut dire « le défaut »')
+  cleanup()
+})
+
+/**
+ * The window gestures, with no window.
+ *
+ * `IpcDeps.widget` is absent in every test and in any run without an overlay,
+ * and the channels answer `{ ok: false }` rather than throwing — which is what
+ * lets the widget treat « la fenêtre n'a pas bougé » as a fact it can say out
+ * loud instead of an exception it has to swallow (DEC-26). `widget:left` is the
+ * one that matters here: the reply crosses a process boundary, so it can
+ * legitimately arrive after the window it was about has already gone.
+ */
+test('the widget’s window gestures answer false when there is no window', async () => {
+  const { ipc, deps, cleanup } = open()
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300 }), {
+    ok: false,
+    above: false,
+  })
+  assert.deepEqual(await ipc.invoke('window:focus', { meetingId: null }), { ok: false })
+  assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: false })
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 150 }), { ok: false })
+
+  const asked: unknown[] = []
+  const focused: Array<string | null> = []
+  const after: number[] = []
+  const measuring: number[] = []
+  let through: boolean | null = null
+  deps.widget = {
+    resize: (box) => {
+      asked.push(box)
+      return { ok: true, above: true }
+    },
+    passThrough: (value) => {
+      through = value
+      return true
+    },
+    focusMain: (meetingId) => {
+      focused.push(meetingId)
+      return true
+    },
+    left: (ms) => {
+      after.push(ms)
+      return true
+    },
+    measuring: (withinMs) => {
+      measuring.push(withinMs)
+      return true
+    },
+  }
+  // The pill's offset travels with the size — it is what lets the main process
+  // leave the pill where it was instead of anchoring a window edge.
+  assert.deepEqual(await ipc.invoke('widget:resize', { width: 340, height: 300, pillTop: 16, pillHeight: 44 }), {
+    ok: true,
+    above: true,
+  })
+  assert.deepEqual(asked, [{ width: 340, height: 300, pillTop: 16, pillHeight: 44 }])
+
+  // And the renderer's own measurement deadline, which is what puts the main
+  // process's first-frame wait on the same clock as it — see `widget:measuring`.
+  assert.deepEqual(await ipc.invoke('widget:measuring', { withinMs: 200 }), { ok: true })
+  assert.deepEqual(measuring, [200])
+
+  // « Ouvrir Sillage » reaches the window, with the meeting it is open on.
+  assert.deepEqual(await ipc.invoke('window:focus', { meetingId: 'm1' }), { ok: true })
+  assert.deepEqual(focused, ['m1'])
+
+  assert.deepEqual(await ipc.invoke('widget:passThrough', { through: true }), { ok: true })
+  assert.equal(through, true)
+
+  /*
+   * The duration the renderer resolved for its own exit, which is what lets the
+   * main process destroy the window *after* the fade instead of during it. Zero
+   * is the `prefers-reduced-motion` answer and has to survive the schema, which
+   * is why it is asserted rather than assumed: a `.positive()` there would have
+   * turned « go now » into a validation error on the way out of the call.
+   */
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 150 }), { ok: true })
+  assert.deepEqual(await ipc.invoke('widget:left', { afterMs: 0 }), { ok: true })
+  assert.deepEqual(after, [150, 0])
+  cleanup()
+})
+
+/**
+ * **« Cette machine uniquement » had no way to be asked for, and was
+ * bypassable once it was** (DEC-37).
+ *
+ * DEC-37 withdrew every jurisdiction claim and kept exactly one rule that still
+ * refuses. Both registries honoured it in their *ranking* — and the ranking is
+ * not where the decision ends. `main.ts` takes the rep's explicit provider
+ * choice whenever it is configured, so « paste an OpenAI key, press *Utiliser*,
+ * then ask for this machine only » left the audio going to OpenAI. The
+ * constraint is applied to the candidate set now
+ * (`core/domain/residency.ts`), which is the only place every downstream path
+ * has to pass through.
+ *
+ * Here: the channel exists, it writes, and the snapshot the screen redraws from
+ * says what a meeting would actually do.
+ */
+test('settings:setOfflineOnly is written and read back on the snapshot', async () => {
+  const { ipc, deps, cleanup } = open()
+  let stored: boolean | null = null
+  deps.preferences = {
+    selectProvider: async () => {},
+    selectModel: async () => {},
+    setField: async () => {},
+    setOfflineOnly: async (value) => {
+      stored = value
+    },
+    mentionSentence: () => null,
+    setMentionSentence: async () => {},
+  }
+  deps.offlineOnly = () => stored ?? false
+  let resettled = 0
+  deps.onSettingsChanged = () => {
+    resettled += 1
+  }
+
+  const before = await ipc.invoke('settings:snapshot', {})
+  assert.equal(before.offlineOnly, false)
+
+  const after = await ipc.invoke('settings:setOfflineOnly', { value: true })
+  assert.equal(stored, true)
+  assert.equal(after.offlineOnly, true)
+  /*
+   * Every settings write drains what is waiting, because any of them can be the
+   * piece that makes — or unmakes — a usable model, and a meeting sitting in
+   * `ended` is waiting on exactly that promise (DEC-39). This one can unmake
+   * one, which is the direction that was never considered.
+   */
+  assert.equal(resettled, 1)
+
+  // And off again: returning to the default has to be reachable, or the first
+  // time a rep asks for this it is permanent.
+  const off = await ipc.invoke('settings:setOfflineOnly', { value: false })
+  assert.equal(stored, false)
+  assert.equal(off.offlineOnly, false)
+  cleanup()
+})
+
+test('settings:setOfflineOnly refuses with a sentence when preferences are absent', async () => {
+  // The build with no settings backend behind it — the channel answers a stated
+  // refusal rather than throwing something nobody composed (DEC-26).
+  const { ipc, cleanup } = open()
+  await assert.rejects(
+    () => ipc.invoke('settings:setOfflineOnly', { value: true }),
+    /préférences ne sont pas disponibles/,
+  )
+  cleanup()
+})
+
+/**
+ * **Why there is no updater, when the reason is the thing that matters.**
+ *
+ * « mise à jour automatique indisponible dans cette build » is true of a
+ * portable install and misleading about an unsigned Windows one, where the fact
+ * a rep needs is that nothing could have checked the download before running it
+ * (`core/domain/updateTrust.ts`). One string for both would have made the
+ * decision to disable auto-update on unsigned builds invisible on the screen
+ * built to explain it.
+ */
+test('update:status carries the stated reason there is no updater', async () => {
+  const { ipc, deps, cleanup } = open()
+
+  const generic = await ipc.invoke('update:status', {})
+  assert.equal(generic.phase, 'disabled')
+  assert.match(generic.reason ?? '', /indisponible dans cette build/)
+
+  deps.noUpdaterReason =
+    'mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
+    'vérifier que la mise à jour vient bien de l’éditeur. Les nouvelles versions sont à ' +
+    'installer à la main.'
+  const stated = await ipc.invoke('update:status', {})
+  assert.match(stated.reason ?? '', /n’est pas signée/)
+  // Still not installable, which is the point: there is nothing to install.
+  assert.equal(stated.installable, false)
+  cleanup()
+})
+
+/**
+ * **The fifty-row defect, one order of magnitude up.**
+ *
+ * `SEARCH_SCAN_LIMIT = 500` argued its own case correctly — « scanning fifty and
+ * returning fifty would mean a match on the fifty-first call was unfindable,
+ * which is the one thing search may not do » — and then did exactly that at five
+ * hundred. Call five hundred and one answered « Aucun appel ne correspond. »
+ * under a preview screen promising « l'historique les porte tous » (DEC-25), and
+ * the only field that could have said the *scan* had been cut short — `scanned` —
+ * was shipped on every answer and read by no screen.
+ *
+ * Five hundred and twenty meetings, seeded through the product's own
+ * `Orchestrator`, because the property is about the five hundred and first.
+ */
+test('every call ever captured is searchable, including the five hundred and first', async () => {
+  const { ipc, deps, cleanup } = open()
+  const DAY = 86_400_000
+  for (let i = 0; i < 520; i += 1) {
+    const id = `m${String(i).padStart(4, '0')}`
+    deps.orchestrator.create({
+      id,
+      title: `Point hebdomadaire ${i}`,
+      clientName: `Client ${i}`,
+      scheduledStart: NOW - i * DAY,
+    })
+    deps.orchestrator.dispatch(id, 'start', null)
+    deps.orchestrator.dispatch(id, 'end', null)
+  }
+
+  // Newest first, so this one is the five hundred and first row — the first one
+  // the old scan could not reach.
+  const beyond = deps.store.projections.listMeetings(null)
+  assert.equal(beyond[500]?.id, 'm0500')
+
+  const found = await ipc.invoke('history:search', { query: 'hebdomadaire 500' })
+  assert.deepEqual(
+    found.rows.map((row) => row.meeting.id),
+    ['m0500'],
+  )
+  // And by the client's own name, which is what a rep types first.
+  const byClient = await ipc.invoke('history:search', { query: 'Client 512' })
+  assert.deepEqual(
+    byClient.rows.map((row) => row.meeting.id),
+    ['m0512'],
+  )
+  // The corpus was read whole, and the number says so — it is what the screen
+  // prints beside « les cinquante plus récents ».
+  assert.equal(found.scanned, 520)
+  cleanup()
+})
+
+test('the search cap is reported, because the screen promises it is not there', async () => {
+  /*
+   * `SEARCH_LIMIT` is fifty and `history:search` simply breaks out of the loop
+   * — while `Results.tsx`, the eight-row preview a rep arrives *from*, draws
+   * « Les premiers résultats — l'historique les porte tous. » An ESN rep passes
+   * fifty calls matching « TJM » inside a year, and from that point the screen
+   * that was just promised to carry all of them silently carried fifty.
+   */
+  const { ipc, deps, cleanup } = open()
+  for (let i = 0; i < 4; i++) captured(deps, `m${i}`, 'on parle du TJM', 'note')
+
+  const capped = await ipc.invoke('history:search', { query: 'TJM', limit: 2 })
+  assert.equal(capped.rows.length, 2)
+  assert.equal(capped.capped, true, 'la liste est tronquée et doit le dire')
+
+  const whole = await ipc.invoke('history:search', { query: 'TJM', limit: 50 })
+  assert.equal(whole.rows.length, 4)
+  assert.equal(whole.capped, false, 'rien de caché, rien à annoncer')
+
+  /*
+   * **And exactly `limit` matches is not a cap.** This was `rows.length >=
+   * limit`, so four matches at a limit of four drew « Affinez la recherche pour
+   * en voir d'autres » — a screen telling a rep to narrow a search that had
+   * already returned everything. The handler collects one row past the limit and
+   * drops it, which is the only way to know the difference.
+   */
+  const exact = await ipc.invoke('history:search', { query: 'TJM', limit: 4 })
+  assert.equal(exact.rows.length, 4)
+  assert.equal(exact.capped, false, 'quatre correspondances, limite quatre : rien n’est caché')
+
+  const over = await ipc.invoke('history:search', { query: 'TJM', limit: 3 })
+  assert.equal(over.rows.length, 3, 'la ligne de dépassement ne voyage jamais')
+  assert.equal(over.capped, true)
+  cleanup()
+})
+
+/**
+ * **The one thing a rep can type from inside the call, and no search reached it.**
+ *
+ * `Projections.marks` existed, `MomentMark.note` carried the rep's own words, the
+ * widget wrote them and both readers drew them — and `searchableRecord` folded
+ * four surfaces of which this was not one. « prix : ils bloquent à 550 », typed
+ * one-handed over a client's face, was in the record and `550` did not find it.
+ * Driven through `meeting:mark`, which is the channel the widget calls.
+ */
+test('a mark the rep typed during the call is findable afterwards', async () => {
+  const { ipc, deps, cleanup } = open()
+  deps.orchestrator.create({ id: 'm1', title: 'Néovia Santé — cadrage', clientName: 'Néovia Santé' })
+  deps.orchestrator.dispatch('m1', 'start', null)
+  const mark = await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'prix : ils bloquent à 550',
+    segmentId: null,
+  })
+  await ipc.invoke('meeting:mark', {
+    meetingId: 'm1',
+    note: 'mise en œuvre repoussée à janvier',
+    segmentId: null,
+  })
+  // The other press: the pill's button, no typing. It carries no words and
+  // contributes none — a moment is not searchable prose.
+  await ipc.invoke('meeting:mark', { meetingId: 'm1', note: '', segmentId: null })
+  deps.orchestrator.dispatch('m1', 'end', null)
+
+  for (const query of ['550', 'bloquent', 'œuvre', 'oeuvre']) {
+    const result = await ipc.invoke('history:search', { query })
+    assert.deepEqual(
+      result.rows.map((row) => row.meeting.id),
+      ['m1'],
+      `« ${query} » ne trouve rien`,
+    )
+    assert.deepEqual(
+      result.rows[0]?.matches.map((m) => m.where),
+      ['marks'],
+    )
+  }
+
+  // Two marks are two notes, and the excerpt says so: `ellipsise` collapses the
+  // newline that separates them, so the join carries a visible separator too.
+  const both = await ipc.invoke('history:search', { query: '550' })
+  assert.match(both.rows[0]?.matches[0]?.excerpt ?? '', /550 · mise en œuvre/)
+
+  /*
+   * A mark taken back is not findable, and nothing had to be written to make
+   * that true: `Projections.marks` applies `moment.forgotten` (DEC-27), so the
+   * note leaves the searchable record the moment the rep retracts it — which is
+   * the point, since it is typed over a client's face and a typo is made here
+   * more easily than anywhere else in the product.
+   */
+  await ipc.invoke('meeting:forget', { meetingId: 'm1', markId: mark.id })
+  assert.deepEqual(await ipc.invoke('history:search', { query: '550' }).then((r) => r.rows), [])
+  assert.equal((await ipc.invoke('history:search', { query: 'œuvre' })).rows.length, 1)
+  cleanup()
+})
+
+test('the apostrophe a Windows keyboard types finds what the app stored (HR-2)', async () => {
+  // Everything stored carries U+2019 — `check:french` enforces it in repo prose
+  // and `terms.fr-esn.ts` ships « appel d’offres » as a Whisper boost term — and
+  // an AZERTY keyboard emits U+0027. Driven through the real handler.
+  const { ipc, deps, cleanup } = open()
+  captured(deps, 'ao', 'ils lancent un appel d’offres en janvier', 'relancer aujourd’hui')
+
+  for (const query of ["appel d'offres", 'appel d’offres', "aujourd'hui"]) {
+    const result = await ipc.invoke('history:search', { query })
+    assert.equal(result.rows.length, 1, `« ${query} » ne trouve rien`)
+  }
+  cleanup()
+})
+
+/*
+ * ── the compte-rendu the rep validated is the one the archive keeps ──────────
+ *
+ * `edits.compteRendu` reached `draftIntents` and nothing else, so the archive and
+ * the CRM held two different documents from the moment a rep corrected a
+ * sentence at the gate. Driven end to end on the real gate, the real store and
+ * the real outbox, because that is the only place the two can be compared:
+ * confirm with a correction, then read the record back through the handlers the
+ * two screens call.
+ */
+test('a correction made at the gate is what Historique draws and what search finds', async () => {
+  const { ipc, deps, cleanup } = open()
+  signIn(deps)
+  atGate(deps, 'm1')
+  const panel = await editsFor(ipc, 'm1')
+
+  // What the gate opened on, and the one line the rep strikes out of it.
+  const deleted = panel.edits.compteRendu
+    .split('\n')
+    .find((line) => line.startsWith('- **Besoin**'))
+  assert.ok(deleted, 'la ligne à supprimer doit être dans le document du modèle')
+
+  const corrected = `${panel.edits.compteRendu
+    .split('\n')
+    .filter((line) => line !== deleted)
+    .join('\n')}\n\nLe client a insisté sur le mot ZORGLUB pendant la réunion.`
+
+  await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: { ...panel.edits, compteRendu: corrected },
+    intentIds: panel.intents.filter((intent) => intent.available).map((intent) => intent.id),
+  })
+
+  // 1. VerySwing gets the string the rep read — the invariant that already held.
+  const task = createdIntents(deps, 'm1').find((intent) => intent.kind === 'crm.task')
+  assert.ok(JSON.stringify(task).includes('ZORGLUB'))
+
+  // 2. And so does the archive, which is the converse and did not hold.
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+  assert.equal(record.compteRendu, corrected)
+  assert.ok((record.compteRendu ?? '').includes('ZORGLUB'))
+  assert.equal((record.compteRendu ?? '').includes(deleted), false)
+
+  // 3. The search searches it, so the call is findable by the phrase the rep is
+  //    certain of — and *not* by the sentence they specifically struck out, which
+  //    the row used to offer as the reason it was in the list.
+  const found = await ipc.invoke('history:search', { query: 'ZORGLUB' })
+  assert.deepEqual(
+    found.rows.map((row) => row.meeting.id),
+    ['m1'],
+  )
+  assert.deepEqual(
+    (await ipc.invoke('history:search', { query: deleted })).rows,
+    [],
+    'la ligne supprimée avant validation ne doit plus être une preuve',
+  )
+
+  // 4. And `meeting:get`, which is the session screen's own read of the same
+  //    document, agrees with both — one function answers all three.
+  assert.equal((await ipc.invoke('meeting:get', { meetingId: 'm1' })).compteRendu, corrected)
+  cleanup()
+})
+
+test('a meeting confirmed before the correction was recorded still reads the model’s document', async () => {
+  /*
+   * The compatibility case, and it is not hypothetical: every meeting in every
+   * install confirmed before `confirmation.recorded` carried this field has no
+   * key at all. `nullish` is what lets those events replay, and « absent » has to
+   * mean « render the extraction » rather than « the document is empty » — which
+   * is the whole reason `confirmedCompteRendu` tests for `!= null` instead of for
+   * truthiness. Written the way the log holds it, not through the handler.
+   */
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+  deps.orchestrator.dispatch('m1', 'confirm', null)
+  deps.store.append('m1', {
+    type: 'confirmation.recorded',
+    intentIds: [],
+    at: 5_000,
+  })
+
+  const record = await ipc.invoke('history:record', { meetingId: 'm1' })
+  assert.match(record.compteRendu ?? '', /Renfort/)
+  assert.match(record.compteRendu ?? '', /## Éléments retenus/)
+  // Findable by the model's own words, exactly as it has always been.
+  assert.equal((await ipc.invoke('history:search', { query: 'Renfort' })).rows.length, 1)
+  cleanup()
+})
+
+test('a row names its client once in its excerpt too', async () => {
+  /*
+   * `meetingHeading` strips the client's name off the front of the objet — the
+   * objet a rep types opens on it almost every time — and `searchableRecord` was
+   * joining the two *raw*, so the evidence line under the row read « Sodexial —
+   * comité de staffing hebdomadaire Sodexial » three pixels under a title that
+   * had just printed the name once. One function, one answer: it moved into
+   * `core/contracts/meeting.ts` so the main process can reach it.
+   */
+  const { ipc, deps, cleanup } = open()
+  deps.orchestrator.create({
+    id: 'man-1',
+    title: 'Sodexial — comité de staffing hebdomadaire',
+    context: null,
+    clientName: 'Sodexial',
+  })
+
+  const excerptFor = async (query: string) =>
+    (await ipc.invoke('history:search', { query })).rows[0]?.matches.find(
+      (match) => match.where === 'meeting',
+    )?.excerpt
+
+  assert.equal(await excerptFor('staffing'), 'Sodexial comité de staffing hebdomadaire')
+  // And the call is still findable by the client's own name, which is the one
+  // thing that must not be lost to a de-duplication.
+  assert.equal(await excerptFor('Sodexial'), 'Sodexial comité de staffing hebdomadaire')
+  cleanup()
+})
+
+/**
+ * **Consent, and the two ways this channel can be absent.**
+ *
+ * The port is implemented in `main.ts`, which is the one file allowed to know
+ * that a privacy pane is a URL. A test — and an older build, and a host where
+ * nothing can be asked — has none, and the channel must then refuse with a
+ * sentence rather than throw something Electron composed: the onboarding row
+ * falls back to the health sentence it already had (DEC-26), which it cannot do
+ * if the renderer is handed « Error invoking remote method ».
+ */
+test('capture permission refuses in a stated sentence when nothing can answer', async () => {
+  const { ipc, cleanup } = open()
+
+  await assert.rejects(ipc.invoke('capture:permission', {}), /autorisations d’enregistrement/)
+  await assert.rejects(ipc.invoke('capture:permission:open', {}), /réglages de confidentialité/)
+
+  cleanup()
+})
+
+test('consent is read through the port, and the pane reports whether it opened', async () => {
+  const { deps, cleanup } = open()
+  let opened = 0
+  deps.capturePermission = {
+    read: () => ({
+      state: 'denied',
+      channel: 'screen',
+      reason: 'l’audio système n’est pas autorisé.',
+      canOpenSettings: true,
+    }),
+    openSettings: async () => {
+      opened += 1
+      return false
+    },
+  }
+  // Registered again, over the same deps, now that the port is there.
+  const ipc = new FakeIpcMain()
+  registerIpc(ipc, deps)
+
+  assert.equal((await ipc.invoke('capture:permission', {})).state, 'denied')
+  // `false` is reported rather than swallowed: a button that appears to do
+  // nothing teaches a rep that the screen is broken.
+  assert.deepEqual(await ipc.invoke('capture:permission:open', {}), { opened: false })
+  assert.equal(opened, 1)
 
   cleanup()
 })

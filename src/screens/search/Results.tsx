@@ -16,6 +16,7 @@
  *    whole reader would be a second Historique inside the home screen.
  */
 import type { HistoryRow } from '../../../electron/core/contracts/history.ts'
+import { meetingAnchor } from '../../../electron/core/contracts/meeting.ts'
 import { formatDayShort, meetingHeading } from '../../app/format.ts'
 import { Button, EmptyState, List, Row, RowTitle } from '../../ui/index.ts'
 import { IntentSummary } from './Intents.tsx'
@@ -25,7 +26,13 @@ export interface ResultsProps {
   /** Null while the first answer is in flight. */
   rows: readonly HistoryRow[] | null
   failure: string | null
-  /** True when the answer filled the pane, so there is more behind the link. */
+  /**
+   * True when a row was **hidden** — the main process's own `capped`, never a
+   * count of the rows above against the limit they were asked for. That
+   * comparison is one more than the question: eight matches filling an
+   * eight-row pane with nothing behind them drew « l'historique les porte
+   * tous », sending a rep to a second screen for results that do not exist.
+   */
   truncated: boolean
   onOpen: (meetingId: string) => void
 }
@@ -43,7 +50,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
 
   if (rows.length === 0) {
     return (
-      <EmptyState hint="La recherche porte sur les clients, les sujets, les transcriptions et vos notes.">
+      <EmptyState hint="La recherche porte sur les clients, les sujets, les transcriptions, vos notes, vos moments marqués et les comptes-rendus.">
         Aucun appel ne correspond.
       </EmptyState>
     )
@@ -55,13 +62,24 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
         {rows.map((row) => (
           <Row key={row.meeting.id} density="roomy" align="center" className="flex-wrap">
             <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-              {formatDayShort(row.meeting.startedAt ?? row.meeting.scheduledStart ?? row.meeting.createdAt)}
+              {formatDayShort(meetingAnchor(row.meeting))}
             </span>
 
             <RowTitle {...meetingHeading(row.meeting)} />
 
             <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
-            <IntentSummary intents={row.intents} className="w-28" />
+            {/*
+              **`truncate`, because `w-28` was a box and not a width.**
+
+              The compact summary is `whitespace-nowrap` in a 112px cell, and
+              « 1 envoi en échec · 2 effectués » measures 169 — 57px of it drawn
+              outside the cell and clipped by `List`'s own `overflow-hidden`,
+              with nothing on screen saying so. It was invisible while the
+              window had slack; the rail (V2) took 224px of it and
+              `--scrollers` found it at 960×600. The ellipsis is the cue the
+              check is about, and the ledger is in the expanded record.
+            */}
+            <IntentSummary intents={row.intents} variant="compact" className="w-28 truncate" />
 
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 

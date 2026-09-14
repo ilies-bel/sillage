@@ -54,14 +54,14 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { AccountRef, ExtractionESN, VerificationReport } from '../../core/contracts/extraction.ts'
 import { freeFormInterpretation } from '../../core/contracts/extraction.ts'
-import { LlmError, LlmSchemaError, type LlmPort } from '../../core/contracts/llm.ts'
+import { type LlmPort } from '../../core/contracts/llm.ts'
 import type { MeetingContext } from '../../core/contracts/meeting.ts'
 import { DEFAULT_RECIPE, isFreeForm, type RecipeId } from '../../core/contracts/recipes.ts'
 import type { TranscriptSegment } from '../../core/contracts/transcript.ts'
 import { chunkTranscript, type ChunkOptions, type TranscriptChunk } from './chunking.ts'
 import { findDeterministicLeaks, forbiddenIdentitiesOf } from './deterministicLeaks.ts'
 import { renderCompteRendu } from './compteRendu.ts'
-import { ExtractionError, extractionErrorMessage } from './errors.ts'
+import { ExtractionError, asExtractionError, extractionErrorMessage } from './errors.ts'
 import { buildFacts } from './facts.ts'
 import {
   EXTRACT_INSTRUCTIONS,
@@ -132,35 +132,6 @@ export interface CompteRenduRecipeDeps {
   diagnostics?: DiagRecorder
   /** Test seam. Production never passes this — DEC-13 means one set of numbers. */
   chunking?: ChunkOptions
-}
-
-const asExtractionError = (error: unknown): ExtractionError => {
-  if (error instanceof ExtractionError) return error
-  if (error instanceof LlmSchemaError) {
-    return new ExtractionError({
-      kind: 'reply-invalid',
-      message: extractionErrorMessage('reply-invalid'),
-      retryable: true,
-      details: error.issues,
-      cause: error,
-    })
-  }
-  if (error instanceof LlmError) {
-    return new ExtractionError({
-      kind: 'llm',
-      message: extractionErrorMessage('llm'),
-      retryable: error.retryable,
-      details: [`${error.kind}: ${error.message}`],
-      cause: error,
-    })
-  }
-  return new ExtractionError({
-    kind: 'llm',
-    message: extractionErrorMessage('llm'),
-    retryable: true,
-    details: [error instanceof Error ? error.message : String(error)],
-    cause: error,
-  })
 }
 
 export class CompteRenduRecipe {
@@ -363,6 +334,7 @@ export class CompteRenduRecipe {
           severity: 'error',
           code: 'extract.chunk.failed',
           module: 'extract',
+          origin: 'authored',
           message: failure.message,
           detail: { chunk: chunk.index, of: chunks.length, kind: failure.kind },
         })

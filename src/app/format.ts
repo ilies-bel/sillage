@@ -31,6 +31,30 @@ const dayShort = new Intl.DateTimeFormat(LOCALE, {
   timeZone: TIME_ZONE,
 })
 
+/**
+ * **The first letter, and only the first letter.**
+ *
+ * French does not capitalise the names of days or months, so `Intl` correctly
+ * returns « jeudi 10 septembre » and « septembre 2026 » — and five call sites
+ * were putting them on screen through Tailwind's `capitalize`, which is
+ * `text-transform: capitalize` and capitalises **every word**. The calendar's
+ * own headings therefore read « Jeudi 10 Septembre » and « Septembre 2026 », in
+ * 20px type, in a product whose compte-rendu gets « jeudi 10 septembre 2026 »
+ * right two screens away.
+ *
+ * It is done here rather than in CSS because `::first-letter` does not apply to
+ * an inline box, so the fix would have had to change the layout of the spans it
+ * landed on. A string is a string.
+ *
+ * `Array.from` and not `[0]`: a first letter can be a surrogate pair, and
+ * slicing one in half is how a formatter turns a date into a replacement
+ * character.
+ */
+export const upperFirst = (value: string): string => {
+  const [first, ...rest] = Array.from(value)
+  return first === undefined ? value : first.toLocaleUpperCase(LOCALE) + rest.join('')
+}
+
 /** `5 août` — a day inside a month the reader already has in front of them. */
 const dayMedium = new Intl.DateTimeFormat(LOCALE, {
   day: 'numeric',
@@ -97,7 +121,9 @@ export const formatElapsed = (ms: number): string => {
 export const formatAgo = (ms: number, now: number): string => {
   if (ms <= 0) return 'jamais'
   const seconds = Math.round((now - ms) / 1000)
-  if (seconds < 60) return "à l'instant"
+  // `’`, like every other apostrophe in the product. This was the one straight
+  // one left — on the calendar's sync line, where a rep reads it every day.
+  if (seconds < 60) return 'à l’instant'
   const minutes = Math.round(seconds / 60)
   if (minutes < 60) return `il y a ${minutes} min`
   const hours = Math.round(minutes / 60)
@@ -128,23 +154,16 @@ export const dayKeyOf = (ms: number): string => dayKey.format(ms)
 
 export const isSameDay = (a: number, b: number): boolean => dayKeyOf(a) === dayKeyOf(b)
 
-/**
- * How a meeting names itself in a list: the client if it has one, else the
- * objet, and « Sans objet » when it has neither.
+/*
+ * How a meeting names itself in a list — **re-exported, not redefined**.
  *
- * The third case is new and it is not an edge: a meeting now starts on one click
- * with no objet and no client, and it stays that way until the rep types one in
- * the session header. Two screens had the same `clientName || title` pair, which
- * rendered an *empty row* for such a meeting — a list of dates with nothing
- * beside them. The label is a rendering concern and stops here: nothing is
- * written into the store, so the CRM never receives « Sans objet ».
+ * It moved to `electron/core/contracts/meeting.ts` when the main process turned
+ * out to need it too: `searchableRecord` builds the surface the search matches
+ * a call's own name in, and it was joining the raw objet to the raw client name,
+ * so the excerpt under a row read « Sodexial — comité de staffing Sodexial »
+ * while the row three pixels above it printed the name once. `src/*` may import
+ * `core/contracts/` and nothing else, which is the same reason `meetingAnchor`
+ * and `speakerLabel` live there. Callers here keep the name.
  */
-export const meetingHeading = (meeting: {
-  title: string
-  clientName: string | null
-}): { title: string; subtitle: string | undefined } => {
-  const client = meeting.clientName?.trim() ?? ''
-  const objet = meeting.title.trim()
-  if (client !== '') return { title: client, subtitle: objet === '' ? undefined : objet }
-  return { title: objet === '' ? 'Sans objet' : objet, subtitle: undefined }
-}
+export { meetingHeading } from '../../electron/core/contracts/meeting.ts'
+

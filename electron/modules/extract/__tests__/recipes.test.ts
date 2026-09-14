@@ -50,9 +50,10 @@ const LIBRE_DOCUMENT = [
 /**
  * Records every call, and answers whatever the test told it to.
  *
- * `complete` throws rather than returning something: the recipe must never
- * reach for the streaming half of the port — that one belongs to the signal
- * rail — and a stub that quietly answered would hide it if it did.
+ * It used to carry a `complete` that threw — « the recipe does not stream » —
+ * against a second verb on `LlmPort` that nothing in the product ever called.
+ * The verb is gone, so the stub is the whole port: an un-schema'd reply is not
+ * something a caller can ask for any more, which is what the throw was for.
  */
 const spyLlm = (reply: unknown) => {
   const calls: LlmStructuredRequest<unknown>[] = []
@@ -60,9 +61,6 @@ const spyLlm = (reply: unknown) => {
     structured: async (request: LlmStructuredRequest<unknown>) => {
       calls.push(request)
       return reply
-    },
-    complete: () => {
-      throw new Error('the recipe does not stream')
     },
   } as unknown as LlmPort
   return { llm, calls }
@@ -125,7 +123,7 @@ test('a free document keeps the model’s own headings and grows no field list',
   assert.match(compteRendu, /## Décisions/)
   // The deterministic header is still rendered — the client, the date and the
   // attendees are facts about the meeting, not about the recipe (DEC-7).
-  assert.match(compteRendu, /\*\*Client\*\*/)
+  assert.match(compteRendu, /^Client : /m)
   // What is absent is the typed slate. « Éléments retenus » followed by six
   // « _non évoqué_ » lines is exactly the document this recipe exists to avoid.
   assert.doesNotMatch(compteRendu, /Éléments retenus/)

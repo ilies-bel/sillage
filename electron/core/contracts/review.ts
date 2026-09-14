@@ -63,7 +63,14 @@ export const ReviewEditsSchema = z.object({
   accountId: z.string().nullable(),
   accountName: z.string().trim().max(300),
   /** The rendered compte-rendu, as the rep left it. Lands in `taskDescription`. */
-  compteRendu: z.string().min(1),
+  /*
+   * Also no `min(1)`: same screen, same argument. A rep who selects the whole
+   * compte-rendu in « Modifier » and deletes it has done something they can undo
+   * — and `draftIntents` already refuses a task with no description, on the row,
+   * in French. Rejecting the confirmation instead would discard every other
+   * correction they had made alongside it.
+   */
+  compteRendu: z.string(),
 
   // The interpretive rows, in the order VISION.md §6 draws them.
   besoin: z.string().max(4000),
@@ -80,9 +87,28 @@ export const ReviewEditsSchema = z.object({
   montant: z.number().nullable(),
   devise: z.string().max(8),
 
-  /** The relance draft. A draft, never a send (HR-8). */
-  mailSubject: z.string().trim().min(1).max(400),
-  mailBody: z.string().min(1).max(20000),
+  /**
+   * The relance draft. A draft, never a send (HR-8).
+   *
+   * **No `min(1)`, for the reason spelled out on `taskName` forty lines up** —
+   * and these three carried one anyway. Clear the objet of the draft (there is
+   * no guard on the field and no reason for one), read both columns, and
+   * *Valider* arms normally, « Valider malgré 1 champ non vérifié ». Pressing it
+   * put a raw English Zod blob across the top of the gate —
+   * `[{"origin":"string","code":"too_small",…,"message":"Too small: expected
+   * string to have >=1 characters"}]` — and **nothing shipped**: not the task,
+   * not the opportunity, not the draft.
+   *
+   * That is the failure DEC-26 exists to prevent, on the one screen in the
+   * product that must never lose what the rep is holding, and the fix is the one
+   * already written down: a requirement is enforced where it can be *stated*.
+   * `draftIntents` marks `mail.draft` unavailable with the reason on the row,
+   * the rep types a subject, and the two VerySwing pushes beside it still ship.
+   * A schema error can only throw, and Electron's IPC hands the rep whatever it
+   * threw.
+   */
+  mailSubject: z.string().trim().max(400),
+  mailBody: z.string().max(20000),
 })
 export type ReviewEdits = z.infer<typeof ReviewEditsSchema>
 
@@ -161,6 +187,26 @@ export const ReviewPanelSchema = z.object({
   /** `faible` when any interpretive field's quote could not be located. */
   overall: ConfidenceSchema,
   intents: z.array(ReviewIntentSchema),
+  /**
+   * **Where each generated line of the compte-rendu came from** (DEC-21).
+   *
+   * The eleven rows in the rail each offer a `[source ▸]`; the document beside
+   * them offered provenance on quotations only — five followable fragments
+   * across twenty-eight substantive lines, and none at all on the twelve
+   * bullets. The bullets are the operative half: « Envoyer 3 CV avec TJM avant
+   * vendredi » is the commitment that becomes the VerySwing task, and it was the
+   * least checkable thing on a screen whose argument is that nothing ships
+   * unchecked.
+   *
+   * Nothing new is claimed. Each entry pairs a line the composer wrote with the
+   * span it was written from — the same span `spanVerification` already looked
+   * up — so the renderer matches on string equality, never on a heuristic.
+   *
+   * **Beside the document and never inside it** (DEC-44): VerySwing receives the
+   * string the rep read, so a marker written into the text would land in the CRM
+   * as literal punctuation.
+   */
+  sources: z.array(z.object({ text: z.string(), span: TranscriptSpanSchema })),
 })
 export type ReviewPanel = z.infer<typeof ReviewPanelSchema>
 
