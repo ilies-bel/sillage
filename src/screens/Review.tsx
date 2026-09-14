@@ -2376,6 +2376,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               sub-line under it says what is left to read, and the control that
               does it is at the end of the text being read.
             */}
+            {/*
+              **The slot is the same height whether or not the button is in it.**
+
+              Measured at 960×600 on the `review` fixture: arming the gate put
+              34.6px of button and 16px of margin into this footer, and the rail's
+              scroller lost exactly those 51px — against a `SHRINK_SLACK` of 64
+              that was sized when the withheld sub-line wrapped to three lines and
+              the move was sixteen. Shortening that sentence to one line made the
+              move fifty-one, and `review-modele-differe` went from five passes in
+              five to one in five: arm, reflow, shrink, invalidate, disarm. So the
+              button's rectangle is reserved while it is withheld — empty, not
+              greyed (DEC-26) — and the sub-line sits where it will sit once the
+              button is there.
+            */}
             {armed ? (
               <Button
                 /*
@@ -2406,7 +2420,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                       ? 'Valider malgré 1 champ non vérifié'
                       : `Valider malgré ${faible.length} champs non vérifiés`}
               </Button>
-            ) : null}
+            ) : (
+              <div aria-hidden className="mt-4 min-h-[35px]" />
+            )}
             {/*
               The sub-line, and while there is no button above it, it is the
               whole of the slot.
