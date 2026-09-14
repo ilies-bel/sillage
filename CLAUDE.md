@@ -93,7 +93,7 @@ modules/crm/vsa/          the only place VSA exists
 **Capture**
 - The capture path has zero network dependencies (DEC-26). A downstream failure never stops a recording.
 - Raw audio is never retained (DEC-12).
-- Proof of life is the input meter, not a live transcript (DEC-38) — both channels, mirrored.
+- Proof of life is the input meter, never a transcript (DEC-38) — both channels, mirrored.
 - A channel producing *nothing* emits no frames, so the watchdog is fed before the keepalive guard, on a timer, per channel.
 - A change of output route during a call is reported, never repaired.
 - One missing channel is `degraded`, never `down` (DEC-32), and the sentence names which side.
@@ -127,7 +127,7 @@ modules/crm/vsa/          the only place VSA exists
 - It is not shown before the renderer has measured itself, with the real font and `widget:state` settled. The order must hold: harness `widget:state` latency < `MEASURE_DEADLINE_MS` < `FIRST_FRAME_MS` < `APPEARANCE_MS`, and the renderer states its own deadline from its own mount.
 - Every timer is reset when a window is created; an elapsed deadline is elapsed.
 - The pill is the anchor, not a window edge — the renderer reports `pillTop`, the main process answers `above`.
-- The widget may draw the transcript; the session screen may not. The **window** collects it, not the panel. No provisional text — `isFinal: false` cannot occur.
+- The transcript is opt-in on both surfaces and off by default — proof of life stays the meter (DEC-38). The **window** collects it, never the panel; on the session screen `LiveAside` does, never `Session`. No provisional text — `isFinal: false` cannot occur.
 
 **The renderer**
 - The rep's document is never written by AI during a call (DEC-5, DEC-14). Gray AI text enters once, at meeting end.

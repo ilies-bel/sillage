@@ -79,20 +79,39 @@ machine) or in `core/domain/` — never in an IPC handler.
   the teardown all name `mainWindow` rather than `getAllWindows()[0]`, and the pill is closed
   with the main window so `window-all-closed` still fires and `before-quit` still ends the
   live meeting properly instead of leaving a process with no way back into it.
-- **The widget may draw the transcript; the session screen still may not** (DEC-49, DEC-38).
-  The clause DEC-38 wrote is « do not reintroduce a live transcript *to prove the tool is
-  working* », and that job now belongs to an instrument. The meter is on the pill whether the
-  panel is open or not; the transcript is behind a press and names the side (DEC-47).
+- **The transcript is opt-in on both surfaces, and off by default** (DEC-49, DEC-38, revised
+  2026-09-13). The clause DEC-38 wrote is « do not reintroduce a live transcript *to prove
+  the tool is working* », and that job belongs to an instrument: the meter is on the pill
+  whether the panel is open or not, it is instant, and it answers during a silence too. What
+  DEC-38 also cost was the third job a transcript is genuinely good at — « what did they just
+  say » — which after the removal only a 340-pixel overlay answered, so a rep with Sillage
+  open on a second screen had to reach for the widget to read back two turns. So the session
+  screen's right column now carries a segmented control, *Trame | Transcription*
+  (`session/LiveAside.tsx`): the slate is the default, the transcript is a press, and the
+  choice lives for the length of the meeting and is persisted nowhere. **This supersedes the
+  earlier line « the session screen may not », which shipped for four rounds; the rest of that
+  entry is unchanged and is the part that actually bites.**
   `transcript:appended` had been broadcast for every segment of every meeting since the
-  orchestrator was written and subscribed to by nobody; this is the surface that keeps that
-  promise. **The window collects it, never the panel** — the panel is mounted by a press and
-  unmounted by the next one, so a transcript held there began at the press and was destroyed
-  by the one that closed it, which is the feature not working on precisely its own use case.
+  orchestrator was written and subscribed to by nobody; the widget was the first surface to
+  keep that promise and this is the second — **on the same broadcast, with no second
+  collector**. **The window collects it, never the panel** — the panel is mounted by a press
+  and unmounted by the next one, so a transcript held there began at the press and was
+  destroyed by the one that closed it, which is the feature not working on precisely its own
+  use case. The session screen has the same shape and the same answer: `LiveAside` is mounted
+  for the length of the meeting whichever view is showing and is the subscriber, and it is not
+  `Session` itself because `Session` holds a live ProseMirror view with the rep's caret in it —
+  a segment arriving every few seconds must not reconcile that subtree, which is the same
+  reason `Elapsed` and `LevelMeter` are their own components.
   And **no provisional text**: a draft drew interim results muted and called that a difference
   over Granola, and `isFinal: false` cannot occur — `LocalWhisperSession` and `RestSttSession`
   both emit `true` and every row in `STT_PROVIDERS` declares `streaming: false`. It was a
   rendering no run of this product could produce, covered by a test that fed it a fixture and
-  by a harness stub that manufactured the input. A non-final segment is dropped in one line.
+  by a harness stub that manufactured the input. A non-final segment is dropped in one line, on
+  both surfaces.
+  DEC-5 is untouched and is stated where the doubt arises: the pane's own footer says « Le
+  texte n'entre jamais dans vos notes. », because a rep meeting a live transcript beside their
+  own document for the first time will wonder, and `Notepad.tsx` still accepts no incoming
+  transaction at all.
 - **The halo is not the widget, and the widget is not in the screen share** (DEC-49).
   `getBoundingClientRect` does not include a `box-shadow`, so sizing the window to the card
   clipped the shadow to nothing — and the shadow is the only thing separating a pale card from

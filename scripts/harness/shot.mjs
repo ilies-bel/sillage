@@ -2792,7 +2792,7 @@ const SCREENS = {
     scenario: 'compte-rendu',
     async drive(page) {
       await SCREENS['session-compte-rendu'].drive(page)
-      await page.getByRole('button', { name: 'Préparer le mail de suivi' }).click()
+      await page.getByRole('button', { name: 'Rédiger la relance' }).click()
       /*
         The question the chip actually sent, above the answer — the chip's label
         is never the last word on what was asked — and then a citation, because
@@ -2825,7 +2825,7 @@ const SCREENS = {
     async drive(page) {
       await SCREENS['session-compte-rendu'].drive(page)
       await page.getByLabel('Poser une question sur cet appel').waitFor()
-      const chip = page.getByRole('button', { name: 'Préparer le mail de suivi' })
+      const chip = page.getByRole('button', { name: 'Rédiger la relance' })
       if ((await chip.count()) !== 0) {
         throw new Error(
           'le mail de suivi est offert sans compte Microsoft — aucun brouillon ne peut être créé',

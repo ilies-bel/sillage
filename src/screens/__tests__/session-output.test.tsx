@@ -210,18 +210,13 @@ describe('nothing on the session screen is about the session screen', () => {
     expect(screen.queryByText('Rien ne migre dans vos notes.')).toBeNull()
   })
 
-  test('the line that names where the correction goes stays', async () => {
-    /*
-     * The opposite of explaining a convention: the document here is read-only and
-     * this says where the editable copy is. A rep who wants to change a word has
-     * one place to go and this is the line that tells them which.
-     */
+  test('no note under the document says where the correction goes', async () => {
+    // It was a sentence about the *next* screen taking a line of the column on
+    // this one. The door to the gate is the filled button in the header, and it
+    // says « Relire et valider » in the words the note was quoting.
     open({ state: 'awaiting_confirmation' }, COMPTE_RENDU)
     await screen.findByText(/Cadrage du renfort data/)
-
-    expect(
-      screen.getByText(/Lecture seule — corrigez-le à l’étape « Relire et valider »/),
-    ).toBeTruthy()
+    expect(screen.queryByText(/Lecture seule/)).toBeNull()
   })
 })
 

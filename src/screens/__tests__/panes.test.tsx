@@ -79,15 +79,19 @@ describe('the signal rail shows what it is listening for', () => {
     expect(screen.getByText('refonte SI 2027')).toBeTruthy()
   })
 
-  test('the count reports covered slots, not signals', () => {
-    // Two signals of the same kind cover one slot. A count that said 2/7 would
-    // read as progress the meeting has not made.
+  test('two signals of one kind are two lines in one slot, and the rail counts nothing', () => {
+    // The « 1/7 » count is gone from the product — a ratio beside the list it
+    // counts is arithmetic the rep has to redo, and it is invisible which row
+    // held two. What is left is the rail itself: one slot, both lines in it.
     render(
       <SignalRail
         signals={[signal(1, 'tjm', '520 €'), signal(2, 'tjm', '480 € en régie')]}
       />,
     )
-    expect(screen.getByText('1/7')).toBeTruthy()
+    expect(rows()).toHaveLength(7)
+    expect(screen.getByText('520 €')).toBeTruthy()
+    expect(screen.getByText('480 € en régie')).toBeTruthy()
+    expect(screen.queryByText('1/7')).toBeNull()
   })
 })
 
