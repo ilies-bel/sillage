@@ -68,7 +68,18 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
             <RowTitle {...meetingHeading(row.meeting)} />
 
             <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
-            <IntentSummary intents={row.intents} variant="compact" className="w-28" />
+            {/*
+              **`truncate`, because `w-28` was a box and not a width.**
+
+              The compact summary is `whitespace-nowrap` in a 112px cell, and
+              « 1 envoi en échec · 2 effectués » measures 169 — 57px of it drawn
+              outside the cell and clipped by `List`'s own `overflow-hidden`,
+              with nothing on screen saying so. It was invisible while the
+              window had slack; the rail (V2) took 224px of it and
+              `--scrollers` found it at 960×600. The ellipsis is the cue the
+              check is about, and the ledger is in the expanded record.
+            */}
+            <IntentSummary intents={row.intents} variant="compact" className="w-28 truncate" />
 
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 

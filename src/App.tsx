@@ -16,7 +16,7 @@ import { useCallback, useState } from 'react'
 import type { BootState } from '../electron/core/contracts/boot.ts'
 import type { HistoryFilter } from '../electron/core/contracts/history.ts'
 import { bootAnswered } from '../electron/core/contracts/bootSteps.ts'
-import { AGENDA, REGLAGES, historiqueOf, type Route } from './app/route.ts'
+import { AGENDA, historiqueOf, type Route } from './app/route.ts'
 import { useBroadcast, useInvoke } from './app/bridge.ts'
 import { Agenda } from './screens/Agenda.tsx'
 import { Session } from './screens/Session.tsx'
@@ -90,7 +90,10 @@ export function App() {
   const historique = useCallback((query: string, filter: HistoryFilter) => {
     setRoute(historiqueOf(query, filter))
   }, [])
-  const reglages = useCallback(() => setRoute(REGLAGES), [])
+  const reglages = useCallback(
+    (section?: SectionId) => setRoute({ screen: 'reglages', section }),
+    [],
+  )
 
   /*
    * **The three that are about *where you are*, installed once, for every
@@ -116,7 +119,17 @@ export function App() {
   useShortcuts({
     historique: () => historique('', NO_FILTER),
     reglages,
-    ...(route.screen === 'agenda' ? {} : { retour: back }),
+    /*
+      Réglages is a sheet over the calendar now, not a screen beside it — so
+      `Échap` has somewhere to go from the *calendar* route too, whenever one is
+      open. The first-run detour opens the same sheet with no route change at
+      all, which is why `inReglages` is consulted before the route is.
+    */
+    ...(inReglages
+      ? { retour: () => setInReglages(null) }
+      : route.screen === 'agenda'
+        ? {}
+        : { retour: back }),
   })
 
   /*
@@ -162,7 +175,27 @@ export function App() {
    * first run — not to the calendar the rep has never reached.
    */
   if (inReglages && (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen))) {
-    return <Reglages section={inReglages} onBack={() => setInReglages(null)} />
+    /*
+      The sheet, over the step the rep left — not instead of it. Réglages is a
+      drawer (V2), so first run stays on screen behind the veil and coming back
+      out of it is the same screen rather than a re-mount.
+    */
+    return (
+      <>
+        <Onboarding
+          onDone={() => {
+            setReplay(false)
+            onboarding.set({ seen: true })
+          }}
+          onReglages={({ section, step }) => {
+            setResume(step)
+            setInReglages(section)
+          }}
+          initialStep={resume}
+        />
+        <Reglages section={inReglages} onBack={() => setInReglages(null)} />
+      </>
+    )
   }
 
   if (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen)) {
@@ -205,9 +238,31 @@ export function App() {
             onOnboarding={() => setReplay(true)}
           />
         ) : route.screen === 'historique' ? (
-          <Historique onBack={back} query={route.query} filter={route.filter} />
+          <Historique
+            onBack={back}
+            onReglages={reglages}
+            query={route.query}
+            filter={route.filter}
+          />
         ) : route.screen === 'reglages' ? (
-          <Reglages onBack={back} />
+          /*
+            **The sheet is drawn over the calendar, which stays mounted.**
+
+            Réglages stopped being a screen (V2): a rep who opens it to look at a
+            connector has not left the day they were on, and replacing the window
+            made them find it again on the way back. The route is still a route —
+            `Échap` and the ✕ both pop it — but what it renders is the calendar
+            plus a dialog over it.
+          */
+          <>
+            <Agenda
+              onOpen={open}
+              onHistorique={historique}
+              onReglages={reglages}
+              onOnboarding={() => setReplay(true)}
+            />
+            <Reglages section={route.section} onBack={back} />
+          </>
         ) : route.screen === 'review' ? (
           <Review key={route.meetingId} meetingId={route.meetingId} onBack={back} onConfirmed={back} />
         ) : (

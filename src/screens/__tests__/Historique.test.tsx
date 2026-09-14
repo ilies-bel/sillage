@@ -185,7 +185,7 @@ describe('search runs in the main process', () => {
       }
     })
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     await act(async () => {
@@ -216,7 +216,7 @@ describe('search runs in the main process', () => {
      * be available for the sentence to be allowed to name it.
      */
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: true })
-    render(<Historique onBack={() => {}} query="TJM" />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} query="TJM" />)
     await settled()
 
     const said = await screen.findByText(/Affinez la recherche/)
@@ -228,7 +228,7 @@ describe('search runs in the main process', () => {
     // rep to narrow a search that is already complete is worse than saying
     // nothing, and `capped` was `rows.length >= limit` for as long as it existed.
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: false })
-    render(<Historique onBack={() => {}} query="TJM" />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} query="TJM" />)
     await settled()
     expect(screen.queryByText(/Affinez la recherche/)).toBeNull()
   })
@@ -249,7 +249,7 @@ describe('search runs in the main process', () => {
    */
   test('the listing says what it is fifty of and points at something that exists', async () => {
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 60, capped: true })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     const said = await screen.findByText(/Les 50 appels les plus récents/)
@@ -271,7 +271,7 @@ describe('search runs in the main process', () => {
       scanned: 60,
       capped: true,
     })
-    render(<Historique onBack={() => {}} filter={{ ...NO_FILTER, statut: 'a-valider' }} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} filter={{ ...NO_FILTER, statut: 'a-valider' }} />)
     await settled()
 
     const said = await screen.findByText(/Les 50 appels les plus récents/)
@@ -294,7 +294,7 @@ describe('search runs in the main process', () => {
       ],
     })
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
 
     expect(await screen.findByText(/plutôt sur un TJM de 520 euros/)).toBeTruthy()
     // French, and the same word the review gate's own tab uses.
@@ -306,7 +306,7 @@ describe('search runs in the main process', () => {
 
   test('an empty result says so rather than showing an empty box', async () => {
     answered({ rows: [] })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     expect(await screen.findByText('Aucun appel enregistré.')).toBeTruthy()
   })
 })
@@ -349,18 +349,24 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
         row({ meeting: meeting({ id: 'm3' }) }),
       ],
     })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     expect(titleOf()).toBe('3 appels')
-    // The word named the furniture. A back link on another screen still names
-    // this one as a destination; standing on it, it said nothing.
-    expect(screen.queryByText('Historique')).toBeNull()
+    /*
+      The word named the furniture, and it still does not head the screen: the
+      title is the count. It *is* in the rail, as the destination this screen is
+      (V2) — a rail item is a label for somewhere to go, which is the one place
+      a noun is the right word. So the assertion is about the page, not the app.
+    */
+    const page = screen.getByRole('main')
+    expect(within(page).queryByText('Historique')).toBeNull()
+    expect(within(screen.getByRole('banner')).queryByText('Historique')).toBeNull()
   })
 
   test('one row is one appel', async () => {
     answered({ rows: [row()] })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
     expect(titleOf()).toBe('1 appel')
   })
@@ -372,7 +378,7 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
    */
   test('an empty list still says what it is empty of', async () => {
     answered({ rows: [] })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await screen.findByText('Aucun appel enregistré.')
     expect(titleOf()).toBe('Aucun appel')
   })
@@ -385,7 +391,7 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
    */
   test('fifty rows with more behind them never claim fifty', async () => {
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 812, capped: true })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     expect(titleOf()).toBe('Plus de 50 appels')
@@ -394,7 +400,7 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
 
   test('exactly fifty rows with nothing behind them is a plain count', async () => {
     answered({ rows: Array.from({ length: 50 }, () => row()), scanned: 60, capped: false })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
     expect(titleOf()).toBe('50 appels')
   })
@@ -409,7 +415,7 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
       rows: withDefaults(payload.filter).statut === 'validees' ? [row()] : [row(), row()],
     }))
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
     expect(titleOf()).toBe('2 appels')
 
@@ -438,7 +444,7 @@ describe('the screen is named by what it holds, not by what it is (US-22)', () =
       rows: (payload.query ?? '') === '' ? [row(), row()] : [row()],
     }))
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     await act(async () => {
@@ -469,7 +475,7 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
     await screen.findByText('on est plutôt sur un TJM de 520 euros')
 
@@ -489,7 +495,7 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
     await screen.findByText('on est plutôt sur un TJM de 520 euros')
 
@@ -507,7 +513,7 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
     answered()
     bridge.when('history:record', () => record({ segments: [], marks: [] }))
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
     await screen.findByText('Aucune transcription pour cet appel.')
 
@@ -528,7 +534,7 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
     await screen.findByText(/Renfort de deux profils Java/)
 
@@ -554,7 +560,7 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
       ],
     })
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     expect(screen.getByText('Transcription')).toBeTruthy()
@@ -570,7 +576,7 @@ describe('a row expands into the full record (DEC-25)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     // 1. transcript, with the speaker channel that came free from the hardware
@@ -594,7 +600,7 @@ describe('a row expands into the full record (DEC-25)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     expect(await screen.findByText(/introuvable dans la transcription/)).toBeTruthy()
@@ -605,7 +611,7 @@ describe('a row expands into the full record (DEC-25)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     // A transcript is the biggest thing in the product; fifty of them must not
@@ -630,7 +636,7 @@ describe('who a turn belongs to (DEC-7)', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     // The app cannot say which of them spoke, and must not pick the first.
@@ -653,7 +659,7 @@ describe('who a turn belongs to (DEC-7)', () => {
       }),
     )
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     const turn = (await screen.findByText('on est plutôt sur un TJM de 520 euros')).closest('li')
@@ -696,7 +702,7 @@ describe('« Demander » on the record (DEC-25, DEC-21)', () => {
     bridge.when('history:record', () => record())
     bridge.when('meeting:ask', () => answer())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     fireEvent.change(screen.getByLabelText('Poser une question sur cet appel'), {
@@ -728,7 +734,7 @@ describe('« Demander » on the record (DEC-25, DEC-21)', () => {
     bridge.when('history:record', () => record())
     bridge.when('meeting:ask', () => answer())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     fireEvent.change(screen.getByLabelText('Poser une question sur cet appel'), {
@@ -755,7 +761,7 @@ describe('« Demander » on the record (DEC-25, DEC-21)', () => {
 describe('push status per intent', () => {
   test('the row summarises each intent and a failure is legible without expanding', async () => {
     answered()
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
 
     await settled()
     const text = document.body.textContent ?? ''
@@ -781,7 +787,7 @@ describe('push status per intent', () => {
    */
   test('a failed push says why on the row itself, before anything is expanded', async () => {
     answered()
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
 
     // Nothing expanded — this is the list as the rep first sees it.
     expect(await screen.findByText(/jeton Microsoft expiré/)).toBeTruthy()
@@ -805,7 +811,7 @@ describe('push status per intent', () => {
     answered()
     bridge.when('history:record', () => record())
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await expandTheRow()
 
     // Twice now: once on the row, once in « Envois » beside the remote ids.
@@ -822,7 +828,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
   test('the way back names the screen it goes to', async () => {
     const backs: number[] = []
     answered()
-    render(<Historique onBack={() => backs.push(1)} />)
+    render(<Historique onBack={() => backs.push(1)} onReglages={() => {}} />)
 
     // Not « ← Aujourd'hui »: that screen is called *Calendrier* now, and a back
     // link naming a title nothing carries is a link a rep has to try to read.
@@ -847,6 +853,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
     render(
       <Historique
         onBack={() => {}}
+        onReglages={() => {}}
         query="TJM"
         filter={{
           client: 'Acme Industries',
@@ -888,7 +895,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
       }
     })
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     const statut = screen.getByRole('group', { name: 'Statut' })
@@ -919,7 +926,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
       }
     })
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await settled()
 
     const press = async (group: string, name: string) => {
@@ -943,9 +950,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
     expect(screen.queryByRole('button', { name: 'Effacer' })).toBeNull()
 
     await press('Statut', 'Validées')
-    await press('Intention', 'Tâche')
-    await press('Client', 'Acme Industries')
-    await waitFor(() => expect(asked.at(-1)?.filter?.client).toBe('Acme Industries'))
+    await waitFor(() => expect(asked.at(-1)?.filter?.statut).toBe('validees'))
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Effacer' }))
@@ -963,19 +968,30 @@ describe('Historique is the expanded form of the calendar’s search', () => {
     expect(screen.queryByRole('button', { name: 'Effacer' })).toBeNull()
   })
 
-  test('the client chips come from the main process, never from the rows on screen', async () => {
+  /**
+   * **The reader offers two axes, and the two data axes are the calendar's** (V2).
+   *
+   * *Intention* and *Client* were here, and the client row in particular turned
+   * the one screen built for reading a record into a facet browser: seven client
+   * names under a search field, on a screen whose whole argument (DEC-25) is
+   * that a rep enters the past by **typing**. They are still offered on the
+   * calendar, where the search is a lookup and a name is the fastest way into a
+   * call the rep half remembers — `SearchBarProps.dataAxes`.
+   *
+   * Nothing is lost from here: typing « Acme » into the box beside these chips
+   * is the same query, asked in the main process, over the same corpus.
+   */
+  test('the reader asks how far back and in what state, and offers no data axes', async () => {
     answered({ clients: ['Acme Industries', 'Nordis', 'Groupe Lefort'], rows: [row()] })
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
 
-    const client = await screen.findByRole('group', { name: 'Client' })
-    // One row is on screen and three clients are offered — the corpus is the
-    // main process's, and the chips are facet values it computed there.
-    for (const name of ['Acme Industries', 'Nordis', 'Groupe Lefort']) {
-      expect(within(client).getByRole('button', { name })).toBeTruthy()
-    }
-    // Three names offered and three chips drawn — no « Tous clients » at the
-    // head of the axis. Un-pressing the pressed chip is what clears it.
-    expect(within(client).getAllByRole('button')).toHaveLength(3)
+    expect(await screen.findByRole('group', { name: 'Période' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Statut' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Intention' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Client' })).toBeNull()
+    // Offered by the main process and still not drawn here — the axis is the
+    // calendar's, and this is not a screen that lost its data.
+    expect(screen.queryByRole('button', { name: 'Acme Industries' })).toBeNull()
   })
 
   test('an answer to a question nobody is asking any more is dropped', async () => {
@@ -989,7 +1005,7 @@ describe('Historique is the expanded form of the calendar’s search', () => {
       rows: [row({ meeting: meeting({ id: 'stale', clientName: 'Réponse périmée' }) })],
     }))
 
-    render(<Historique onBack={() => {}} />)
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 260))
     })

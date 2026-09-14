@@ -437,7 +437,16 @@ const SCREENS = {
       const total = await days.count()
       let found = false
       for (let i = 0; i < Math.min(total, 42); i += 1) {
-        await page.getByRole('button', { name: 'Aujourd’hui' }).click()
+        /*
+          The **calendar's** own *Aujourd'hui* — its pager's way back to today.
+          The left rail now holds an item by the same name (V2), which is the
+          home destination and not a pager, so the selector is scoped to the
+          grid rather than made more literal.
+        */
+        await page
+          .getByRole('region', { name: 'Calendrier' })
+          .getByRole('button', { name: 'Aujourd’hui' })
+          .click()
         await page.waitForTimeout(120)
         await days.nth(i).click()
         await page.waitForTimeout(220)
@@ -4583,20 +4592,6 @@ const ECHO_DECLARED = [
    * The label is per row and answers « why is this row here »; the heading names a
    * box. Neither file is in this lane.
    */
-  {
-    stages: ['historique', 'historique-demander'],
-    text: 'transcription',
-    pair: 'span.w-28 (search/Results.tsx, quelle surface a répondu) · h2.pane-label (Historique.tsx)',
-    why: 'l’étiquette de résultat dit pourquoi la ligne est là ; le titre nomme le volet',
-    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
-  },
-  {
-    stages: ['historique', 'historique-demander'],
-    text: 'compte-rendu',
-    pair: 'span.w-28 (search/Results.tsx) · h2.pane-label (Historique.tsx)',
-    why: 'comme ci-dessus',
-    story: 'US-23 supprime ce titre — cette entrée échouera au passage où il arrive',
-  },
   /*
    * The one of the three that needs a **decision** rather than a story: US-23 keeps
    * « Mes notes » deliberately (it and « Extraction » are two blocks of plain French

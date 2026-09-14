@@ -59,6 +59,15 @@ const row = cva('bg-card flex min-w-0 gap-inline', {
       dense: 'px-row py-2.5',
       /** Agenda and Historique: a title with a subtitle under it. */
       roomy: 'px-5 py-3.5 gap-4',
+      /**
+       * A row that is a card of its own: *Passées*, the validation queue, the
+       * reader's calls. 16px by 10px — `--space-row` and the same vertical as
+       * `dense` — so that the three lists a rep scans on the home screen are one
+       * rectangle and not three near-misses. The edge stroke and the radius are
+       * the caller's, because only the caller knows whether the card is a `li`,
+       * a `button` or a wrapper around both.
+       */
+      card: 'px-row py-2.5 gap-4',
     },
     align: { baseline: 'items-baseline', center: 'items-center' },
     interactive: { true: 'hover:bg-card-soft w-full text-left transition', false: '' },

@@ -733,16 +733,36 @@ const typeQuery = async (value: string): Promise<void> => {
 }
 
 describe('the search is the only entry into the past', () => {
-  test('there is no Historique link in the header any more', async () => {
+  test('the header carries no navigation — the rail does, and Réglages left it', async () => {
+    const asked: string[] = []
     signedOut()
-    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}}
-      onOnboarding={() => {}} />)
+    render(<Agenda onOpen={() => {}} onHistorique={(query) => asked.push(query)}
+      onReglages={() => {}} onOnboarding={() => {}} />)
     await screen.findByRole('region', { name: 'Calendrier' })
 
-    // VISION.md §6: *Historique* is not in the navigation. It is where the
-    // search goes, and it is reached by typing — not by aiming at a word.
-    expect(screen.queryByRole('button', { name: 'Historique' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Réglages' })).toBeTruthy()
+    /*
+      **The header holds the screen's subject and its controls, and no links.**
+
+      *Réglages* was a word in it; it is in the rail's footer now, on every
+      screen rather than on this one, which is what stops the same pane having
+      two doors. *Historique* was never in it and still is not.
+    */
+    // The page header — the one holding the `h1`. The month grid has a `header`
+    // of its own (its pager), which is why this is not `getByRole('banner')`.
+    const header = screen.getByRole('heading', { level: 1 }).closest('header') as HTMLElement
+    expect(within(header).queryByRole('button', { name: 'Réglages' })).toBeNull()
+    expect(within(header).queryByRole('button', { name: 'Historique' })).toBeNull()
+
+    /*
+      It is in the rail, and it is a destination there (V2). DEC-25's rule
+      survives where it was aimed: the *query* is what opens the reader, so the
+      rail opens it **empty** and the search box is still the only thing that
+      carries a question into it.
+    */
+    const rail = screen.getByRole('navigation', { name: 'Navigation principale' })
+    fireEvent.click(within(rail).getByRole('button', { name: 'Historique' }))
+    expect(asked).toEqual([''])
+
     expect(box()).toBeTruthy()
   })
 

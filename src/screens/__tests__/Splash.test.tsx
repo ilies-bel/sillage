@@ -172,7 +172,7 @@ describe('what the splash holds the window for', () => {
     render(<App />)
 
     expect(await screen.findByText('en cours…')).toBeTruthy()
-    expect(screen.queryByText('Aujourd’hui')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull()
   })
 
   test('a download holds it', async () => {
@@ -181,7 +181,7 @@ describe('what the splash holds the window for', () => {
     render(<App />)
 
     expect(await screen.findByRole('progressbar')).toBeTruthy()
-    expect(screen.queryByText('Aujourd’hui')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull()
   })
 
   test('a failed step does NOT hold it', async () => {
@@ -193,7 +193,7 @@ describe('what the splash holds the window for', () => {
     )
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
     expect(screen.queryByText('Base locale')).toBeNull()
   })
 
@@ -202,7 +202,7 @@ describe('what the splash holds the window for', () => {
     bridge.when('boot:state', () => booted())
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
   })
 
   test('a boot:changed broadcast releases it, with no poll', async () => {
@@ -215,7 +215,7 @@ describe('what the splash holds the window for', () => {
       bridge.emit('boot:changed', booted())
     })
 
-    await waitFor(() => expect(screen.getByText('Aujourd’hui')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeTruthy())
   })
 
   test('a rejected boot:state does not trap the rep behind the splash', async () => {
@@ -225,6 +225,6 @@ describe('what the splash holds the window for', () => {
     openApp()
     render(<App />)
 
-    expect(await screen.findByText('Aujourd’hui')).toBeTruthy()
+    expect(await screen.findByRole('navigation', { name: 'Navigation principale' })).toBeTruthy()
   })
 })

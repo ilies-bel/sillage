@@ -68,6 +68,9 @@ module.exports = {
          */
         'meter-dropped': 'var(--meter-dropped)',
 
+        /* The one sheet's backdrop (Réglages). See `--veil` in tokens.css. */
+        veil: 'var(--veil)',
+
         accent: 'var(--accent)',
         success: 'var(--success)',
         warn: 'var(--warn)',

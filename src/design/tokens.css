@@ -168,6 +168,18 @@
    */
   --shadow-overlay: 0 4px 14px rgb(0 0 0 / 38%);
 
+  /*
+   * The veil behind the one sheet in this product (Réglages, V2).
+   *
+   * A token rather than `bg-strong/40`, for the reason the naming rules above
+   * give twice: an opacity modifier on a colour token is the shape that compiles
+   * to nothing and shows up as an element that is silently unstyled. It is the
+   * ink colour at 32% — enough that the calendar behind it is legibly *behind*,
+   * light enough that the rep can still see which screen they left, which is the
+   * whole argument for a sheet over a screen.
+   */
+  --veil: rgb(15 25 34 / 32%);
+
   /* type faces */
   --font-display: "Fraunces", ui-serif, Georgia, serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
