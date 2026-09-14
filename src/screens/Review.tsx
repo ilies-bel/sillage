@@ -47,11 +47,13 @@ import {
   Chip,
   CopyButton,
   List,
+  OverflowMenu,
   PageTurn,
   SectionHeader,
   Segmented,
   unavailable,
 } from '../ui/index.ts'
+import { copyText } from '../lib/clipboard.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { useShortcuts } from '../app/shortcuts.ts'
 import { cn } from '../lib/utils.ts'
@@ -320,6 +322,31 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * VerySwing receives (DEC-44) — set as prose instead of dumped as a log.
    */
   const [mode, setMode] = useState<'lecture' | 'modifier' | 'transcription'>('lecture')
+  /*
+   * The clipboard's answer, since the control that used to give it is now a menu
+   * item and a menu item disappears the moment it is chosen.
+   *
+   * `CopyButton` swaps its own label to « Copié » under the rep's cursor, which
+   * is the whole argument for a label change over a toast (`ui/CopyButton.tsx`).
+   * Behind an overflow there is no label left to swap, so the answer is said
+   * once, beside the glyph that was pressed, and taken away by itself — and a
+   * refusal says so rather than lying by omission, because a rep who pastes a
+   * stale clipboard into a client's mail has been told nothing went wrong.
+   */
+  const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+    },
+    [],
+  )
+  const copyCompteRendu = async (text: string) => {
+    const ok = await copyText(text)
+    setCopied(ok ? 'done' : 'failed')
+    if (copyTimer.current) clearTimeout(copyTimer.current)
+    copyTimer.current = setTimeout(() => setCopied('idle'), 1_600)
+  }
   /*
    * Which citation the transcript is opened on, or null for the top of the call.
    *
@@ -1693,34 +1720,46 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             : ''}
         </h1>
         {/*
-          The count, and a way to reach it.
+          **The count, and a way to reach it — and no second `⚠` in the bar.**
 
-          It read « Certains champs n'ont pas pu être vérifiés » — no number, no
-          control, and the field it was about a thousand pixels down a scrolling
-          column. « Certains » is the vaguest possible statement of a measured
-          quantity: the app knows exactly how many and exactly which. A rep who
-          reads this has one question, and the banner now answers it and then
-          takes them there.
+          It read « ⚠ faible — 1 champ non vérifié dans la transcription », which
+          made the mark the loudest thing in the title bar and the *third*
+          statement of one fact: the row itself wears it, and *Valider*'s own
+          label already says « Valider malgré 1 champ non vérifié ». A mark
+          repeated three times on one screen is a mark a rep stops reading, which
+          is the failure DEC-21 exists to prevent, at the top of the screen where
+          it costs the most.
+
+          What the bar owes is the **measurement**, quietly: how many fields there
+          are and how many were checked. That is the number this product makes
+          about itself and it is worth stating whether or not it is bad — a screen
+          that speaks up only when something failed teaches a rep that silence
+          means nothing was measured.
+
+          It is still the way in: pressing it jumps the rail to the first
+          unverified row and focuses it, which is « the gate opens on the doubt »
+          (DEC-4, DEC-21). It stays a control while there is a doubt to reach and
+          becomes a plain line when there is none, because a control that goes
+          nowhere is the dead button DEC-26 refuses.
+
+          **It stays in this row rather than moving over the rail it counts, and
+          that is measured rather than preferred.** Taking a `min-h-[24px]`
+          control out of this header gives both scrollers about eleven pixels, and
+          `review-modele-differe` — the staging that asserts a deferred rewrite
+          gives *Valider* back at **zero** page turns — went from six passes in six
+          to three in six at 1280×800, in both directions: the gate withheld, and
+          a page turn oscillating between the two columns. The guard is knife-edge
+          on that fixture and this row is part of what holds it there.
         */}
-        {faible.length > 0 ? (
-          /*
-            `hover:text-warn` on purpose. `Button`'s `link` variant carries
-            `hover:text-body`, so the one warning on the irreversible screen
-            turned slate grey under the cursor — the gesture that precedes the
-            click removed the colour that made it a warning. And it wears the
-            same `⚠` as the rows it counts, so the banner and the field it jumps
-            to are recognisably the same fact.
-          */
-          <Button
-            variant="link"
-            className="text-warn hover:text-warn shrink-0"
-            onClick={focusFirstFaible}
-          >
-            {faible.length === 1
-              ? `${FAIBLE} — 1 champ non vérifié dans la transcription`
-              : `${FAIBLE} — ${faible.length} champs non vérifiés dans la transcription`}
+        {faible.length === 0 ? (
+          <span className="text-muted shrink-0 text-meta">
+            {panel.fields.length} champs · tous vérifiés
+          </span>
+        ) : (
+          <Button variant="link" className="text-muted shrink-0" onClick={focusFirstFaible}>
+            {`${panel.fields.length} champs · ${panel.fields.length - faible.length} vérifiés`}
           </Button>
-        ) : null}
+        )}
       </header>
 
       {failure ? (
@@ -1805,9 +1844,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 them, corrections included, and the same string VerySwing will
                 receive (DEC-44).
               */}
-              {mode === 'transcription' ? null : (
-                <CopyButton text={edits.compteRendu} what="le compte-rendu" />
-              )}
               <Segmented
                 label="Affichage du compte-rendu"
                 options={[
@@ -1823,6 +1859,42 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   if (next !== 'transcription') setFocus(null)
                   setMode(next)
                 }}
+              />
+              {/*
+                **The way out of the app, behind one glyph** — and drawn in every
+                view, which the bare *Copier* it replaces was not.
+
+                Not every follow-up goes through Outlook and not every rep has a
+                Microsoft account — the demo build has none at all (DEC-28) — and
+                the compte-rendu's real second destination is a paste: into a mail
+                client the app holds no token for, into Teams, into a proposal.
+                `Modifier` selects inside a textarea and `Lecture` does not, which
+                left the reading half of the switch with no way to take the text;
+                *Transcription* was given none at all, so the only tab where the
+                rep is looking *away* from the document was also the only one that
+                could not copy it.
+
+                It went behind the overflow because a toolbar is a claim about
+                what happens on a screen, and copying is not a third of what
+                happens here — the compte-rendu is read and *Valider* is pressed
+                (DEC-4). Same string either way: `edits.compteRendu`, what the rep
+                has in front of them, corrections included, and byte for byte what
+                VerySwing receives (DEC-44).
+              */}
+              {copied === 'idle' ? null : (
+                <span key={copied} role="status" className="text-muted animate-fade-in text-meta">
+                  {copied === 'done' ? 'Compte-rendu copié' : 'Copie impossible'}
+                </span>
+              )}
+              <OverflowMenu
+                what="le compte-rendu"
+                items={[
+                  {
+                    id: 'copier',
+                    label: 'Copier le compte-rendu',
+                    onSelect: () => void copyCompteRendu(edits.compteRendu),
+                  },
+                ]}
               />
             </div>
 
@@ -2168,6 +2240,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */
             className="fade-below min-h-0 flex-1 overflow-y-auto px-row pb-block pt-row"
           >
+
           <SectionHeader>Prêt à envoyer</SectionHeader>
 
           {/*
@@ -2356,9 +2429,20 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             */}
             <p
               className={cn(
-                // `.measure`, because this line is ninety-seven characters and
-                // was the one `line-length` finding on the screen — on the
-                // sentence a rep reads under time pressure.
+                // `.measure`, because this line used to be ninety-seven
+                // characters and was the one `line-length` finding on the screen
+                // — on the sentence a rep reads under time pressure.
+                //
+                // **It is one line now, and the clause that went is the
+                // justification, not the fact.** « Tout ce qui part doit avoir
+                // été affiché avant d’être validé — il reste du compte-rendu, à
+                // gauche. » is ninety-seven characters at `--type-meta` inside a
+                // 58ch measure: three wrapped lines under an empty primary slot,
+                // of which the rep needs the last eight words. What is left says
+                // *what* is unread and *where*, which is the pair the control at
+                // the foot of that column acts on; the rule it used to recite is
+                // already said by that control's own label and by the
+                // « Ce qui sera créé » list above the slot.
                 'measure mx-auto mt-1.5 text-center text-meta',
                 (faible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
               )}
@@ -2374,11 +2458,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                     // control offered moved the transcript. It names the way back now,
                     // which is also what the control at the foot of that column does.
                     mode === 'transcription'
-                    ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, sous « Lecture ».'
-                    : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste du compte-rendu, à gauche.'
+                    ? 'Il reste du compte-rendu à lire, sous « Lecture ».'
+                    : 'Il reste du compte-rendu à lire, à gauche.'
                   : unreadIsAbove('rail')
-                    ? 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus haut.'
-                    : 'Tout ce qui part doit avoir été affiché avant d’être validé — il reste des champs, plus bas.'
+                    ? 'Il reste des champs à lire, plus haut.'
+                    : 'Il reste des champs à lire, plus bas.'
                 : stalled && !busy
                   ? `La réécriture n’a pas démarré : ce que « Valider » envoie est le compte-rendu affiché à gauche, avec vos corrections.`
                   : faible.length > 0 && !busy
