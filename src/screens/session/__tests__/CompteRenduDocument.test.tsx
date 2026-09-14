@@ -70,3 +70,34 @@ describe('CompteRenduDocument', () => {
     expect(drawn(container)).toBe('')
   })
 })
+
+/*
+ * The magnifier at the end of a followable line (DEC-44). It is drawn only on
+ * a line the composer wrote from a span — string equality, never a guess — and
+ * a plain line gets neither the glyph nor the control.
+ */
+describe('provenance glyph', () => {
+  const sources = [{ text: 'TJM évoqué : 550 €', span: { quote: '550 euros' } }]
+
+  it('hangs a magnifier on a sourced line and none on a plain one', () => {
+    const { container } = render(
+      <CompteRenduDocument
+        text={'- TJM évoqué : 550 €\n- Mode : régie'}
+        sources={sources}
+        onQuote={() => {}}
+      />,
+    )
+    const buttons = container.querySelectorAll('button')
+    expect(buttons.length).toBe(1)
+    expect(buttons[0]?.querySelector('svg')).not.toBeNull()
+    expect(buttons[0]?.textContent).toContain('TJM évoqué')
+  })
+
+  it('draws no control at all when there is no record beside it', () => {
+    const { container } = render(
+      <CompteRenduDocument text={'- TJM évoqué : 550 €'} sources={sources} />,
+    )
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('svg')).toBeNull()
+  })
+})

@@ -27,6 +27,7 @@
  * down, which made the document the app produced quieter than the notes it was
  * written from — on the surfaces where the compte-rendu *is* the output.
  */
+import { Search } from 'lucide-react'
 import { parseCompteRendu, parseInline } from './compteRenduLines.ts'
 
 interface CompteRenduDocumentProps {
@@ -214,9 +215,23 @@ export function CompteRenduDocument({
                   <button
                     type="button"
                     onClick={() => onQuote(sourced)}
-                    className="text-body hover:text-strong decoration-card hover:decoration-muted focus-visible:decoration-muted min-h-[24px] text-left underline decoration-dotted decoration-from-font underline-offset-4 transition"
+                    aria-label={`Voir la source dans la transcription : ${line.text}`}
+                    className="group text-body hover:text-strong hover:bg-inner focus-visible:bg-inner decoration-card hover:decoration-muted focus-visible:decoration-muted -mx-1 min-h-[24px] rounded-sm px-1 text-left underline decoration-dotted decoration-from-font underline-offset-4 transition"
                   >
                     <Prose text={line.text} />
+                    {/*
+                      The magnifier, at the end of the line, under the cursor
+                      only. It names what the press does — open the record on
+                      this line — where the dotted rule only says that a press
+                      does something. Hidden at rest so twelve followable rows
+                      do not become twelve glyphs; `focus-visible` brings it up
+                      for the keyboard as hover does for the pointer. Brand
+                      blue, not warn: this is a way in, not a doubt.
+                    */}
+                    <Search
+                      aria-hidden
+                      className="text-brand ml-1 inline size-3.5 -translate-y-px opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
+                    />
                   </button>
                 ) : (
                   <Prose text={line.text} onQuote={onQuote} />

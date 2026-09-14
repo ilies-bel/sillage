@@ -20,6 +20,7 @@ import {
   CopyButton,
   EmptyState,
   List,
+  OverflowMenu,
   Row,
   RowTitle,
   SectionHeader,
@@ -462,5 +463,37 @@ describe('cn() resolves conflicting utilities instead of emitting both', () => {
 
     expect(keys('spacing').sort()).toEqual([...SPACING_STEPS].sort())
     expect(keys('fontSize').sort()).toEqual([...TYPE_STEPS].sort())
+  })
+})
+
+/*
+ * The overflow: one 24×24 glyph, a real menu behind it, three ways out.
+ */
+describe('OverflowMenu', () => {
+  test('opens on press, selects an item, and closes on Échap back to the trigger', () => {
+    const onSelect = vi.fn()
+    render(
+      <OverflowMenu what="le compte-rendu" items={[{ id: 'copier', label: 'Copier', onSelect }]} />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Autres actions sur le compte-rendu' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(trigger)
+    const item = screen.getByRole('menuitem', { name: 'Copier' })
+    expect(document.activeElement).toBe(item)
+    fireEvent.keyDown(item, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copier' }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  test('an outside press closes it', () => {
+    render(<OverflowMenu what="le compte-rendu" items={[{ id: 'a', label: 'A', onSelect() {} }]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Autres actions sur le compte-rendu' }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })
