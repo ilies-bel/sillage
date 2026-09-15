@@ -169,3 +169,56 @@ test('a laptop that slept through the window ends on waking, not one window late
   h.advance(SILENCE_GRACE_MS * 4)
   assert.equal(h.ends.length, 1)
 })
+
+test.describe('hold and release (session:pause)', () => {
+  test('a held watch does not end a silent call, and a released one counts from now', () => {
+    let now = 1_000_000
+    const timers: Array<{ fn: () => void; at: number }> = []
+    const ended: string[] = []
+    const watch = new EndOfMeetingWatch({
+      scheduledEnd: null,
+      onEnd: (reason) => ended.push(reason),
+      clock: () => now,
+      setTimer: (fn, ms) => {
+        const handle = { fn, at: now + ms }
+        timers.push(handle)
+        return handle
+      },
+      clearTimer: (handle) => {
+        const index = timers.indexOf(handle as never)
+        if (index >= 0) timers.splice(index, 1)
+      },
+    })
+    const fire = (untilMs: number) => {
+      now = untilMs
+      for (const timer of timers.splice(0)) if (timer.at <= now) timer.fn()
+    }
+
+    watch.speechStarted('rep')
+    watch.speechEnded('rep')
+    assert.ok(timers.length > 0)
+    const deadline = timers[0]!.at
+
+    watch.hold()
+    assert.equal(watch.held, true)
+    assert.equal(timers.length, 0)
+    fire(deadline + 60 * 60_000)
+    assert.deepEqual(ended, [])
+
+    watch.release()
+    assert.equal(watch.held, false)
+    assert.equal(watch.silentSince, now)
+    assert.ok(timers.length > 0)
+    assert.ok(timers[0]!.at > now)
+  })
+
+  test('releasing while someone speaks forgets the silence', () => {
+    const watch = new EndOfMeetingWatch({ scheduledEnd: null, onEnd: () => undefined })
+    watch.speechEnded('far')
+    watch.hold()
+    watch.speechStarted('rep')
+    watch.release()
+    assert.equal(watch.silentSince, null)
+    watch.stop()
+  })
+})

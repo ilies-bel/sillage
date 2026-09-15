@@ -230,6 +230,20 @@ export function Widget() {
 
   const live = state.state.status === 'ready' ? state.state.value.meeting : null
   /*
+   * Whether frames are being dropped before the transcriber. Seeded by the
+   * answer to `widget:state`, moved by `recording:paused` — never by the press:
+   * the pill draws what the main process says is true, and a press whose
+   * answer differs is a press that changed nothing.
+   */
+  const [paused, setPaused] = useState(false)
+  useEffect(() => {
+    if (live) setPaused(live.paused)
+  }, [live])
+  useBroadcast('recording:paused', (payload) => {
+    if (gone.current) return
+    if (live && payload.meetingId === live.meetingId) setPaused(payload.paused)
+  })
+  /*
    * The last meeting this window *rendered*, which is what makes the freeze cover
    * a read that was already on the wire. Written during render and only while the
    * window is staying: that is the definition of « what is on screen », and there
@@ -639,6 +653,7 @@ export function Widget() {
             open={open}
             above={above}
             placed={placed}
+            paused={paused}
             onToggle={() => setOpen((was) => !was)}
             onMark={() => void mark(null, '')}
             onMention={() => void announce()}
@@ -690,6 +705,7 @@ export function Widget() {
               onForget={forget}
               onClose={() => setOpen(false)}
               onAnnounce={setAnnounced}
+              paused={paused}
             />
           ) : null}
           {/*
@@ -1527,6 +1543,7 @@ interface PillProps {
   startedAt: number | null
   meetingId: string | null
   marks: number
+  paused: boolean
   open: boolean
   above: boolean
   /**
@@ -1558,6 +1575,7 @@ function Pill({
   startedAt,
   meetingId,
   marks,
+  paused,
   open,
   above,
   placed,
@@ -1615,7 +1633,7 @@ function Pill({
       */}
       <span className="flex shrink-0 items-center gap-1.5">
         <span aria-hidden className="bg-accent h-2 w-2 shrink-0 rounded-full" />
-        <span className="sr-only">Enregistrement en cours</span>
+        <span className="sr-only">{paused ? 'Enregistrement en pause' : 'Enregistrement en cours'}</span>
       </span>
 
       {meetingId === null ? (
@@ -1624,7 +1642,16 @@ function Pill({
         <LevelMeter meetingId={meetingId} variant="pill" />
       )}
 
-      <Elapsed since={startedAt} />
+      {/*
+        The clock, or the word. A pause is the one state in which elapsed time
+        stops meaning « how long this call has been written down », so the word
+        takes its rectangle rather than sitting beside a counter that lies.
+      */}
+      {paused ? (
+        <span className="text-muted shrink-0 text-ui">En pause</span>
+      ) : (
+        <Elapsed since={startedAt} />
+      )}
 
       {/*
         **Telling the client, in one press** (US-11, `mention.ts`).
@@ -1757,6 +1784,7 @@ interface PanelProps {
    * and a second one on a card this small would read every sentence twice.
    */
   onAnnounce: (sentence: string) => void
+  paused: boolean
 }
 
 function Panel({
@@ -1770,6 +1798,7 @@ function Panel({
   onForget,
   onClose,
   onAnnounce,
+  paused,
 }: PanelProps) {
   const [note, setNote] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
@@ -1996,32 +2025,29 @@ function Panel({
             </Button>
 
             {/*
-              **UNWIRED — *Pause* stops nothing today, and says so rather than
-              pretending.**
-
-              `SessionCommandSchema` declares `arm · disarm · start · end ·
-              abort · extract · extractionSucceeded · extractionFailed ·
-              confirm · pushSettled` and no pause. Pausing a recording is a
-              state the machine does not have, and inventing one here would mean
-              a renderer flag that the orchestrator, the capture module and the
-              crash sweep all disagree with — a widget saying « en pause » over
-              a call that is still being written to disk is worse than no
-              control at all.
-
-              What it costs to leave it drawn: one control in the footer that
-              reports a refusal instead of acting. What it would cost to wire
-              it: a new state in `MeetingState`, a transition table entry, a
-              capture verb, and a decision about what a paused recording does to
-              the extraction — none of which is this change. So the press says
-              the one true sentence and the announcement is read by the same
-              live region every other refusal on this card uses.
+              **Pause is a capture verb** (`session:pause`), not a meeting state:
+              the transcriber stops hearing frames and the silence clock is held,
+              while the machine stays in `recording` and the meter keeps moving
+              (DEC-38). The label is the next act, and it changes only when the
+              main process says the state did — see `paused` on the window.
             */}
             <Button
               variant="text"
               className="no-drag px-1"
-              onClick={() => onAnnounce('La pause n’est pas encore disponible.')}
+              onClick={() =>
+                void invoke('session:pause', { meetingId, paused: !paused })
+                  .then(({ paused: now }) => {
+                    if (now === paused)
+                      onAnnounce(
+                        paused
+                          ? 'L’enregistrement n’a pas pu reprendre.'
+                          : 'La pause n’a pas pu être prise.',
+                      )
+                  })
+                  .catch(() => onAnnounce('La pause n’a pas pu être prise.'))
+              }
             >
-              Pause
+              {paused ? 'Reprendre' : 'Pause'}
             </Button>
           </span>
         )}

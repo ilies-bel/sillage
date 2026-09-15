@@ -683,6 +683,48 @@ export class Orchestrator {
    *    `enhancement.unhandled` and `before-quit` records `app.quit.endFailed`, and
    *    two rows for one failed flush is the honest reading: two callers needed it.
    */
+  /**
+   * `session:pause`. A verb on the recording, not on the machine — see the
+   * channel's docblock. Answers what is true afterwards, which for a meeting
+   * that is not recording is `false`.
+   */
+  setPaused(meetingId: MeetingId, paused: boolean): boolean {
+    const recording = this.#recordings.get(meetingId)
+    if (!recording) return false
+    const before = recording.paused
+    const now = recording.pause(paused)
+    if (now === before) return now
+    const watch = this.#endWatch.get(meetingId)
+    if (now) watch?.hold()
+    else watch?.release()
+    // Two literals, not one ternary: `check:diag` reads what this product wrote.
+    if (now) {
+      this.#diagnostics.record({
+        severity: 'info',
+        code: 'recording.paused',
+        module: 'app',
+        message: 'Enregistrement en pause',
+        detail: { meetingId },
+        meetingId,
+      })
+    } else {
+      this.#diagnostics.record({
+        severity: 'info',
+        code: 'recording.resumed',
+        module: 'app',
+        message: 'Enregistrement repris',
+        detail: { meetingId },
+        meetingId,
+      })
+    }
+    this.#broadcast('recording:paused', { meetingId, paused: now })
+    return now
+  }
+
+  isPaused(meetingId: MeetingId): boolean {
+    return this.#recordings.get(meetingId)?.paused ?? false
+  }
+
   async stopRecording(meetingId: MeetingId): Promise<void> {
     const inFlight = this.#stopping.get(meetingId)
     if (inFlight) {

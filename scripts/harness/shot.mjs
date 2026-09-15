@@ -2667,6 +2667,30 @@ const SCREENS = {
    * that is *not rendered* and one *crushed to nothing* are different, and this
    * check exists because the second one shipped.
    */
+  /**
+   * **The paused call** — the one state the pill draws a word in place of the
+   * clock. Driven through the footer's own control and the stub's broadcast,
+   * which is the order the product uses: nothing on this window changes on a
+   * press, only on `recording:paused`.
+   */
+  'widget-pause': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await page.getByRole('button', { name: 'Pause' }).click()
+      await page.getByRole('button', { name: 'Reprendre' }).waitFor()
+      await page.getByText('En pause', { exact: true }).waitFor()
+      if ((await page.getByLabel('Durée d’enregistrement').count()) !== 0) {
+        throw new Error('en pause, la pastille compte encore le temps')
+      }
+      await settled(page)
+    },
+  },
+
   'widget-refus': {
     scenario: 'session',
     query: 'window=widget',

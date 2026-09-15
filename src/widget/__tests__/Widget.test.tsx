@@ -60,6 +60,7 @@ const recording = (marks: MomentMark[] = [], mentionSentence = MENTION_SENTENCE_
     clientName: 'Néovia Santé',
     startedAt: STARTED,
     marks,
+    paused: false,
   },
 })
 
@@ -401,21 +402,28 @@ test('the panel says why the client’s name may be drawn over a shared screen',
   expect(screen.getByText('Invisible en partage d’écran')).toBeTruthy()
 })
 
-test('Pause is drawn and refuses, because the machine has no pause (UNWIRED)', async () => {
-  // `SessionCommandSchema` declares no pause verb. A renderer flag would be a
-  // widget saying « en pause » over a call still being written to disk, so the
-  // press says the one true sentence instead and no command is sent.
+test('Pause asks the main process and draws its answer, never its own press', async () => {
   const sent: unknown[] = []
-  bridge.when('session:command', (payload) => {
+  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => {
     sent.push(payload)
-    return { ok: true as const, state: 'recording' as const }
+    return { paused: payload.paused }
   })
   render(<Widget />)
   await openPanel()
 
   fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
-  expect(sent).toEqual([])
-  expect(screen.getByText('La pause n’est pas encore disponible.')).toBeTruthy()
+  await waitFor(() => expect(sent).toEqual([{ meetingId: 'm1', paused: true }]))
+  // The press alone changes nothing on screen: the broadcast does.
+  expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy()
+  await act(async () => {
+    bridge.emit('recording:paused', { meetingId: 'm1', paused: true })
+  })
+  expect(screen.getByRole('button', { name: 'Reprendre' })).toBeTruthy()
+  expect(screen.getByText('En pause')).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reprendre' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1]).toEqual({ meetingId: 'm1', paused: false })
 })
 
 test('with nothing recording it says so and offers no controls', async () => {
@@ -1638,7 +1646,7 @@ test('un second enregistrement dans la même fenêtre porte ses propres marques'
       title: 'Sodexial — comité de staffing',
       clientName: 'Sodexial',
       startedAt: STARTED + 3_600_000,
-      marks: [],
+      marks: [], paused: false,
     },
   }))
   await act(async () => {

@@ -42,6 +42,7 @@ export class EndOfMeetingWatch {
   #silentSince: number | null = null
   #timer: unknown = null
   #stopped = false
+  #held = false
 
   constructor(deps: EndOfMeetingWatchDeps) {
     this.#deps = deps
@@ -89,13 +90,43 @@ export class EndOfMeetingWatch {
    */
 
   /** The meeting ended by another route. Nothing may fire afterwards. */
+  /**
+   * **A paused call is quiet on purpose.**
+   *
+   * Holding stops the silence clock without forgetting it was silent: the
+   * timer is disarmed and the edges keep arriving. Releasing restarts the
+   * count from *now* if every channel is still quiet — the two minutes the rep
+   * spent away are theirs, not the grace window's — and does nothing at all
+   * if someone is speaking.
+   */
+  hold(): void {
+    if (this.#stopped || this.#held) return
+    this.#held = true
+    this.#disarm()
+  }
+
+  release(): void {
+    if (this.#stopped || !this.#held) return
+    this.#held = false
+    if (this.#speaking.size > 0) {
+      this.#silentSince = null
+      return
+    }
+    this.#silentSince = this.#clock()
+    this.#evaluate()
+  }
+
+  get held(): boolean {
+    return this.#held
+  }
+
   stop(): void {
     this.#stopped = true
     this.#disarm()
   }
 
   #evaluate(): void {
-    if (this.#stopped) return
+    if (this.#stopped || this.#held) return
     const decision = decideEndOfMeeting({
       now: this.#clock(),
       silentSince: this.#silentSince,

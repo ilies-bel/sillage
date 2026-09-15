@@ -431,6 +431,27 @@ export const invokeChannels = {
    * in `app/` — two spellings of one answer is how a screen ends up disagreeing
    * with itself across a remount.
    */
+  /**
+   * **Pause is a capture verb, not a meeting state.**
+   *
+   * The machine stays in `recording`: one recording at a time, the crash sweep,
+   * `liveIds()` and the widget's existence all key on that state and none of
+   * them has an opinion about a rep who stepped out for two minutes. What a
+   * pause does is upstream of all of them — `Recording` stops handing frames to
+   * the transcriber and `EndOfMeetingWatch` holds its silence clock, so a held
+   * call is neither transcribed nor ended for being quiet. The input meter goes
+   * on: proof of life is the meter, never the transcript (DEC-38), and a paused
+   * meter that fell silent would look exactly like a dead device.
+   *
+   * Idempotent — `paused: true` on a paused call answers `true` and changes
+   * nothing — and answered with the truth: a meeting that is not recording
+   * answers `false`, which is what the widget then draws.
+   */
+  'session:pause': {
+    request: z.object({ meetingId: MeetingIdSchema, paused: z.boolean() }),
+    response: z.object({ paused: z.boolean() }),
+  },
+
   'enhancement:status': {
     request: z.object({ meetingId: MeetingIdSchema }),
     response: EnhancementStatusSchema,
@@ -538,6 +559,8 @@ export const invokeChannels = {
           clientName: z.string().nullable(),
           startedAt: TimestampSchema,
           marks: z.array(MomentMarkSchema),
+          /** Frames are being dropped before the transcriber (`session:pause`). */
+          paused: z.boolean(),
         })
         .nullable(),
       /**
@@ -1058,6 +1081,12 @@ export type InvokeResponse<C extends InvokeChannel> = z.infer<
 /** Main → renderer, fire and forget. */
 export const broadcastChannels = {
   'session:changed': z.object({ meetingId: MeetingIdSchema, state: MeetingStateSchema }),
+  /**
+   * The pause flipped, on either surface. The widget and the session screen
+   * both draw it, and neither trusts its own press: the answer to
+   * `session:pause` is one window's, this is every window's.
+   */
+  'recording:paused': z.object({ meetingId: MeetingIdSchema, paused: z.boolean() }),
   'transcript:appended': z.object({
     meetingId: MeetingIdSchema,
     segment: TranscriptSegmentSchema,

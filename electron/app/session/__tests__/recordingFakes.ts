@@ -82,6 +82,7 @@ export class TailingTranscribe extends EventEmitter {
 export interface RecordingRig {
   store: Store
   orchestrator: Orchestrator
+  capture: FakeCapture
   transcribe: TailingTranscribe
   records: DiagInput[]
   meetingId: string
@@ -102,6 +103,7 @@ export const recordingRig = async (
     meetingId?: string
     /** Installed before the meeting starts — `watchPower`, for instance. */
     install?: (orchestrator: Orchestrator, store: Store, records: DiagInput[]) => void
+    broadcast?: (channel: string, payload: unknown) => void
   } = {},
 ): Promise<RecordingRig> => {
   const store = openMemoryStore()
@@ -110,6 +112,7 @@ export const recordingRig = async (
   const transcribe = new TailingTranscribe(options.delayMs ?? 5)
   const orchestrator = new Orchestrator(store, {
     diagnostics: { record: (input) => records.push(input) },
+    ...(options.broadcast ? { broadcast: options.broadcast as never } : {}),
     recording: {
       createCapture: () => capture as never,
       createTranscribe: () => transcribe as never,
@@ -137,6 +140,7 @@ export const recordingRig = async (
   return {
     store,
     orchestrator,
+    capture,
     transcribe,
     records,
     meetingId,

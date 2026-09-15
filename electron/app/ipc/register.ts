@@ -750,6 +750,10 @@ export const handlers: Handlers = {
       : { ok: false as const, state: outcome.state, reason: outcome.reason }
   },
 
+  'session:pause': ({ meetingId, paused }, { orchestrator }) => ({
+    paused: orchestrator.setPaused(meetingId, paused),
+  }),
+
   'enhancement:status': ({ meetingId }, { enhancementStatus }) =>
     enhancementStatus?.(meetingId) ?? { status: 'idle' as const },
 
@@ -1256,6 +1260,7 @@ export const handlers: Handlers = {
         clientName: meeting.clientName,
         startedAt: meeting.startedAt ?? meeting.createdAt,
         marks: store.projections.marks(meetingId),
+        paused: orchestrator.isPaused(meetingId),
       },
     }
   },

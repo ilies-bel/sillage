@@ -155,10 +155,10 @@ export function TranscriptPane({ turns, live, finding }: TranscriptPaneProps) {
                     shape they read it in live. Changing one without the other is
                     two screens printing the same turn differently.
                   */}
-                  <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
+                  <span className="text-muted w-[38px] shrink-0 tabular-nums text-meta leading-relaxed">
                     {formatOffset(turn.startMs)}
                   </span>
-                  <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
+                  <span className="text-muted w-[44px] shrink-0 text-meta leading-relaxed">
                     {speakerLabel(turn.channel, [])}
                   </span>
                   <span

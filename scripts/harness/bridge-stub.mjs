@@ -3034,8 +3034,16 @@ export function installAppBridge(config) {
               // pill's elapsed counter seventeen minutes before the invite.
               startedAt: NEOVIA_STARTED,
               marks: MARKS,
+              paused: false,
             },
           },
+    // Answers the request as if it had landed; the widget draws the answer.
+    'session:pause': (payload) => {
+      // Like the main process: the answer is one window's, the broadcast is every
+      // window's, and the widget draws the broadcast.
+      harness.emit('recording:paused', { meetingId: payload.meetingId, paused: payload.paused })
+      return { paused: payload.paused }
+    },
     'meeting:mark': (payload) => {
       /*
         **A refusal is a thing this channel really does, so the fixture has to be

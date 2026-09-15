@@ -86,6 +86,7 @@ export class Recording {
   #diagnostics: DiagRecorder
   #stopping: Promise<void> | null = null
   #levelPoll: ReturnType<typeof setInterval> | null = null
+  #paused = false
 
   private constructor(
     session: MeetingSession,
@@ -231,10 +232,13 @@ export class Recording {
 
   #wire(): void {
     this.#capture.on('frame', (frame: AudioFrame) => {
+      // The gate. Capture keeps running — the meter is fed from it and the
+      // devices stay open — and the transcriber simply hears nothing.
+      if (this.#paused) return
       this.#transcribe.write(frame.channel, frame.chunk, frame.sampleRate)
     })
     this.#capture.on('speechEnded', (channel: Channel) => {
-      this.#transcribe.speechEnded(channel)
+      if (!this.#paused) this.#transcribe.speechEnded(channel)
       this.#notifySpeech(channel, false)
     })
     this.#capture.on('speechStarted', (channel: Channel) => {
@@ -297,6 +301,33 @@ export class Recording {
    * meeting, which is where the next steps get agreed. `TranscribeSession.stop()`
    * resolves only once both providers have flushed.
    */
+  /**
+   * Stop feeding the transcriber, or start again. Capture is untouched: the
+   * devices stay open, the meter keeps moving (DEC-38), and nothing is written
+   * to disk either way (DEC-12). Flushing the transcriber on the way in closes
+   * the utterance that was mid-air, so the last words before the pause are
+   * committed rather than held until the rep comes back.
+   */
+  pause(paused: boolean): boolean {
+    if (this.#stopping) return false
+    if (this.#paused === paused) return this.#paused
+    this.#paused = paused
+    if (paused) {
+      for (const channel of ['rep', 'far'] as const) {
+        try {
+          this.#transcribe.speechEnded(channel)
+        } catch (error) {
+          this.#record('transcribe', channel, error)
+        }
+      }
+    }
+    return this.#paused
+  }
+
+  get paused(): boolean {
+    return this.#paused
+  }
+
   async stop(): Promise<void> {
     // Sticky, not cleared on completion. A `Recording` is per meeting and never
     // restarted — the Rust monitors tear their platform handles down on stop —
