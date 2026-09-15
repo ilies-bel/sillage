@@ -71,6 +71,7 @@ import {
   Rail,
   ReadingColumn,
   Row as UiRow,
+  RowLead,
   RowTitle,
   SectionHeader,
   type ReadingSubject,
@@ -305,15 +306,27 @@ export function Historique({
           </EmptyState>
         ) : (
           /*
-            **Each call is a card of its own** (V2). A divided list said these
-            rows were one block to be read down; they are not — they are the
-            record, and what a rep does here is pick one and open it. The
-            rectangle is the queue row's: an edge stroke, `rounded-sm`, 16px by
-            10px. It is also what makes an *expanded* row legible: a record six
-            hundred pixels tall inside a hairline-divided list reads as the list
-            having come apart.
+            **The same row the calendar draws, because it is the same object.**
+
+            This was a card per call, argued as « a rep picks one and opens it »
+            — which is true, and the calendar's *Passées* said exactly the same
+            thing about the same meetings and was rebuilt as bare hairline rows
+            one commit ago. What a rep saw after that was one design on the
+            calendar and another for the same calls one click away: the product
+            contradicting itself, which is a worse fault than either shape.
+
+            The other half of the old argument survives and is the reason the
+            box did not simply go: a record six hundred pixels tall inside a
+            hairline-divided list does read as the list having come apart. So
+            the box moved from *every* row to the **open** one — where it is
+            information (« this is the one you opened ») rather than decoration.
+            A collapsed list is now the calendar's list; an expanded row is a
+            card, once.
           */
-          <ul aria-label="Appels enregistrés" className="flex flex-col gap-2">
+          <ul
+            aria-label="Appels enregistrés"
+            className="divide-y divide-[var(--border-subtle)]"
+          >
             {rows.map((row) => (
               <Row
                 key={row.meeting.id}
@@ -415,14 +428,32 @@ function Row({ row, expanded, onToggle }: RowProps) {
   }, [expanded])
 
   return (
-    <li ref={self} className="bg-card border-card scroll-mt-2 overflow-hidden rounded-sm border">
+    <li
+      ref={self}
+      className={cn(
+        'scroll-mt-2 overflow-hidden',
+        // The stroke marks the open record, not the list. `-mx-px` so the
+        // border sits over the hairlines rather than beside them, and the row
+        // does not step sideways as it opens.
+        expanded ? 'bg-card border-card -mx-px my-1 rounded-sm border' : 'bg-transparent',
+      )}
+    >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         className="hover:bg-card-soft w-full text-left transition"
       >
-        <UiRow as="div" density="card" align="center" className="bg-transparent">
+        <UiRow as="div" density="roomy" align="center" className="bg-transparent">
+          {/*
+            The date leads, as it does in both of the calendar's lists — the
+            grammar `ui/List.tsx`'s `RowLead` exists to hold. It used to sit at
+            the trailing edge on the argument that « in a record the clock is a
+            detail », which is the same argument *Passées* made and gave up: a
+            rep scanning the two screens one click apart met the client's name
+            in two different columns.
+          */}
+          <RowLead>{formatDayShort(meetingAnchor(meeting))}</RowLead>
           <RowTitle {...meetingHeading(meeting)} />
           <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
           {/*
@@ -433,15 +464,6 @@ function Row({ row, expanded, onToggle }: RowProps) {
                 « Envois » in the expanded record two clicks below.
               */}
               <IntentSummary intents={row.intents} variant="compact" className="w-48 truncate" />
-          {/*
-            The date, at the trailing edge (V2). In a schedule the clock is the
-            index and leads; in a record of calls that have already happened it
-            is a detail of the card, and the card is led by the client's name —
-            which is what a rep is scanning for here.
-          */}
-          <span className="text-muted shrink-0 text-right tabular-nums text-ui">
-            {formatDayShort(meetingAnchor(meeting))}
-          </span>
         </UiRow>
       </button>
 
