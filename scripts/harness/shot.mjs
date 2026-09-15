@@ -3593,11 +3593,13 @@ async function main() {
 
   let dim = []
   let graphics = 0
+  let undeclaredGraphics = 0
   if (flags.contrast) {
     await page.evaluate(() => document.fonts.ready)
     const measured = await contrast(page)
     dim = measured.dim
     graphics = measured.graphics
+    undeclaredGraphics = measured.undeclared
   }
 
   /*
@@ -4055,7 +4057,8 @@ async function main() {
     if (dim.length === 0) {
       console.log(
         `  contraste: texte AA, ${graphics} graphique(s) à 3:1` +
-          (graphics === 0 ? ' — aucun élément ne s’est déclaré `data-graphic`' : ''),
+          (graphics === 0 ? ' — aucun élément ne s’est déclaré `data-graphic`' : '') +
+          (undeclaredGraphics > 0 ? `, ${undeclaredGraphics} marque(s) non déclarée(s)` : ''),
       )
     }
     else {
@@ -4602,6 +4605,20 @@ async function contrast(page) {
      * green line, and now it says how much it is worth.
      */
     let graphics = 0
+    /*
+     * **And how many marks it walked past**, because « 0 graphique(s) » on a
+     * screen covered in them reads exactly like a pass.
+     *
+     * Opt-in is right — 1.4.11 covers a graphic *required to understand the
+     * content*, and only the author knows which — but an opt-in census cannot
+     * tell « nothing here needs checking » from « nobody has opted in », and two
+     * separate reviewers read this line the second way on the same round. A
+     * candidate is what a mark looks like: `aria-hidden`, painted, no words of
+     * its own, small enough to be a dot or a bar, and carrying an opaque fill or
+     * ring. That is a heuristic, so it is *reported* and never failed on — the
+     * number's whole job is to stop the green line meaning nothing.
+     */
+    let undeclared = 0
     const painted = (el) => {
       const style = getComputedStyle(el)
       if (style.display === 'none' || style.visibility === 'hidden') return false
@@ -4641,9 +4658,28 @@ async function contrast(page) {
        * check relaxed for a reason that has expired is a check nobody has
        * audited.
        */
+      /*
+       * **And a `border`, which is the third way to draw the same boundary.**
+       *
+       * The paragraph above reasons about `ring-*` because `ring-*` compiles to
+       * a `box-shadow` and would otherwise read as no ink at all. A hollow mark
+       * drawn with `border` had the identical problem and was not handled: the
+       * calendar grid's « réunion prête » is `border border-accent-mark` on a
+       * transparent fill, and this reported it « rien sur rgb(235,248,255) » —
+       * 0:1, a mark it could see perfectly well being called invisible.
+       *
+       * Same shape as `ring-card` resolving to no colour and `decoration-card`
+       * resolving to a background token, and the same rule this repo already
+       * writes down for those two: whatever `border-*` can say, the utilities
+       * that draw the same line must be able to say too. Here it runs the other
+       * way — the *check* knew two of the three.
+       */
+      const edge = parseFloat(style.borderTopWidth) > 0 && opaque(style.borderTopColor)
+        ? style.borderTopColor
+        : null
       const ink = opaque(style.backgroundColor)
         ? style.backgroundColor
-        : (rings.filter(opaque).pop() ?? null)
+        : (rings.filter(opaque).pop() ?? edge)
       if (!ink) {
         out.push({
           text: el.dataset.graphic || 'graphique',
@@ -4666,7 +4702,18 @@ async function contrast(page) {
         need: 3,
       })
     }
-    return { dim: out, graphics }
+    for (const el of document.querySelectorAll('[aria-hidden="true"]')) {
+      if (el.hasAttribute('data-graphic') || el.closest('[data-graphic]')) continue
+      if (!painted(el)) continue
+      if ((el.textContent ?? '').trim().length > 0) continue
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 || box.height === 0 || box.width > 24 || box.height > 24) continue
+      const style = getComputedStyle(el)
+      const rings = [...style.boxShadow.matchAll(/rgba?\([^)]+\)/g)].map((m) => m[0])
+      const bordered = opaque(style.borderTopColor) && parseFloat(style.borderTopWidth) > 0
+      if (opaque(style.backgroundColor) || rings.some(opaque) || bordered) undeclared += 1
+    }
+    return { dim: out, graphics, undeclared }
   })
   await stylesheet.evaluate((node) => node.remove())
   return findings

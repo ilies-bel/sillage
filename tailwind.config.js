@@ -82,6 +82,11 @@ module.exports = {
         scrim: 'var(--bg-scrim)',
 
         accent: 'var(--accent)',
+        /*
+         * The same meaning, cut for a ground with no label beside it — see
+         * `--accent-mark` in tokens.css. The calendar grid only.
+         */
+        'accent-mark': 'var(--accent-mark)',
         success: 'var(--success)',
         warn: 'var(--warn)',
         danger: 'var(--danger)',
@@ -129,6 +134,7 @@ module.exports = {
         brand: 'var(--brand-500)',
         /* The armed dot is a hollow ring — see `StateDot`'s `armed` tone. */
         accent: 'var(--accent)',
+        'accent-mark': 'var(--accent-mark)',
       },
       borderRadius: {
         sm: 'var(--radius-sm)',

@@ -626,7 +626,7 @@ same hue (200°), darkened, ratios measured against white.
 --brand-50:       #ebf8ff;   /*  1.08:1 on #ffffff — page wash, selected row */
 --brand-100:      #c9eafb;   /*  1.26:1 on #ffffff — their tint: section fills, chips */
 --brand-300:      #4dc2fb;   /*  2.01:1 on #ffffff — their blue: large fills ONLY, never text */
---brand-500:      #059ce5;   /*  3.05:1 on #ffffff — borders, focus rings, non-text UI, dots */
+--brand-500:      #0594da;   /*  3.35:1 on #ffffff — borders, focus rings, non-text UI, dots */
 --brand-700:      #036696;   /*  6.28:1 on #ffffff — links, selected labels, brand text */
 --brand-900:      #02334b;   /* 13.31:1 on #ffffff — headings on a brand tint */
 
@@ -648,6 +648,18 @@ same hue (200°), darkened, ratios measured against white.
 /* semantic */
 --accent:         #ff8500;   /*  2.44:1 on #ffffff — their orange, ONE meaning: armed /
                                  recording. Fill and dot only; it cannot carry text. */
+
+/* The same meaning on a ground where 2.44:1 is not enough. --accent is a fill
+   beside a word: StateDot refuses to render without a visible label, so its dot
+   is a second carrier and 1.4.11 exempts it. The calendar grid is the one place
+   that is not true -- a cell has a date and a dot, and only the mark says which
+   day carries it. There --accent measures 2.25:1 on a selected day and 2.18:1
+   under the pointer. Darkening --accent itself would put it 1.49:1 from --warn,
+   which shares a screen with it in nine files, so it is scoped to the one
+   surface that needs it -- the same argument the overlay palette makes.
+   CalendarGrid draws no --warn, so inside it there is one orange and it means
+   what orange means everywhere. */
+--accent-mark:    #d77000;   /*  3.37:1 on #ffffff — grid marks, no label beside them */
 --success:        #2f855a;   /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
 --warn:           #b45309;   /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
 --danger:         #c53030;   /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */

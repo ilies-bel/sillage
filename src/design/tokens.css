@@ -34,7 +34,19 @@
   --brand-50: #ebf8ff; /*  1.08:1 on #ffffff — page wash, selected row */
   --brand-100: #c9eafb; /*  1.26:1 on #ffffff — their tint: section fills, chips */
   --brand-300: #4dc2fb; /*  2.01:1 on #ffffff — their blue: large fills ONLY, never text */
-  --brand-500: #059ce5; /*  3.05:1 on #ffffff — borders, focus rings, non-text UI, dots */
+  /*
+   * **3.05:1 on white was true and useless.** White is not a surface this
+   * product paints: the lightest real ground is `--bg-card` #fdfefe and the
+   * darkest a mark lands on is `--bg-subtle` #eef3f7, where #059ce5 measured
+   * **2.73:1** — under the 3:1 a non-text mark is held to, on the token whose
+   * own comment licensed it for exactly that. A ratio quoted against a ground
+   * nothing is drawn on is the same instrument as a comment.
+   *
+   * #0594da is the same hue five per cent down, which is imperceptible beside
+   * the old value and clears 3:1 on every ground in the file — the worst being
+   * 3.00:1 on `--bg-subtle`. Measured on all six in the prose block below.
+   */
+  --brand-500: #0594da; /*  3.35:1 on #ffffff — borders, focus rings, non-text UI, dots */
   --brand-700: #036696; /*  6.28:1 on #ffffff — links, selected labels, brand text */
   --brand-900: #02334b; /* 13.31:1 on #ffffff — headings on a brand tint */
 
@@ -64,6 +76,34 @@
    * tab, a primary button or a link. Brand blue marks selection and navigation.
    */
   --accent: #ff8500; /*  2.44:1 on #ffffff — FILL AND DOT ONLY, never text */
+  /*
+   * **The same meaning, on a ground where 2.44:1 is not enough.**
+   *
+   * `--accent` is licensed as a fill, and as a fill beside a word it is fine:
+   * `StateDot` refuses to render without a visible label, so its dot is a second
+   * carrier of something already written down — the exemption WCAG 1.4.11
+   * allows. The calendar grid is the one place that is not true. A cell has a
+   * date and a dot; the legend under the grid explains the code but only the
+   * mark says which day carries it. Measured there, `--accent` is **2.25:1** on
+   * a selected day (`--brand-50`) and 2.18:1 on `--bg-subtle` under the pointer.
+   *
+   * Darkening `--accent` itself was the obvious move and is the wrong one: at
+   * the 3:1 it would need (#d77000) it sits **1.49:1** from `--warn` #b45309,
+   * and the two share a screen in nine files — `StateDot`, `SectionNav`,
+   * `Button`, `Session`, `Historique`, `PendingGates`, `Reglages`,
+   * `TranscriptReader` and the widget. Trading a contrast floor for two
+   * semantics a rep cannot tell apart is not a fix.
+   *
+   * So it is scoped to the surface that needs it, which is the `--widget-*`
+   * argument again: a token re-cut for one ground rather than a palette bent to
+   * its worst case. `CalendarGrid` draws no `--warn` at all, so inside it there
+   * is one orange and it means what orange means everywhere — armed or
+   * recording, never a tab, a button or a link.
+   *
+   * 3.01:1 on `--bg-subtle`, 3.11:1 on `--brand-50`, 3.25:1 on the grid's own
+   * canvas, 3.37:1 on white.
+   */
+  --accent-mark: #d77000;
   --success: #2f855a; /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
   --warn: #b45309; /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
   --danger: #c53030; /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */

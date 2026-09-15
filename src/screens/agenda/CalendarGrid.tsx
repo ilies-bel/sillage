@@ -223,8 +223,8 @@ const MARK_CLASS: Record<DayMark, string> = {
     called that « réunion prête ». The grid said *ready* about a call in
     progress.
   */
-  recording: 'bg-accent',
-  armed: 'border border-accent',
+  recording: 'bg-accent-mark',
+  armed: 'border border-accent-mark',
   captured: 'bg-brand-500',
   scheduled: 'border border-brand-500',
 }
@@ -257,7 +257,21 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
       */}
       <span aria-hidden className="flex h-1.5 items-center">
         {mark && mark !== 'scheduled' ? (
-          <span className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])} />
+          /*
+            `data-graphic`, because here the dot is the whole signal.
+
+            `StateDot` refuses to render without a *visible* label beside it, so
+            on a row the dot is a second carrier of something already written
+            down — that is the exemption 1.4.11 allows and why it does not opt
+            in. A calendar cell has a date and nothing else: the legend under the
+            grid explains the code, but only this mark says which day carries it.
+            Undeclared, it was invisible to `--contrast`, which printed
+            « 0 graphique(s) » on the one screen the marks are the point of.
+          */
+          <span
+            data-graphic={MARK_NAME[mark]}
+            className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])}
+          />
         ) : null}
       </span>
     </button>
