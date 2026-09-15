@@ -55,6 +55,29 @@ export interface SectionNavItem<Id extends string = string> {
   note?: string
   /** What `note` says, in French, for a screen reader. Required with `note`. */
   noteLabel?: string
+  /**
+   * Whether the note is **something wrong** or **something waiting**.
+   *
+   * One slot was serving both in one colour. In Réglages the note is « 2 »
+   * beside *Connecteurs* and means two connectors are down — a warning, and
+   * `--warn` is right. In the rail it is « 3 » beside *À valider* and means
+   * three calls are waiting for the rep — a queue, in which nothing has gone
+   * wrong and nothing is broken.
+   *
+   * Drawn in `--warn` both times, that put a burnt orange twenty pixels from
+   * the bright `--accent` of « réunion prête » in the calendar's legend: two
+   * oranges, different saturations, different meanings, adjacent. VISION.md §6
+   * sanctions both tokens and gives each one job — « orange means this meeting
+   * is armed or recording and nothing else » is `--accent`'s, and `--warn` is a
+   * different token with a different job — so the fault is not the palette, it
+   * is a component that could not tell a backlog from a fault.
+   *
+   * `count` is the default because it is the harmless reading: a caller that
+   * says nothing gets a neutral mark rather than an alarm it did not ask for.
+   * The count still draws the eye — it is the only figure on the row — it just
+   * stops claiming something is wrong.
+   */
+  noteTone?: 'count' | 'warn'
 }
 
 export interface SectionNavProps<Id extends string> {
@@ -114,7 +137,16 @@ export function SectionNav<Id extends string>({
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.note ? (
                   <>
-                    <span aria-hidden className="text-warn shrink-0 text-meta tabular-nums">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'shrink-0 text-meta font-semibold tabular-nums',
+                        // `--brand-700` is 6.28:1 on white and 5.80:1 on the
+                        // selected row's `--brand-50`; `--warn` is 5.02:1 and
+                        // 4.50:1. Both clear AA at this size either way.
+                        item.noteTone === 'warn' ? 'text-warn' : 'text-brand-700',
+                      )}
+                    >
                       {item.note}
                     </span>
                     {/*

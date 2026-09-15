@@ -300,6 +300,11 @@ export function Reglages({ onBack, section: opensOn, onOnboarding }: ReglagesPro
               ? {
                   ...item,
                   note: String(broken),
+                  // The one note in the product that really is a warning: a
+                  // connector in défaut is something wrong, not something
+                  // waiting. The rail's « À valider » count is the other case
+                  // and takes the default — see `SectionNavItem.noteTone`.
+                  noteTone: 'warn' as const,
                   noteLabel:
                     broken === 1 ? '1 connecteur en défaut' : `${broken} connecteurs en défaut`,
                 }

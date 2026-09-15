@@ -150,7 +150,21 @@ export function PendingGates({
               ? `au moins ${total} réunions en attente de validation`
               : `${total} réunion${total > 1 ? 's' : ''} en attente de validation`
           }
-          className="text-warn min-w-0 flex-1 text-ui tabular-nums"
+          /*
+            `--brand-700`, not `--warn`. This is the same number the rail prints
+            beside *À valider* and it means the same thing — calls waiting for
+            the rep — so the two have to agree, and `SectionNavItem.noteTone`
+            carries the argument: a queue is not a fault. Nothing here has gone
+            wrong; three compte-rendus are ready and nobody has read them yet.
+
+            It also un-crowds the screen. In `--warn` this sat a few rows under
+            « réunion prête » in the calendar's legend, which is the bright
+            `--accent`: two oranges at different saturations meaning different
+            things, in one glance. The staleness line below — « Rien n'a été
+            envoyé depuis N jours » — keeps `--warn`, because that one *is* a
+            fault and is the only thing on this screen making that claim.
+          */
+          className="text-brand-700 min-w-0 flex-1 text-ui font-semibold tabular-nums"
         >
           {capped ? `${total}+` : total}
         </span>
