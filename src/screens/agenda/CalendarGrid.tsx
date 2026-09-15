@@ -174,6 +174,11 @@ export function CalendarGrid({
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
   { mark: 'captured', label: 'réunion enregistrée' },
   { mark: 'armed', label: 'réunion prête' },
+  /*
+    The key gained its third entry with the mark. Until it did, one orange dot
+    stood for two opposite conditions and the legend explained only the second.
+  */
+  { mark: 'recording', label: 'enregistrement en cours' },
 ]
 
 function Legend() {
@@ -211,7 +216,15 @@ interface DayCellProps {
  * filled one at a glance.
  */
 const MARK_CLASS: Record<DayMark, string> = {
-  armed: 'bg-accent',
+  /*
+    **Filled is happening, hollow is offered** — the same split `StateDot` makes
+    on the row this dot points at, so the grid and the list agree. It did not:
+    a recording call is also armed, so it took the armed mark and the legend
+    called that « réunion prête ». The grid said *ready* about a call in
+    progress.
+  */
+  recording: 'bg-accent',
+  armed: 'border border-accent',
   captured: 'bg-brand-500',
   scheduled: 'border border-brand-500',
 }
@@ -265,6 +278,9 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
  * screen reader is told are the same three sentences.
  */
 const MARK_NAME: Record<DayMark, string> = {
+  // The spoken names track `LEGEND` deliberately — see its docblock. A rep
+  // using a screen reader hears the same distinction the dot now draws.
+  recording: 'dont une en cours d’enregistrement',
   armed: 'dont une prête',
   captured: 'dont une enregistrée',
   scheduled: 'aucune enregistrée',

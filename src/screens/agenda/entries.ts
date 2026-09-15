@@ -210,20 +210,36 @@ const attendeesOf = (event: CalendarEvent): string | null => {
   return names.length > 0 ? names.join(', ') : null
 }
 
-/** What a day cell has to draw under its number. */
-export type DayMark = 'armed' | 'captured' | 'scheduled'
+/**
+ * What a day cell has to draw under its number.
+ *
+ * **`recording` is the fourth and it exists because the grid was lying.** A call
+ * being recorded is also armed, so it took the `armed` mark — and the legend
+ * under the grid calls that mark « réunion prête ». Measured on the shipped
+ * screen: the 15th carried the armed dot while its only orange-state meeting
+ * read « EN COURS ». The grid said *ready* about a call in progress, on the
+ * screen a rep opens mid-call, under a key that said so in words.
+ */
+export type DayMark = 'recording' | 'armed' | 'captured' | 'scheduled'
 
 /**
- * One mark per day, strongest first: armed beats captured beats merely
- * scheduled. Built over every entry rather than over the visible month, so
- * paging the grid never has to re-derive it.
+ * One mark per day, strongest first: a live recording beats an offer beats a
+ * captured call beats a merely scheduled one. Built over every entry rather
+ * than over the visible month, so paging the grid never has to re-derive it.
  */
 export const marksByDay = (entries: readonly AgendaEntry[]): Map<DayKey, DayMark> => {
   const marks = new Map<DayKey, DayMark>()
-  const rank: Record<DayMark, number> = { scheduled: 0, captured: 1, armed: 2 }
+  const rank: Record<DayMark, number> = { scheduled: 0, captured: 1, armed: 2, recording: 3 }
 
   for (const entry of entries) {
-    const mark: DayMark = entry.armed ? 'armed' : entry.meetingId ? 'captured' : 'scheduled'
+    const mark: DayMark =
+      entry.state === 'recording'
+        ? 'recording'
+        : entry.armed
+          ? 'armed'
+          : entry.meetingId
+            ? 'captured'
+            : 'scheduled'
     const current = marks.get(entry.day)
     if (!current || rank[mark] > rank[current]) marks.set(entry.day, mark)
   }
