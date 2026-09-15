@@ -625,42 +625,32 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             */
             chipsAlways={false}
             className="mb-3"
+            /*
+              The view switch belongs to the day list, so over search results it
+              is four buttons that change nothing — the dead control DEC-26
+              forbids. What takes its place is the way back.
+            */
+            trailing={
+              searching ? (
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setQuery('')
+                    setFilter(NO_FILTER)
+                  }}
+                >
+                  Effacer la recherche
+                </Button>
+              ) : (
+                <Segmented
+                  label="Période affichée"
+                  options={VIEWS}
+                  current={view}
+                  onSelect={setView}
+                />
+              )
+            }
           />
-
-          {/*
-            The range label was here, in `text-copy`, and it is the page's `h1`
-            now — US-22. Nothing replaces it: this row holds the switch that
-            *changes* the range, and the title above says which one is on, so a
-            caption between the two would be the third rendering of one fact.
-            `justify-end` rather than `justify-between`, because the control it
-            holds has always sat at the end of the rule.
-          */}
-          <div className="mb-3 flex items-center justify-end gap-4">
-            {/*
-              The view switch belongs to the day list, so it goes with it. A
-              `Jour · Semaine · Mois · Liste` left on screen over a list of
-              search results would be four buttons that change nothing — the
-              dead control DEC-26 forbids. What takes its place is the way back.
-            */}
-            {searching ? (
-              <Button
-                variant="text"
-                onClick={() => {
-                  setQuery('')
-                  setFilter(NO_FILTER)
-                }}
-              >
-                Effacer la recherche
-              </Button>
-            ) : (
-              <Segmented
-                label="Période affichée"
-                options={VIEWS}
-                current={view}
-                onSelect={setView}
-              />
-            )}
-          </div>
 
           {searching ? (
             <Results

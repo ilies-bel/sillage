@@ -127,6 +127,12 @@ export interface SearchBarProps {
    */
   dataAxes?: boolean
   className?: string
+  /**
+   * What sits at the end of the search row, after *Tout l’historique ›*.
+   * The calendar puts its view switch there: one line holds the search, the
+   * way into the past and the period, instead of two rows for three controls.
+   */
+  trailing?: ReactNode
 }
 
 export function SearchBar({
@@ -140,6 +146,7 @@ export function SearchBar({
   chipsAlways = true,
   dataAxes = true,
   className,
+  trailing,
 }: SearchBarProps) {
   /*
    * Focus opens the axes and blur does not close them: a rep who focused the
@@ -151,23 +158,31 @@ export function SearchBar({
 
   return (
     <div className={className}>
-      <div className="flex items-center gap-inline">
+      {/*
+        One row, and it wraps only at the window minimum: the field keeps a
+        readable width and the two controls after it drop under, right-aligned,
+        rather than the field shrinking to a slit.
+      */}
+      <div className="flex flex-wrap items-center gap-inline">
         <input
           ref={inputRef}
           type="search"
           onFocus={() => setAsked(true)}
           aria-label="Rechercher un client, un sujet, une transcription ou une note"
-          placeholder="Rechercher un client, un sujet, un mot dit en réunion…"
+          placeholder="Client, sujet, mot dit en réunion…"
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           maxLength={200}
-          className="text-strong bg-inner border-card placeholder:text-muted min-w-0 flex-1 rounded-sm border px-2.5 py-1.5 text-ui"
+          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-2.5 py-1.5 text-ui"
         />
 
         {onHistorique ? (
           <Button variant="text" className="shrink-0" onClick={onHistorique}>
             Tout l’historique ›
           </Button>
+        ) : null}
+        {trailing ? (
+          <div className="ml-auto flex shrink-0 items-center">{trailing}</div>
         ) : null}
       </div>
 

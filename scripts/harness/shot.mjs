@@ -582,7 +582,7 @@ const SCREENS = {
     scenario: 'historique',
     async drive(page) {
       await openAgenda(page)
-      await page.getByPlaceholder(/Rechercher/).first().fill('Néovia')
+      await page.getByPlaceholder(/mot dit en réunion/).first().fill('Néovia')
       await page.getByText('Résultats').first().waitFor()
       // The row is found *by its name*, and the excerpt says which surface hit.
       await page.getByText('Intitulé').first().waitFor()
@@ -2060,7 +2060,7 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Tout l’historique ›' }).click()
       await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
-      await page.getByPlaceholder(/Rechercher/).first().fill('relancer les achats')
+      await page.getByPlaceholder(/mot dit en réunion/).first().fill('relancer les achats')
       await page.getByText('Moments marqués').first().waitFor()
       await page.getByText(/relancer les achats avant le 15/).first().waitFor()
     },
@@ -2086,7 +2086,7 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Tout l’historique ›' }).click()
       await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
-      await page.getByPlaceholder(/Rechercher/).first().fill('TJM')
+      await page.getByPlaceholder(/mot dit en réunion/).first().fill('TJM')
       await page.getByText(/Affinez la recherche pour en voir d’autres/).waitFor()
       await page.getByText(/sur 812 appels parcourus/).waitFor()
     },
