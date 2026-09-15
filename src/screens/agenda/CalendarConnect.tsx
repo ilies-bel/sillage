@@ -44,10 +44,10 @@ export function CalendarConnect({
   return (
     <section
       aria-label="Agenda Outlook"
-      className="border-card bg-card mt-block rounded-md border p-row shadow-sm"
+      className="border-card bg-card mt-block rounded-sm border p-row"
     >
       <div className="flex items-start gap-inline">
-        <span className="bg-brand-100 text-brand-700 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
+        <span className="bg-brand-100 text-brand-700 flex h-8 w-8 shrink-0 items-center justify-center rounded-sm">
           <CalendarDays size={18} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">

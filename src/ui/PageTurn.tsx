@@ -61,7 +61,7 @@ export function PageTurn({
       className="turn-ground pointer-events-none sticky bottom-0 z-10 flex justify-center pb-2 pt-8"
       {...(ground ? { style: { ['--turn-ground' as string]: ground } } : {})}
     >
-      <Button variant="bordered" className="pointer-events-auto shadow-sm" onClick={onTurn}>
+      <Button variant="bordered" className="pointer-events-auto shadow-card" onClick={onTurn}>
         {what}
       </Button>
     </div>

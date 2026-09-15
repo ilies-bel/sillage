@@ -216,7 +216,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         so the three stay on one axis as the step changes height.
       */}
       <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
-        <img src={logo} alt="" aria-hidden className="h-8 w-8 self-center rounded-md shadow-sm" />
+        <img src={logo} alt="" aria-hidden className="h-8 w-8 self-center rounded-sm shadow-card" />
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
         <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
         {/*
@@ -395,7 +395,7 @@ function Quoi() {
 
 function Promise({ title, children }: { title: string; children: string }) {
   return (
-    <li className="border-card bg-card rounded-md border p-4 shadow-sm">
+    <li className="border-card bg-card rounded-sm border p-4">
       <h3 className="text-strong text-copy font-semibold">{title}</h3>
       {/* `.measure` on the paragraph and not inherited: `ch` resolves against
           the element's own size, so the step's own measure is a wider one once
@@ -514,7 +514,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
           */
           const permissionRow = id === 'capture' ? consent : null
           return (
-            <li key={id} className="border-card bg-card rounded-md border p-4 shadow-sm">
+            <li key={id} className="border-card bg-card rounded-sm border p-4">
               <div className="flex items-baseline gap-inline">
                 <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
                   {NEEDS[id].title}
