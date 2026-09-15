@@ -517,7 +517,21 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
         cas.
       </p>
 
-      <ul className="space-y-row">
+      {/*
+        **The same subtraction page 1 made, on the page beside it.**
+
+        These were three bordered cards with a 6px corner and a drop shadow; the
+        radius and the shadow went when `check:tokens` grew a rule for
+        off-scale utilities, and the boxes went from page 1 in the same pass —
+        leaving first run boxed on one step and bare on the next, which is the
+        half-applied shape this whole round has been about.
+
+        Hairlines rather than page 1's pure whitespace, because these rows are
+        not prose: each carries a state dot, a value and sometimes a control, so
+        two adjacent rows with nothing between them read as one row with two
+        dots. It is the same `divide-y` the calendar's lists use.
+      */}
+      <ul className="divide-y divide-[var(--border-subtle)]">
         {ASKED.map((id) => {
           const row: ConnectorHealth | null = snapshot?.[id] ?? null
           const state = row?.state ?? 'down'
@@ -529,7 +543,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
           */
           const permissionRow = id === 'capture' ? consent : null
           return (
-            <li key={id} className="border-card bg-card rounded-sm border p-4">
+            <li key={id} className="py-row">
               <div className="flex items-baseline gap-inline">
                 <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
                   {NEEDS[id].title}
