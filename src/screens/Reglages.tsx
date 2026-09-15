@@ -86,6 +86,7 @@ import {
   List,
   Row,
   SectionHeader,
+  ReadingColumn,
   SectionNav,
   StateDot,
   unavailable,
@@ -550,12 +551,41 @@ function Sheet({
         aria-modal="true"
         aria-label="Réglages"
         className={cn(
-          'border-card bg-card relative flex h-[600px] max-h-full w-[920px] max-w-full overflow-hidden rounded-lg border',
+          /*
+            **The sheet is the size of what it holds, and it was not.**
+
+            `h-[600px] w-[920px]`, fixed, at every viewport. Measured at
+            1280×800 that left 320×200 of window unused *while cutting its own
+            content off* at the bottom edge, and 155 CSS px of bare paper down
+            the right of every pane — because the content is one `.measure`
+            (58ch, ~490px) inside a 636px column.
+
+            Two arguments above are right and stay: one measure for the whole
+            pane, so a connector's state, its reason and its *Réessayer* are one
+            glance wide; and that measure left against the rail rather than
+            centred, so the pane starts near the thing that opened it. Neither
+            of them asks the *sheet* to be 920px. So the sheet comes in to meet
+            the column — 220 rail + 32 gutter + the measure + 32 — instead of
+            the column being stretched to fill a number nobody chose.
+
+            The height follows the window now rather than ignoring it, capped so
+            it does not become a full-screen panel on a large display, and
+            floored by `max-h-full` at 960×600 where the window is the smaller
+            of the two.
+          */
+          'border-card bg-card relative flex h-[min(680px,calc(100vh-64px))] max-h-full w-[784px] max-w-full overflow-hidden rounded-lg border',
           leaving ? 'leaving' : 'animate-rise-in',
         )}
       >
         {nav ? (
-          <div className="bg-card-soft border-subtle flex w-[220px] shrink-0 flex-col border-r py-row">
+          /*
+            The same ground the app's own rail uses, and for the same reason:
+            `--bg-card-soft` is two units off the card it sits beside, so the
+            whole boundary was the stroke and the fill did nothing. `--bg-subtle`
+            is a step a rep can see, and the stroke goes with it. One rail, two
+            places, one shape.
+          */
+          <div className="bg-subtle flex w-[220px] shrink-0 flex-col py-row">
             <p className="font-display text-strong mb-block px-row text-display leading-none">
               Réglages
             </p>
@@ -563,7 +593,27 @@ function Sheet({
           </div>
         ) : null}
 
-        <main className="bg-card min-h-0 flex-1 overflow-y-auto px-gutter pb-10 pt-row">
+        {/*
+          **The pane says how much of itself is left, and it was the one
+          scroller in the product that did not.**
+
+          `shot.mjs --fade` reported « 0 masque(s) » on `reglages` against 3 on
+          the session screen and 5 on Historique, and both shots showed a card
+          sheared clean through at the sheet's bottom edge. The repo's own
+          invariant — « a reading column says how much of itself is left » — was
+          unhonoured in the pane with the most content in the product.
+
+          `ReadingColumn` rather than a `.fade-below` class, because the mask is
+          only half the contract: the ramp is driven by `data-above` /
+          `data-below`, which something has to measure on every scroll, and the
+          page turn comes with it. A bare class would have drawn a ramp of zero
+          length and looked fixed.
+        */}
+        <main className="bg-card flex min-h-0 flex-1 flex-col">
+          <ReadingColumn
+            subject={{ determiner: 'la', noun: 'section' }}
+            className="px-gutter pb-10 pt-row"
+          >
           {/*
             The pane's own title row. The ✕ is at the right of it, on the
             baseline of the heading, and it is a `nav` button rather than an
@@ -586,6 +636,7 @@ function Sheet({
             </Button>
           </div>
           {children}
+          </ReadingColumn>
         </main>
       </div>
     </div>
