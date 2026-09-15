@@ -54,6 +54,10 @@ export interface RailProps {
   onUpdate: () => void
 }
 
+/** *À valider* is built in two branches (with a count and without), so its path
+ *  is named rather than typed twice. */
+const GLYPH_VALIDER = 'M20 6 9 17l-5-5'
+
 const ITEM =
   'flex w-full items-center gap-2 border-l-2 border-transparent px-row py-2 text-left text-ui transition active:translate-y-px'
 
@@ -65,20 +69,39 @@ export function Rail({
   onReglages,
   onUpdate,
 }: RailProps) {
+  /*
+   * **One icon column for all five rows.** Measured, the labels sat on two left
+   * edges — the three destinations at x=18 and the two footer buttons at x=42 —
+   * because only the footer reserved a glyph slot. A 24px step down a five-row
+   * list, on the one surface that is on every screen.
+   *
+   * The three paths are the same 24-box, 1.75-stroke family `RailGlyph` draws
+   * below: a calendar page for the day, a check for the queue, a clock turned
+   * back for the record.
+   */
   const items: readonly SectionNavItem<RailPlace>[] = [
-    { id: 'aujourdhui', label: 'Aujourd’hui' },
+    {
+      id: 'aujourdhui',
+      label: 'Aujourd’hui',
+      glyph: 'M4 8h16M8 3v3m8-3v3M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z',
+    },
     pending !== null && pending > 0
       ? {
           id: 'a-valider' as const,
           label: 'À valider',
+          glyph: GLYPH_VALIDER,
           note: String(pending),
           noteLabel:
             pending === 1
               ? '1 appel en attente de validation'
               : `${pending} appels en attente de validation`,
         }
-      : { id: 'a-valider' as const, label: 'À valider' },
-    { id: 'historique', label: 'Historique' },
+      : { id: 'a-valider' as const, label: 'À valider', glyph: GLYPH_VALIDER },
+    {
+      id: 'historique',
+      label: 'Historique',
+      glyph: 'M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3 5v4h4',
+    },
   ]
 
   return (
@@ -138,7 +161,7 @@ export function Rail({
         <button
           type="button"
           onClick={onReglages}
-          className={cn(ITEM, 'text-muted hover:bg-subtle hover:text-body')}
+          className={cn(ITEM, 'text-muted hover:bg-card hover:text-body')}
         >
           <RailGlyph d="M5 7h9m3 0h2M5 12h2m3 0h9M5 17h13m3 0h1" />
           <span className="min-w-0 flex-1 truncate">Réglages</span>

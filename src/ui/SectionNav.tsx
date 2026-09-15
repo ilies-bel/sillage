@@ -78,6 +78,21 @@ export interface SectionNavItem<Id extends string = string> {
    * stops claiming something is wrong.
    */
   noteTone?: 'count' | 'warn'
+  /**
+   * A 24×24 path, drawn at 16px on the leading edge of the item.
+   *
+   * Optional, and used by one caller. `ui/Rail.tsx` is five rows — three
+   * destinations through this component and two footer buttons hand-rolled
+   * around a glyph — and measured, the labels sat on **two left edges**: the
+   * three at x=18 and the two at x=42, a 24px step down a five-row list, because
+   * only the bottom two reserved an icon column. Réglages' seven sections pass
+   * nothing and keep the single text column they have always had.
+   *
+   * A path rather than a node, so every item in a rail is the same 1.75-stroke
+   * 24-box glyph and a caller cannot drop a filled icon from another family into
+   * one row. The same rule `RailGlyph` already enforced for the footer.
+   */
+  glyph?: string
 }
 
 export interface SectionNavProps<Id extends string> {
@@ -129,11 +144,35 @@ export function SectionNav<Id extends string>({
                     measurement and the exclusions.
                   */
                   'flex w-full items-center gap-2 border-l-2 px-row py-2 text-left text-ui transition active:translate-y-px',
+                  /*
+                    **`hover:bg-card`, a lift rather than a tint.** This was
+                    `hover:bg-subtle`, which works on Réglages' `--bg-card-soft`
+                    nav and does **nothing** on the app rail: that surface became
+                    `--bg-subtle` itself, so the hover resolved to the ground it
+                    was already on and the three destinations had no pointer
+                    feedback at all. `--bg-card` #fdfefe is lighter than both
+                    grounds, so the row lifts on either one — and lifts toward
+                    the same white the selected segment uses.
+                  */
                   selected
                     ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
-                    : 'text-muted hover:bg-subtle hover:text-body border-transparent',
+                    : 'text-muted hover:bg-card hover:text-body border-transparent',
                 )}
               >
+                {item.glyph ? (
+                  <svg
+                    aria-hidden
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d={item.glyph} />
+                  </svg>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.note ? (
                   <>

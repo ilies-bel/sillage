@@ -374,7 +374,7 @@ function Quoi() {
         ce que votre ordinateur joue et ce que dit votre micro, puis écrit le compte-rendu à la fin.
       </p>
 
-      <ul className="space-y-row">
+      <ul className="space-y-block">
         <Promise title="Rien ne part sans vous">
           À la fin de l’appel, Sillage vous montre le compte-rendu, la tâche VerySwing et le
           brouillon de relance. Rien n’est créé tant que vous n’avez pas validé — une fois. Et il
@@ -393,10 +393,25 @@ function Quoi() {
   )
 }
 
+/**
+ * One promise: a heading and a sentence. **No box.**
+ *
+ * These were three identically-sized bordered cards, which is the page
+ * structure craft-floor names first — and it is the exact pattern the agenda
+ * gave up two commits earlier, still standing on the first screen a rep ever
+ * sees. `--bg-canvas` #f7f9fb and `--bg-card` #fdfefe are 1.3% apart in
+ * luminance, so the grouping was carried entirely by three identical 1px
+ * strokes; VISION.md §6 has asked for « rows, not cards » throughout, and the
+ * reference boxes nothing on its equivalent screen.
+ *
+ * What replaces them is space: `--space-block` between promises against
+ * `--space-tight` between a heading and its own sentence, so each pair reads as
+ * one thing and the three read as three. Tight groups, generous separation.
+ */
 function Promise({ title, children }: { title: string; children: string }) {
   return (
-    <li className="border-card bg-card rounded-sm border p-4">
-      <h3 className="text-strong text-copy font-semibold">{title}</h3>
+    <li>
+      <h3 className="text-strong mb-tight text-copy font-semibold">{title}</h3>
       {/* `.measure` on the paragraph and not inherited: `ch` resolves against
           the element's own size, so the step's own measure is a wider one once
           the text inside is `--type-ui`. The class goes on the prose that wears
