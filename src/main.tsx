@@ -28,6 +28,27 @@ if (isWidget) {
   document.body.style.background = 'transparent'
   document.documentElement.style.background = 'transparent'
   /*
+   * **And `#root`, which is the one that was actually covering the call.**
+   *
+   * `index.html` paints `html, body, #root` with `--bg-canvas` inline, so the
+   * window shows paper instead of white before the stylesheet lands. Two of
+   * those three were cleared here and the third was not — and `#root` is the
+   * element that fills the window, so the transparency this block exists to
+   * deliver stopped one level short of the surface. Measured on the widget
+   * route: `body` and `html` transparent, `#root` `rgb(247, 249, 251)`.
+   *
+   * What a rep saw was the failure the docblock above describes as prevented —
+   * « an opaque rectangle the size of the window » over a client's video —
+   * extending the full 20px `HALO` on every side of the pill, with the shadow
+   * that is supposed to separate the card from the call falling onto it.
+   *
+   * It survived because nothing ever photographs this window over anything but
+   * the app's own paper, where an opaque `#f7f9fb` rectangle is invisible by
+   * construction. `widget-sombre` asserts the absence of an opaque ancestor
+   * now, which is the property rather than this line.
+   */
+  root.style.background = 'transparent'
+  /*
    * The overlay's palette, on the one route that is not inside the app.
    *
    * `.widget-surface` re-points the surface tokens for this document

@@ -263,6 +263,44 @@
    */
   --widget-meter-dropped: #7b8b97; /*  4.92:1 on #101c25 */
 
+  /*
+   * **The edge that does not depend on which way the call goes.**
+   *
+   * Every other carrier of this card's boundary is dark, and the argument for
+   * them was only ever run in one direction. Measured against the grounds the
+   * widget actually floats over — the card `--widget-bg`, the border
+   * `--widget-border`, and `--shadow-overlay`'s 38 % black, each against the
+   * host:
+   *
+   *     host                     card    border   shadow    rim
+   *     harness paper #f7f9fb   16.38     8.98     2.66     1.02
+   *     Teams light   #f5f5f5   15.86     8.69     2.65     1.03
+   *     Teams dark    #1f1f1f    1.05     1.74     1.13     3.31
+   *     Zoom dark     #1a1a1a    1.01     1.84     1.09     3.34
+   *     letterbox     #000000    1.21     2.22     1.00     3.13
+   *     mid grey      #808080    4.38     2.40     2.06     1.77
+   *
+   * Over a dark call all three dark carriers are gone at once, which is the
+   * exact failure the *light* palette was rebuilt to escape — it was restated
+   * for the new ground in one direction and never re-run for the other. The
+   * shadow token says « darker to pay for the smaller spread, so it still reads
+   * as elevation over a dark call »; 38 % black on #1f1f1f is 1.13:1. A comment
+   * is not a check.
+   *
+   * A light rim is the complement, not a bigger version of the same idea: it
+   * vanishes on paper (1.02) exactly where the card is at its strongest
+   * (16.38), and carries the edge alone where the card has nothing (3.31 on
+   * #1f1f1f). Read down the table and **every ground now has one carrier over
+   * 3:1** — the floor a non-text boundary is held to. 36 % is the lowest step
+   * that clears it on all three dark grounds; 32 % reaches only 2.67 on black.
+   *
+   * `rgb(… / N%)` and not `color-mix`, for the reason `--bg-scrim` is: the
+   * contrast detector cannot composite a `color(srgb …)` and reports the
+   * element unmeasured, which is how a boundary goes unchecked in the first
+   * place.
+   */
+  --widget-rim: rgb(255 255 255 / 36%);
+
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;
   --radius: 12px;
@@ -297,7 +335,14 @@
    * spilling 16px past the frame; `0 4px 14px` reaches 18 and 14. Darker to pay
    * for the smaller spread, so it still reads as elevation over a dark call.
    */
-  --shadow-overlay: 0 4px 14px rgb(0 0 0 / 38%);
+  /*
+   * Named apart from `--shadow-overlay` so the widget can put a rim *in front
+   * of* this blur (`.widget-surface` in `index.css`) without either spelling
+   * the value twice or referring to its own token, which is a cycle and
+   * computes to nothing. One value, two compositions.
+   */
+  --shadow-overlay-blur: 0 4px 14px rgb(0 0 0 / 38%);
+  --shadow-overlay: var(--shadow-overlay-blur);
 
   /*
    * The veil behind the one sheet in this product (Réglages, V2).

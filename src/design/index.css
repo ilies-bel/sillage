@@ -254,6 +254,23 @@
   --meter-rep: var(--widget-meter-rep);
   --meter-client: var(--widget-meter-client);
   --meter-dropped: var(--widget-meter-dropped);
+  /*
+    And the boundary, which is the one re-point that is not about the palette
+    being dark — it is about the *host* being unknown.
+
+    Every token above swaps a light value for a dark one and is checked against
+    `--widget-bg`, a ground this file controls. The card's outer edge is checked
+    against whatever Teams is painting, and there the dark fill, the dark border
+    and the black shadow all fail together: 1.05, 1.74 and 1.13 over Teams'
+    dark theme. `--widget-rim` carries it there and disappears on paper, where
+    the card carries it at 16.38. `tokens.css` has the table.
+
+    In front of the blur, not instead of it: `0 0 0 1px` is a hard ring on the
+    border box, then `--shadow-overlay-blur` spreads behind it. The extent grows
+    by one pixel — 19px below and 15px sideways, inside the 20px `HALO` the
+    widget reserves.
+  */
+  --shadow-overlay: 0 0 0 1px var(--widget-rim), var(--shadow-overlay-blur);
 }
 
 @layer components {
