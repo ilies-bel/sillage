@@ -1582,6 +1582,20 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Réglages' }).click()
       await page.getByRole('navigation', { name: 'Sections des réglages' }).waitFor()
+      /*
+       * **The keyboard first, because it is the way that was broken.** `Échap`
+       * closes through `App.tsx`'s shortcut table, not through the sheet, so it
+       * was a route change that unmounted the dialog between two frames while
+       * the ✕ beside it animated — measured, « ✕ → leaving, Échap → unmounted ».
+       * Both run the same `dismissReglages` now, and a stage that only pressed
+       * the button would not have noticed the difference.
+       */
+      await page.keyboard.press('Escape')
+      await page.waitForSelector('[role="dialog"].leaving', { timeout: 5_000 })
+      // Let it finish leaving, then do it again with the control.
+      await page.waitForTimeout(250)
+      await page.getByRole('button', { name: 'Réglages' }).first().click()
+      await page.getByRole('navigation', { name: 'Sections des réglages' }).waitFor()
       await page.getByRole('button', { name: 'Fermer les réglages' }).click()
       await page.waitForSelector('[role="dialog"].leaving', { timeout: 5_000 })
 

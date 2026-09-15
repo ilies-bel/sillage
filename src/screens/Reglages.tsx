@@ -74,7 +74,6 @@ import {
 } from '../../electron/core/contracts/mention.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { useDismiss } from '../app/useDismiss.ts'
 import { cn } from '../lib/utils.ts'
 import { SHORTCUTS } from '../app/shortcuts.ts'
 import { NOTE_SHORTCUTS } from '../editor/note/keymap.ts'
@@ -152,9 +151,18 @@ interface ReglagesProps {
    * dry run it ends on. Absent while first run itself is on screen.
    */
   onOnboarding?: () => void
+  /**
+   * The sheet is on its way out.
+   *
+   * Owned by `App.tsx` and not by this file, because `Échap` closes it and that
+   * key is registered one component up — a sheet that ran its own exit would
+   * animate on its ✕ and vanish between two frames on the keyboard. `onBack` is
+   * already the dismissing one, so every way out is the same way out.
+   */
+  leaving?: boolean
 }
 
-export function Reglages({ onBack, section: opensOn, onOnboarding }: ReglagesProps) {
+export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = false }: ReglagesProps) {
   const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
@@ -249,14 +257,14 @@ export function Reglages({ onBack, section: opensOn, onOnboarding }: ReglagesPro
   */
   if (settings.state.status === 'loading') {
     return (
-      <Sheet onClose={onBack} title="Réglages">
+      <Sheet onClose={onBack} leaving={leaving} title="Réglages">
         <Centered>Chargement…</Centered>
       </Sheet>
     )
   }
   if (settings.state.status === 'failed') {
     return (
-      <Sheet onClose={onBack} title="Réglages">
+      <Sheet onClose={onBack} leaving={leaving} title="Réglages">
         <Centered>
           <p className="text-danger text-copy">{settings.state.reason}</p>
         </Centered>
@@ -279,6 +287,7 @@ export function Reglages({ onBack, section: opensOn, onOnboarding }: ReglagesPro
   return (
     <Sheet
       onClose={onBack}
+      leaving={leaving}
       /*
         **The pane is named by what it holds, and that name is the sheet's
         title.** It used to be « Réglages » in the window header with the
@@ -504,24 +513,24 @@ function Sheet({
   title,
   nav,
   onClose,
+  leaving,
   children,
 }: {
   title: string
   /** The sections column. Absent on the two unsettled states — there is nothing to switch. */
   nav?: ReactNode
   onClose: () => void
-  children: ReactNode
-}) {
   /*
    * **The sheet leaves, and until this it did not.** It rose in over 150ms on
    * `animate-rise-in` and then vanished between two frames — measured by the
    * product's own detector as « 0 qui s'en vont » on every screen in the app
-   * window. `app/useDismiss.ts` holds it for one `--motion` so `.leaving` can
-   * run, and the veil goes with it rather than snapping out from under a pane
-   * that is still fading.
+   * window. `App.tsx` holds it for one `--motion` so `.leaving` can run, and
+   * the veil goes with it rather than snapping out from under a pane that is
+   * still fading.
    */
-  const { leaving, dismiss } = useDismiss(onClose)
-
+  leaving: boolean
+  children: ReactNode
+}) {
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
       {/*
@@ -531,9 +540,9 @@ function Sheet({
         surface is one too many.
       */}
       <div
-        className={cn('bg-veil absolute inset-0 transition-opacity', leaving && 'opacity-0')}
+        className={cn('bg-veil absolute inset-0 transition-opacity ease-in', leaving && 'opacity-0')}
         aria-hidden
-        onClick={dismiss}
+        onClick={onClose}
       />
 
       <div
@@ -571,7 +580,7 @@ function Sheet({
               variant="nav"
               className="min-w-[24px]"
               aria-label="Fermer les réglages"
-              onClick={dismiss}
+              onClick={onClose}
             >
               ✕
             </Button>

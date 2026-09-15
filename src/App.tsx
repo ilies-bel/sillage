@@ -25,6 +25,7 @@ import { Historique } from './screens/Historique.tsx'
 import { Reglages, type SectionId } from './screens/Reglages.tsx'
 import { Onboarding, type Step } from './screens/Onboarding.tsx'
 import { useShortcuts } from './app/shortcuts.ts'
+import { useDismiss } from './app/useDismiss.ts'
 import { NO_FILTER } from './screens/search/filters.ts'
 import { Splash } from './screens/Splash.tsx'
 
@@ -80,6 +81,30 @@ export function App() {
   }, [])
 
   const back = useCallback(() => setRoute(AGENDA), [])
+
+  /*
+   * **The sheet's exit lives here, because `Échap` does.**
+   *
+   * Réglages is drawn in two branches below — over first run, and over the
+   * calendar — and closed three ways: its ✕, its veil, and `Échap` through the
+   * table below. The first two are the sheet's own and it ran its own exit on
+   * them; the third is a route change one component up, and it unmounted the
+   * sheet between two frames. Measured (`scratch/escape-check.mjs`): ✕ →
+   * `leaving`, Échap → `unmounted`.
+   *
+   * Nesting a second `useShortcuts` inside the sheet would not fix it —
+   * `app/shortcuts.ts` adds one listener per caller and both would fire, so
+   * `Échap` would start an exit and navigate out from under it in the same
+   * frame. The dismissal belongs wherever the last way out lives, which is here.
+   *
+   * Called unconditionally and before every early return, as a hook must be;
+   * when no sheet is open `dismiss` closes nothing.
+   */
+  const closeReglages = useCallback(() => {
+    if (inReglages !== null) setInReglages(null)
+    else back()
+  }, [inReglages, back])
+  const { leaving: reglagesLeaving, dismiss: dismissReglages } = useDismiss(closeReglages)
   // Both are reached from the calendar and from nowhere else. There is no nav
   // bar and no modal chrome to hold them (HR-10) — the home screen is the hub,
   // and neither screen is somewhere a rep goes during a call.
@@ -125,8 +150,16 @@ export function App() {
       open. The first-run detour opens the same sheet with no route change at
       all, which is why `inReglages` is consulted before the route is.
     */
-    ...(inReglages
-      ? { retour: () => setInReglages(null) }
+    /*
+      Both ways of holding a sheet open take the exit, and that is two branches
+      rather than one because they are two different states: first run opens it
+      with no route change at all (`inReglages`), and the calendar opens it as a
+      route. Measured (`scratch/escape-check.mjs`), wiring only the first left
+      `Échap` on the calendar still unmounting between two frames — which is the
+      branch a rep actually meets, since first run happens once.
+    */
+    ...(inReglages || route.screen === 'reglages'
+      ? { retour: dismissReglages }
       : route.screen === 'agenda'
         ? {}
         : { retour: back }),
@@ -193,7 +226,7 @@ export function App() {
           }}
           initialStep={resume}
         />
-        <Reglages section={inReglages} onBack={() => setInReglages(null)} />
+        <Reglages section={inReglages} leaving={reglagesLeaving} onBack={dismissReglages} />
       </>
     )
   }
@@ -259,7 +292,12 @@ export function App() {
               onHistorique={historique}
               onReglages={reglages}
             />
-            <Reglages section={route.section} onBack={back} onOnboarding={() => setReplay(true)} />
+            <Reglages
+              section={route.section}
+              leaving={reglagesLeaving}
+              onBack={dismissReglages}
+              onOnboarding={() => setReplay(true)}
+            />
           </>
         ) : route.screen === 'review' ? (
           <Review key={route.meetingId} meetingId={route.meetingId} onBack={back} onConfirmed={back} />

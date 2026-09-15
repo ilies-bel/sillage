@@ -253,6 +253,23 @@ module.exports = {
       transitionTimingFunction: {
         DEFAULT: 'var(--ease-out)',
         out: 'var(--ease-out)',
+        /*
+         * **The exit curve, reachable from a utility — and it was not.**
+         *
+         * `--ease-in` existed, argued over forty lines of `tokens.css` and
+         * pinned by shape in `tokens.test.ts`, but the only way to spend it was
+         * a hand-written `transition:` in `index.css`. So the first element
+         * outside that file to need it — the Réglages veil, fading out with the
+         * sheet — reached for `transition-opacity`, got `DEFAULT`, and left on
+         * the *arriving* curve. `shot.mjs --motion` caught it on the new
+         * `reglages-sortie` stage: « 1 élément qui s'en vont portent une courbe
+         * d'arrivée », which is the exact defect that check was written for and
+         * the exact defect the widget's exit shipped with for a round.
+         *
+         * A rule with no way to obey it is a rule that will be broken. VISION.md
+         * §6: « ease-out on the way in, ease-in on the way out ».
+         */
+        in: 'var(--ease-in)',
       },
       /*
        * Two, and both obey the rule: opacity plus a small translate, ≤150ms,
