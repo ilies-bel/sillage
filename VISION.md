@@ -723,19 +723,22 @@ same hue (200°), darkened, ratios measured against white.
    edges still separates the window from it" was measured only against this
    file's own ground: #33485a is 1.82:1 on the FILL and 1.74:1 on Teams' dark
    theme, where the fill is 1.05:1 and the 38 % black shadow is 1.13:1. All
-   three carriers are dark, so over a dark call they fail together — the same
-   shape of failure the light palette was replaced to escape, restated for the
-   new ground in one direction and never re-run for the other.
+   three carriers are dark, so over a dark call they fail together.
 
-   The rim is the complement. It vanishes on paper (1.02:1) exactly where the
+   The rim is the complement. It vanishes on paper (1.04:1) exactly where the
    fill is strongest (16.38:1), and carries the edge alone where the fill has
-   nothing (3.31:1 on #1f1f1f, 3.13:1 on black). Every ground the widget floats
-   over now has one carrier over 3:1, which is the floor a non-text boundary is
-   held to. 36 % is the lowest step that clears it on all three dark grounds.
-   tokens.css carries the table; `widget-sombre` in the harness is what keeps it
-   true, because eight stages photographing this card over #f7f9fb is how the
-   sentence above survived three rounds. */
---widget-rim: rgb(255 255 255 / 36%);
+   nothing (8.66:1 on #1f1f1f). The floor is not at either end: it is the
+   crossover near rgb(110,110,110), where the fill has gone dim and the rim has
+   not yet brightened, and the best carrier there is 3.42:1. Swept over all 256
+   greys rather than over a list of hosts someone thought of — the first draft
+   of this rim reasoned from six named grounds, satisfied all six at 36 %, and
+   bottomed out at 2.38:1 in the band between them.
+
+   36 % of a stated case is the same instrument as a comment. tokens.css carries
+   the sweep; `widget-sombre` in the harness re-runs it against the shipped
+   composition on every smoke, because eight stages photographing this card over
+   #f7f9fb is how the sentence above survived three rounds. */
+--widget-rim: rgb(255 255 255 / 70%);
 --widget-ink:     #f3f7fa;   /* 16.05:1 on #101c25 · 13.64:1 on #1b2a35 */
 --widget-ink-dim: #a3b4c1;   /*  8.11:1 on #101c25 ·  6.90:1 on #1b2a35 */
 

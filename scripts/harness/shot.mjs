@@ -2480,43 +2480,30 @@ const SCREENS = {
       await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
       await page.waitForTimeout(120)
+      /*
+       * The panel open, so the 340px card is measured too and not only the
+       * pill. The first version of this stage measured « whatever
+       * `.shadow-overlay` happens to be on screen », which in the collapsed
+       * scenario is one element out of four.
+       */
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await page.waitForTimeout(120)
 
-      /*
-       * `#1f1f1f` is Teams' dark theme, and it is the *kind* one rather than the
-       * worst: Zoom's `#1a1a1a` and a letterboxed black are both further from
-       * the card. On `html`, because that is where a host would be — behind a
-       * window whose own background is the card and nothing else.
-       */
-      const HOST = '#1f1f1f'
-      /*
-       * **Every opaque ancestor, not a selector.**
-       *
-       * Two earlier spellings of this both produced a stage whose number and
-       * whose screenshot disagreed, which is worse than having neither. `html`
-       * alone left `body` painting; `html, body` left the renderer's own root
-       * `<div>` painting `--bg-canvas` over both, so the assertion composited
-       * against a host the picture never showed. The chain behind the pill is
-       * `drag-region → flex → flex → div#root(#f7f9fb) → body → html`.
-       *
-       * Walking it and repainting whatever is opaque states the intent directly
-       * — « take the app's paper out from behind this window and put a call
-       * there » — and cannot go stale when a wrapper is added or renamed.
-       */
       /*
        * **First: is the window actually transparent?**
        *
-       * This is the assertion, and painting the host below is only the setup
-       * for it. `index.html` paints `html, body, #root` with `--bg-canvas` so
-       * the app does not flash white before its stylesheet lands; `main.tsx`
-       * cleared two of those three on this route, and `#root` — the element
-       * that fills the window — kept `rgb(247, 249, 251)`. A transparent,
-       * frameless, always-on-top window was laying an opaque sheet of the app's
-       * paper over the client's video, `HALO` and all, with the shadow that
-       * separates the card from the call falling onto it.
+       * This is the assertion; painting a host below is only what makes the
+       * screenshot legible. `index.html` paints `html, body, #root` with
+       * `--bg-canvas` so the app does not flash white before its stylesheet
+       * lands; `main.tsx` cleared two of those three on this route, and `#root`
+       * — the element that fills the window — kept `rgb(247, 249, 251)`. A
+       * transparent, frameless, always-on-top window was laying an opaque sheet
+       * of the app's paper over the client's video, `HALO` and all, with the
+       * shadow that separates the card from the call falling onto it.
        *
        * Nothing caught it for the same reason nothing caught the contrast: over
        * `#f7f9fb`, an opaque `#f7f9fb` rectangle is invisible by construction.
-       * Every stage shoots this window over `#f7f9fb`.
        */
       const opaque = await page.evaluate(() =>
         [...document.querySelectorAll('.shadow-overlay')].flatMap((card) => {
@@ -2540,56 +2527,29 @@ const SCREENS = {
       }
 
       /*
-       * Then the call itself, on the document element — the one surface behind
-       * everything, now that nothing between it and the card paints at all.
-       * `#1f1f1f` is Teams' dark theme, and it is the *kind* of dark: Zoom's
-       * `#1a1a1a` and a letterboxed black are both further from the card.
+       * **Then every ground, not a host somebody thought of.**
+       *
+       * The first version of this stage painted one `HOST` — `#1f1f1f` — and
+       * asserted against it. That is the same instrument as the six-row table
+       * in `tokens.css` it was written to enforce, and it had the same hole:
+       * `#1f1f1f` is the rim's *best* point, so the stage passed while the
+       * property it claimed was false from about `#3a3a3a` to `#656565`,
+       * bottoming out at 2.38:1. A check whose sample is chosen by the same
+       * person who chose the value is not independent of it.
+       *
+       * The card's own colours do not depend on what is behind it, so they are
+       * read once from the shipped composition and swept over all 256 greys
+       * here. Greys are the worst case: a saturated host is further from this
+       * desaturated card on at least one channel.
        */
-      await page.addStyleTag({
-        content: `html { background: ${HOST} !important; background-image: none !important; }`,
-      })
-      await page.waitForTimeout(50)
-
-      const edges = await page.evaluate(() => {
-        const channel = (v) => {
-          const c = v / 255
-          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-        }
-        const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-        const ratio = (a, b) => {
-          const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
-          return (hi + 0.05) / (lo + 0.05)
-        }
+      const measured = await page.evaluate(() => {
         const rgb = (value) => (value.match(/[\d.]+/g) || []).map(Number)
-        /** `rgba(r,g,b,a)` over an opaque ground — the rim is translucent by design. */
-        const flatten = (value, ground) => {
-          const [r, g, b, a = 1] = rgb(value)
-          return [r, g, b].map((c, i) => a * c + (1 - a) * ground[i])
-        }
-        /*
-         * Read back, never assumed, and read the way `contrast()` reads a
-         * ground: the first opaque background above the element. The constant
-         * above says what to paint; this says what is actually behind the card,
-         * and the assertion is only worth anything while those are the same.
-         */
-        const groundOf = (el) => {
-          for (let node = el.parentElement; node; node = node.parentElement) {
-            const style = getComputedStyle(node)
-            if (!/rgba\([^)]*,\s*0\s*\)|transparent/.test(style.backgroundColor)) {
-              return rgb(style.backgroundColor).slice(0, 3)
-            }
-          }
-          return [255, 255, 255]
-        }
-
         return [...document.querySelectorAll('.shadow-overlay')]
           .filter((el) => el.getBoundingClientRect().width > 0)
           .map((el) => {
             const style = getComputedStyle(el)
-            const ground = groundOf(el)
             /*
-             * **Every layer, and the transparent ones dropped first.** Tailwind
-             * composes `shadow-overlay` as
+             * Tailwind composes `shadow-overlay` as
              * `var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0
              * 0 #0000), var(--tw-shadow)`, so the computed value *opens* with
              * two `rgba(0, 0, 0, 0)` placeholders. Reading « the first colour in
@@ -2597,58 +2557,92 @@ const SCREENS = {
              * 1.00:1 — a check that finds a defect for the wrong reason is one
              * that will also clear for the wrong reason.
              */
-            const layers = (style.boxShadow.match(/rgba?\([^)]*\)/g) ?? [])
-              .filter((value) => (rgb(value)[3] ?? 1) > 0)
-              .map((value) => flatten(value, ground))
-            const fill = flatten(style.backgroundColor, ground)
-            /*
-             * VISION §6's own sentence about this surface — « the edge is
-             * lighter than the fill … whichever way the video goes, one of the
-             * two edges still separates the window from it » — as a predicate.
-             * A shadow layer lighter than the card is the rim; if none is, the
-             * composition has lost it and the sentence is false again.
-             */
-            const rim = layers.find((layer) => lum(layer) > lum(fill)) ?? null
+            const shadows = (style.boxShadow.match(/rgba?\([^)]*\)/g) ?? [])
+              .map(rgb)
+              .filter((layer) => (layer[3] ?? 1) > 0)
             return {
-              name: el.getAttribute('aria-label') || el.className.split(' ').slice(-1)[0] || 'surface',
-              fill: ratio(fill, ground),
-              border: ratio(flatten(style.borderTopColor, ground), ground),
-              rim: rim ? ratio(rim, ground) : null,
-              shadows: layers.map((layer) => ratio(layer, ground)),
+              name:
+                el.getAttribute('aria-label') ||
+                el.className.split(' ').find((c) => c.startsWith('w-[')) ||
+                'surface',
+              fill: rgb(style.backgroundColor),
+              border: rgb(style.borderTopColor),
+              shadows,
             }
           })
       })
 
-      if (edges.length === 0) throw new Error('aucune surface flottante à mesurer')
+      if (measured.length === 0) throw new Error('aucune surface flottante à mesurer')
+
+      const channel = (v) => {
+        const c = v / 255
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      }
+      const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+        return (hi + 0.05) / (lo + 0.05)
+      }
+      const flatten = ([r, g, b, a = 1], ground) => [r, g, b].map((c, i) => a * c + (1 - a) * ground[i])
 
       /*
-       * 3:1 is the floor a non-text boundary is held to, and the assertion is on
-       * the *best* of the three carriers rather than on each: a light rim is
-       * meant to replace the dark fill over a dark call, not to join it. What
-       * must never happen again is all three being under the floor at once.
+       * 3:1 is the floor a non-text boundary is held to (WCAG 1.4.11), and the
+       * assertion is on the *best* of the carriers rather than on each: a light
+       * rim is meant to replace the dark fill over a dark call, not to join it.
+       * What must never happen again is all of them being under the floor at
+       * once, on any ground at all.
        */
       const FLOOR = 3
-      for (const edge of edges) {
-        if (edge.rim === null) {
-          throw new Error(`${edge.name} : aucun liseré dans l’ombre — --widget-rim a disparu de la composition`)
+      for (const surface of measured) {
+        /*
+         * VISION §6's own sentence about this window — « the edge is lighter
+         * than the fill … whichever way the video goes, one of the two edges
+         * still separates it » — as a predicate. A shadow layer lighter than
+         * the card is the rim; if none is, the composition has lost it.
+         */
+        const hasRim = surface.shadows.some((layer) => lum(flatten(layer, [255, 255, 255])) > lum(surface.fill))
+        if (!hasRim) {
+          throw new Error(`${surface.name} : aucun liseré clair dans l’ombre — --widget-rim a quitté la composition`)
         }
-        const best = Math.max(edge.fill, edge.border, ...edge.shadows)
-        if (best < FLOOR) {
+        let worst = Infinity
+        let worstGrey = 0
+        for (let v = 0; v <= 255; v++) {
+          const ground = [v, v, v]
+          const best = Math.max(
+            ratio(flatten(surface.fill, ground), ground),
+            ratio(flatten(surface.border, ground), ground),
+            ...surface.shadows.map((layer) => ratio(flatten(layer, ground), ground)),
+          )
+          if (best < worst) {
+            worst = best
+            worstGrey = v
+          }
+        }
+        if (worst < FLOOR) {
           throw new Error(
-            `${edge.name} sur ${HOST} : fond ${edge.fill.toFixed(2)}:1, bord ${edge.border.toFixed(2)}:1, ` +
-              `liseré ${edge.rim.toFixed(2)}:1 — rien ne sépare la fenêtre de l’appel (plancher ${FLOOR}:1)`,
+            `${surface.name} : sur rgb(${worstGrey},${worstGrey},${worstGrey}) le meilleur porteur du bord ` +
+              `est ${worst.toFixed(2)}:1 — rien ne sépare la fenêtre de l’appel (plancher ${FLOOR}:1)`,
           )
         }
+        surface.worst = worst
+        surface.worstGrey = worstGrey
       }
       console.log(
-        `   bords sur ${HOST}: ` +
-          edges
-            .map(
-              (e) =>
-                `${e.name} fond ${e.fill.toFixed(2)} · bord ${e.border.toFixed(2)} · liseré ${e.rim.toFixed(2)}`,
-            )
+        '   pire fond sur 256 gris: ' +
+          measured
+            .map((s) => `${s.name} ${s.worst.toFixed(2)}:1 @rgb(${s.worstGrey})`)
             .join(' | '),
       )
+
+      /*
+       * And a ground for the picture. The numbers above are swept; this is so a
+       * human opening the PNG sees the window over something other than the
+       * app's own paper. `#1f1f1f` is Teams' dark theme.
+       */
+      await page.addStyleTag({
+        content: 'html { background: #1f1f1f !important; background-image: none !important; }',
+      })
+      await page.waitForTimeout(50)
     },
   },
 

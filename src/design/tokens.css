@@ -269,16 +269,15 @@
    * Every other carrier of this card's boundary is dark, and the argument for
    * them was only ever run in one direction. Measured against the grounds the
    * widget actually floats over — the card `--widget-bg`, the border
-   * `--widget-border`, and `--shadow-overlay`'s 38 % black, each against the
-   * host:
+   * `--widget-border`, and this rim, each against the host:
    *
-   *     host                     card    border   shadow    rim
-   *     harness paper #f7f9fb   16.38     8.98     2.66     1.02
-   *     Teams light   #f5f5f5   15.86     8.69     2.65     1.03
-   *     Teams dark    #1f1f1f    1.05     1.74     1.13     3.31
-   *     Zoom dark     #1a1a1a    1.01     1.84     1.09     3.34
-   *     letterbox     #000000    1.21     2.22     1.00     3.13
-   *     mid grey      #808080    4.38     2.40     2.06     1.77
+   *     host                      card   border    rim    best
+   *     harness paper #f7f9fb    16.38     8.98   1.04   16.38
+   *     Teams light   #f5f5f5    15.86     8.69   1.06   15.86
+   *     grey          #6e6e6e     3.39     1.86   3.42    3.42
+   *     grey          #565656     2.36     1.29   4.58    4.58
+   *     Teams dark    #1f1f1f     1.05     1.74   8.66    8.66
+   *     letterbox     #000000     1.21     2.22   9.96    9.96
    *
    * Over a dark call all three dark carriers are gone at once, which is the
    * exact failure the *light* palette was rebuilt to escape — it was restated
@@ -288,18 +287,29 @@
    * is not a check.
    *
    * A light rim is the complement, not a bigger version of the same idea: it
-   * vanishes on paper (1.02) exactly where the card is at its strongest
-   * (16.38), and carries the edge alone where the card has nothing (3.31 on
-   * #1f1f1f). Read down the table and **every ground now has one carrier over
-   * 3:1** — the floor a non-text boundary is held to. 36 % is the lowest step
-   * that clears it on all three dark grounds; 32 % reaches only 2.67 on black.
+   * vanishes on paper (1.04) exactly where the card is at its strongest
+   * (16.38), and carries the edge alone where the card has nothing.
+   *
+   * **36 % was wrong and the way it was wrong is the point.** The first version
+   * of this block reasoned from six named hosts, read « every ground clears
+   * 3:1 » off them, and picked the lowest alpha that satisfied *those six*. The
+   * six skipped the crossover — the band where the card has gone dim and the
+   * rim has not yet brightened. Swept over all 256 greys instead of guessed at,
+   * 36 % bottoms out at **2.38:1 on rgb(86,86,86)**: a dim room on a webcam, a
+   * grey slide, letterbox around a mid-tone image. A table of the cases you
+   * thought of is the same instrument as a comment.
+   *
+   * 56 % is the first alpha that clears 3:1 on every one of the 256; 70 % is
+   * taken for margin and bottoms out at **3.42:1 on rgb(110,110,110)**. Pure
+   * white would only reach 4.17 — at mid grey nothing is far away, which is why
+   * this is a floor and not a ratio to maximise.
    *
    * `rgb(… / N%)` and not `color-mix`, for the reason `--bg-scrim` is: the
    * contrast detector cannot composite a `color(srgb …)` and reports the
    * element unmeasured, which is how a boundary goes unchecked in the first
    * place.
    */
-  --widget-rim: rgb(255 255 255 / 36%);
+  --widget-rim: rgb(255 255 255 / 70%);
 
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;
