@@ -52,6 +52,30 @@ allowed; a range is not.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | `b716856` | — | — | — | — | — | — | — | — | — | *pre-rubric, `NOT IMPRESSED`, 15 findings* |
 | 2 | `84a326f` | 7 | 7 | 5 | 5 | 6 | 5 | 7 | 6 | 6 | **54** |
+| 3 | `16f341f` | 7 | 7 | 5 | 5.5 | 6.5 | 5.5 | 7 | 7 | 6 | **56.5** |
+
+**Round 4 split the product across three reviewers in parallel**, because two
+whole surfaces had never been evaluated: the in-meeting widget, and the
+detection-and-arming path. They are scored apart because they are judged on
+different terms — a floating pill over another application's video is not held
+to the same chrome rules as a screen.
+
+| Round | Surface | Commit | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Total |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4 | widget | `feee61a` | 6.5 | 5.5 | 6 | 4.5 | 4.5 | 7 | 5 | 5 | 5 | **49** |
+| 4 | detection | `feee61a` | 6 | 7.5 | 7 | 5 | 4 | 5.5 | 6 | 7 | 6 | **54** |
+
+What splitting it bought, immediately: **both new reviewers independently found
+the same defect, and it was not a design one.** The floating pill drew
+`--accent` and announced « Enregistrement en cours » to a screen reader
+*unconditionally* — so with no meeting it showed « Aucun enregistrement » beside
+the recording colour while saying the opposite out loud. On the one surface
+built to be read across a desk, the product's central safety claim was carried
+by a mark that said the same thing either way.
+
+Neither reviewer of the main screens had seen it in three rounds, because the
+widget is not one of the main screens. A score is only as wide as what you point
+it at.
 
 Round 2's own notes, kept because the next round is scored against them:
 
