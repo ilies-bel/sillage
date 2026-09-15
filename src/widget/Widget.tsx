@@ -489,9 +489,36 @@ export function Widget() {
           kind: 'refus',
           text: error instanceof Error ? error.message : 'Impossible de marquer ce moment.',
         })
+        /*
+         * **And the pill stops claiming a recording it has just been told is
+         * not happening.**
+         *
+         * `meeting:mark` refuses when the meeting is not `recording`, and
+         * `widget:state` answers `{ meeting: null }` in exactly that case — so a
+         * refusal is proof this window's copy is stale. It is reachable in the
+         * ordinary way: `EndOfMeetingWatch` can end the call with the pill still
+         * floating over it, and the rep's press lands in the gap before
+         * `session:changed` arrives.
+         *
+         * What that gap drew, measured six pixels apart at the same instant: a
+         * filled `--accent` dot, `data-graphic="enregistrement en cours"`, a
+         * clock still counting, and an `sr-only` « Enregistrement en cours » —
+         * beside a `role="alert"` reading « Aucun enregistrement en cours ». A
+         * screen reader is read both. On the one surface whose whole job is to
+         * tell a rep across a desk whether the client is being written down, the
+         * loud half said yes while the quiet half said no.
+         *
+         * The reload rather than a flag read off the message: the main process
+         * is the authority on what is recording, this is the channel that asks
+         * it, and `session:changed` already drives the same call. Parsing the
+         * refusal's French would put a second, weaker copy of the rule in the
+         * renderer — and it would repair only this sentence, where a re-read
+         * repairs whatever else has gone stale in the same gap.
+         */
+        state.reload()
       }
     },
-    [meetingId],
+    [meetingId, state.reload],
   )
 
   /**

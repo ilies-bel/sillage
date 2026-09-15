@@ -729,6 +729,8 @@ export function installAppBridge(config) {
    * created and stopped being so while the pill was still up. See the responder.
    */
   let REFUSE_MARKS = null
+/** The call stopped while the pill was up — see `refuseMarks`. */
+let RECORDING_STOPPED = false
 
   /**
    * A speech-shaped level history for the header meter — 20 samples, which is
@@ -3013,7 +3015,26 @@ export function installAppBridge(config) {
       stage, which is what makes the transient real.
     */
     'widget:state': () =>
-      scenario === 'widget-sans-reunion'
+      /*
+        **`RECORDING_STOPPED` and not just the scenario**, because the fixture
+        was producing a pairing the product cannot.
+
+        `app/ipc/register.ts` derives both this answer and `meeting:mark`'s
+        refusal from one condition — `stateOf(id) === 'recording'`. So the state
+        `refuseMarks()` stages, « the call stopped recording while the pill was
+        still up », makes *this* channel answer `{ meeting: null }` too. The stub
+        refused the mark and went on reporting a live recording here, which is
+        not a stale copy in the renderer but two channels of one process
+        disagreeing about the same fact.
+
+        That mattered: the fix for the pill's contradiction is that a refusal
+        proves the window's copy is stale, so the renderer re-reads this channel.
+        Against the old fixture the re-read returned the recording again and the
+        product looked broken when it was the fixture that was. Sixth time this
+        file has been caught unable to produce the input a defect lives on, and
+        the first time it produced an impossible one.
+      */
+      scenario === 'widget-sans-reunion' || RECORDING_STOPPED
         ? { meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }
         : {
             /*
@@ -3186,6 +3207,14 @@ export function installAppBridge(config) {
         reason === undefined
           ? 'Aucun enregistrement en cours — il n’y a pas de moment à marquer.'
           : reason
+      /*
+        The default reason *is* « the call stopped », so it moves the other
+        channel the main process would move with it. A caller passing its own
+        reason is staging a store failure **during** a recording, which is the
+        other half of what `meeting:mark` rejects on — there the meeting is
+        still live and this channel must keep saying so.
+      */
+      RECORDING_STOPPED = reason === undefined
     },
     replaySession(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'

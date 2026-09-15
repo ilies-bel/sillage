@@ -3037,6 +3037,65 @@ const SCREENS = {
       if (after !== before) {
         throw new Error(`le compteur a bougé sur un refus : « ${before} » → « ${after} »`)
       }
+
+      /*
+       * **And the pill must agree with the sentence beside it.**
+       *
+       * Both elements were already in this stage's viewport and it checked
+       * neither. Measured six pixels apart at the same instant, before the fix:
+       * the pill drew a filled `--accent` dot carrying
+       * `data-graphic="enregistrement en cours"`, a clock still counting and an
+       * `sr-only` « Enregistrement en cours » — beside this `role="alert"`
+       * reading « Aucun enregistrement en cours ». A screen reader is read both.
+       *
+       * This is the whole job of the window. It floats over a client's video to
+       * say, across a desk, whether the conversation is being written down; in
+       * the one state where it is not, the loud half said it was. `meeting:mark`
+       * refuses precisely because the meeting is not `recording`, so the
+       * refusal is proof the pill's copy is stale — the renderer re-reads
+       * `widget:state`, which answers `{ meeting: null }`, and the two halves
+       * come back into agreement.
+       *
+       * Asserted on the accessible names and on `data-graphic` rather than on a
+       * screenshot, because the contradiction was never visible in one: each
+       * half is correct on its own and only the pair is wrong.
+       */
+      const agreed = () => {
+        const alert = document.querySelector('[role="alert"]')?.textContent ?? ''
+        const graphic = document.querySelector('[data-graphic]')?.getAttribute('data-graphic') ?? null
+        const spoken = [...document.querySelectorAll('.sr-only')].map((el) => el.textContent ?? '')
+        const denies = /aucun enregistrement/i.test(alert)
+        const claims = [graphic ?? '', ...spoken].filter((text) => /enregistrement en cours/i.test(text))
+        return { ok: !(denies && claims.length > 0), alert, claims }
+      }
+      /*
+       * **Waited for, not sampled.** The repair is a re-read of `widget:state`,
+       * which this fixture answers with the shipped channel's own 150 ms of
+       * latency — so a single reading taken when the alert appears catches the
+       * window mid-repair and fails on a working product. Polled to a deadline
+       * instead: the contradiction must *clear*, and a stage that asserted the
+       * first frame would be measuring the round trip rather than the rule.
+       */
+      await page
+        .waitForFunction(
+          () => {
+            const alert = document.querySelector('[role="alert"]')?.textContent ?? ''
+            const graphic = document.querySelector('[data-graphic]')?.getAttribute('data-graphic') ?? null
+            const spoken = [...document.querySelectorAll('.sr-only')].map((el) => el.textContent ?? '')
+            const denies = /aucun enregistrement/i.test(alert)
+            return !(denies && [graphic ?? '', ...spoken].some((t) => /enregistrement en cours/i.test(t)))
+          },
+          undefined,
+          { timeout: 4_000 },
+        )
+        .catch(async () => {
+          const said = await page.evaluate(agreed)
+          throw new Error(
+            `la pastille et le refus se contredisent : « ${said.alert.trim()} » ` +
+              `à côté de ${said.claims.map((text) => `« ${text.trim()} »`).join(', ')}`,
+          )
+        })
+
       await page.evaluate(() => window.__harness.refuseMarks(null))
     },
   },
