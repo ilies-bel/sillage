@@ -54,7 +54,29 @@ export function Segmented<Id extends string>({
     <div
       role="group"
       aria-label={label}
-      className={cn('border-card bg-inner inline-flex shrink-0 rounded-sm border p-0.5', className)}
+      /*
+        **A tinted track with a raised white chip on it, not a wash on white.**
+        This was `bg-inner` (#ffffff) carrying a `bg-brand-50` (#ebf8ff)
+        selection: **1.08:1**, so which option is current rested almost entirely
+        on `text-brand-700` against `text-muted`. It is the most repeated control
+        in the product — four groups across the calendar, the session and the
+        review gate — and the one a rep uses most often without reading.
+
+        Inverting it is what a sliding thumb was asked for and refused. The
+        refusal stands: §6 allows « opacity and 2–4px translate only », a thumb
+        travels ~80px, and two of these four groups are on screen during a live
+        client call, where DEC-14's « a chip that moves during a call is a chip
+        that steals a glance » applies directly. But the request was pointing at
+        something real — the selection could not be *seen* — and the answer to
+        that is contrast, not travel. A raised chip reads instantly, reads for a
+        colour-blind rep, and needs no motion at all.
+
+        `--bg-subtle` #eef3f7 is the same ground the rail uses, nine units off
+        the canvas; the chip is `--bg-inner` #ffffff on top of it with
+        `shadow-card` — VISION §6's « shadows barely there », and the third
+        surface in the product that genuinely lifts off the paper.
+      */
+      className={cn('bg-subtle inline-flex shrink-0 rounded-sm p-0.5', className)}
     >
       {options.map((option) => {
         const selected = option.id === current
@@ -72,8 +94,8 @@ export function Segmented<Id extends string>({
               */
               'rounded-sm px-inline py-1 text-ui transition active:translate-y-px',
               selected
-                ? 'bg-brand-50 text-brand-700 font-medium'
-                : 'text-muted hover:bg-subtle hover:text-body',
+                ? 'bg-inner shadow-card text-brand-700 font-medium'
+                : 'text-muted hover:text-body',
             )}
           >
             {option.label}

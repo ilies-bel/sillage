@@ -87,9 +87,22 @@ const button = cva(
       /** The default control: a bordered chip of a button on a card. */
       bordered:
         'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle enabled:active:translate-y-px rounded-sm border px-3 py-1.5 text-ui font-medium',
+      /*
+       * **`border border-transparent` on every filled variant, and it is
+       * alignment rather than decoration.**
+       *
+       * `bordered` carries a 1px `--border-card`; the filled variants carried
+       * none, so measured on the shipped screens every filled button was
+       * **exactly 2px shorter** than every outlined one — 31px against 33px.
+       * They sit together constantly: on the agenda *Ouvrir* (filled) is
+       * directly above *Enregistrer* (bordered) on the same right edge, and the
+       * session header swaps *Terminer* for *Relire et valider* in the same slot
+       * across two states of one screen. Reserving the width makes the two
+       * families one height without changing a single colour.
+       */
       /** One per view at most. Brand blue marks action and navigation. */
       primary:
-        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
+        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
       /**
        * The primary, when what it ships carries a doubt the app measured.
        *
@@ -104,7 +117,7 @@ const button = cva(
        * it still ships (DEC-4). Only the colour and the label change, and they
        * change because the payload did.
        */
-      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm px-3 py-1.5 text-ui font-medium',
+      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
       /**
        * The way back out of a screen — *‹ Calendrier*, and only that.
        *
@@ -130,7 +143,7 @@ const button = cva(
        * different rectangle from the label the rep just pressed, and a bordered
        * copy of it would not be.
        */
-      danger: 'bg-danger text-inner rounded-sm px-3 py-1.5 text-ui font-medium',
+      danger: 'bg-danger text-inner rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
       text: 'text-muted hover:text-body disabled:opacity-60 enabled:active:translate-y-px text-ui',
       /** The same, when it needs to read as a link rather than a control. */
