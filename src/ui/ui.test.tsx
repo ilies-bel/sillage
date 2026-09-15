@@ -22,6 +22,7 @@ import {
   List,
   OverflowMenu,
   Row,
+  RowLead,
   RowTitle,
   SectionHeader,
   SectionNav,
@@ -495,5 +496,106 @@ describe('OverflowMenu', () => {
     expect(screen.getByRole('menu')).toBeTruthy()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+/*
+ * **The two additions the Granola pass made to the nav item, and the shared
+ * leading column.** All three are the kind of thing a screenshot shows and a
+ * DOM test pins: a colour that means the wrong thing, an icon column only half
+ * the rows reserve, and a width two lists have to agree on.
+ */
+describe('a note is a count unless the caller says it is a fault', () => {
+  const items = [
+    { id: 'a' as const, label: 'Aujourd’hui' },
+    { id: 'b' as const, label: 'À valider', note: '3', noteLabel: '3 appels en attente' },
+  ]
+
+  test('by default the count is brand blue, not the warning orange', () => {
+    /*
+     * `--warn` marked both « 2 connecteurs en défaut » and « 3 calls waiting »,
+     * which put a burnt orange twenty pixels from the bright `--accent` of
+     * « réunion prête » in the calendar legend — two oranges, two meanings, one
+     * glance. A queue is not a fault.
+     */
+    render(<SectionNav label="Navigation" items={items} current="a" onSelect={() => {}} />)
+    const note = screen.getByText('3')
+    expect(note.className).toContain('text-brand-700')
+    expect(note.className).not.toContain('text-warn')
+  })
+
+  test('and `warn` is still available for the one note that is a fault', () => {
+    const faults = [items[0], { ...items[1], noteTone: 'warn' as const }]
+    render(<SectionNav label="Navigation" items={faults} current="a" onSelect={() => {}} />)
+    expect(screen.getByText('3').className).toContain('text-warn')
+  })
+
+  test('the count keeps its sentence for a screen reader either way', () => {
+    // Colour is never the only signal in this product, and « 3 » on its own
+    // could be anything.
+    render(<SectionNav label="Navigation" items={items} current="a" onSelect={() => {}} />)
+    expect(screen.getByText('3 appels en attente')).toBeTruthy()
+  })
+})
+
+describe('an icon column is all of the rows or none of them', () => {
+  test('a glyph is drawn, hidden from the tree, and never the item’s name', () => {
+    /*
+     * The rail's labels sat on two left edges — three destinations at x=18 and
+     * two footer buttons at x=42 — because only the footer reserved a slot.
+     * `glyph` is a path so every row in a rail is the same 24-box stroke family;
+     * the row is still named by its French label and nothing else.
+     */
+    const items = [{ id: 'a' as const, label: 'Historique', glyph: 'M12 7v5l3 2' }]
+    render(<SectionNav label="Navigation" items={items} current="a" onSelect={() => {}} />)
+    const button = screen.getByRole('button', { name: 'Historique' })
+    const svg = button.querySelector('svg')
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+    expect(svg?.querySelector('path')?.getAttribute('d')).toBe('M12 7v5l3 2')
+  })
+
+  test('and an item without one draws no empty slot', () => {
+    const items = [{ id: 'a' as const, label: 'Transcription' }]
+    render(<SectionNav label="Navigation" items={items} current="a" onSelect={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Transcription' }).querySelector('svg')).toBeNull()
+  })
+})
+
+describe('every list row starts on one leading edge', () => {
+  test('RowLead is one width, so two lists cannot disagree about it', () => {
+    /*
+     * Measured on the agenda before this existed: three sections of one
+     * scrolling column drew title left edges at 724 / 592 / 676 — a 132px
+     * spread — partly because two of them used `w-28` and `w-16` for the same
+     * column. The width lives in one component now; a second number is a
+     * second grid.
+     */
+    const { container } = render(
+      <List bare>
+        <Row>
+          <RowLead>14:30 – 15:30</RowLead>
+          <RowTitle title="Néovia Santé" />
+        </Row>
+      </List>,
+    )
+    const lead = container.querySelector('span.w-28')
+    expect(lead?.textContent).toBe('14:30 – 15:30')
+    // Tabular, because a column of times that reflows as it updates is a column
+    // nobody can scan.
+    expect(lead?.className).toContain('tabular-nums')
+  })
+
+  test('a bare list drops the box and keeps the hairlines', () => {
+    const { container } = render(
+      <List bare>
+        <Row>
+          <RowTitle title="Une réunion" />
+        </Row>
+      </List>,
+    )
+    const list = container.querySelector('ul')
+    expect(list?.className).toContain('divide-y')
+    expect(list?.className).not.toContain('border-card')
+    expect(list?.className).not.toContain('rounded-lg')
   })
 })
