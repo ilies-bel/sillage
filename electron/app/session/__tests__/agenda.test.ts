@@ -1706,3 +1706,85 @@ test('and it says which call is in the way, because that one has a remedy', asyn
   assert.equal(h.agenda.armNow('BBB').meetingId, meetingIdFor('BBB'))
   h.store.close()
 })
+
+/**
+ * **« One conversation, one offer » was unreachable on the calendar path — the
+ * primary one (HR-9).**
+ *
+ * `#adHocSpent` is the field that makes the suppression a decision about the
+ * *conversation* rather than a pause keyed on an instant. It was latched inside
+ * `if (!calendarOffered)`, and on a calendar-armed call a calendar offer stands
+ * for the whole call — so the branch never ran and the latch was never written
+ * on the path it exists for.
+ *
+ * What the rep got, one minute after the most ordinary gesture in the product:
+ * they join their 14:00 call, are offered it, record it, press *Terminer* at
+ * 14:20 and keep talking. `calendarOffered` goes false for the first time, the
+ * branch finally runs, and by then nothing is live — so the detector offers the
+ * same conversation again. The day holds two rows for one call, the second
+ * wearing the screen's one filled *Enregistrer*, and a second OS notification
+ * fires whose click navigates them off the compte-rendu being written.
+ *
+ * `AdHocInput.spent`'s own docblock names this scenario as the thing the field
+ * closes. It did not, for as long as the field has existed.
+ */
+test('a calendar call that ends mid-slot is not re-offered as an unplanned one', async () => {
+  const h = harness([event('AAA')], 'Teams', 'Teams')
+  await h.agenda.tick({ now: T0 - 60_000 })
+
+  const meetingId = meetingIdFor('AAA')
+  assert.equal(h.agenda.snapshot().armed?.meetingId, meetingId, 'l’appel du calendrier n’a pas été proposé')
+
+  // Recorded, then finished well inside the slot — with the rep still talking.
+  h.orchestrator.dispatch(meetingId, 'start', null)
+  h.orchestrator.dispatch(meetingId, 'end', null)
+
+  // Long enough after that the ad-hoc dwell is satisfied several times over.
+  await h.agenda.tick({ now: T0 + 20 * 60_000 + AD_HOC_DWELL_MS })
+  await h.agenda.tick({ now: T0 + 26 * 60_000 })
+
+  assert.equal(
+    h.armed.length,
+    1,
+    `la même conversation a été proposée ${h.armed.length} fois : ${JSON.stringify(h.armed)}`,
+  )
+  assert.equal(h.agenda.snapshot().armed, null, 'une réunion terminée est encore proposée')
+  h.store.close()
+})
+
+/**
+ * **`AgendaSnapshot.armed` is « the meeting currently offered », and it was
+ * « the last meeting this agenda touched, while the hold lasts ».**
+ *
+ * `#armed` is cleared when the hold drops, and the hold outlives the meeting.
+ * Between *Terminer* and the rep hanging up, the field named a meeting the
+ * orchestrator calls `ended` — and the screen believed it: `buildEntries` set
+ * `entry.armed` beside `past`, so a conversation just recorded drew a « Prêt »
+ * state dot and an *Enregistrer* button under **Passées**. HR-7 says armed is an
+ * offer, never a recording; this was an offer to record something already
+ * recorded.
+ *
+ * The ad-hoc path is the one that reaches it, because there is no calendar event
+ * whose end can clear the note.
+ */
+test('a snapshot never offers a meeting the machine calls ended', async () => {
+  const h = harness([], 'Teams', 'Teams')
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+
+  const offered = h.agenda.snapshot().armed
+  assert.ok(offered, 'l’appel hors calendrier n’a pas été proposé')
+
+  h.orchestrator.dispatch(offered.meetingId, 'start', null)
+  h.orchestrator.dispatch(offered.meetingId, 'end', null)
+
+  // The rep is still on the call: the hold has not dropped.
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 60_000 })
+
+  assert.equal(
+    h.agenda.snapshot().armed,
+    null,
+    'une réunion terminée est encore annoncée comme proposée tant que le micro est tenu',
+  )
+  h.store.close()
+})

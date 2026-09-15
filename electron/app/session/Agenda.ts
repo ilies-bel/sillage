@@ -236,9 +236,38 @@ export class Agenda {
       // window and never left the main process, so the calendar asserted
       // « Aucune réunion ce jour-là » about days Graph was never asked about.
       window: { from: this.#window.from, to: this.#window.to },
-      armed: this.#armed,
+      armed: this.#standingOffer(),
       reason: this.#reason,
     }
+  }
+
+  /**
+   * `#armed` as the *machine* sees it, which is the only reading a consumer of
+   * this snapshot can act on.
+   *
+   * `#armed` is this class's note of what it last offered. It is cleared when
+   * the hold drops, and the hold outlives the meeting — so between *Terminer*
+   * and the rep hanging up, this field named a meeting the orchestrator calls
+   * `ended`. `AgendaSnapshot.armed` is documented as « the meeting currently
+   * offered »; what it actually returned was « the last meeting this agenda
+   * touched, while the hold lasts ».
+   *
+   * Driven end to end, that is what the rep saw: `buildEntries` read the field,
+   * `EntryRow` set `entry.armed = true` beside `past = true`, and a conversation
+   * that had just been recorded drew a *« Prêt »* state dot and an
+   * *« Enregistrer »* button under **Passées** — HR-7's own words, « armed is an
+   * offer, never a recording », inverted into an offer to record something
+   * already recorded.
+   *
+   * `#tick` already had this rule and kept it to itself, in the two lines that
+   * compute `calendarOffered`: « `still standing` is the machine's word, not
+   * this field's ». One lookup, so the detector and the screen cannot disagree
+   * about whether an offer is live.
+   */
+  #standingOffer(): AgendaSnapshot['armed'] {
+    if (this.#armed === null) return null
+    const state = this.#options.orchestrator.stateOf(this.#armed.meetingId)
+    return state === 'armed' || state === 'recording' ? this.#armed : null
   }
 
   /**
@@ -569,21 +598,22 @@ export class Agenda {
      * Read after the calendar branch has run, from the field that records what
      * actually happened.
      */
-    const standing = this.#armed
     /*
-     * And « still standing » is the machine's word, not this field's. `#armed` is
-     * `Agenda`'s own note of what it last offered; the session is what knows whether
-     * that offer is live. A rep who armed a row and then abandoned it leaves a note
-     * here pointing at an `idle` meeting, and treating that as a standing offer would
-     * silence the detector on the strength of a decision that is over.
+     * « Still standing » is the machine's word, not `#armed`'s. `#armed` is
+     * `Agenda`'s own note of what it last offered; the session is what knows
+     * whether that offer is live. A rep who armed a row and then abandoned it
+     * leaves a note here pointing at an `idle` meeting, and treating that as a
+     * standing offer would silence the detector on the strength of a decision
+     * that is over.
+     *
+     * `#standingOffer` is that rule, and it is a method because the snapshot
+     * needs the same one — it did not have it, and shipped an ended meeting to
+     * the screen as an offer for as long as the rep kept talking.
      */
-    const offeredState =
-      standing === null ? null : this.#options.orchestrator.stateOf(standing.meetingId)
-    const calendarOffered =
-      standing?.eventId != null && (offeredState === 'armed' || offeredState === 'recording')
-    if (!calendarOffered) {
-      /*
-       * **Is this product already doing something about a meeting?**
+    const standing = this.#standingOffer()
+    const calendarOffered = standing?.eventId != null
+    /*
+     * **Is this product already doing something about a meeting?**
        *
        * `liveStates()` is every session this process holds, created or rehydrated
        * this run — and the two states counted are **deliberately** the two, not
@@ -606,20 +636,42 @@ export class Agenda {
        * rule it named was never applied at all. See `AdHocInput.spent` for the
        * paths that went through that hole and this one.
        */
-      const live = this.#options.orchestrator
-        .liveStates()
-        .some((state) => state === 'armed' || state === 'recording')
-      /*
-       * **Suppression is a decision, not a delay** — see `#adHocSpent`.
-       *
-       * Marked here rather than inside `decideAdHoc`, which is pure and answers
-       * the same question for the same input every time. What the domain rule
-       * cannot know is that the *hold* outlives the meeting: this is the caller's
-       * fact about its own state, and the one line that makes « one conversation,
-       * one offer » true of a conversation rather than of an instant.
-       */
-      if (live) this.#adHocSpent = true
+    const live = this.#options.orchestrator
+      .liveStates()
+      .some((state) => state === 'armed' || state === 'recording')
+    /*
+     * **Suppression is a decision, not a delay** — see `#adHocSpent`.
+     *
+     * Marked here rather than inside `decideAdHoc`, which is pure and answers
+     * the same question for the same input every time. What the domain rule
+     * cannot know is that the *hold* outlives the meeting: this is the caller's
+     * fact about its own state, and the one line that makes « one conversation,
+     * one offer » true of a conversation rather than of an instant.
+     *
+     * **Outside `calendarOffered`, which is where it belonged all along.** This
+     * latch lived inside that branch, so it was written only on ticks where no
+     * calendar offer stood — and on the calendar path, HR-9's primary one, a
+     * calendar offer stands for the whole call. The field invented to make « one
+     * conversation, one offer » true of a conversation was therefore never
+     * written on the path it matters most on.
+     *
+     * What that cost, driven minute by minute on this class: a rep joins their
+     * 14:00 call, is offered it, records it, presses *Terminer* at 14:20 and
+     * keeps talking. At 14:21 `calendarOffered` goes false for the first time,
+     * the branch finally runs — and by then nothing is live, so `#adHocSpent` is
+     * still false, the hold is still held, and the detector offers the same
+     * conversation a second time. The day shows two rows for one call, the
+     * second wearing the screen's one filled *Enregistrer*, and a second OS
+     * notification fires whose click navigates the rep off the compte-rendu
+     * being written.
+     *
+     * A standing calendar offer is `armed` or `recording` by its own definition
+     * above, so it is already inside `liveStates()`: lifting the latch out of
+     * the branch is the whole fix, and it needs no second condition.
+     */
+    if (live) this.#adHocSpent = true
 
+    if (!calendarOffered) {
       const adHoc = decideAdHoc({
         micHeldBy: signal.inCall,
         now,
