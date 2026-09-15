@@ -234,8 +234,8 @@ describe('the rows are measured, and the remedy fits the fault', () => {
 
     expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Réglages/ })).toBeNull()
-    // Three rows, all measured as ready.
-    expect(screen.getAllByText('prêt')).toHaveLength(3)
+    // Two rows — transcription ships ready and is not asked for — both measured as ready.
+    expect(screen.getAllByText('prêt')).toHaveLength(2)
   })
 
   test('it names what the permission buys, not what the connector is called', async () => {
@@ -607,7 +607,6 @@ describe('the promise the rail stopped repeating', () => {
   test('step 1 says the notepad is never written into (DEC-5)', () => {
     open()
 
-    expect(screen.getByText('Vos notes restent les vôtres')).toBeTruthy()
     expect(screen.getByText(/n’écrit jamais dans votre bloc-notes pendant l’appel/)).toBeTruthy()
   })
 
@@ -697,7 +696,7 @@ describe('the capture row draws consent, and never a platform', () => {
     open(HEALTHY)
     await toBesoins()
 
-    await waitFor(() => expect(screen.getAllByText('prêt')).toHaveLength(3))
+    await waitFor(() => expect(screen.getAllByText('prêt')).toHaveLength(2))
     expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
   })
 

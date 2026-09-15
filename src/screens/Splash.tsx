@@ -31,6 +31,7 @@
 import type { BootState, BootStep } from '../../electron/core/contracts/boot.ts'
 import { BOOT_STEPS, type BootStepId } from '../../electron/core/contracts/bootSteps.ts'
 import { StateDot } from '../ui/index.ts'
+import logo from '../assets/logo.png'
 import type { StateDotProps } from '../ui/index.ts'
 
 /**
@@ -78,8 +79,19 @@ interface SplashProps {
 
 export function Splash({ state }: SplashProps) {
   return (
-    <div className="bg-canvas grain flex h-full flex-col items-center justify-center px-gutter">
-      <div className="flex w-full max-w-sm flex-col items-center">
+    <div className="bg-canvas grain relative flex h-full flex-col items-center justify-center px-gutter">
+      {/*
+        The blur. Two brand washes, blurred past recognition, behind a panel
+        that blurs what is behind it — the one screen where the product is
+        allowed to be a mood rather than a table. `aria-hidden` and
+        `pointer-events-none`: it is paint, not content.
+      */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="bg-brand-300 absolute left-0 top-0 h-96 w-96 -translate-x-1/3 -translate-y-1/3 rounded-full opacity-70 blur-3xl" />
+        <div className="bg-brand-100 absolute bottom-0 right-0 h-[28rem] w-[28rem] translate-x-1/4 translate-y-1/3 rounded-full blur-3xl" />
+      </div>
+      <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-white/60 px-8 py-10 backdrop-blur-xl">
+        <img src={logo} alt="" aria-hidden className="mb-4 h-16 w-16 rounded-xl shadow-sm" />
         {/*
           The wordmark. Fraunces at display size, which is the one place
           `--display-tracking` is a setting rather than a smudge.

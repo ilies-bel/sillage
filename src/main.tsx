@@ -18,6 +18,7 @@ import { createRoot } from 'react-dom/client'
 import './design/index.css'
 import { App } from './App.tsx'
 import { Widget } from './widget/Widget.tsx'
+import { TitleBar } from './ui/TitleBar.tsx'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root introuvable')
@@ -29,5 +30,18 @@ if (isWidget) {
 }
 
 createRoot(root).render(
-  <StrictMode>{isWidget ? <Widget /> : <App />}</StrictMode>,
+  <StrictMode>
+    {isWidget ? (
+      <Widget />
+    ) : (
+      // The band is the window's, not a screen's: it stays over the splash,
+      // first run and every route alike.
+      <div className="flex h-full flex-col">
+        <TitleBar />
+        <div className="min-h-0 flex-1">
+          <App />
+        </div>
+      </div>
+    )}
+  </StrictMode>,
 )

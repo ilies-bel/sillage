@@ -114,6 +114,15 @@ export interface AgendaOptions {
    * seconds would be a notification every thirty seconds.
    */
   onArmed?: (armed: { meetingId: string; subject: string }) => void
+  /**
+   * What the calendar column says before the first tick has decided anything.
+   *
+   * Defaults to a sync in progress, which is the truth over a real calendar
+   * and a lie over `NULL_CALENDAR`: a rep with no Microsoft account was shown
+   * « synchronisation du calendrier en cours… » about a sync that never
+   * starts. `main.ts` passes the sentence that is true for that branch.
+   */
+  initialReason?: string
 }
 
 export class Agenda {
@@ -213,6 +222,7 @@ export class Agenda {
 
   constructor(options: AgendaOptions) {
     this.#options = options
+    if (options.initialReason) this.#reason = options.initialReason
     this.#clock = options.clock ?? Date.now
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
     this.#window = options.calendar.window()

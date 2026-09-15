@@ -271,6 +271,12 @@ let closeSecondaryWindows: (() => void) | null = null
  */
 let resyncOverlay: (() => void) | null = null
 
+/**
+ * The height of the renderer's title band, and of the Windows controls overlay
+ * drawn over it. One number, so the two rectangles are the same rectangle.
+ */
+const TITLE_BAR_HEIGHT = 36
+
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1280,
@@ -283,6 +289,15 @@ const createWindow = (): BrowserWindow => {
     // flash of the retired cream palette on every launch.
     backgroundColor: '#f7f9fb',
     title: 'Sillage',
+    // The chrome is the brand's. The frame's title bar is hidden and the
+    // renderer draws its own band in `--brand-700` (`src/ui/TitleBar.tsx`);
+    // the OS keeps its own controls over it — traffic lights on macOS,
+    // the Window Controls Overlay on Windows, painted in the same blue so the
+    // band is one rectangle on both platforms. Neither option is a platform
+    // test: each host ignores the other's.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#036696', symbolColor: '#ffffff', height: TITLE_BAR_HEIGHT },
+    trafficLightPosition: { x: 14, y: 11 },
     webPreferences: {
       // esbuild emits CommonJS (scripts/build-electron.js), so `__dirname` is
       // real at runtime: dist-electron/electron/app → dist-electron/electron.
@@ -1823,6 +1838,8 @@ const boot = async (): Promise<void> => {
      */
     agenda = new Agenda({
       calendar: NULL_CALENDAR,
+      // Never « synchronisation en cours » here: nothing will ever sync.
+      initialReason: 'aucun calendrier connecté — les appels en cours sont détectés sans lui',
       orchestrator,
       meetingSignal: () => meetingApps.current(),
       refreshMeetingSignal: (wantProcessList) => meetingApps.refresh({ processList: wantProcessList }),

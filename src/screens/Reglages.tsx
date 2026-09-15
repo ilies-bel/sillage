@@ -634,7 +634,7 @@ function Typed({ children }: { children: ReactNode }) {
 function Lede({ children }: { children: ReactNode }) {
   // `74ch`, not the shared `.measure`: 38rem is 87 characters at `--type-copy`,
   // and a measure is a count of characters rather than a width.
-  return <p className="text-muted mb-3 measure text-copy leading-relaxed">{children}</p>
+  return <p className="text-muted mb-block measure text-ui leading-relaxed">{children}</p>
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────
@@ -1165,8 +1165,11 @@ function ProviderLine({
           ) : null}
         </span>
 
-        <span className="flex shrink-0 items-center gap-3">
-          <span className="text-muted text-meta">{RESIDENCY_LABEL[row.residency]}</span>
+        <span className="flex shrink-0 items-center gap-4">
+          <span className="text-muted text-meta">
+            {RESIDENCY_LABEL[row.residency]}
+            {row.cost === 'free' ? null : ` · ${COST_LABEL[row.cost]}`}
+          </span>
           {/*
             **What it costs, beside where it runs.**
 
@@ -1181,9 +1184,6 @@ function ProviderLine({
             engines, which already say « sur la machine » next to it, and a label
             repeating the neighbouring one is noise.
           */}
-          {row.cost === 'free' ? null : (
-            <span className="text-muted text-meta">{COST_LABEL[row.cost]}</span>
-          )}
 
           {/*
             Choosing is a separate act from configuring. A rep with two keys

@@ -49,6 +49,7 @@ import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { Button, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
 import type { SectionId } from './Reglages.tsx'
+import logo from '../assets/logo.png'
 
 export interface OnboardingProps {
   /** Recorded as seen, then the calendar. The rep is never sent here again. */
@@ -74,6 +75,16 @@ const ORDER: readonly Step[] = ['quoi', 'besoins', 'essai']
  * Réglages is a screen for somebody who already knows what the app does. Here
  * the row has to answer « why is it asking me this ».
  */
+/**
+ * Which of the required subsystems are worth a first-run card.
+ *
+ * Transcription is not one: the weights ship inside the installer and it has
+ * no key, no account and no setting to make (HR-4, DEC-30). A card for a thing
+ * that is already working is a checklist item a rep cannot act on. The two
+ * that remain each need something from them — a consent, a decision.
+ */
+const ASKED = REQUIRED_CONNECTORS.filter((id) => id !== 'transcribe')
+
 const NEEDS: Record<
   (typeof REQUIRED_CONNECTORS)[number],
   { title: string; why: string; section: SectionId }
@@ -94,7 +105,7 @@ const NEEDS: Record<
   },
   llm: {
     title: 'L’analyse',
-    why: 'Ce qui écrit le compte-rendu à la fin de l’appel. À choisir dans Réglages.',
+    why: 'Ce qui écrit le compte-rendu à la fin de l’appel : un modèle sur cette machine ou un fournisseur avec votre clé. À choisir dans Réglages.',
     section: 'llm',
   },
 }
@@ -205,6 +216,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         so the three stay on one axis as the step changes height.
       */}
       <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
+        <img src={logo} alt="" aria-hidden className="h-8 w-8 self-center rounded-md shadow-sm" />
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
         <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
         {/*
@@ -365,14 +377,16 @@ function Quoi() {
       <ul className="space-y-row">
         <Promise title="Rien ne part sans vous">
           À la fin de l’appel, Sillage vous montre le compte-rendu, la tâche VerySwing et le
-          brouillon de relance. Rien n’est créé tant que vous n’avez pas validé — une fois.
+          brouillon de relance. Rien n’est créé tant que vous n’avez pas validé — une fois. Et il
+          n’écrit jamais dans votre bloc-notes pendant l’appel.
         </Promise>
         <Promise title="La transcription reste sur cette machine">
           C’est le réglage par défaut. L’audio est transcrit puis effacé ; il n’est jamais conservé.
         </Promise>
-        <Promise title="Vos notes restent les vôtres">
-          Sillage n’écrit jamais dans votre bloc-notes pendant l’appel. Ce que vous tapez est à
-          vous, et rien ne s’y ajoute tout seul.
+        <Promise title="Sillage s’adapte à votre vocabulaire">
+          TJM, régie, forfait, intercontrat : il connaît les mots du métier. Il apprend aussi les
+          vôtres — les noms de vos interlocuteurs et de leurs sociétés, lus dans l’invitation, et
+          les termes que vous corrigez, retenus pour les appels suivants.
         </Promise>
       </ul>
     </section>
@@ -381,7 +395,7 @@ function Quoi() {
 
 function Promise({ title, children }: { title: string; children: string }) {
   return (
-    <li>
+    <li className="border-card bg-card rounded-md border p-4 shadow-sm">
       <h3 className="text-strong text-copy font-semibold">{title}</h3>
       {/* `.measure` on the paragraph and not inherited: `ch` resolves against
           the element's own size, so the step's own measure is a wider one once
@@ -483,12 +497,13 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
         Ce dont Sillage a besoin
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
-        Trois choses, et c’est tout. Vous pouvez les régler maintenant ou plus tard — l’application
-        s’ouvre dans tous les cas.
+        Deux choses. La transcription, elle, est déjà là : rien à installer, rien à régler.
+        Vous pouvez faire le reste maintenant ou plus tard — l’application s’ouvre dans tous les
+        cas.
       </p>
 
-      <ul className="space-y-block">
-        {REQUIRED_CONNECTORS.map((id) => {
+      <ul className="space-y-row">
+        {ASKED.map((id) => {
           const row: ConnectorHealth | null = snapshot?.[id] ?? null
           const state = row?.state ?? 'down'
           /*
@@ -499,7 +514,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
           */
           const permissionRow = id === 'capture' ? consent : null
           return (
-            <li key={id} className="border-subtle border-t pt-row first:border-t-0 first:pt-0">
+            <li key={id} className="border-card bg-card rounded-md border p-4 shadow-sm">
               <div className="flex items-baseline gap-inline">
                 <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
                   {NEEDS[id].title}
@@ -682,7 +697,7 @@ function Essai({ onReglages }: { onReglages: () => void }) {
         Votre premier appel
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
-        Rien de plus à préparer. Voilà ce qui se passera.
+        Rien de plus à préparer. En quatre temps :
       </p>
 
       <EssaiAudio onReglages={onReglages} />
@@ -692,30 +707,29 @@ function Essai({ onReglages }: { onReglages: () => void }) {
           n="1"
           title="Vous démarrez"
           says={[
-            'Depuis le calendrier, sur la réunion du jour — ou avec « Démarrer une réunion » si elle n’y est pas.',
-            'Et si l’appel n’était pas prévu, Sillage le remarque : quand une application garde le micro vingt-cinq secondes d’affilée, la journée affiche une ligne « Prêt » et une notification vous le dit. C’est une proposition, jamais un enregistrement — rien ne s’enregistre avant que vous n’appuyiez sur « Enregistrer », et ne pas y répondre ne coûte rien.',
+            'Depuis le calendrier, ou avec « Démarrer une réunion ». Si une application garde le micro vingt-cinq secondes, la journée affiche une ligne « Prêt » et une notification vous le propose : c’est une proposition, jamais un enregistrement, et l’ignorer ne coûte rien.',
           ]}
         />
         <Beat
           n="2"
           title="Une pastille reste au-dessus de l’appel"
           says={[
-            'Dès que l’enregistrement commence, une pastille s’affiche en bas de l’écran, au centre, par-dessus l’appel : les deux barres de niveau — la vôtre et celle du client, et tant qu’elles bougent l’appel est capté —, la durée, de quoi marquer un moment, et un bouton qui copie la phrase prévenant votre interlocuteur que l’échange est transcrit, à coller dans la conversation ou à lire à voix haute.',
-            'Elle n’apparaît ni dans un partage d’écran, ni dans la barre des tâches : pour revenir à l’application, ouvrez son panneau puis « Ouvrir Sillage ». « Terminer » est au même endroit et demande confirmation avant d’arrêter l’enregistrement. Vous pouvez la déplacer en la faisant glisser : elle revient au même endroit à l’appel suivant, sauf si cet écran n’est plus branché.',
+            'Elle se pose en bas de l’écran, par-dessus l’appel, hors du partage d’écran et de la barre des tâches : deux barres de niveau, la durée, de quoi marquer un moment, et la phrase qui prévient votre interlocuteur que l’échange est transcrit.',
+            'Son panneau tient « Ouvrir Sillage » et « Terminer », qui demande confirmation.',
           ]}
         />
         <Beat
           n="3"
           title="Vous prenez vos notes, normalement"
           says={[
-            'Le bloc-notes est à vous. À droite, Sillage note au passage ce qu’il entend — profil, TJM, durée, objections — sans rien écrire chez vous.',
+            'Le bloc-notes est à vous. À droite, Sillage relève ce qu’il entend — profil, TJM, durée, objections — sans rien écrire chez vous.',
           ]}
         />
         <Beat
           n="4"
           title="Vous validez, une fois"
           says={[
-            'À la fin, le compte-rendu s’écrit et Sillage vous montre ce qu’il s’apprête à créer. Chaque valeur porte l’extrait de l’appel dont elle vient, et celles qu’il n’a pas pu retrouver dans l’enregistrement sont signalées. Vous corrigez, vous validez, c’est parti.',
+            'À la fin, le compte-rendu s’écrit, chaque valeur cite l’extrait dont elle vient, et ce qui n’a pas été retrouvé est signalé. Vous corrigez, vous validez.',
           ]}
         />
       </ol>
