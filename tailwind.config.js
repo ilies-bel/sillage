@@ -125,6 +125,16 @@ module.exports = {
         sm: 'var(--radius-sm)',
         DEFAULT: 'var(--radius)',
         lg: 'var(--radius-lg)',
+        /*
+         * **The one radius that is not a card corner.** The input meter's bars
+         * are three pixels wide (`session/LevelMeter.tsx`), and the 10–14px
+         * band VISION §6 sets for a *box* would round each of them into a dot.
+         * They wore `rounded-[1px]`, an arbitrary value, which is the shape
+         * `check:tokens` now rejects everywhere else — so it is named here
+         * instead of exempted there. A rung for a cap on a bar, not a fourth
+         * step on the card scale; nothing with a border should reach for it.
+         */
+        bar: '1px',
       },
       /*
        * **One entry, and `shadow-card` is gone because nothing wore it.**
@@ -147,6 +157,25 @@ module.exports = {
       boxShadow: {
         /* The in-meeting widget, which floats over another application. */
         overlay: 'var(--shadow-overlay)',
+        /*
+         * **Back, and this time something wears it** — the condition the
+         * paragraph above set when it deleted this line (« the day a surface
+         * genuinely lifts off the paper this is one line again »).
+         *
+         * Three surfaces do, and all three were reaching for Tailwind's own
+         * `shadow-sm` to get it, which `check:tokens` now refuses: the page
+         * turn's floating control (`ui/PageTurn.tsx`), which hovers *over* the
+         * column it scrolls, and the two app icons on the splash and on first
+         * run, which are product marks rather than panes. VISION §6 names this
+         * exact value — « Shadows barely there (0 1px 2px rgb(0 0 0 / 8%)) ».
+         *
+         * The paragraph's other half still holds and is the reason this list is
+         * two entries and not five: a **card** in this product is a 1px
+         * `--border-card` on `--bg-card`, flat. The cards that wore `shadow-sm`
+         * — first run's three, the calendar-connect panel — did not get this
+         * token, they lost the shadow.
+         */
+        card: 'var(--shadow-card)',
       },
       /*
        * Five steps, added alongside Tailwind's numeric scale rather than

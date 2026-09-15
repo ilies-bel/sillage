@@ -792,6 +792,30 @@ describe("the motion scales are tokens, and the ladder reaches the product", () 
     expect(durations.DEFAULT).toBe("var(--motion-fast)");
   });
 
+  test("and every type rung is drawn by something", () => {
+    /*
+     * **The same acceptance line, asked of the scale that just grew.** US-3's
+     * rule is that a token nothing draws with is a dead declaration, and the
+     * document ladder (`--type-prose / subhead / heading / title`) was added in
+     * one commit with four consumers — so it starts honest and this is what
+     * keeps it that way. A fifth rung added « for completeness » fails here on
+     * the commit that adds it.
+     *
+     * Config *and* stylesheets, for the reason the motion version gives: the
+     * notepad reads three of these straight out of `index.css`
+     * (`.notepad .ProseMirror h1/h2/h3`) and is not a `fontSize` entry.
+     *
+     * The interface rungs are in scope too. They were all spent when this was
+     * written; if one ever stops being, that is worth knowing rather than
+     * grandfathering.
+     */
+    const spenders = config + read("./index.css");
+    const rungs = [...rootTokens.keys()].filter((name) => name.startsWith("--type-"));
+    expect(rungs.length, "the type ladder still has rungs to check").toBeGreaterThanOrEqual(9);
+    const unspent = rungs.filter((name) => !new RegExp(`var\\(${name}\\)`).test(spenders));
+    expect(unspent, "type rungs declared and drawn by nothing").toEqual([]);
+  });
+
   test("and every rung is reachable from somewhere", () => {
     /*
      * **The acceptance line US-3 is built on: a token nothing draws with is a

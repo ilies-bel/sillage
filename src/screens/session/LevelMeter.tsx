@@ -228,7 +228,7 @@ export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
       */}
       {variant === 'pill' ? null : (
         <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
-          <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-[1px]" />
+          <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-bar" />
           non transcrit
         </span>
       )}
@@ -303,7 +303,7 @@ function Bar({ rms, floor, channel }: BarProps) {
          * and a square edge is what lets a rep see which bars are grey; a
          * lozenge is decoration wearing a measurement's clothes.
          */
-        className={`w-full rounded-[1px] ${
+        className={`w-full rounded-bar ${
           audible ? (rep ? 'bg-brand-500' : 'bg-brand-700') : 'bg-meter-dropped'
         }`}
         /*

@@ -136,7 +136,64 @@ const CANCELS = [
   },
 ]
 
+/**
+ * **The fourth rule: a scale the design system does not have.**
+ *
+ * `tailwind.config.js` declares its scales under `theme.extend`, which *adds to*
+ * Tailwind's defaults rather than replacing them. So the file that says the type
+ * scale is `label / meta / ui / copy / display` also ships `text-xs` through
+ * `text-9xl`, the file that says radius is `sm / DEFAULT / lg` (10 / 12 / 14px)
+ * also ships `rounded-md` at 6px, and the file whose only shadow is `overlay`
+ * also ships `shadow-sm`. None of that is a typo anybody can see: the class is
+ * real, Tailwind emits it, and the element simply lands off the system.
+ *
+ * Measured when this rule was written: `rounded-md` ×7, `rounded-xl` ×1,
+ * `shadow-sm` ×6, `text-sm` and `text-xs` in the editor's error boundary, and —
+ * before the document ladder landed — twelve `text-[Npx]` arbitrary sizes over
+ * five distinct values. The visible cost was the three first-run cards, drawn at
+ * a 6px corner with Tailwind's drop shadow while every other card in the product
+ * is 10–14px and flat, which is why they read as belonging to a different app.
+ *
+ * The allowed keys are read out of the config rather than copied, so a rung
+ * added there is allowed here on the same commit — the `tokenNames` pattern
+ * above. What is *not* read from the config is the small set of Tailwind
+ * built-ins that are part of the system by intent rather than by declaration:
+ * a circle is `rounded-full` and a square corner is `rounded-none`, and neither
+ * is a size on a scale.
+ */
+const KEYWORD_OK = { borderRadius: new Set(['full', 'none']), boxShadow: new Set(['none']), fontSize: new Set([]) }
+const OFF_SCALE = (() => {
+  const config = createRequire(import.meta.url)(join(ROOT, 'tailwind.config.js'))
+  const extend = config.theme?.extend ?? {}
+  const scale = (group, prefix) => {
+    const declared = new Set([...Object.keys(extend[group] ?? {}), ...KEYWORD_OK[group]])
+    return {
+      // `rounded-lg`, `rounded-[3px]`, and bare `rounded` (DEFAULT). Stops at a
+      // `/` so `text-muted/40` stays the ALPHA rule's business, and at `:` so a
+      // variant prefix (`lg:rounded-sm`) is read without its variant.
+      pattern: new RegExp(`(?<![\\w-])${prefix}(?:-(\\[[^\\]]+\\]|[a-z0-9]+(?:-[a-z0-9]+)*))?(?![\\w-])`, 'g'),
+      declared,
+      group,
+      prefix,
+    }
+  }
+  return [scale('borderRadius', 'rounded'), scale('boxShadow', 'shadow'), scale('fontSize', 'text')]
+})()
+
+/**
+ * `text-` is the hard one: it is a size *and* a colour *and* an alignment, and
+ * they all share the prefix. Only a suffix that is unmistakably a size is
+ * judged — Tailwind's own size names, and any arbitrary `[…px]`/`[…rem]`. A
+ * colour (`text-muted`), an alignment (`text-left`) and a transform
+ * (`text-balance`) fall through untouched, which is the same split
+ * `tailwind.config.js` makes at the top for why the scale is not called `body`.
+ */
+const TAILWIND_SIZES = /^(?:xs|sm|base|lg|xl|[2-9]xl)$/
+const isSize = (suffix) =>
+  suffix !== undefined && (TAILWIND_SIZES.test(suffix) || /^\[[\d.]+(?:px|rem|em)\]$/.test(suffix))
+
 const violations = []
+const offScale = []
 const deadAlpha = []
 const cancelled = []
 let checked = 0
@@ -158,6 +215,31 @@ for (const file of files) {
       if (!tokenNames.has(match[1])) continue
       deadAlpha.push(`${file}:${i + 1}: ${match[0]}  ${line.trim()}`)
     }
+    for (const { pattern, declared, group, prefix } of OFF_SCALE) {
+      pattern.lastIndex = 0
+      for (const match of line.matchAll(pattern)) {
+        const suffix = match[1]
+        /*
+         * **Only the suffixed forms are judged**, and the reason is that these
+         * prefixes are ordinary English. A bare `rounded` is the config's own
+         * `DEFAULT` rung and legitimate anyway; a bare `text` is not a utility
+         * at all, and matching it flagged 300+ lines of `const text = …` and
+         * `schema.text("-")` in the editor's own tests the first time this rule
+         * ran. Comments are already stripped, so what is left is code, and in
+         * code a hyphenated `rounded-md` is a class name and `text` is a
+         * variable. The gap this leaves — a bare `shadow`, which would be
+         * Tailwind's default — is worth the 300 false positives it costs to
+         * close.
+         */
+        if (suffix === undefined) continue
+        if (declared.has(suffix)) continue
+        // Only judge `text-` when the suffix is a size; it is also the colour
+        // and the alignment prefix.
+        if (prefix === 'text' && !isSize(suffix)) continue
+        const known = [...declared].sort().join(', ') || '(none)'
+        offScale.push(`${file}:${i + 1}: ${match[0]} — ${group} declares ${known}\n      ${line.trim()}`)
+      }
+    }
     for (const { utility, by, why } of CANCELS) {
       const hit = utility.exec(line)
       if (!hit) continue
@@ -172,6 +254,15 @@ if (cancelled.length > 0) {
   console.error(`\nutilities that cancel each other — the class is right and the rule never applies (${cancelled.length}):\n`)
   for (const v of cancelled) console.error(`  ${v}`)
   console.error('\nDrop the display utility, or drop the clamp — the two cannot both be meant.\n')
+  process.exit(1)
+}
+
+if (offScale.length > 0) {
+  console.error(`\nutilities off the declared scale — Tailwind's defaults leaking past \`extend\` (${offScale.length}):\n`)
+  for (const v of offScale) console.error(`  ${v}`)
+  console.error('\nUse a declared rung, or add one to tailwind.config.js (and to')
+  console.error('src/design/tokens.css + VISION.md §6 when it is a new value). `rounded-md`')
+  console.error('is 6px and `shadow-sm` is Tailwind\'s, not this product\'s.\n')
   process.exit(1)
 }
 

@@ -435,6 +435,20 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | R32-2 | A reading column said « Remonter dans du compte-rendu » | `ui-read` | **done** — merged |
 | R32-3 | Two ports declared outside `core/contracts/` | `checks` | **done** — merged |
 | R32-4 | `tokens.test.ts` pinned the mapping, not the numbers | `checks` | **done** — merged |
+| | **The Granola pass — round 35** | | *the user: « on par with Granola »* |
+| G35-1 | The window's blue chrome band | `ui-shell` | **done** — `75cf869` |
+| G35-2 | Two document scales, eleven sizes under a comment saying five | `ui-read` | **done** — `75cf869` |
+| G35-3 | Three competing containers on the day, seven on the slate | `ui-agenda` `ui-session` | **done** — `75cf869` |
+| G35-4 | The splash overflowed its own window by 112×149px | `ui-onboarding` | **done** — `75cf869` |
+| G35-5 | `bg-white/60`, the one surface colour no token named | `checks` | **done** — `75cf869` |
+| G35-6 | The calendar held 320px while the titles truncated at 960×600 | `ui-agenda` | **done** — `75cf869` |
+| G35-7 | Tailwind's own scales leaking past `theme.extend` | `checks` | in flight |
+| G35-8 | No exit motion anywhere outside the widget | `motion` | todo |
+| G35-9 | The Réglages sheet is a fixed 920×600 with no fade | `ui-reglages` | todo |
+| G35-10 | Two oranges twenty pixels apart in the rail | `ui-status` | todo |
+| G35-11 | Chips are `rounded-sm`; every reference chip is a pill | `ui-shared` | todo |
+| G35-12 | The rail's five rows sit on two left edges | `ui-shared` | todo |
+| — | A sliding thumb on `Segmented` | `motion` | **rejected — §6 allows 2–4px translate; the thumb travels ~80px, live during a call** |
 | | **The simplicity pass — round 34** | | *the user, on the screenshots* |
 | US-22 | The screen is named by what changed | `ui-agenda` `ui-history` | agenda half **done** — merged; history half in flight |
 | US-23 | A caption only where the content cannot name itself | `ui-session` `ui-history` | session half **done** — merged; history half in flight |

@@ -188,10 +188,10 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
   if (loaded.state.status === 'failed' || !initial) {
     return (
       <Centered>
-        <p className="text-danger text-sm">
+        <p className="text-danger text-copy">
           {loaded.state.status === 'failed' ? loaded.state.reason : 'Réunion introuvable'}
         </p>
-        <button type="button" onClick={onBack} className="text-muted mt-3 text-xs underline">
+        <button type="button" onClick={onBack} className="text-muted mt-3 text-ui underline">
           Retour
         </button>
       </Centered>
@@ -342,7 +342,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
       </header>
 
       {saveFailed ? (
-        <p role="alert" className="text-warn border-subtle border-b px-6 py-1.5 text-xs">
+        <p role="alert" className="text-warn border-subtle border-b px-6 py-1.5 text-ui">
           Enregistrement des notes en attente — nouvelle tentative à la prochaine frappe.
         </p>
       ) : null}
@@ -525,7 +525,7 @@ function Elapsed({ since }: { since: number | null }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted flex h-full flex-col items-center justify-center text-sm">
+    <div className="text-muted flex h-full flex-col items-center justify-center text-copy">
       {children}
     </div>
   )

@@ -572,12 +572,12 @@ function Record({
 
   if (failure) {
     return (
-      <p role="alert" className="text-danger px-5 pb-4 text-xs">
+      <p role="alert" className="text-danger px-5 pb-4 text-ui">
         {failure}
       </p>
     )
   }
-  if (!record) return <p className="text-muted px-5 pb-4 text-xs">Chargement…</p>
+  if (!record) return <p className="text-muted px-5 pb-4 text-ui">Chargement…</p>
 
   return (
     <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-5 py-4">
@@ -880,14 +880,14 @@ function Transcript({
    * stating, and the marks are drawn under it.
    */
   if (segments.length === 0 && marks.length === 0) {
-    return <p className="text-muted text-xs">Aucune transcription pour cet appel.</p>
+    return <p className="text-muted text-ui">Aucune transcription pour cet appel.</p>
   }
 
   let marked = false
   return (
     <>
     {segments.length === 0 ? (
-      <p className="text-muted mb-1.5 text-xs">
+      <p className="text-muted mb-1.5 text-ui">
         Aucune transcription pour cet appel — seuls vos moments marqués sont ci-dessous.
       </p>
     ) : null}
@@ -895,7 +895,7 @@ function Transcript({
       {interleaveMarks(segments, marks).map((row) => {
         if (row.kind === 'mark') {
           return (
-            <li key={row.key} className="flex gap-2 text-xs">
+            <li key={row.key} className="flex gap-2 text-ui">
               <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold">
                 {formatTime(row.mark.at)}
               </span>
@@ -915,7 +915,7 @@ function Transcript({
           <li
             key={row.key}
             ref={isHit ? hit : undefined}
-            className={`flex gap-2 rounded-sm text-xs ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
+            className={`flex gap-2 rounded-sm text-ui ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
           >
             <span className="text-muted w-10 shrink-0 tabular-nums text-meta">
               {formatOffset(segment.startMs)}
@@ -924,7 +924,7 @@ function Transcript({
               {speakerLabel(segment.channel, interlocuteurs)}
             </span>
             {/*
-              `.measure` because this is prose and the column is wide: at `text-xs` in
+              `.measure` because this is prose and the column is wide: at `text-ui` in
               the 599px pane a turn drew **97 characters a line**, which is the number
               the class exists to end — and no stage could see it until the fixture's
               transcript lasted as long as its call, because five short turns either fit
@@ -966,7 +966,7 @@ const foldQuote = (text: string): string =>
  */
 function Extraction({ fields }: { fields: readonly ReviewField[] }) {
   if (fields.length === 0) {
-    return <p className="text-muted text-xs">Aucune extraction pour cet appel.</p>
+    return <p className="text-muted text-ui">Aucune extraction pour cet appel.</p>
   }
 
   return (

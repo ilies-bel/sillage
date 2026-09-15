@@ -115,7 +115,7 @@ export function Splash({ state }: SplashProps) {
         <div className="bg-brand-100 absolute bottom-0 right-0 h-[28rem] w-[28rem] translate-x-1/4 translate-y-1/3 rounded-full blur-3xl" />
       </div>
       <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim px-8 py-10 backdrop-blur-xl">
-        <img src={logo} alt="" aria-hidden className="mb-4 h-16 w-16 rounded-xl shadow-sm" />
+        <img src={logo} alt="" aria-hidden className="mb-4 h-16 w-16 rounded shadow-sm" />
         {/*
           The wordmark. Fraunces at display size, which is the one place
           `--display-tracking` is a setting rather than a smudge.
