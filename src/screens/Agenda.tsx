@@ -58,6 +58,7 @@ import { Button, Rail, Segmented, type SegmentedOption } from '../ui/index.ts'
 import type { SectionId } from './Reglages.tsx'
 import { useUpdateReady } from '../app/update.ts'
 import { CalendarGrid } from './agenda/CalendarGrid.tsx'
+import { CalendarConnect } from './agenda/CalendarConnect.tsx'
 import { DayPane } from './agenda/DayPane.tsx'
 import { NewMeeting } from './agenda/NewMeeting.tsx'
 import { PendingGates, PENDING_LIMIT } from './agenda/PendingGates.tsx'
@@ -112,10 +113,9 @@ interface AgendaProps {
    */
   onReglages: (section?: SectionId) => void
   /** Replays first run, from the empty day. It is seen once and worth seeing twice. */
-  onOnboarding: () => void
 }
 
-export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: AgendaProps) {
+export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   const agenda = useInvoke('agenda:snapshot', {})
   const auth = useInvoke('auth:state', {})
   /* The rail's one conditional row. `phase: 'ready'` only — see `app/update.ts`. */
@@ -571,6 +571,10 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
             counts={counts}
           />
 
+          {authState ? (
+            <CalendarConnect auth={authState} onReglages={() => onReglages('calendrier')} />
+          ) : null}
+
           {/*
             **The sync line is gone, and where it went is the point.**
 
@@ -680,7 +684,6 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
               /* The screen's one filled control, decided once, above. */
               emphasis={emphasis}
               reason={snapshot?.reason ?? null}
-              signedOut={authState?.status !== 'signedIn'}
               showDay={view !== 'jour'}
               when={selected < today ? 'past' : selected > today ? 'future' : 'today'}
               unsynced={unsynced}
@@ -690,7 +693,6 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
               */
               readAt={snapshot?.syncedAt ?? null}
               now={now}
-              onConnecteurs={() => onReglages('connecteurs')}
               onRefresh={() => void refresh()}
               refreshing={busy}
               /*
@@ -700,28 +702,7 @@ export function Agenda({ onOpen, onHistorique, onReglages, onOnboarding }: Agend
                 control, never a second way of doing it.
               */
               action={
-                <div className="flex flex-wrap items-center justify-center gap-inline">
-                  <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
-                  {/*
-                    **The other way out of an empty day, and it is not a demo.**
-
-                    A rep who installs on Tuesday with no calls until Thursday
-                    opens the app on nothing: a grey box and a scheduling form.
-                    The general-purpose notetakers answer that with « try a demo
-                    meeting » — a fabricated recording that proves the fixture
-                    works, and that would sit in *Historique* afterwards
-                    indistinguishable from a client call.
-
-                    What this product has instead is already true: the first-run
-                    sequence, which says what happens in three beats and offers
-                    twenty seconds of *real* capture on the rep's own machine
-                    (DEC-45). Seen once and then never again — so on the day it
-                    is worth seeing a second time, there was no way back to it.
-                  */}
-                  <Button variant="nav" onClick={onOnboarding}>
-                    Revoir la présentation ›
-                  </Button>
-                </div>
+                <NewMeeting variant="empty" day={selected} today={today} onCreated={created} />
               }
               onOpen={onOpen}
             />

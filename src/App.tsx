@@ -235,7 +235,6 @@ export function App() {
             onOpen={open}
             onHistorique={historique}
             onReglages={reglages}
-            onOnboarding={() => setReplay(true)}
           />
         ) : route.screen === 'historique' ? (
           <Historique
@@ -259,9 +258,8 @@ export function App() {
               onOpen={open}
               onHistorique={historique}
               onReglages={reglages}
-              onOnboarding={() => setReplay(true)}
             />
-            <Reglages section={route.section} onBack={back} />
+            <Reglages section={route.section} onBack={back} onOnboarding={() => setReplay(true)} />
           </>
         ) : route.screen === 'review' ? (
           <Review key={route.meetingId} meetingId={route.meetingId} onBack={back} onConfirmed={back} />

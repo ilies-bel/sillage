@@ -29,6 +29,8 @@ export interface EmptyStateProps {
    * elsewhere on the screen is the dead end DEC-26 forbids — the rep reads that
    * there is nothing, and the panel offers them nothing to do about it.
    */
+  /** A glyph naming what is absent, drawn in a brand disc above the sentence. */
+  icon?: ReactNode
   action?: ReactNode
   grain?: boolean
   className?: string
@@ -38,6 +40,7 @@ export function EmptyState({
   children,
   reason,
   hint,
+  icon,
   action,
   grain = true,
   className,
@@ -45,7 +48,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'border-card bg-card-soft rounded-lg border px-6 py-10 text-center',
+        'border-card bg-card-soft rounded-lg border px-6 py-12 text-center',
         grain && 'grain',
         className,
       )}
@@ -57,7 +60,15 @@ export function EmptyState({
         the element that holds the text — `ch` resolves against its own font
         size, so the two here need it separately.
       */}
-      <p className="measure text-body text-copy">{children}</p>
+      {icon ? (
+        <span
+          aria-hidden
+          className="bg-brand-100 text-brand-700 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+        >
+          {icon}
+        </span>
+      ) : null}
+      <p className="measure text-strong text-copy font-medium">{children}</p>
       {reason ? <p className="measure text-muted mt-1.5 text-ui">{reason}</p> : null}
       {hint ? <p className="text-muted mt-4 text-ui">{hint}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}

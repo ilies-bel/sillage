@@ -20,6 +20,7 @@
  *    never as a failure of the app (DEC-26, DEC-32). Graph being unreachable is
  *    a line in this pane, not a banner over the product.
  */
+import { CalendarDays } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { formatAgo, formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
@@ -41,8 +42,6 @@ interface DayPaneProps {
   entries: readonly AgendaEntry[]
   /** Why the calendar has nothing to show, in its own words. May be empty. */
   reason: string | null
-  /** True when Graph is not connected — changes what the empty state offers. */
-  signedOut: boolean
   /**
    * Where the selected range sits relative to today.
    *
@@ -106,7 +105,6 @@ interface DayPaneProps {
   /** The clock `readAt` is measured against — the screen's own, never a new one. */
   now?: number
   /** Opens Réglages on *Connecteurs*. The card's one way out of the second half. */
-  onConnecteurs?: () => void
   /**
    * Re-read the calendar (`agenda:refresh`).
    *
@@ -134,7 +132,6 @@ interface DayPaneProps {
 export function DayPane({
   entries,
   reason,
-  signedOut,
   showDay,
   when,
   action,
@@ -142,7 +139,6 @@ export function DayPane({
   emphasis,
   readAt = null,
   now = Date.now(),
-  onConnecteurs,
   onRefresh,
   refreshing = false,
   onOpen,
@@ -193,6 +189,7 @@ export function DayPane({
         </List>
       ) : suppressed ? null : (
         <EmptyState
+          icon={<CalendarDays size={22} aria-hidden />}
           action={action}
           reason={unsynced ? undefined : reason || undefined}
           /*
@@ -210,8 +207,6 @@ export function DayPane({
             <CalendarLine
               readAt={readAt}
               now={now}
-              signedOut={signedOut}
-              onConnecteurs={onConnecteurs}
               onRefresh={onRefresh}
               refreshing={refreshing}
             />
@@ -477,38 +472,22 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
 function CalendarLine({
   readAt,
   now,
-  signedOut,
-  onConnecteurs,
   onRefresh,
   refreshing,
 }: {
   readAt: number | null
   now: number
-  signedOut: boolean
-  onConnecteurs?: () => void
   onRefresh?: () => void
   refreshing?: boolean
 }) {
-  const read = readAt === null ? null : `Calendrier lu ${formatAgo(readAt, now)}`
-
-  if (read === null && !signedOut) return null
-
-  return (
-    <span className="inline-flex flex-wrap items-baseline justify-center gap-inline">
-      {read === null ? null : onRefresh ? (
-        <Button variant="nav" onClick={onRefresh} {...unavailable(refreshing === true, 'Lecture…')}>
-          {read}
-        </Button>
-      ) : (
-        <span>{read}</span>
-      )}
-      {read !== null && signedOut ? <span aria-hidden>·</span> : null}
-      {signedOut ? <span>Microsoft non connecté</span> : null}
-      {signedOut && onConnecteurs ? (
-        <Button variant="nav" onClick={onConnecteurs}>
-          Connecteurs ›
-        </Button>
-      ) : null}
-    </span>
+  // A reading that never happened has no age: « lu jamais » is not a sentence.
+  if (readAt === null || readAt <= 0) return null
+  const read = `Calendrier lu ${formatAgo(readAt, now)}`
+  return onRefresh ? (
+    <Button variant="nav" onClick={onRefresh} {...unavailable(refreshing === true, 'Lecture…')}>
+      {read}
+    </Button>
+  ) : (
+    <span>{read}</span>
   )
 }

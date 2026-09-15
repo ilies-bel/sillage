@@ -463,19 +463,30 @@ const SCREENS = {
   },
 
   /*
-   * The empty day's second way out — the first-run sequence, replayed. A rep who
+   * The first-run sequence, replayed from Réglages › Connecteurs. A rep who
    * installs on Tuesday with no calls until Thursday opens the app on nothing,
    * and what this product has to show them is already true: three beats and
    * twenty seconds of real capture (DEC-45), rather than a fabricated demo
    * meeting that would sit in *Historique* afterwards.
    */
-  'agenda-empty-presentation': {
+  'reglages-presentation': {
     scenario: 'agenda',
     async drive(page) {
       await openAgenda(page)
-      await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
+      await page.getByRole('button', { name: 'Réglages' }).click()
       await page.getByRole('button', { name: /Revoir la présentation/ }).click()
       await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
+    },
+  },
+
+  /** The calendar's account, said in the calendar's terms. */
+  'reglages-calendrier': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('button', { name: 'Calendrier', exact: true }).click()
+      await page.getByText(/agenda Outlook/).waitFor()
     },
   },
 
@@ -4638,6 +4649,13 @@ const ECHO_DECLARED = [
    * here (DEC-44). The fixture's objet is what the entry matches, so a fixture change
    * fails this entry loudly, which is correct.
    */
+  {
+    stages: ['reglages-sans-entra'],
+    text: 'aucune application microsoft n’est configurée — le calendrier et les brouillons outlook restent indisponibles',
+    pair: 'CalendarConnect (la carte sous la grille, derrière le voile) · MicrosoftAccount (la ligne du compte dans Réglages)',
+    why: 'la même condition sur deux surfaces — le calendrier reste monté sous la feuille Réglages (V2), et la carte est ce qui envoie le commercial vers la ligne',
+    story: 'ronde « Agenda Outlook » — la carte a pris la phrase de l’état vide',
+  },
   {
     stages: [
       'review',

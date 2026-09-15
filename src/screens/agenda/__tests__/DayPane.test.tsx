@@ -47,7 +47,6 @@ describe('DayPane — the day it is describing', () => {
       <DayPane
         entries={[entry(true)]}
         reason={null}
-        signedOut={false}
         when="past"
         showDay={false}
         unsynced={false}
@@ -71,7 +70,6 @@ describe('DayPane — the day it is describing', () => {
       <DayPane
         entries={[entry(true)]}
         reason={null}
-        signedOut={false}
         when="past"
         showDay={false}
         unsynced
@@ -89,7 +87,6 @@ describe('DayPane — the day it is describing', () => {
       <DayPane
         entries={[entry(true)]}
         reason={null}
-        signedOut={false}
         when="past"
         showDay={false}
         unsynced={false}
@@ -107,7 +104,6 @@ describe('DayPane — the day it is describing', () => {
       <DayPane
         entries={[]}
         reason={null}
-        signedOut={false}
         when="past"
         showDay={false}
         unsynced={false}
@@ -124,7 +120,6 @@ describe('DayPane — the day it is describing', () => {
       <DayPane
         entries={[entry(true)]}
         reason={null}
-        signedOut={false}
         when="today"
         showDay={false}
         unsynced={false}
@@ -148,7 +143,6 @@ describe('DayPane — a call under way is not a call about to start', () => {
       <DayPane
         entries={[row(over)]}
         reason={null}
-        signedOut={false}
         when="today"
         showDay={false}
         unsynced={false}
@@ -245,7 +239,6 @@ describe('DayPane — one filled control for the whole pane', () => {
       <DayPane
         entries={day}
         reason={null}
-        signedOut={false}
         when="today"
         showDay={false}
         unsynced={false}

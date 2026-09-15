@@ -525,14 +525,14 @@ try {
     }
   })
 
-  await step('the empty day can replay first run', async () => {
+  await step('Réglages can replay first run', async () => {
     await page.keyboard.press('Escape')
     await page.getByRole('region', { name: 'Calendrier' }).waitFor()
     // `Échap` from the reader is one of the three shortcuts installed for every
     // screen; reaching the calendar here is that assertion as well.
     // A day with nothing on it: the fresh profile has exactly one meeting, and
     // any other cell is empty.
-    await page.getByRole('button', { name: /aucune réunion$/ }).first().click()
+    await page.getByRole('button', { name: 'Réglages' }).click()
     await page.getByRole('button', { name: /Revoir la présentation/ }).click()
     await page.getByRole('heading', { name: /Sillage écoute l’appel/ }).waitFor()
     await page.getByRole('button', { name: 'Passer' }).click()

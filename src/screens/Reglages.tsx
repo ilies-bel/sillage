@@ -95,6 +95,7 @@ export type SectionId =
   | 'transcription'
   | 'llm'
   | 'connecteurs'
+  | 'calendrier'
   | 'raccourcis'
   | 'maj'
   | 'diagnostics'
@@ -107,6 +108,7 @@ const SECTIONS: readonly SectionNavItem<SectionId>[] = [
   { id: 'transcription', label: 'Transcription' },
   { id: 'llm', label: 'Modèle de langage' },
   { id: 'connecteurs', label: 'Connecteurs' },
+  { id: 'calendrier', label: 'Calendrier' },
   /*
    * The keyboard has a pane because it has to be discoverable somewhere, and
    * the alternative is the one this product refuses: a `?` sheet over the
@@ -141,9 +143,16 @@ interface ReglagesProps {
    * particular.
    */
   section?: SectionId
+  /**
+   * Replays first run. It left the empty day's card — a rep looking at a
+   * Tuesday with nothing on it is not asking for a presentation — and a
+   * reference lives with the other references, under *Connecteurs*, beside the
+   * dry run it ends on. Absent while first run itself is on screen.
+   */
+  onOnboarding?: () => void
 }
 
-export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
+export function Reglages({ onBack, section: opensOn, onOnboarding }: ReglagesProps) {
   const [section, setSection] = useState<SectionId>(opensOn ?? LANDING)
   const settings = useInvoke('settings:snapshot', {})
   /** The provider or model id currently being written, so two clicks cannot race. */
@@ -436,6 +445,7 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
               auth={snapshot.auth}
               probe={snapshot.probe}
               probeReason={snapshot.probeReason}
+              onOnboarding={onOnboarding}
               onHealth={(connector, health) => {
                 settings.set({
                   ...snapshot,
@@ -445,6 +455,8 @@ export function Reglages({ onBack, section: opensOn }: ReglagesProps) {
                 })
               }}
             />
+          ) : section === 'calendrier' ? (
+            <Calendrier auth={snapshot.auth} />
           ) : section === 'raccourcis' ? (
             <Raccourcis />
           ) : section === 'maj' ? (
@@ -1166,9 +1178,14 @@ function ProviderLine({
         </span>
 
         <span className="flex shrink-0 items-center gap-4">
-          <span className="text-muted text-meta">
-            {RESIDENCY_LABEL[row.residency]}
-            {row.cost === 'free' ? null : ` · ${COST_LABEL[row.cost]}`}
+          <span className="text-muted flex items-center gap-1 text-meta">
+            <span>{RESIDENCY_LABEL[row.residency]}</span>
+            {row.cost === 'free' ? null : (
+              <>
+                <span aria-hidden>·</span>
+                <span>{COST_LABEL[row.cost]}</span>
+              </>
+            )}
           </span>
           {/*
             **What it costs, beside where it runs.**
@@ -1415,6 +1432,7 @@ interface ConnectorsProps {
   auth: SettingsSnapshot['auth']
   probe: CapabilityReport | null
   probeReason: string | null
+  onOnboarding?: () => void
   onHealth: (connector: ConnectorId, health: ConnectorRow['health']) => void
 }
 
@@ -1434,7 +1452,7 @@ const group = (
     return row ? [row] : []
   })
 
-function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProps) {
+function Connectors({ rows, auth, probe, probeReason, onOnboarding, onHealth }: ConnectorsProps) {
   const [retrying, setRetrying] = useState<ConnectorId | null>(null)
   const [busy, setBusy] = useState(false)
   /**
@@ -1459,34 +1477,6 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
     },
     [onHealth],
   )
-
-  const signIn = useCallback(async () => {
-    setBusy(true)
-    setFailure(null)
-    try {
-      await invoke('auth:signIn', {})
-    } catch (error) {
-      setFailure(
-        error instanceof Error ? error.message : 'La connexion Microsoft n’a pas abouti.',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }, [])
-
-  const signOut = useCallback(async () => {
-    setBusy(true)
-    setFailure(null)
-    try {
-      await invoke('auth:signOut', {})
-    } catch (error) {
-      setFailure(
-        error instanceof Error ? error.message : 'La déconnexion Microsoft n’a pas abouti.',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }, [])
 
   const required = group(rows, REQUIRED_CONNECTORS)
   const optional = group(rows, OPTIONAL_CONNECTORS)
@@ -1569,37 +1559,7 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
         gives a calendar invite with no session behind it. A button that does
         nothing is the defect DEC-26 names.
       */}
-      <List as="div" className="mb-2">
-        <Row as="div" align="center">
-          <span className="text-body w-32 shrink-0 text-copy">Microsoft 365</span>
-          <span className="min-w-0 flex-1">
-            {auth.status === 'signedIn' ? (
-              <span className="text-muted text-ui">{auth.account.username}</span>
-            ) : auth.reason ? (
-              <span className="text-muted block text-meta">{auth.reason}</span>
-            ) : null}
-            {failure ? (
-              <span role="alert" className="text-danger block text-meta">
-                {failure}
-              </span>
-            ) : null}
-          </span>
-          {auth.status === 'signedIn' ? (
-            <BusyButton
-              variant="link"
-              busy={busy}
-              busyReason="Connexion en cours…"
-              onClick={() => void signOut()}
-            >
-              Se déconnecter
-            </BusyButton>
-          ) : auth.reason ? null : (
-            <BusyButton busy={busy} busyReason="Connexion en cours…" onClick={() => void signIn()}>
-              Se connecter
-            </BusyButton>
-          )}
-        </Row>
-      </List>
+      <MicrosoftAccount auth={auth} />
 
       <List>
         {optional.map((row) => (
@@ -1614,6 +1574,111 @@ function Connectors({ rows, auth, probe, probeReason, onHealth }: ConnectorsProp
 
       {/* VISION.md §6: the DEC-24 probe result lives under *VerySwing*. */}
       <Probe report={probe} reason={probeReason} />
+
+      {onOnboarding ? (
+        <p className="mt-block">
+          <Button variant="nav" onClick={onOnboarding}>
+            Revoir la présentation ›
+          </Button>
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * The Microsoft 365 account — the credential the calendar and Outlook both
+ * hang off. Drawn under *Connecteurs* with them, and again as the whole of
+ * *Calendrier*, from one component so the two cannot disagree.
+ */
+function MicrosoftAccount({ auth }: { auth: SettingsSnapshot['auth'] }) {
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  const signIn = useCallback(async () => {
+    setBusy(true)
+    setFailure(null)
+    try {
+      await invoke('auth:signIn', {})
+    } catch (error) {
+      setFailure(
+        error instanceof Error ? error.message : 'La connexion Microsoft n’a pas abouti.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  const signOut = useCallback(async () => {
+    setBusy(true)
+    setFailure(null)
+    try {
+      await invoke('auth:signOut', {})
+    } catch (error) {
+      setFailure(
+        error instanceof Error ? error.message : 'La déconnexion Microsoft n’a pas abouti.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  return (
+    <List as="div" className="mb-2">
+      <Row as="div" align="center">
+        <span className="text-body w-32 shrink-0 text-copy">Microsoft 365</span>
+        <span className="min-w-0 flex-1">
+          {auth.status === 'signedIn' ? (
+            <span className="text-muted text-ui">{auth.account.username}</span>
+          ) : auth.reason ? (
+            <span className="text-muted block text-meta">{auth.reason}</span>
+          ) : null}
+          {failure ? (
+            <span role="alert" className="text-danger block text-meta">
+              {failure}
+            </span>
+          ) : null}
+        </span>
+        {auth.status === 'signedIn' ? (
+          <BusyButton
+            variant="link"
+            busy={busy}
+            busyReason="Connexion en cours…"
+            onClick={() => void signOut()}
+          >
+            Se déconnecter
+          </BusyButton>
+        ) : auth.reason ? null : (
+          <BusyButton busy={busy} busyReason="Connexion en cours…" onClick={() => void signIn()}>
+            Se connecter
+          </BusyButton>
+        )}
+      </Row>
+    </List>
+  )
+}
+
+/**
+ * *Calendrier* — the same account, said in the calendar's terms.
+ *
+ * *Connecteurs* lists it as a credential among faults; a rep who wants their
+ * meetings to appear is not looking for a fault. The card under the month grid
+ * on the calendar sends them here.
+ */
+function Calendrier({ auth }: { auth: SettingsSnapshot['auth'] }) {
+  return (
+    <section>
+      <Lede>
+        Avec votre compte Microsoft 365, les réunions de votre agenda Outlook apparaissent
+        dans le calendrier, avec leurs participants et l’objet de l’invitation. Sillage lit
+        l’agenda et n’y écrit jamais ; la relance est un brouillon dans votre boîte, jamais
+        un envoi.
+      </Lede>
+      <MicrosoftAccount auth={auth} />
+      <p className="text-muted measure mt-block text-ui leading-relaxed">
+        Sans compte, le calendrier reste utilisable : les appels en cours sont détectés et
+        vous pouvez y ajouter une réunion vous-même.
+      </p>
     </section>
   )
 }
