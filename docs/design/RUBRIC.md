@@ -51,3 +51,23 @@ allowed; a range is not.
 | Round | Commit | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Total |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | `b716856` | — | — | — | — | — | — | — | — | — | *pre-rubric, `NOT IMPRESSED`, 15 findings* |
+| 2 | `84a326f` | 7 | 7 | 5 | 5 | 6 | 5 | 7 | 6 | 6 | **54** |
+
+Round 2's own notes, kept because the next round is scored against them:
+
+- The three axes that moved from round 1 were **chrome**, **typography** and
+  **craft** — the band, the split document scale, and Tailwind's scales leaking
+  past `theme.extend`. Craft moved furthest because it became *enforced*
+  (`check:tokens`' fourth rule) rather than merely tidied.
+- **Density moved sideways and that counts as a regression.** Taking the boxes
+  off the agenda removed the only thing bracketing *Passées*, and the three row
+  grammars underneath — a 132px spread of title left edges — became the most
+  visible thing on the home screen. A fix that exposes something worse is not a
+  fix yet.
+- Motion scored 5 on one measurement: « 0 qui s'en vont, 0 @keyframes de
+  sortie » on all eight app screens. `--ease-in` was declared, argued over forty
+  lines and worn by one element, in the other window.
+- The round withdrew its own round-1 request for a sliding thumb on `Segmented`
+  and ruled the §6 refusal correct — then named the real defect behind it, a
+  selection resting on **1.08:1** of fill. A request is evidence of a problem
+  and not a specification of the fix.
