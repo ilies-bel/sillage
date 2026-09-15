@@ -164,6 +164,66 @@
   --type-heading: 19px;
   --type-title: 24px;
 
+  /*
+   * **The overlay — the one surface in this product that is not on its paper.**
+   *
+   * VISION.md §6 carries the argument; the short version is that the in-meeting
+   * widget is drawn over *another application's video call*, and it wore the
+   * app's own palette to do it: `--bg-card` #fdfefe with a `--border-card`
+   * #d3dee6 edge, which is **1.24:1 against its own fill**, separated from the
+   * call by a 38 % black shadow and nothing else. Over a dark call that is the
+   * brightest object on the display; over a shared white slide the fill and the
+   * border both vanish and the shadow is about 1.2:1. Two of the three carriers
+   * are gone whichever way the video goes.
+   *
+   * It took the accent with it. `--accent` measures **2.41:1** on the pill's
+   * card — under WCAG 1.4.11's 3:1, on the one mark in the product that says a
+   * client is being recorded — and **7.08:1** on the ground below. That number
+   * is the whole case: the dot did not need a different colour, it needed a
+   * different surface to sit on.
+   *
+   * **The edge is lighter than the fill**, which is the property the app's
+   * palette cannot have and this window cannot do without. Every overlay on a
+   * desktop is built this way.
+   *
+   * **This is not a dark theme.** « There is no dark theme » is about the *app*,
+   * whose palette is its temperature. This is one window, on one route
+   * (`?window=widget`), that is not inside the app — and DEC-49 already carves
+   * it out three times. It is applied by a single class in `index.css` that
+   * re-points the surface tokens for that subtree, so no component picks a
+   * palette, every existing `bg-card` / `text-strong` in `Widget.tsx` keeps
+   * meaning what it means, and there is no second design to keep honest.
+   */
+  --widget-bg: #101c25; /* the ground itself — every ratio below is measured against it */
+  --widget-soft: #1b2a35; /*  1.18:1 on #101c25 — inner surfaces, the meter's track */
+  --widget-border: #33485a; /*  1.82:1 on #101c25 — LIGHTER than the fill, which is the point */
+  --widget-ink: #f3f7fa; /* 16.05:1 on #101c25 · 13.64:1 on #1b2a35 */
+  --widget-ink-dim: #a3b4c1; /*  8.11:1 on #101c25 ·  6.90:1 on #1b2a35 */
+
+  /*
+   * The two semantics that had to be re-cut for the dark ground, and the one
+   * that did not.
+   *
+   * `--danger` and `--warn` are measured against white and are 3.16:1 and
+   * 3.44:1 on `--widget-bg` — under AA as text, on a refusal and on « Terminer »,
+   * which are the two sentences on this surface a rep most needs to read. These
+   * are the same hues lifted until they clear it, and each also carries the ink
+   * ratio for the case where it is a *fill*: the widget's one filled red button
+   * takes `--widget-soft` as its label, so lightening the fill is what keeps
+   * that legible rather than what breaks it. Measured the other way round —
+   * the ink *on* each fill, which the `·` convention above cannot express
+   * because it reads as this token against a second surface — `--widget-soft`
+   * is 6.09 on the red and 6.81 on the amber.
+   *
+   * `--brand-700` needs no new value. The scope points it at `--brand-300` —
+   * the client's own #4dc2fb, which VISION.md §6 says « cannot carry text » and
+   * is right about, on white, at 2.01:1. On this ground it is **8.58:1**. The
+   * brand's actual blue finally carries text, on the one surface dark enough
+   * for it.
+   */
+  --widget-danger: #f08a8a; /*  7.17:1 on #101c25 */
+  --widget-warn: #e8a33d; /*  8.02:1 on #101c25 */
+
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;
   --radius: 12px;

@@ -686,6 +686,51 @@ same hue (200°), darkened, ratios measured against white.
 --type-subhead:   16px;
 --type-heading:   19px;
 --type-title:     24px;
+
+/* THE OVERLAY — the one surface that is not on this product's paper.
+
+   The in-meeting widget is a frameless always-on-top window drawn over ANOTHER
+   APPLICATION'S VIDEO CALL, over the face of the person the rep is talking to.
+   It wore the app's own palette: `--bg-card` #fdfefe with a `--border-card`
+   #d3dee6 edge, which is 1.24:1 against its own fill, separated from the call
+   by a 38%-black shadow and nothing else. Over a dark Teams call that is the
+   brightest object on the display; over a shared white slide the fill and the
+   border both vanish and only the shadow is left, at about 1.2:1. Two of the
+   three carriers are gone in either direction.
+
+   And it took the accent with it: `--accent` on #fdfefe is 2.41:1, under WCAG
+   1.4.11's 3:1 — on the one mark in the product that says a client is being
+   recorded. On the ground below it is 7.08:1.
+
+   The ground is darker than the ink it is made of and the EDGE IS LIGHTER THAN
+   THE FILL, which is the property the app's palette cannot have and this
+   surface cannot do without: whichever way the video goes, one of the two edges
+   still separates the window from it. Every overlay on a desktop is built this
+   way — the volume HUD, the conferencing app's own call bar — for this reason.
+
+   This is NOT a dark theme and does not open the door to one. "There is no dark
+   theme" is about the APP, whose palette is its temperature; this is one
+   window, on one route (`?window=widget`), that is not inside the app at all.
+   DEC-49 already carves this surface out three times — the halo it reserves,
+   `setContentProtection(true)`, and DEC-50's scale overshoot. It is scoped by a
+   single class in `index.css` that re-points the surface tokens, so no
+   component chooses a palette and no second design exists to keep honest. */
+--widget-bg:      #101c25;   /*  the ground itself — every ratio below is measured against it */
+--widget-soft:    #1b2a35;   /*  1.18:1 on #101c25 — inner surfaces, the meter's track */
+--widget-border:  #33485a;   /*  1.82:1 on #101c25 — LIGHTER than the fill, which is the point */
+--widget-ink:     #f3f7fa;   /* 16.05:1 on #101c25 · 13.64:1 on #1b2a35 */
+--widget-ink-dim: #a3b4c1;   /*  8.11:1 on #101c25 ·  6.90:1 on #1b2a35 */
+
+/* Two semantics re-cut for that ground: --danger and --warn are measured
+   against white and land at 3.16:1 and 3.44:1 on it, under AA as text, on a
+   refusal and on « Terminer ». Same hues, lifted. Each carries the ink ratio
+   for the case where it is a fill, because the widget's one filled red button
+   takes --widget-soft as its label — measured the other way round, that ink is
+   6.09 on the red and 6.81 on the amber. --brand-700 needs no new value: the scope
+   points it at --brand-300, the client's own #4dc2fb, which cannot carry text
+   on white at 2.01:1 and is 8.58:1 here. */
+--widget-danger:  #f08a8a;   /*  7.17:1 on #101c25 */
+--widget-warn:    #e8a33d;   /*  8.02:1 on #101c25 */
 ```
 
 `--text-muted` was `#7d8c98` in the first draft of this palette. It measures 3.27:1 on

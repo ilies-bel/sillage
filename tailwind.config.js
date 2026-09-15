@@ -120,14 +120,6 @@ module.exports = {
         card: 'var(--border-card)',
         muted: 'var(--text-muted)',
         brand: 'var(--brand-500)',
-        /*
-          The recording dot's boundary. `--accent` is 2.41:1 on the widget's
-          card — under 1.4.11's 3:1 — and the hue is the brand's, so the mark
-          gets an edge instead of a different colour: `--warn` is the same
-          family at 5.02:1. `ringColor` and not `borderColor`, because a border
-          would grow the 8px dot and a ring is drawn inside it.
-        */
-        warn: 'var(--warn)',
       },
       borderRadius: {
         sm: 'var(--radius-sm)',

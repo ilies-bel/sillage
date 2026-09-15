@@ -199,6 +199,55 @@
   initial-value: 0px;
 }
 
+/*
+ * **The overlay's ground, applied by re-pointing the surface tokens for one
+ * subtree — and by nothing else.**
+ *
+ * `tokens.css` carries the argument and the five measured values. The mechanism
+ * is here and it is deliberately the smallest one available: every
+ * `bg-card`, `border-card`, `text-strong` and `text-muted` already written in
+ * `src/widget/Widget.tsx` keeps meaning exactly what it means, and simply
+ * resolves to the overlay's palette instead of the app's. No component takes a
+ * theme prop, no class list forks, and there is no second set of names for a
+ * reviewer to keep in step.
+ *
+ * It is set on the document element by `main.tsx`, on the one route that is the
+ * widget (`?window=widget`), so it cannot leak into the app window — they are
+ * two windows and two documents.
+ *
+ * The derived tokens follow for free, which is the whole reason the palette is
+ * built out of `var()` aliases: `--ink-rep` and `--ink-agent` are declared as
+ * `var(--text-strong)` / `var(--text-muted)` and re-resolve in this scope, and
+ * `--meter-dropped` is a `color-mix` over `--text-muted`, so the meter's
+ * below-floor bars stay « the same measurement, marked unusable » on the dark
+ * ground without a second declaration.
+ *
+ * `--bg-canvas` is **not** re-pointed: the widget's window is transparent and
+ * `main.tsx` clears the body background on purpose, so a ground here would put
+ * an opaque rectangle the size of the window over the call.
+ */
+.widget-surface {
+  --bg-card: var(--widget-bg);
+  --bg-card-soft: var(--widget-soft);
+  --bg-inner: var(--widget-soft);
+  --bg-subtle: var(--widget-soft);
+  --border-card: var(--widget-border);
+  --border-subtle: var(--widget-border);
+  --text-strong: var(--widget-ink);
+  --text-body: var(--widget-ink);
+  --text-muted: var(--widget-ink-dim);
+  /*
+    The semantics, re-cut. `--brand-700` is 2.75:1 here and `--brand-300` — the
+    client's own blue, which cannot carry text on white — is 8.58:1; the two red
+    and amber steps are in `tokens.css` with their ink ratios. `--success` stays
+    as it is: VISION.md §6 makes it a dot and nothing else, and 3.81:1 clears
+    the 3:1 a dot is held to.
+  */
+  --brand-700: var(--brand-300);
+  --danger: var(--widget-danger);
+  --warn: var(--widget-warn);
+}
+
 @layer components {
   /*
    * **The frameless window's titlebar, which is the whole window.**

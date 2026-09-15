@@ -1668,25 +1668,14 @@ function Pill({
             meetingId === null
               ? 'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-muted'
               : /*
-                  **A boundary, because the fill alone is 2.41:1.**
-
-                  `--accent` #ff8500 on the pill's `--bg-card` #fdfefe measures
-                  2.41:1 — under WCAG 1.4.11's 3:1 for non-text UI, on the one
-                  mark in the product that says a client is being recorded. The
-                  hue is the brand's and is not negotiable (VISION.md §6 gives
-                  it one meaning and `tokens.css` states the ratio), so what
-                  changes is that the mark gets an edge: `--warn` #b45309 is the
-                  same family two steps down at 5.02:1, and a 1px inset ring of
-                  it is what defines the circle against the card. 1.4.11 asks
-                  that the *boundary* be distinguishable, which is exactly what
-                  this draws.
-
-                  It is a floor, not the answer. The deeper finding is that this
-                  whole card is a light fill with a 1.24:1 light stroke over an
-                  unknown video, and that needs a decision about the surface
-                  rather than a ring on one dot.
+                  No ring. The mark wore a `--warn` boundary for one commit,
+                  because `--accent` on the pill's old `--bg-card` ground was
+                  2.41:1 and under 1.4.11's 3:1. The ground moved (`--widget-bg`
+                  in tokens.css) and the same dot on the same hue is **7.08:1**
+                  there, so the boundary has nothing left to do and a second
+                  orange inside an 8px circle is only mud.
                 */
-                'bg-accent ring-warn h-2 w-2 shrink-0 rounded-full ring-1 ring-inset'
+                'bg-accent h-2 w-2 shrink-0 rounded-full'
           }
         />
         {/*

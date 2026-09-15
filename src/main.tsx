@@ -27,6 +27,16 @@ const isWidget = new URLSearchParams(window.location.search).get('window') === '
 if (isWidget) {
   document.body.style.background = 'transparent'
   document.documentElement.style.background = 'transparent'
+  /*
+   * The overlay's palette, on the one route that is not inside the app.
+   *
+   * `.widget-surface` re-points the surface tokens for this document
+   * (`design/index.css`); `tokens.css` carries why a window drawn over another
+   * application's video call cannot wear the paper the app is made of. Set on
+   * the document element rather than on a component, so the whole tree is on
+   * one ground and nothing can render half of itself in the other palette.
+   */
+  document.documentElement.classList.add('widget-surface')
 }
 
 createRoot(root).render(
