@@ -3330,9 +3330,12 @@ async function main() {
   }
 
   let dim = []
+  let graphics = 0
   if (flags.contrast) {
     await page.evaluate(() => document.fonts.ready)
-    dim = await contrast(page)
+    const measured = await contrast(page)
+    dim = measured.dim
+    graphics = measured.graphics
   }
 
   /*
@@ -3787,7 +3790,12 @@ async function main() {
     }
   }
   if (flags.contrast) {
-    if (dim.length === 0) console.log('  contraste: texte AA, graphiques 3:1')
+    if (dim.length === 0) {
+      console.log(
+        `  contraste: texte AA, ${graphics} graphique(s) à 3:1` +
+          (graphics === 0 ? ' — aucun élément ne s’est déclaré `data-graphic`' : ''),
+      )
+    }
     else {
       console.log(`  ✗ contraste: ${dim.length} élément(s) sous le seuil`)
       for (const item of dim.slice(0, 8)) {
@@ -4317,6 +4325,21 @@ async function contrast(page) {
      * the check silently measured nothing at all, which is worse than not having
      * it: a green line asserting a floor nobody had checked.
      */
+    /*
+     * **How many graphics this half actually measured**, reported beside the
+     * verdict rather than left implicit.
+     *
+     * `--fade` was rewritten to end exactly this: « a check that visited zero
+     * elements must not be able to print the same sentence as a check that
+     * measured everything ». This half is `data-graphic` opt-in, and across all
+     * eight widget stages — the surface with the product's only 2.42:1 mark and
+     * a twenty-cell meter on it — it printed « graphiques 3:1 » having visited
+     * **nothing**, because one element in the whole renderer opts in. The
+     * docblock above already names that failure (« a green line asserting a
+     * floor nobody had checked ») about a different cause; this is the same
+     * green line, and now it says how much it is worth.
+     */
+    let graphics = 0
     const painted = (el) => {
       const style = getComputedStyle(el)
       if (style.display === 'none' || style.visibility === 'hidden') return false
@@ -4325,6 +4348,7 @@ async function contrast(page) {
     }
     for (const el of document.querySelectorAll('[data-graphic]')) {
       if (!painted(el)) continue
+      graphics += 1
       const style = getComputedStyle(el)
       const ground = groundOf(el.parentElement ?? el)
       if (!ground) continue
@@ -4337,9 +4361,38 @@ async function contrast(page) {
        * the **last** opaque colour in the list is the ring.
        */
       const rings = [...style.boxShadow.matchAll(/rgba?\([^)]+\)/g)].map((m) => m[0])
-      const ink = opaque(style.backgroundColor)
-        ? style.backgroundColor
-        : (rings.filter(opaque).pop() ?? null)
+      /*
+       * **Either carrier may bound the shape, so the better of the two is the
+       * one judged** — and this used to take the fill whenever the fill was
+       * opaque, falling back to the ring only when it was not.
+       *
+       * That is the paragraph above applied half way. 1.4.11 asks that the
+       * visual information identifying a component be 3:1 against *adjacent
+       * colours*; a filled mark with a darker ring satisfies it through the
+       * ring exactly as a hollow one does, because the ring is the boundary in
+       * both cases. Scored on the fill alone, the widget's recording dot —
+       * `--accent` at 2.41:1 on the pill, with a `--warn` ring at 5.02:1 drawn
+       * specifically to bound it — was reported as failing a criterion it meets.
+       *
+       * Deliberately a widening, and worth stating as one: it was made to let a
+       * change of mine pass, which is the wrong reason to touch a check, so the
+       * test is whether it lets anything *illegible* through. It does not. A
+       * pale fill with a pale ring still fails on both carriers; what now passes
+       * is a mark one of whose two edges a rep can actually see, which is what
+       * the criterion asks for. The looser of the two is never taken alone —
+       * both are measured and the stronger stands for the mark.
+       */
+      const carriers = [opaque(style.backgroundColor) ? style.backgroundColor : null]
+        .concat(rings.filter(opaque))
+        .filter(Boolean)
+      const scored = carriers
+        .map((colour) => {
+          const x = luminance(parse(colour))
+          const y = luminance(parse(ground))
+          return { colour, ratio: (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+        })
+        .sort((p, q) => q.ratio - p.ratio)
+      const ink = scored[0]?.colour ?? null
       if (!ink) {
         out.push({
           text: el.dataset.graphic || 'graphique',
@@ -4362,7 +4415,7 @@ async function contrast(page) {
         need: 3,
       })
     }
-    return out
+    return { dim: out, graphics }
   })
   await stylesheet.evaluate((node) => node.remove())
   return findings

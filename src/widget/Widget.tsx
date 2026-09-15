@@ -1630,10 +1630,78 @@ function Pill({
         Recording, said the way the rest of the product says it: orange, which
         VISION.md §6 gives exactly one meaning — armed or recording — and a
         word, because colour is never the only carrier of a state here.
+
+        **And it has to be conditional, which for two rounds it was not.** Both
+        the dot and its `sr-only` word were drawn unconditionally, so with no
+        meeting the pill showed « Aucun enregistrement » beside a `--accent` dot
+        — sampled `rgb(255,133,0)`, byte-identical to the recording state two
+        lines of code away — while announcing « Enregistrement en cours » to a
+        screen reader. On the one surface built to be read across a desk, over
+        everything the rep shares, the loud element said the same thing whether
+        a client was being recorded or not, and the spoken one was simply false.
+        The comment above asserted the rule the code broke.
+
+        Idle takes `StateDot`'s `pending` ring — « the slot is here and it is
+        empty », which is exactly the state and commits to no semantic colour.
+        Not a second fill: a grey dot would be a third thing to tell apart at a
+        glance, and the whole point is that there are two.
       */}
       <span className="flex shrink-0 items-center gap-1.5">
-        <span aria-hidden className="bg-accent h-2 w-2 shrink-0 rounded-full" />
-        <span className="sr-only">{paused ? 'Enregistrement en pause' : 'Enregistrement en cours'}</span>
+        <span
+          aria-hidden
+          /*
+            `data-graphic`, and this is the surface that most needed it. The
+            check is opt-in — 1.4.11 covers a graphic *required to understand
+            the content*, and only the author knows which — and exactly one
+            element in the renderer had opted in, so « graphiques 3:1 » printed
+            green on all eight widget stages having measured nothing.
+
+            This one qualifies where a `StateDot` does not. `StateDot` refuses
+            to render without a *visible* label beside it, so the dot is a
+            second carrier of something already written down. Here the pill's
+            words are a clock and a meter; the spoken twin is `sr-only`. For a
+            rep reading this across a desk, over a client's video, the dot is
+            the whole signal.
+          */
+          data-graphic={meetingId === null ? 'aucun enregistrement' : 'enregistrement en cours'}
+          className={
+            meetingId === null
+              ? 'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-muted'
+              : /*
+                  **A boundary, because the fill alone is 2.41:1.**
+
+                  `--accent` #ff8500 on the pill's `--bg-card` #fdfefe measures
+                  2.41:1 — under WCAG 1.4.11's 3:1 for non-text UI, on the one
+                  mark in the product that says a client is being recorded. The
+                  hue is the brand's and is not negotiable (VISION.md §6 gives
+                  it one meaning and `tokens.css` states the ratio), so what
+                  changes is that the mark gets an edge: `--warn` #b45309 is the
+                  same family two steps down at 5.02:1, and a 1px inset ring of
+                  it is what defines the circle against the card. 1.4.11 asks
+                  that the *boundary* be distinguishable, which is exactly what
+                  this draws.
+
+                  It is a floor, not the answer. The deeper finding is that this
+                  whole card is a light fill with a 1.24:1 light stroke over an
+                  unknown video, and that needs a decision about the surface
+                  rather than a ring on one dot.
+                */
+                'bg-accent ring-warn h-2 w-2 shrink-0 rounded-full ring-1 ring-inset'
+          }
+        />
+        {/*
+          Only when there is something to say that is not already on screen.
+          Recording, the pill's words are a clock and a meter — neither of which
+          names the state — so the dot needs a spoken twin. Idle, « Aucun
+          enregistrement » is already *visible* two elements along, and a second
+          copy here is the same sentence twice to a screen reader and a strict
+          -mode collision for any stage that looks the string up.
+        */}
+        {meetingId === null ? null : (
+          <span className="sr-only">
+            {paused ? 'Enregistrement en pause' : 'Enregistrement en cours'}
+          </span>
+        )}
       </span>
 
       {meetingId === null ? (
