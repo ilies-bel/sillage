@@ -95,3 +95,19 @@ Round 2's own notes, kept because the next round is scored against them:
   and ruled the §6 refusal correct — then named the real defect behind it, a
   selection resting on **1.08:1** of fill. A request is evidence of a problem
   and not a specification of the fix.
+
+**Round 5 kept the three-surface split.** Its per-axis breakdown lives in the
+round-5 reports and was not transcribed into this table before the reports were
+gone — a process failure, not a scoring one, and the reason round 6 onward
+writes its row here as part of the round rather than after it. The totals are
+the baseline round 6 is measured against:
+
+| Round | Surface | Commit | Total |
+|---|---|---|---|
+| 5 | main | `d0a50c9` | **59.5** |
+| 5 | detection | `d0a50c9` | **56** |
+| 5 | widget | `d0a50c9` | **52** |
+
+Round 5's own « one thing », now shipped (`1b9e9d1`): the calendar grid drew one
+orange for « armed » and « recording » both, with a legend explaining only the
+second.
