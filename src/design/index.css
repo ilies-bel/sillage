@@ -225,7 +225,8 @@
   }
 
   /*
-   * **The widget leaving the screen, which is the one exit that is seen.**
+   * **The widget leaving the screen — the one exit a rep watches over another
+   * application.** (`.leaving` below is the app window's own, added later.)
    *
    * Everything else in this product arrives and leaves inside a window the rep
    * chose to look at. The pill is drawn *over another application* — over the
@@ -262,6 +263,45 @@
    * repeated in TypeScript.
    */
   .widget-leaving {
+    opacity: 0;
+    transform: translateY(3px);
+    transition:
+      opacity var(--motion) var(--ease-in),
+      transform var(--motion) var(--ease-in);
+  }
+
+  /*
+   * **The same exit, for the app's own surfaces — and until this rule there
+   * were none.**
+   *
+   * Measured with `shot.mjs --motion` across all eight screens: « N élément(s)
+   * animé(s) dont **0 qui s'en vont**, 0 `@keyframes` de sortie ». The rule
+   * above was the only exit in the repo and it is in the *other* window, so in
+   * the app window Réglages rose in over 150ms and then vanished between two
+   * frames, and so did the `source ▸` panel and every notice. VISION.md §6 asks
+   * for « ease-out on the way in, ease-in on the way out » and the product had
+   * been doing the first half only — which is also why `--ease-in`, forty lines
+   * of argument and a shape assertion in `tokens.test.ts`, was worn by exactly
+   * one element.
+   *
+   * Deliberately the same three declarations as `.widget-leaving` rather than a
+   * shared class: that rule is load-bearing in a way this one is not — the
+   * renderer reads its duration back off computed style and the main process
+   * waits exactly that long before destroying the window (`widget:left`). Tying
+   * the app's sheet to the handshake that dismisses an always-on-top window
+   * over a client's call would mean a flourish here could strand a window
+   * there. Two rules, one vocabulary, no coupling.
+   *
+   * `riseIn` run backwards, and nothing more: opacity and a 3px translate, the
+   * whole of §6's allowance. The one overshoot this product owns
+   * (`--ease-overshoot`) is DEC-50's and stays on the widget's arrival.
+   *
+   * Held mounted by `app/useLeaving.ts`, which reads `--motion` rather than
+   * restating it — so under `prefers-reduced-motion`, where that token is
+   * `0ms`, the surface unmounts with no intermediate frame and this rule never
+   * paints.
+   */
+  .leaving {
     opacity: 0;
     transform: translateY(3px);
     transition:

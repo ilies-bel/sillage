@@ -30,6 +30,7 @@ import {
   EmptyState,
   List,
   Row,
+  RowLead,
   RowTitle,
   SectionHeader,
   StateDot,
@@ -247,10 +248,13 @@ export function DayPane({
             competing rather than one day's calls.
 
             So the distinction stays and the boxes go. What separates a schedule
-            from a record here is what always did the work: the section header
-            above, and `EntryRowProps.card` moving the clock from the leading
-            edge to the trailing one — in a schedule the time is the index, in a
-            record it is a detail. Both are content. Neither is a rectangle.
+            from a record is the section header above it and the `--space-block`
+            under that — which is all it ever needed. The round that removed the
+            boxes first kept a *second* carrier as well, moving the clock to the
+            trailing edge down here; measured, that left three row grammars on
+            one continuous ground — a 132px spread of title left edges and 93px
+            of rag on the buttons — which is worse than the border it replaced.
+            `ui/List.tsx`'s `RowLead` is the single grid all three now sit on.
 
             `bare` on both halves, so the day is one surface (VISION.md §6:
             « rows, not cards, for lists — density over decoration »), and the
@@ -263,7 +267,6 @@ export function DayPane({
                 key={entry.key}
                 entry={entry}
                 showDay={showDay}
-                card
                 filled={entry.meetingId !== null && entry.meetingId === emphasis}
                 onOpen={onOpen}
                 onArm={onArm}
@@ -288,14 +291,6 @@ export function DayPane({
 interface EntryRowProps {
   entry: AgendaEntry
   showDay: boolean
-  /**
-   * Draw the entry as a card of its own rather than as a row of a divided list.
-   *
-   * *Passées* only. The time moves to the trailing edge with it: in a schedule
-   * the clock is the index and belongs first, and in a record of calls that have
-   * already happened it is a detail of the card, which is the far side.
-   */
-  card?: boolean
   /** This is the screen's one filled control — see `DayPaneProps.emphasis`. */
   filled: boolean
   onOpen: (meetingId: string) => void
@@ -303,23 +298,33 @@ interface EntryRowProps {
   onArm: (eventId: string) => void
 }
 
-function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: EntryRowProps) {
+function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
 
+  /*
+   * **The clock leads, on every row of this pane and of the queue beside it.**
+   *
+   * It used to move: leading on the schedule, trailing on *Passées*, on the
+   * argument that in a schedule the clock is the index and in a record of calls
+   * already held it is a detail. The argument is sound and the border it lived
+   * inside used to carry it. That border is gone, so what the rep now sees is
+   * one continuous column in which the shape changes twice for no stated reason
+   * — measured, a 132px spread of title left edges and 93px of rag on the
+   * buttons across three sections of one scroller.
+   *
+   * The distinction it was drawing is still drawn: `SectionHeader` and the
+   * `--space-block` above it say « these already happened », which is what the
+   * geometry was re-stating a second time and less clearly.
+   */
   const when = (
-    <span
-      className={cn(
-        'text-muted shrink-0 tabular-nums text-ui',
-        card ? 'text-right' : 'w-28',
-      )}
-    >
+    <RowLead>
       {showDay ? (
         <span className="block">{upperFirst(formatDayMedium(noonOf(entry.day)))}</span>
       ) : null}
       {entry.end === null || entry.end <= entry.start
         ? formatTime(entry.start)
         : formatRange(entry.start, entry.end)}
-    </span>
+    </RowLead>
   )
 
   return (
@@ -347,11 +352,10 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
      * keep in step, which is what `shot.mjs --motion` checks.
      */
     <Row
-      density={card ? 'card' : 'roomy'}
+      density="roomy"
       align="center"
       /*
-        No edge stroke: the list above owns the grouping now, and `card` means
-        only « the clock is a detail of this row, so it goes last ».
+        No edge stroke: the list above owns the grouping now.
 
         **`relative`, because the row is the target on the rows where a click is
         safe.** Measured at 1280×800 the row is 1050 CSS px wide and only the
@@ -371,7 +375,7 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
         entry.armed && 'animate-rise-in',
       )}
     >
-      {card ? null : when}
+      {when}
 
       <RowTitle title={entry.title} subtitle={entry.subtitle ?? undefined} />
 
@@ -487,8 +491,6 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
         </Button>
       ) : null}
 
-      {/* Last on a card, first on a row — see `EntryRowProps.card`. */}
-      {card ? when : null}
     </Row>
   )
 }

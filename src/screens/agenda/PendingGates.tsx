@@ -35,7 +35,7 @@
 import type { HistoryRow } from '../../../electron/core/contracts/history.ts'
 import { meetingAnchor } from '../../../electron/core/contracts/meeting.ts'
 import { formatDayShort, meetingHeading } from '../../app/format.ts'
-import { Button, List, Row, RowTitle, SectionHeader } from '../../ui/index.ts'
+import { Button, List, Row, RowLead, RowTitle, SectionHeader } from '../../ui/index.ts'
 
 /** How many rows before the screen sends the rep to the full record. */
 export const PENDING_SHOWN = 4
@@ -195,9 +195,9 @@ export function PendingGates({
       <List bare label="Réunions en attente de validation">
         {shown.map((row) => (
           <Row key={row.meeting.id} density="roomy" align="center">
-            <span className="text-muted w-16 shrink-0 tabular-nums text-ui">
-              {formatDayShort(meetingAnchor(row.meeting))}
-            </span>
+            {/* The same leading column the day pane uses — `ui/List.tsx` says
+                why all three sections of this scroller share one. */}
+            <RowLead>{formatDayShort(meetingAnchor(row.meeting))}</RowLead>
             <RowTitle {...meetingHeading(row.meeting)} />
             {/*
               What is still sitting there, in the words the gate uses — and, past

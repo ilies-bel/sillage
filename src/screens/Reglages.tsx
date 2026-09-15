@@ -74,6 +74,8 @@ import {
 } from '../../electron/core/contracts/mention.ts'
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { useDismiss } from '../app/useDismiss.ts'
+import { cn } from '../lib/utils.ts'
 import { SHORTCUTS } from '../app/shortcuts.ts'
 import { NOTE_SHORTCUTS } from '../editor/note/keymap.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
@@ -510,6 +512,16 @@ function Sheet({
   onClose: () => void
   children: ReactNode
 }) {
+  /*
+   * **The sheet leaves, and until this it did not.** It rose in over 150ms on
+   * `animate-rise-in` and then vanished between two frames — measured by the
+   * product's own detector as « 0 qui s'en vont » on every screen in the app
+   * window. `app/useDismiss.ts` holds it for one `--motion` so `.leaving` can
+   * run, and the veil goes with it rather than snapping out from under a pane
+   * that is still fading.
+   */
+  const { leaving, dismiss } = useDismiss(onClose)
+
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
       {/*
@@ -518,13 +530,20 @@ function Sheet({
         pane is the same act, named, and two accessible « fermer » targets on one
         surface is one too many.
       */}
-      <div className="bg-veil absolute inset-0" aria-hidden onClick={onClose} />
+      <div
+        className={cn('bg-veil absolute inset-0 transition-opacity', leaving && 'opacity-0')}
+        aria-hidden
+        onClick={dismiss}
+      />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Réglages"
-        className="border-card bg-card animate-rise-in relative flex h-[600px] max-h-full w-[920px] max-w-full overflow-hidden rounded-lg border"
+        className={cn(
+          'border-card bg-card relative flex h-[600px] max-h-full w-[920px] max-w-full overflow-hidden rounded-lg border',
+          leaving ? 'leaving' : 'animate-rise-in',
+        )}
       >
         {nav ? (
           <div className="bg-card-soft border-subtle flex w-[220px] shrink-0 flex-col border-r py-row">
@@ -552,7 +571,7 @@ function Sheet({
               variant="nav"
               className="min-w-[24px]"
               aria-label="Fermer les réglages"
-              onClick={onClose}
+              onClick={dismiss}
             >
               ✕
             </Button>

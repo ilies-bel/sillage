@@ -109,6 +109,38 @@ export function Row({ children, as: Tag = 'li', className, ...variants }: RowPro
 }
 
 /**
+ * **The leading cell: the clock, and the reason every row starts on one edge.**
+ *
+ * Measured at 1280×800 on the agenda, the one screen `docs/stories/ref/
+ * granola-home.png` is the direct comparison for, three sections shared one
+ * uninterrupted scroller and drew three different row grammars:
+ *
+ *     section      title x   clock      button right
+ *     schedule       724     leading        1228
+ *     Passées        592     trailing       1135
+ *     En attente     676     leading        1228
+ *
+ * A 132px spread of title left edges and 93px of rag on the buttons. Two causes:
+ * *Passées* moved its clock to the trailing edge, which both un-indented its
+ * titles and pushed its buttons off the right edge the other two share; and the
+ * two leading clocks were `w-28` and `w-16`, so even the sections that agreed
+ * about the shape disagreed about the width.
+ *
+ * The geometry was not new — it predates the round that took the borders off.
+ * What that round changed is that the box bracketing *Passées* is gone, so the
+ * three grammars now sit on one continuous ground with nothing saying why the
+ * shape changes mid-column. Their list drops the strokes **and** keeps one grid;
+ * the rigid grid is what makes dropping the strokes affordable.
+ *
+ * So: one width, named once, wide enough for the longest thing any list puts
+ * here — « 14:30 – 15:30 » at `--type-ui`, tabular. A short date (« 11/09 »)
+ * sits in the same column with slack rather than in a column of its own.
+ */
+export function RowLead({ children }: { children: ReactNode }) {
+  return <span className="text-muted w-28 shrink-0 tabular-nums text-ui">{children}</span>
+}
+
+/**
  * The middle cell: a title and, when there is one, a subtitle under it.
  *
  * **The title wraps to two lines; the subtitle still truncates.** Both used to

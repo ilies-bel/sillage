@@ -1555,6 +1555,86 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **Réglages on its way out — the app window's only exit, held mid-flight.**
+   *
+   * `widget-sortie` beside it does this for the pill, and for a long time the
+   * pill was the only thing in the product that left at all: `--motion` reported
+   * « 0 qui s'en vont, 0 @keyframes de sortie » on all eight app screens, so
+   * `--ease-in` — declared, argued over forty lines of `tokens.css` and pinned
+   * by shape in `tokens.test.ts` — was worn by one element, in the other window.
+   *
+   * It has to be a **stage** and cannot be a declaration check, for the reason
+   * `widget-sortie` exists: `.leaving` is on nothing at rest, so `--motion` run
+   * against the settled screen measures a sheet that never moves and passes. The
+   * class arrives through a React state update inside `useDismiss`, which is why
+   * it is waited for rather than assumed — a stage that shot the frame before it
+   * landed would report « rien à mesurer » and go green, which this repo has
+   * shipped three times.
+   *
+   * The veil is asserted with it. It fades on the same duration, because a
+   * backdrop snapping out from under a pane that is still fading is the sheet
+   * reading as two surfaces on two clocks.
+   */
+  'reglages-sortie': {
+    scenario: 'reglages',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Réglages' }).click()
+      await page.getByRole('navigation', { name: 'Sections des réglages' }).waitFor()
+      await page.getByRole('button', { name: 'Fermer les réglages' }).click()
+      await page.waitForSelector('[role="dialog"].leaving', { timeout: 5_000 })
+
+      /*
+       * **This stage asserts for itself, and has to.** `--motion` samples the
+       * settled page some 400ms after `drive` returns, and by then `useDismiss`
+       * has called `onClose` and the sheet is unmounted — so the census would
+       * count an element that is no longer there and report « 0 qui s'en vont »
+       * while passing. `widget-sortie` escapes that only because nothing in the
+       * harness destroys its window, so `.widget-leaving` persists for ever.
+       *
+       * `widget-entree` already sets the precedent the README states: a stage
+       * that needs a value *at an instant* takes it at that instant rather than
+       * leaning on a census of the resting frame.
+       */
+      /*
+       * Two frames in, not at the instant the class lands: `getComputedStyle`
+       * reports the *current animated* value, so read immediately it is still
+       * the resting 1 and the assertion below would fail on a working exit.
+       * `--contrast` carries the same caveat about the same API. Well inside the
+       * 150ms the sheet survives.
+       */
+      await page.waitForTimeout(60)
+      const exit = await page.evaluate(() => {
+        const el = document.querySelector('[role="dialog"].leaving')
+        if (!el) return null
+        const style = getComputedStyle(el)
+        const root = getComputedStyle(document.documentElement)
+        return {
+          opacity: style.opacity,
+          duration: style.transitionDuration,
+          easing: style.transitionTimingFunction,
+          motion: root.getPropertyValue('--motion').trim(),
+          easeIn: root.getPropertyValue('--ease-in').trim(),
+          easeOut: root.getPropertyValue('--ease-out').trim(),
+        }
+      })
+      if (!exit) throw new Error('la feuille a disparu avant la mesure')
+      // Going, not arriving.
+      if (Number(exit.opacity) >= 1) throw new Error(`opacité ${exit.opacity} — la feuille ne part pas`)
+      // On the tokens, and on the *exit* end of the motion (VISION.md §6).
+      if (!exit.easing.includes(exit.easeIn)) {
+        throw new Error(`courbe de sortie ${exit.easing} — attendu --ease-in ${exit.easeIn}`)
+      }
+      if (exit.easing.includes(exit.easeOut)) {
+        throw new Error('la sortie porte la courbe d’entrée — c’est le clignotement de --ease-in')
+      }
+      if (!exit.duration.split(',').every((d) => d.trim() === '0.15s')) {
+        throw new Error(`durée de sortie ${exit.duration} — attendu --motion ${exit.motion}`)
+      }
+    },
+  },
+
   /*
    * The dry run, after it has answered — and answered with the case that
    * matters: the rep was heard and the machine was not, which is the failure a

@@ -29,7 +29,7 @@ export {
   type OverflowMenuItem,
   type OverflowMenuProps,
 } from './OverflowMenu.tsx'
-export { List, Row, RowTitle, type ListProps, type RowProps, type RowTitleProps } from './List.tsx'
+export { List, Row, RowLead, RowTitle, type ListProps, type RowProps, type RowTitleProps } from './List.tsx'
 export { Chip, type ChipProps } from './Chip.tsx'
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader.tsx'
 export { SectionNav, type SectionNavItem, type SectionNavProps } from './SectionNav.tsx'
