@@ -403,14 +403,29 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
         started. Every review round has photographed this on the flagship stage,
         and `DayPane.test.tsx`'s only fixture sets `armed: false` and never `true`.
 
-        The offer and the recording are two different things to say, so the dot is
-        reserved for the offer: `recording` has its own label and, below, its own
-        verb — *Ouvrir*, because a call under way is opened, never started again.
+        The offer and the recording are two different things to say — and for a
+        round the screen said only one of them. `recording` fell through to the
+        plain `STATE_LABEL` span, so a **live call** was « En cours » at
+        `--type-ui` in `--text-muted`, sentence case, no dot: pixel-identical to
+        « À valider » and « Validée », and quieter than the *offer* two rows
+        above it, which had the dot, the uppercase, the weight and the tracking.
+
+        The product spent its whole state vocabulary on the thing that had not
+        happened and none on the thing that was happening, on the screen a rep
+        opens mid-call. « Armed is an offer, never a recording » (HR-7) is the
+        product's central safety claim, and a rep could not read which of the two
+        they were looking at without reading a 12px word.
+
+        Both are the accent now — VISION.md §6 gives that colour to « armed *or*
+        recording », which is why `StateDot`'s tone is called `armed` and means
+        both — and the *label* is what separates them. That is the honest split:
+        the colour says « this meeting is live in some sense », which is true of
+        both, and the word says which.
       */}
-      {entry.armed && entry.state !== 'recording' ? (
+      {entry.state === 'recording' || entry.armed ? (
         <StateDot
           tone="armed"
-          label="Prêt"
+          label={entry.state === 'recording' ? STATE_LABEL.recording : 'Prêt'}
           className="text-label font-semibold uppercase tracking-wider"
         />
       ) : entry.state ? (
