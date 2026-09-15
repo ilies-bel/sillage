@@ -47,9 +47,8 @@ import type {
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { Button, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
+import { Button, Logo, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
 import type { SectionId } from './Reglages.tsx'
-import logo from '../assets/logo.png'
 
 export interface OnboardingProps {
   /** Recorded as seen, then the calendar. The rep is never sent here again. */
@@ -216,7 +215,8 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         so the three stay on one axis as the step changes height.
       */}
       <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
-        <img src={logo} alt="" aria-hidden className="h-8 w-8 self-center rounded-sm shadow-card" />
+        {/* See `ui/Logo.tsx` — this drew the previous product's mark, invisibly. */}
+        <Logo className="h-8 w-8 self-center" />
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
         <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
         {/*

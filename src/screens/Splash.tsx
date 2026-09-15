@@ -30,8 +30,7 @@
  */
 import type { BootState, BootStep } from '../../electron/core/contracts/boot.ts'
 import { BOOT_STEPS, type BootStepId } from '../../electron/core/contracts/bootSteps.ts'
-import { StateDot } from '../ui/index.ts'
-import logo from '../assets/logo.png'
+import { Logo, StateDot } from '../ui/index.ts'
 import type { StateDotProps } from '../ui/index.ts'
 
 /**
@@ -115,7 +114,17 @@ export function Splash({ state }: SplashProps) {
         <div className="bg-brand-100 absolute bottom-0 right-0 h-[28rem] w-[28rem] translate-x-1/4 translate-y-1/3 rounded-full blur-3xl" />
       </div>
       <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim px-8 py-10 backdrop-blur-xl">
-        <img src={logo} alt="" aria-hidden className="mb-4 h-16 w-16 rounded shadow-card" />
+        {/*
+          The mark, drawn rather than loaded. It carried the archived
+          predecessor's circled monogram at 1.04:1 — white artwork on
+          transparency, so what a rep actually saw here was `shadow-card`
+          outlining an empty rounded square. `ui/Logo.tsx` has the measurement.
+
+          No `rounded shadow-card` around it any more: the box and the lift were
+          there to make a raster read as an app icon. A mark stands on its own,
+          and VISION §6's « shadows barely there » is about panes.
+        */}
+        <Logo className="mb-4 h-16 w-16" />
         {/*
           The wordmark. Fraunces at display size, which is the one place
           `--display-tracking` is a setting rather than a smudge.

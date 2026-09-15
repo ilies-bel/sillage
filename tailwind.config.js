@@ -171,12 +171,21 @@ module.exports = {
          * paragraph above set when it deleted this line (« the day a surface
          * genuinely lifts off the paper this is one line again »).
          *
-         * Three surfaces do, and all three were reaching for Tailwind's own
-         * `shadow-sm` to get it, which `check:tokens` now refuses: the page
-         * turn's floating control (`ui/PageTurn.tsx`), which hovers *over* the
-         * column it scrolls, and the two app icons on the splash and on first
-         * run, which are product marks rather than panes. VISION §6 names this
-         * exact value — « Shadows barely there (0 1px 2px rgb(0 0 0 / 8%)) ».
+         * Two surfaces do, and both were reaching for Tailwind's own `shadow-sm`
+         * to get it, which `check:tokens` now refuses: the page turn's floating
+         * control (`ui/PageTurn.tsx`), which hovers *over* the column it
+         * scrolls, and the selected chip in `ui/Segmented.tsx`, which is lifted
+         * off its own track. VISION §6 names this exact value — « Shadows barely
+         * there (0 1px 2px rgb(0 0 0 / 8%)) ».
+         *
+         * **It said three, and named the two app icons on the splash and on
+         * first run.** Those were `<img>` elements carrying the archived
+         * predecessor's mark as white artwork on transparency, so the shadow was
+         * the only thing that rendered — an empty rounded square standing in for
+         * a logo (`ui/Logo.tsx`). The mark is drawn now and stands on its own;
+         * the box and the lift existed to make a raster read as an app icon.
+         * The sentence also missed `Segmented`, which had been wearing this and
+         * saying so in its own file the whole time.
          *
          * The paragraph's other half still holds and is the reason this list is
          * two entries and not five: a **card** in this product is a 1px
