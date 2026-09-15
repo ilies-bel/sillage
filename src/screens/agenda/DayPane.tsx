@@ -175,7 +175,7 @@ export function DayPane({
   return (
     <div className="min-h-0">
       {upcoming.length > 0 ? (
-        <List>
+        <List bare>
           {upcoming.map((entry) => (
             <EntryRow
               key={entry.key}
@@ -235,22 +235,29 @@ export function DayPane({
         <section className="mt-block">
           <SectionHeader>Passées</SectionHeader>
           {/*
-            **A past call is a card; a call still ahead is a row.**
+            **A past call and a call still ahead are the same object, and the
+            screen used to draw them in two chrome languages 200 pixels apart.**
 
-            The two halves of this pane are not the same kind of thing and the
-            divided list said they were. Above the divider is a schedule — rows
-            in one block, read down, where the hairline between them is the point.
-            Below it is a record: each card is one call that happened, complete
-            on its own, and what a rep does with it is pick one. Separating them
-            is what makes « Passées » a set of objects rather than the tail of the
-            same list, and it is the shape *En attente de validation* and
-            *Historique* already have one screen over.
+            This block said « a past call is a card; a call still ahead is a
+            row », and argued it: above the divider a schedule read down as one
+            block, below it a record of discrete things to pick from. The
+            distinction is real. Carrying it in a *border* was the mistake — a
+            rep scanning the day sees a bordered list, then two bordered cards,
+            then one more under *En attente*, and reads three containers
+            competing rather than one day's calls.
 
-            `gap-2` and an edge stroke each, at `px-row py-2.5` — 16px by 10px,
-            the same rectangle the queue rows use, so the three lists on this
-            screen are one family.
+            So the distinction stays and the boxes go. What separates a schedule
+            from a record here is what always did the work: the section header
+            above, and `EntryRowProps.card` moving the clock from the leading
+            edge to the trailing one — in a schedule the time is the index, in a
+            record it is a detail. Both are content. Neither is a rectangle.
+
+            `bare` on both halves, so the day is one surface (VISION.md §6:
+            « rows, not cards, for lists — density over decoration »), and the
+            reference does the same — `docs/stories/ref/granola-home.png` draws
+            no row borders at all.
           */}
-          <ul aria-label="Réunions passées" className="flex flex-col gap-2">
+          <List bare as="ul" label="Réunions passées">
             {past.map((entry) => (
               <EntryRow
                 key={entry.key}
@@ -262,7 +269,7 @@ export function DayPane({
                 onArm={onArm}
               />
             ))}
-          </ul>
+          </List>
           {/*
             The *Ajouter au …* control follows the card that used to carry it.
 
@@ -342,8 +349,25 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
     <Row
       density={card ? 'card' : 'roomy'}
       align="center"
+      /*
+        No edge stroke: the list above owns the grouping now, and `card` means
+        only « the clock is a detail of this row, so it goes last ».
+
+        **`relative`, because the row is the target on the rows where a click is
+        safe.** Measured at 1280×800 the row is 1050 CSS px wide and only the
+        ~85px button responded to the pointer — the primary object of the
+        primary screen, inert across 92% of itself, with no hover feedback to
+        say so either way. The reference makes the whole row the target
+        (`docs/stories/ref/granola-home.png`).
+
+        The stretch is on the *button*, below, and only on the branch whose
+        `onClick` is `onOpen`. That is the whole of the care this needs: a row
+        that only carries `eventId` starts a capture (`onArm`), and « the rep
+        clicked somewhere in a 1050px rectangle » is not how a recording of a
+        client call should begin. Navigation is reversible; arming is not.
+      */
       className={cn(
-        card && 'border-card rounded-sm border',
+        'relative transition hover:bg-subtle',
         entry.armed && 'animate-rise-in',
       )}
     >
@@ -415,7 +439,21 @@ function EntryRow({ entry, showDay, card = false, filled, onOpen, onArm }: Entry
         validated, both want. A live call is opened, never started again.
       */}
       {meetingId ? (
-        <Button variant={filled ? 'primary' : 'bordered'} onClick={() => onOpen(meetingId)}>
+        /*
+          `after:absolute after:inset-0` — the button's hit area is the row.
+
+          A stretched pseudo-element rather than wrapping the row in a `button`:
+          the row is an `li` carrying a title, a clock and a state label, and a
+          button around all of it would read every one of them out as part of the
+          control's name. This keeps one control with one accessible name and
+          gives it the rectangle. Everything else in the row is text, so there is
+          nothing underneath for the overlay to steal.
+        */
+        <Button
+          variant={filled ? 'primary' : 'bordered'}
+          className="after:absolute after:inset-0 after:content-['']"
+          onClick={() => onOpen(meetingId)}
+        >
           {entry.armed && entry.state !== 'recording' ? 'Enregistrer' : 'Ouvrir'}
         </Button>
       ) : entry.eventId !== null && !entry.past ? (

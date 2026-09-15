@@ -289,14 +289,22 @@ const createWindow = (): BrowserWindow => {
     // flash of the retired cream palette on every launch.
     backgroundColor: '#f7f9fb',
     title: 'Sillage',
-    // The chrome is the brand's. The frame's title bar is hidden and the
-    // renderer draws its own band in `--brand-700` (`src/ui/TitleBar.tsx`);
-    // the OS keeps its own controls over it — traffic lights on macOS,
-    // the Window Controls Overlay on Windows, painted in the same blue so the
-    // band is one rectangle on both platforms. Neither option is a platform
-    // test: each host ignores the other's.
+    // There is no chrome. The frame's title bar is hidden and the renderer
+    // reserves the same strip as bare drag space (`src/ui/TitleBar.tsx`); the
+    // OS keeps its own controls over it — traffic lights on macOS, the Window
+    // Controls Overlay on Windows. Neither option is a platform test: each
+    // host ignores the other's.
+    //
+    // The overlay wears the page's own ground rather than a brand fill:
+    // `#f7f9fb` is `--bg-canvas` and `#4a5a67` is `--text-body`, both from
+    // `src/design/tokens.css`. They were `#036696` on `#ffffff` — a saturated
+    // `--brand-700` band across the top of every screen — and the strip is
+    // now invisible on both platforms instead of being the loudest rectangle
+    // in the product. A value here that drifts from the token is a seam along
+    // the top edge on Windows only, which is the platform nothing is written
+    // on (HR-2), so the two hexes are named above as well as written.
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#036696', symbolColor: '#ffffff', height: TITLE_BAR_HEIGHT },
+    titleBarOverlay: { color: '#f7f9fb', symbolColor: '#4a5a67', height: TITLE_BAR_HEIGHT },
     trafficLightPosition: { x: 14, y: 11 },
     webPreferences: {
       // esbuild emits CommonJS (scripts/build-electron.js), so `__dirname` is

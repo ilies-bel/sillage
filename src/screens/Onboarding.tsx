@@ -366,7 +366,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
 function Quoi() {
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-[22px] leading-tight">
+      <h2 className="text-strong font-display mb-3 text-title leading-tight">
         Sillage écoute l’appel, il n’y participe pas.
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
@@ -493,7 +493,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
 
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-[22px] leading-tight">
+      <h2 className="text-strong font-display mb-3 text-title leading-tight">
         Ce dont Sillage a besoin
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
@@ -693,7 +693,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
 function Essai({ onReglages }: { onReglages: () => void }) {
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-[22px] leading-tight">
+      <h2 className="text-strong font-display mb-3 text-title leading-tight">
         Votre premier appel
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">

@@ -1913,7 +1913,7 @@ function Panel({
             {heading.trim() === '' ? 'Réunion en cours' : heading}
           </h1>
         </div>
-        <p className="text-muted mt-0.5 flex items-center gap-tight text-[11px] leading-tight">
+        <p className="text-muted mt-0.5 flex items-center gap-tight text-meta leading-tight">
           <EyeOff aria-hidden size={11} strokeWidth={2} className="shrink-0" />
           Invisible en partage d’écran
         </p>

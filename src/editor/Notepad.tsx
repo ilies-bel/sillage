@@ -272,7 +272,7 @@ export function Notepad({
     // not the « clipped and looks short » failure `--scrollers` measures.
     <div
       data-scrolls
-      className="notepad relative h-full min-h-0 overflow-y-auto text-[15px] leading-[1.7]"
+      className="notepad relative h-full min-h-0 overflow-y-auto text-prose leading-[1.7]"
     >
       {empty && placeholder ? (
         // `notepad-placeholder` carries the position, because it has to be the

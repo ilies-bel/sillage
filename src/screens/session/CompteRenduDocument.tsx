@@ -23,9 +23,16 @@
  * characters at `--type-meta`, plus the 6px `mr-1.5`) with room to spare, and
  * `scripts/harness/geometry.mjs` measures the painted rects.
  *
- * Set at `--type-copy`, the same size as the rep's own notepad. It was one step
- * down, which made the document the app produced quieter than the notes it was
- * written from — on the surfaces where the compte-rendu *is* the output.
+ * Set at `--type-prose`, the same size as the rep's own notepad — and this
+ * paragraph used to say exactly that about `--type-copy`, which was **false**.
+ * The notepad is 15px (`src/editor/Notepad.tsx`) and this was 14px, with the
+ * headings a full step down as well (20/16/14 against 24/19/16), so the
+ * document the app produced was quieter than the notes it was written from at
+ * every level — on the surfaces where the compte-rendu *is* the output, and on
+ * the one screen that draws both at once. The claim was right about what should
+ * be true and wrong about what was, which is the eighth time prose in this repo
+ * has been wrong about the code. `--type-prose` and its three siblings exist so
+ * the sentence is now checkable against a token instead of a literal.
  */
 import { Search } from 'lucide-react'
 import { parseCompteRendu, parseInline } from './compteRenduLines.ts'
@@ -98,11 +105,26 @@ interface CompteRenduDocumentProps {
  */
 const GUTTER = 'pl-10'
 
-/** What each line class is set in. The `#` gutter is common to all of them. */
+/**
+ * What each line class is set in. The `#` gutter is common to all of them.
+ *
+ * **One document scale, shared with the rep's notepad.** These were `[20px]`,
+ * `[16px]` and `text-copy` — off the token scale, and one step below
+ * `.notepad .ProseMirror`'s 24 / 19 / 16 at every level. The two documents sit
+ * side by side on the session screen, so the product's own output was visibly
+ * smaller than the scratchpad it was written from: the thing a rep is here to
+ * read was set as the subordinate of the thing they jotted during the call.
+ *
+ * `--type-title` / `--type-heading` / `--type-subhead` are the notepad's own
+ * numbers, named in `tokens.css`. The compte-rendu came up to meet them rather
+ * than the notepad coming down, because the reference sets its note body near
+ * 17px with a title at roughly twice that
+ * (`docs/stories/ref/granola-note.png`) and the gap to close was upward.
+ */
 const HEADING_CLASS: Record<1 | 2 | 3, string> = {
-  1: 'font-display text-strong mt-block first:mt-0 text-[20px] leading-tight',
-  2: 'text-strong mt-block first:mt-0 text-[16px] font-semibold leading-snug',
-  3: 'text-strong mt-row first:mt-0 text-copy font-semibold leading-snug',
+  1: 'font-display text-strong mt-block first:mt-0 text-title leading-tight',
+  2: 'text-strong mt-block first:mt-0 text-heading font-semibold leading-snug',
+  3: 'text-strong mt-row first:mt-0 text-subhead font-semibold leading-snug',
 }
 
 /**
@@ -185,7 +207,7 @@ export function CompteRenduDocument({
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
-              <p className="text-body text-copy leading-relaxed">
+              <p className="text-body text-prose leading-relaxed">
                 {sourced && onQuote ? (
                   /*
                     **Lighter than a quotation's underline, on purpose.**
@@ -242,7 +264,7 @@ export function CompteRenduDocument({
         }
 
         return (
-          <p key={key} className="text-body whitespace-pre-wrap text-copy leading-relaxed">
+          <p key={key} className="text-body whitespace-pre-wrap text-prose leading-relaxed">
             <Prose text={line.text} onQuote={onQuote} />
           </p>
         )

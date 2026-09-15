@@ -178,7 +178,7 @@ export function PendingGates({
         </p>
       ) : null}
 
-      <List label="Réunions en attente de validation">
+      <List bare label="Réunions en attente de validation">
         {shown.map((row) => (
           <Row key={row.meeting.id} density="roomy" align="center">
             <span className="text-muted w-16 shrink-0 tabular-nums text-ui">

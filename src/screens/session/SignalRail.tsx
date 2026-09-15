@@ -117,7 +117,13 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE }: SignalRailProps
         which is the worst of both.
       */}
       <ReadingColumn subject={{ determiner: 'la', noun: 'fiche' }} className="slate px-4 pb-4">
-        <ul className="space-y-1.5">
+        {/*
+        `SLATE_LIST` — the hairline lives here, once, instead of as seven edge
+        strokes. `divide-y` draws between the rows and never around the set, so
+        the slate reads as one form being filled in rather than as a stack of
+        cards, and the column's own border is the only rectangle left.
+      */}
+      <ul className="divide-y divide-[var(--border-subtle)]">
           {slots.map((kind) => (
             <Slot key={kind} label={KIND_LABEL[kind]} found={byKind.get(kind) ?? []} />
           ))}
@@ -197,11 +203,25 @@ function Slot({ label, found }: SlotProps) {
   const empty = found.length === 0
 
   return (
-    <li
-      className={`slate-row border-card flex items-baseline gap-inline rounded-sm border px-2.5 py-1.5 ${
-        empty ? 'border-transparent' : 'bg-inner'
-      }`}
-    >
+    /*
+      **No box.** Each row wore `border-card rounded-sm border` with `bg-inner`
+      when filled and `border-transparent` when not, so a filled slate was seven
+      individually outlined cards stacked inside an already-outlined column —
+      the `nested-cards` the impeccable detector reports on this screen, and two
+      of the three containers saying the same thing. VISION.md §6 has asked for
+      « rows, not cards, for lists » from the start.
+
+      What the box was really for is kept, and it is the only thing that
+      mattered: **empty and filled are the same shape**, so a signal landing
+      shifts nothing (DEC-14). That came from reserving the border's width on
+      the empty row, and it now comes from the two states sharing one set of
+      paddings and differing only in their text — which is a stronger version of
+      the same guarantee, because there is no width left to reserve.
+
+      The hairline between rows belongs to the list, not to the row; see
+      `SLATE_LIST` below.
+    */
+    <li className="slate-row flex items-baseline gap-inline py-1.5">
       {/* 64px, not 72: every pixel here is a pixel the value does not get,
           and the longest label in the slate (« Démarrage ») fits. */}
       <span className="slate-label text-muted w-16 shrink-0 text-meta">{label}</span>

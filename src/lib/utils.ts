@@ -14,7 +14,24 @@ import { extendTailwindMerge } from 'tailwind-merge'
  * and that file's `spacing` / `fontSize` keys ever stop agreeing.
  */
 export const SPACING_STEPS = ['tight', 'inline', 'row', 'block', 'gutter'] as const
-export const TYPE_STEPS = ['label', 'meta', 'ui', 'copy', 'display'] as const
+/**
+ * Both halves of the scale: the interface's five, then the document's four
+ * (`--type-prose` in tokens.css says why the second group exists). A rung
+ * missing here is a `text-` override that silently fails to override, which is
+ * what `ui.test.tsx` reads `tailwind.config.js` to prevent — and what it caught
+ * when these four were added there and not here.
+ */
+export const TYPE_STEPS = [
+  'label',
+  'meta',
+  'ui',
+  'copy',
+  'display',
+  'prose',
+  'subhead',
+  'heading',
+  'title',
+] as const
 
 /**
  * `text-ui` is a size and `text-muted` is a colour, and `text-` is all they

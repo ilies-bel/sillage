@@ -724,18 +724,31 @@
     line-height: 1.25;
   }
 
+  /*
+   * The document ladder, from `tokens.css`. These were `24px`, `19px` and
+   * `16px` written here as literals — the same three settings
+   * `CompteRenduDocument` was writing as `[20px]`, `[16px]` and `text-copy`,
+   * one step down, so the two documents on the session screen disagreed.
+   * `--type-title` / `--type-heading` / `--type-subhead` are these numbers,
+   * named, and both documents now read them from the same place.
+   *
+   * The tracking stays here rather than riding on the token: `--type-title`
+   * carries `-0.8px` in `tailwind.config.js` because a 24px setting wants it,
+   * and h2's `-0.4px` is a second value that belongs to this face at this size
+   * and is not worth a rung of its own.
+   */
   .notepad .ProseMirror h1 {
-    font-size: 24px;
+    font-size: var(--type-title);
     letter-spacing: -0.8px;
   }
 
   .notepad .ProseMirror h2 {
-    font-size: 19px;
+    font-size: var(--type-heading);
     letter-spacing: -0.4px;
   }
 
   .notepad .ProseMirror h3 {
-    font-size: 16px;
+    font-size: var(--type-subhead);
   }
 
   /*

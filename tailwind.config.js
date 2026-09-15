@@ -71,6 +71,9 @@ module.exports = {
         /* The one sheet's backdrop (Réglages). See `--veil` in tokens.css. */
         veil: 'var(--veil)',
 
+        /* The splash panel, over the blurred washes. See `--bg-scrim`. */
+        scrim: 'var(--bg-scrim)',
+
         accent: 'var(--accent)',
         success: 'var(--success)',
         warn: 'var(--warn)',
@@ -163,6 +166,20 @@ module.exports = {
         meta: 'var(--type-meta)',
         ui: 'var(--type-ui)',
         copy: 'var(--type-copy)',
+        /*
+         * The document ladder. See `--type-prose` in tokens.css for why these
+         * four exist and why they are sizes rather than a ratio: they are the
+         * settings the notepad and the compte-rendu were already drawing with,
+         * off the scale, in two versions that disagreed by one step.
+         *
+         * `title` and not `heading-lg`, `prose` and not `body`: a key may not
+         * appear in both `colors` and `fontSize` (the rule at the top of this
+         * file), and `text-body` is already the body *colour*.
+         */
+        prose: 'var(--type-prose)',
+        subhead: 'var(--type-subhead)',
+        heading: 'var(--type-heading)',
+        title: ['var(--type-title)', { letterSpacing: '-0.8px' }],
         /*
          * The one step that carries tracking, because tracking is a property of
          * the size and not of the tag. `-1.5px` is a 28px setting; the base

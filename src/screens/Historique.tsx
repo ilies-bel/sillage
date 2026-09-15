@@ -896,10 +896,10 @@ function Transcript({
         if (row.kind === 'mark') {
           return (
             <li key={row.key} className="flex gap-2 text-xs">
-              <span className="text-brand-700 w-10 shrink-0 tabular-nums text-[11px] font-semibold">
+              <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold">
                 {formatTime(row.mark.at)}
               </span>
-              <span className="text-brand-700 w-12 shrink-0 text-[11px] font-semibold">marqué</span>
+              <span className="text-brand-700 w-12 shrink-0 text-meta font-semibold">marqué</span>
               <span className="text-strong measure border-brand-500 min-w-0 flex-1 border-l-2 pl-2">
                 {row.mark.note === '' ? 'Marqué pendant l’appel.' : row.mark.note}
               </span>
@@ -917,10 +917,10 @@ function Transcript({
             ref={isHit ? hit : undefined}
             className={`flex gap-2 rounded-sm text-xs ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
           >
-            <span className="text-muted w-10 shrink-0 tabular-nums text-[11px]">
+            <span className="text-muted w-10 shrink-0 tabular-nums text-meta">
               {formatOffset(segment.startMs)}
             </span>
-            <span className="text-muted w-12 shrink-0 text-[11px]">
+            <span className="text-muted w-12 shrink-0 text-meta">
               {speakerLabel(segment.channel, interlocuteurs)}
             </span>
             {/*

@@ -560,7 +560,27 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           to its content — left 42% of the window as bare canvas below the
           grid, which is what made a finished screen read as an unfinished one.
         */}
-        <aside className="bg-card-soft border-subtle w-80 shrink-0 overflow-y-auto border-r px-row py-row">
+        {/*
+          **The calendar narrows before the day does** — the rule `ui/Rail.tsx`
+          already states about itself, applied to the other piece of chrome on
+          this screen.
+
+          It was `w-80`, fixed, at every size. At the 960×600 minimum `main.ts`
+          declares that is 320px of a 960px window holding a month grid with 28
+          of its 42 cells empty, while the column it sits beside truncated the
+          one thing a rep scans a day for: measured on the shipped screen, all
+          three upcoming titles clipped — « Néovia San… », « Banque Delcourt… »,
+          « Arkelia Logistiqu… », eleven of thirty-five characters kept on the
+          first. A month grid loses nothing at 256px; a meeting title loses its
+          client.
+
+          Three steps rather than a breakpoint that hides it, because DEC-31
+          says the calendar is always drawn: 256 under 1024, 288 to 1280, 320
+          above. The grid's own columns are what set the floor — seven day
+          numbers and their marks fit 256 with room, and below that the cells
+          would start to crowd.
+        */}
+        <aside className="bg-card-soft border-subtle w-64 shrink-0 overflow-y-auto border-r px-row py-row lg:w-72 xl:w-80">
           <CalendarGrid
             month={month}
             onMonth={setMonth}

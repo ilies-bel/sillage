@@ -91,7 +91,22 @@ export function Rail({
       do: measured, the search results list hid 41px of a row inside its own box
       at 960 and was clean at 1060. Chrome gives way first.
     */
-    <div className="bg-card-soft border-subtle flex w-44 shrink-0 flex-col border-r py-row lg:w-56">
+    /*
+      **A ground, not a stroke.** The rail was `--bg-card-soft` with a 1px
+      `--border-subtle` down its right edge, which is two ways of saying the
+      same boundary: `--bg-card-soft` is #f9fbfd against the canvas's #f7f9fb,
+      two units apart and invisible, so the whole separation was carried by the
+      line and the fill was doing nothing. `--bg-subtle` is #eef3f7 — nine units
+      down from the canvas, a step a rep can actually see — and with it the
+      stroke is redundant and goes. One boundary, stated once.
+
+      Every text token is measured against `--bg-subtle` in `tokens.css`
+      precisely because it is « the darkest surface any of them lands on »:
+      `--text-muted` is 4.56:1 there, so the footer rows still clear AA. The
+      selected item brings its own `--brand-50`, so `SectionNav`'s 5.80:1 is
+      untouched.
+    */
+    <div className="bg-subtle flex w-44 shrink-0 flex-col py-row lg:w-56">
       {/*
         The product's name, once, at the top of the one surface that is on every
         screen. It is not a heading: the page's `h1` says what changed (US-22),

@@ -85,12 +85,36 @@ export function Splash({ state }: SplashProps) {
         that blurs what is behind it — the one screen where the product is
         allowed to be a mood rather than a table. `aria-hidden` and
         `pointer-events-none`: it is paint, not content.
+
+        **`overflow-clip`, and the exact word matters.** Both washes are pushed
+        outside this box on purpose — `-translate-x-1/3` and `translate-x-1/4`
+        of a 24rem and a 28rem circle — and with nothing clipping them they
+        enlarged the *document* instead of bleeding off it: measured, the splash
+        rendered 1392×949 CSS in a 1280×800 window, 112px wider and 149px
+        taller, which is `translate-x-1/4` of 448px and `translate-y-1/3` of
+        448px exactly. The window gained two scrollbars and a bare strip down
+        the right of the product's **first frame**, and no check could see it —
+        `--scrollers`, `--geometry` and `--prose` all measure boxes *inside* a
+        screen, and this was the screen outgrowing the window. It was found by
+        noticing that every other stage's PNG came out at exactly twice its
+        viewport and this one did not.
+
+        `overflow-hidden` fixes the growth and buys a false finding with it: a
+        hidden box is a **scroll container**, so `--scrollers` then reports « 1
+        boîte cache du contenu » on four stagings — correctly, by its own rule,
+        because content that overflows a scrollable box is content a rep cannot
+        see. `overflow-clip` is not a scroll container: there is no scrollable
+        overflow region to hide anything in, and the check skips it for the same
+        reason it skips `visible`. The right primitive rather than an exemption
+        — `data-scrolls` would have silenced it, but that marker means « this box
+        is supposed to hold more than it shows », and a paint layer is not
+        supposed to hold anything at all.
       */}
-      <div aria-hidden className="pointer-events-none absolute inset-0">
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-clip">
         <div className="bg-brand-300 absolute left-0 top-0 h-96 w-96 -translate-x-1/3 -translate-y-1/3 rounded-full opacity-70 blur-3xl" />
         <div className="bg-brand-100 absolute bottom-0 right-0 h-[28rem] w-[28rem] translate-x-1/4 translate-y-1/3 rounded-full blur-3xl" />
       </div>
-      <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-white/60 px-8 py-10 backdrop-blur-xl">
+      <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim px-8 py-10 backdrop-blur-xl">
         <img src={logo} alt="" aria-hidden className="mb-4 h-16 w-16 rounded-xl shadow-sm" />
         {/*
           The wordmark. Fraunces at display size, which is the one place

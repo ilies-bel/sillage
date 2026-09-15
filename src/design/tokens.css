@@ -132,6 +132,38 @@
   --type-copy: 14px;
   --type-display: 28px;
 
+  /*
+   * **The document ladder — four rungs the product was already setting, off the
+   * scale, in two places that disagreed.**
+   *
+   * The five rungs above are the *interface's* sizes: a label, a row, a chip, a
+   * pane heading. They stop at 14 and resume at 28, and there is a document in
+   * the middle of this product — the compte-rendu — that needs a body and three
+   * headings inside that gap. With nothing declared for it, every screen that
+   * needed one invented it: measured, `src/` carried twelve `text-[Npx]`
+   * escapes over five distinct values, and `index.css` set three more straight
+   * on `.notepad .ProseMirror`. The real scale was eleven sizes under a comment
+   * that said five, and `check:tokens` could not see any of it — that grep looks
+   * for a hex.
+   *
+   * Worse than the count: the two documents **disagreed**. The rep's notepad was
+   * 24 / 19 / 16 / 15 and the compte-rendu beside it was 20 / 16 / 14 / 14, so
+   * the product's own output was one step smaller than the scratchpad at every
+   * level, on a screen that shows both at once. These four rungs are the
+   * notepad's numbers, named, and the compte-rendu now draws with them — one
+   * document scale, used twice, instead of two scales used once each.
+   *
+   * Sizes rather than a ratio: 15 → 16 → 19 → 24 is roughly 1.07 / 1.19 / 1.26,
+   * which is not a geometric ladder and is not trying to be. They are the four
+   * settings that were already on screen and already read well; regularising
+   * them to a ratio would change every heading in the product to satisfy a
+   * spreadsheet.
+   */
+  --type-prose: 15px;
+  --type-subhead: 16px;
+  --type-heading: 19px;
+  --type-title: 24px;
+
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;
   --radius: 12px;
@@ -179,6 +211,37 @@
    * whole argument for a sheet over a screen.
    */
   --veil: rgb(15 25 34 / 32%);
+
+  /*
+   * The splash panel, and the only translucent *surface* in the product
+   * (`src/screens/Splash.tsx`). It sits over two blurred brand washes and
+   * carries `backdrop-blur`, so it has to let some of them through — an opaque
+   * card there would be a white rectangle punched into the one screen §6 allows
+   * to be a mood.
+   *
+   * It was `bg-white/60`, which is the same shape as the `bg-muted/30` bug
+   * `--meter-dropped` was written to fix, with one extra problem: `white` is
+   * Tailwind's own colour, not a token, so `check:tokens` never saw it — that
+   * grep looks for a hex literal and `white` is a word. It was the only surface
+   * colour in the product that no token named.
+   *
+   * `rgb(… / 60%)` and **not** `color-mix(in srgb, var(--bg-inner) 60%,
+   * transparent)`, which is what it was first written as — derived from the
+   * paper, on the `--meter-dropped` pattern, and it broke the one check that
+   * can see this screen. `color-mix` resolves through `getComputedStyle` to
+   * `color(srgb 1 1 1 / 0.6)`, a form `shot.mjs --contrast` cannot composite
+   * against the ground behind it, so every text run on the splash was scored
+   * against the translucent value itself: « Sillage » came back at **1.57:1**
+   * — near-black on white — and nine elements failed on a panel whose real
+   * ratios are 13.31 and up. A token that makes the product unmeasurable is
+   * worse than the literal it replaced.
+   *
+   * So it follows `--veil` above, which has always been an `rgb(… / %)` for the
+   * same reason, and the alpha is written here rather than as an opacity
+   * modifier because Tailwind cannot recompute alpha on a bare `var()` — the
+   * rule stated at the top of `tailwind.config.js`.
+   */
+  --bg-scrim: rgb(255 255 255 / 60%);
 
   /* type faces */
   --font-display: "Fraunces", ui-serif, Georgia, serif;

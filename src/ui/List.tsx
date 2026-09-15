@@ -35,15 +35,38 @@ export interface ListProps {
    * different things rather than one ambiguous one.
    */
   label?: string
+  /**
+   * Drop the box: hairlines between the rows, and no edge stroke, no radius.
+   *
+   * **For a list whose grouping is already stated above it.** A `SectionHeader`
+   * — a short accent rule and an uppercase label — plus `--space-block` under it
+   * says « these belong together » on its own; the surrounding rectangle then
+   * says it a second time, and a screen that says it three times in a column
+   * (the calendar's day, *Passées*, *En attente de validation*) reads as three
+   * competing containers rather than one list of a rep's calls.
+   *
+   * It is also what the reference does (`docs/stories/ref/granola-home.png`):
+   * their note list draws no row borders at all — icon, title, subtitle,
+   * right-aligned time, separated by a date caption and whitespace. VISION.md §6
+   * has asked for « rows, not cards, for lists — density over decoration » from
+   * the beginning; the boxes are the drift, not this.
+   *
+   * The hairlines stay. Their list is eight rows on a dark ground with no
+   * trailing controls; ours carries a button on the right of every row, and
+   * with nothing between them two adjacent rows read as one row with two
+   * buttons.
+   */
+  bare?: boolean
   className?: string
 }
 
-export function List({ children, as: Tag = 'ul', label, className }: ListProps) {
+export function List({ children, as: Tag = 'ul', label, bare = false, className }: ListProps) {
   return (
     <Tag
       aria-label={label}
       className={cn(
-        'border-card divide-y divide-[var(--border-subtle)] overflow-hidden rounded-lg border',
+        'divide-y divide-[var(--border-subtle)]',
+        bare ? 'overflow-hidden' : 'border-card overflow-hidden rounded-lg border',
         className,
       )}
     >
@@ -86,9 +109,20 @@ export function Row({ children, as: Tag = 'li', className, ...variants }: RowPro
 }
 
 /**
- * The middle cell: a title and, when there is one, a subtitle under it. Both
- * truncate, because a client name long enough to wrap turns a scannable list
- * into a ragged one.
+ * The middle cell: a title and, when there is one, a subtitle under it.
+ *
+ * **The title wraps to two lines; the subtitle still truncates.** Both used to
+ * truncate, on the argument that « a client name long enough to wrap turns a
+ * scannable list into a ragged one ». That is right at 1280×800, where the
+ * titles fit on one line and this clamp therefore changes nothing. It is wrong
+ * at the 960×600 minimum `main.ts` declares, where it was measured cutting all
+ * three of the day's meetings — « Néovia San… », « Banque Delcourt… », « Arkelia
+ * Logistiqu… », eleven of thirty-five characters kept on the first — and a
+ * meeting a rep cannot identify is worse than a row that is one line taller.
+ *
+ * Two lines and not `break-words`: the raggedness the old rule feared is real,
+ * and this bounds it. The subtitle is the attendee list, which is the field that
+ * can run to any length and the one a rep scans past, so it keeps `truncate`.
  *
  * `title` is `--ink-rep` and `subtitle` is `--ink-agent` nowhere near by
  * accident — provenance is colour and only colour (DEC-5), so these two are the
@@ -103,7 +137,14 @@ export interface RowTitleProps {
 export function RowTitle({ title, subtitle, className }: RowTitleProps) {
   return (
     <span className={cn('min-w-0 flex-1', className)}>
-      <span className="text-strong block truncate text-copy">{title}</span>
+      {/*
+        No `block` beside the clamp: `line-clamp-2` *is* a display utility
+        (`display: -webkit-box`), and a `block` next to it wins and makes the
+        clamp inert — the title then wrapped to as many lines as it liked, which
+        is the raggedness the two-line bound exists to prevent. `check:tokens`
+        catches this pair; it caught this one.
+      */}
+      <span className="text-strong line-clamp-2 text-copy">{title}</span>
       {subtitle ? <span className="text-muted block truncate text-ui">{subtitle}</span> : null}
     </span>
   )

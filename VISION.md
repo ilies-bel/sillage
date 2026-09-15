@@ -660,15 +660,32 @@ same hue (200°), darkened, ratios measured against white.
 --space-block:    20px;
 --space-gutter:   32px;
 
-/* type scale — Inter, the five sizes actually on screen. `--type-ui` is the
-   workhorse; `--type-label` is the uppercase letterspaced section header;
-   `--type-display` is where Fraunces and the -1.5px tracking start applying.
+/* type scale, part one — the INTERFACE. Inter. `--type-ui` is the workhorse;
+   `--type-label` is the uppercase letterspaced section header; `--type-display`
+   is where Fraunces and the -1.5px tracking start applying.
    Times, durations and money are tabular-nums at any of these sizes. */
 --type-label:     11px;
 --type-meta:      11px;
 --type-ui:        12px;
 --type-copy:      14px;
 --type-display:   28px;
+
+/* type scale, part two — the DOCUMENT. The compte-rendu and the rep's notepad
+   are one document set two ways, and these are the four rungs they share: a
+   body and three headings, living in the gap the interface scale leaves
+   between 14 and 28.
+
+   This block said « the five sizes actually on screen » and there were eleven.
+   Every surface that needed a heading between a chip and a splash wordmark
+   invented one: twelve `text-[Npx]` escapes over five values in `src/`, plus
+   three literals set straight on `.notepad .ProseMirror` — and `check:tokens`
+   is a grep for a hex, so none of it was visible. The two documents had drifted
+   a full step apart (notepad 24/19/16/15, compte-rendu 20/16/14/14), which made
+   the product's own output smaller than the scratchpad beside it. */
+--type-prose:     15px;
+--type-subhead:   16px;
+--type-heading:   19px;
+--type-title:     24px;
 ```
 
 `--text-muted` was `#7d8c98` in the first draft of this palette. It measures 3.27:1 on
