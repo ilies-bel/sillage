@@ -515,7 +515,8 @@ function Elapsed({ since }: { since: number | null }) {
    */
   return (
     <StateDot
-      tone="armed"
+      // Filled: capture is running. The offer is the hollow ring — `StateDot`.
+      tone="recording"
       label={formatElapsed(now - since)}
       labelClassName="text-strong tabular-nums"
       className="text-ui"

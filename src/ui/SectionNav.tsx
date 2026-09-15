@@ -154,8 +154,24 @@ export function SectionNav<Id extends string>({
                     grounds, so the row lifts on either one — and lifts toward
                     the same white the selected segment uses.
                   */
+                  /*
+                    **The selected row lifts to white.** It was `--brand-50`
+                    #ebf8ff, and once the rails became `--bg-subtle` #eef3f7 that
+                    is **1.032:1** — the fill contributed nothing and selection
+                    rested entirely on the 2px rule and a text colour, on *two*
+                    surfaces, because the Réglages sheet copied the app rail's
+                    ground and inherited the defect with it.
+
+                    `--bg-inner` is the same lift `Segmented`'s raised chip uses
+                    against the same ground, so the product now says « the
+                    selected one is the white one » in both places rather than
+                    once. The 2px rule stays and is still the carrier that
+                    survives a projector: the docblock above makes that argument
+                    and it is unchanged — what changes is that the fill is no
+                    longer pretending to help.
+                  */
                   selected
-                    ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
+                    ? 'border-brand-500 bg-inner text-brand-700 font-medium'
                     : 'text-muted hover:bg-card hover:text-body border-transparent',
                 )}
               >

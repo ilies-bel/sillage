@@ -146,7 +146,7 @@ describe('a section rail says which section is open, and not only in colour', ()
 
   test('selection is brand blue, never the accent orange', () => {
     // VISION.md §6 gives orange exactly one meaning — armed or recording — and
-    // a settings rail is not that. `--brand-700` on `--brand-50` is 5.80:1.
+    // a settings rail is not that. `--brand-700` on `--bg-inner` is 6.28:1.
     render(
       <SectionNav
         label="Sections des réglages"
@@ -156,9 +156,32 @@ describe('a section rail says which section is open, and not only in colour', ()
       />,
     )
     const current = screen.getByRole('button', { name: 'Connecteurs' })
-    expect(current.className).toContain('bg-brand-50')
     expect(current.className).toContain('text-brand-700')
     expect(current.className).not.toMatch(/accent/)
+  })
+
+  test('the selected row lifts off the rail instead of tinting with it', () => {
+    /*
+     * `--brand-50` #ebf8ff on the rails' `--bg-subtle` #eef3f7 is **1.032:1** —
+     * the fill did nothing, and selection rested entirely on the 2px rule and a
+     * text colour. On two surfaces, because the Réglages sheet copied the app
+     * rail's ground and took the defect with it.
+     *
+     * `--bg-inner` is the same lift `Segmented`'s raised chip uses against the
+     * same ground, so « the selected one is the white one » is now one idiom
+     * rather than two half-idioms.
+     */
+    render(
+      <SectionNav
+        label="Sections des réglages"
+        items={items}
+        current="connecteurs"
+        onSelect={() => {}}
+      />,
+    )
+    const current = screen.getByRole('button', { name: 'Connecteurs' })
+    expect(current.className).toContain('bg-inner')
+    expect(current.className).not.toContain('bg-brand-50')
   })
 
   test('the current section is also marked by a rule, not by the wash alone', () => {

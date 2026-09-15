@@ -96,7 +96,7 @@ export function LiveAside({ meetingId, signals, recipe, recording, onHide }: Liv
               otherwise would be the app saying it is still listening.
             */}
             {recording ? (
-              <StateDot tone="armed" label="en direct" className="text-meta" />
+              <StateDot tone="recording" label="en direct" className="text-meta" />
             ) : null}
             <FindGlyph on={finding} onToggle={() => setFinding((was) => !was)} />
           </span>

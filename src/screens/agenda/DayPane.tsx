@@ -300,6 +300,15 @@ interface EntryRowProps {
 
 function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
   const meetingId = entry.meetingId
+  /**
+   * Whether this row's verb is « Ouvrir ».
+   *
+   * Both branches of the control below call `onOpen`; the verb differs because
+   * an armed meeting is one the rep is about to record and an ended one is one
+   * they are going to read. It is named because two things now read it — the
+   * label and whether the row is a target — and they must not drift apart.
+   */
+  const opens = !(entry.armed && entry.state !== 'recording')
 
   /*
    * **The clock leads, on every row of this pane and of the queue beside it.**
@@ -424,7 +433,7 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
       */}
       {entry.state === 'recording' || entry.armed ? (
         <StateDot
-          tone="armed"
+          tone={entry.state === 'recording' ? 'recording' : 'armed'}
           label={entry.state === 'recording' ? STATE_LABEL.recording : 'Prêt'}
           className="text-label font-semibold uppercase tracking-wider"
         />
@@ -470,10 +479,30 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
         */
         <Button
           variant={filled ? 'primary' : 'bordered'}
-          className="after:absolute after:inset-0 after:content-['']"
+          /*
+            **The row is the target only where the verb is « Ouvrir ».**
+
+            The stretch was on every row whose action is `onOpen`, and one of
+            those rows says *Enregistrer* — a meeting already armed, whose verb
+            is aspirational because the rep records it from the session screen.
+            Measured on `agenda-appel-imprevu`: `elementFromPoint` at 30% across
+            a 672px row returned the button named « Enregistrer ». Two controls
+            on that screen carry the product's capture verb, one of them arms
+            and records from an 89px button and the other navigates from an
+            invisible rectangle two thirds of the screen wide, and nothing on
+            screen separates them.
+
+            The behaviour was always right — this branch only ever navigates,
+            and the `onArm` branch below never got the stretch. What was wrong
+            is that the *appearance* said otherwise, and a 672px target is a lot
+            of surface on which to say the wrong thing about recording a client.
+            So the stretch follows the word: « Ouvrir » takes the row, and a row
+            that reads *Enregistrer* keeps its button.
+          */
+          className={cn(opens && "after:absolute after:inset-0 after:content-['']")}
           onClick={() => onOpen(meetingId)}
         >
-          {entry.armed && entry.state !== 'recording' ? 'Enregistrer' : 'Ouvrir'}
+          {opens ? 'Ouvrir' : 'Enregistrer'}
         </Button>
       ) : entry.eventId !== null && !entry.past ? (
         /*

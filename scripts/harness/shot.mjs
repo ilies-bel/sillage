@@ -4362,37 +4362,26 @@ async function contrast(page) {
        */
       const rings = [...style.boxShadow.matchAll(/rgba?\([^)]+\)/g)].map((m) => m[0])
       /*
-       * **Either carrier may bound the shape, so the better of the two is the
-       * one judged** — and this used to take the fill whenever the fill was
-       * opaque, falling back to the ring only when it was not.
+       * The fill when there is one, the ring when there is not. A hollow mark
+       * says what a filled one says, and `ring-*` is a `box-shadow`, so an
+       * element with a transparent background and a 1px inset ring would
+       * otherwise measure 1.01:1 against its own ground and be reported as
+       * invisible when it is perfectly legible.
        *
-       * That is the paragraph above applied half way. 1.4.11 asks that the
-       * visual information identifying a component be 3:1 against *adjacent
-       * colours*; a filled mark with a darker ring satisfies it through the
-       * ring exactly as a hollow one does, because the ring is the boundary in
-       * both cases. Scored on the fill alone, the widget's recording dot —
-       * `--accent` at 2.41:1 on the pill, with a `--warn` ring at 5.02:1 drawn
-       * specifically to bound it — was reported as failing a criterion it meets.
-       *
-       * Deliberately a widening, and worth stating as one: it was made to let a
-       * change of mine pass, which is the wrong reason to touch a check, so the
-       * test is whether it lets anything *illegible* through. It does not. A
-       * pale fill with a pale ring still fails on both carriers; what now passes
-       * is a mark one of whose two edges a rep can actually see, which is what
-       * the criterion asks for. The looser of the two is never taken alone —
-       * both are measured and the stronger stands for the mark.
+       * **This took the stronger of the two for four commits, and the widening
+       * is reverted here.** It was made so a `--warn` ring could bound an
+       * `--accent` dot that measured 2.41:1 on the widget's old light card —
+       * legitimate reasoning about 1.4.11, which asks that the *boundary* be
+       * distinguishable — but the widget then got a ground of its own, the dot
+       * became 7.08:1, and the ring was deleted. There is now no element in
+       * `src/` carrying both an opaque fill and an opaque ring, so the loosened
+       * rule protected nothing and only widened what could pass unnoticed. A
+       * check relaxed for a reason that has expired is a check nobody has
+       * audited.
        */
-      const carriers = [opaque(style.backgroundColor) ? style.backgroundColor : null]
-        .concat(rings.filter(opaque))
-        .filter(Boolean)
-      const scored = carriers
-        .map((colour) => {
-          const x = luminance(parse(colour))
-          const y = luminance(parse(ground))
-          return { colour, ratio: (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
-        })
-        .sort((p, q) => q.ratio - p.ratio)
-      const ink = scored[0]?.colour ?? null
+      const ink = opaque(style.backgroundColor)
+        ? style.backgroundColor
+        : (rings.filter(opaque).pop() ?? null)
       if (!ink) {
         out.push({
           text: el.dataset.graphic || 'graphique',

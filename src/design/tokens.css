@@ -97,6 +97,15 @@
   --meter-dropped: color-mix(in srgb, var(--text-muted) 32%, transparent);
 
   /*
+   * The meter's two channels. Declared as the steps `LevelMeter` already drew
+   * with, so the app is unchanged — the point of naming them is that the
+   * overlay can re-point a *graphic* without following a text re-point into a
+   * 1.51:1 collapse. See `--widget-meter-rep`.
+   */
+  --meter-rep: var(--brand-500);
+  --meter-client: var(--brand-700);
+
+  /*
    * Spacing — five steps, and each one is named after the thing it spaces
    * rather than after a number. Derived from what the screens already repeat
    * (row padding, the gap between a label and the list under it, the screen
@@ -223,6 +232,36 @@
    */
   --widget-danger: #f08a8a; /*  7.17:1 on #101c25 */
   --widget-warn: #e8a33d; /*  8.02:1 on #101c25 */
+
+  /*
+   * **The meter's two channels, on the overlay — and the reason the meter needs
+   * tokens of its own at all.**
+   *
+   * `LevelMeter` drew `--brand-500` for the rep and `--brand-700` for the far
+   * side: two *text* steps, borrowed for a graphic. On the app's paper they are
+   * 2.06:1 apart and read as two channels. The overlay re-points `--brand-700`
+   * to `--brand-300` — correctly, for text, which is what that re-point is for —
+   * and the meter went with it: measured, the two channels collapsed to
+   * **1.51:1**, two near-equal fields of near-identical blue, on the instrument
+   * DEC-38 makes the product's proof of life, on the pill that drops both
+   * legends. The fix for a graphic riding on a text token is not a better text
+   * token.
+   *
+   * So: `--meter-rep` and `--meter-client` are declared at `:root` as the two
+   * steps the app already used, and re-pointed here. 3.18:1 apart, and each
+   * clears 3:1 against the ground on its own — which the old pair never had to,
+   * because on paper the ground was white.
+   */
+  --widget-meter-rep: #8ad8fb; /* 10.94:1 on #101c25 */
+  --widget-meter-client: #1176a8; /*  3.44:1 on #101c25 */
+  /*
+   * The third reading, « measured and under the transcriber's floor ». The
+   * `color-mix` over `--text-muted` that `--meter-dropped` is computes to
+   * #3f4d57 on this ground — **1.98:1**, under 3:1, on the bar that tells a rep
+   * a channel is dying. A value rather than a mix here, because the mix is
+   * derived from an ink token and this has to clear a graphics floor.
+   */
+  --widget-meter-dropped: #7b8b97; /*  4.92:1 on #101c25 */
 
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;

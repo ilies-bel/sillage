@@ -246,6 +246,14 @@
   --brand-700: var(--brand-300);
   --danger: var(--widget-danger);
   --warn: var(--widget-warn);
+  /*
+    And the meter, which is a graphic and must not follow the text re-point
+    above: `--brand-700 → --brand-300` is right for a link and collapses the
+    two channels to 1.51:1 for a bar. `tokens.css` carries the numbers.
+  */
+  --meter-rep: var(--widget-meter-rep);
+  --meter-client: var(--widget-meter-client);
+  --meter-dropped: var(--widget-meter-dropped);
 }
 
 @layer components {
@@ -598,11 +606,24 @@
    * token is a variable the caller sets — `--turn-ground`, defaulting to the
    * card.
    */
+  /*
+   * `65%`, not `40%`. The band is 73px tall (`pt-8` + the button + `pb-2`), so
+   * reaching the ground at 40% left **44px fully opaque** sitting over whatever
+   * the column happened to be scrolled to. On four reading columns that buries
+   * half a paragraph, which continues and is recoverable. On Réglages — added
+   * this round — it buried « Calendrier · connecté » whole, on the pane whose
+   * entire job is reporting connector state: a status row is atomic, and half
+   * of one is not a shorter status, it is a missing one.
+   *
+   * At 65% the opaque part is 26px, under one 19.5px line plus its leading, so
+   * the band dims rather than erases. The button keeps its own opaque `bg-inner`
+   * and is unaffected; what changes is the strip either side of it.
+   */
   .turn-ground {
     background-image: linear-gradient(
       to bottom,
       transparent,
-      var(--turn-ground, var(--bg-card)) 40%
+      var(--turn-ground, var(--bg-card)) 65%
     );
   }
 

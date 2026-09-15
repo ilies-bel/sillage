@@ -731,6 +731,17 @@ same hue (200°), darkened, ratios measured against white.
    on white at 2.01:1 and is 8.58:1 here. */
 --widget-danger:  #f08a8a;   /*  7.17:1 on #101c25 */
 --widget-warn:    #e8a33d;   /*  8.02:1 on #101c25 */
+
+/* The meter's channels on that ground. LevelMeter drew --brand-500 and
+   --brand-700 — two TEXT steps borrowed for a graphic — and the overlay's
+   --brand-700 re-point (right for text) collapsed them from 2.06:1 to 1.51:1 on
+   the instrument DEC-38 makes the proof of life. --meter-rep / --meter-client
+   are declared at :root as those same steps and re-pointed here: 3.18:1 apart,
+   each clearing 3:1 against the ground on its own. --meter-dropped's color-mix
+   computes to 1.98:1 here, so the third reading gets a value too. */
+--widget-meter-rep:     #8ad8fb;   /* 10.94:1 on #101c25 */
+--widget-meter-client:  #1176a8;   /*  3.44:1 on #101c25 */
+--widget-meter-dropped: #7b8b97;   /*  4.92:1 on #101c25 */
 ```
 
 `--text-muted` was `#7d8c98` in the first draft of this palette. It measures 3.27:1 on

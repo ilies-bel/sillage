@@ -1667,7 +1667,20 @@ function Pill({
           className={
             meetingId === null
               ? 'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-muted'
-              : /*
+              : paused
+                ? /*
+                    **Paused is hollow, because nothing is being captured.**
+                    It wore the filled accent and a full moving meter while
+                    capture was suspended, which is the one reading this mark
+                    must never give. `StateDot` splits the same way on the
+                    agenda — an offer is a ring, a capture is a fill — so
+                    « filled orange means it is recording » is now true on all
+                    three surfaces a rep meets it on. The ring is `--accent` and
+                    not `--text-muted`: a paused call is still armed, and the
+                    hue is what says so.
+                  */
+                  'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-accent'
+                : /*
                   No ring. The mark wore a `--warn` boundary for one commit,
                   because `--accent` on the pill's old `--bg-card` ground was
                   2.41:1 and under 1.4.11's 3:1. The ground moved (`--widget-bg`

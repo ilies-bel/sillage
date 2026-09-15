@@ -304,7 +304,14 @@ function Bar({ rms, floor, channel }: BarProps) {
          * lozenge is decoration wearing a measurement's clothes.
          */
         className={`w-full rounded-bar ${
-          audible ? (rep ? 'bg-brand-500' : 'bg-brand-700') : 'bg-meter-dropped'
+          /*
+            `--meter-rep` / `--meter-client`, not two brand steps. They resolve
+            to exactly those steps on the app's paper, so nothing changes here —
+            but the overlay re-points `--brand-700` to `--brand-300` for text
+            legibility, and this graphic followed it into a **1.51:1** channel
+            separation on the pill that drops both legends. A bar is not a link.
+          */
+          audible ? (rep ? 'bg-meter-rep' : 'bg-meter-client') : 'bg-meter-dropped'
         }`}
         /*
          * A floor of 6% rather than 0: a bar with no height is a gap, and a row

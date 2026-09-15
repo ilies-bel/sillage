@@ -67,6 +67,13 @@ module.exports = {
          * nothing and the bars were invisible.
          */
         'meter-dropped': 'var(--meter-dropped)',
+        /*
+         * The meter's two channels. Named because the meter is a *graphic* and
+         * was drawing with two text steps — see `--widget-meter-rep` in
+         * tokens.css for the 1.51:1 collapse that cost.
+         */
+        'meter-rep': 'var(--meter-rep)',
+        'meter-client': 'var(--meter-client)',
 
         /* The one sheet's backdrop (Réglages). See `--veil` in tokens.css. */
         veil: 'var(--veil)',
@@ -120,6 +127,8 @@ module.exports = {
         card: 'var(--border-card)',
         muted: 'var(--text-muted)',
         brand: 'var(--brand-500)',
+        /* The armed dot is a hollow ring — see `StateDot`'s `armed` tone. */
+        accent: 'var(--accent)',
       },
       borderRadius: {
         sm: 'var(--radius-sm)',

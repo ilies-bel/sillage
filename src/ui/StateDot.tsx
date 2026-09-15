@@ -23,7 +23,34 @@ import { cn } from '../lib/utils.ts'
 const dot = cva('h-1.5 w-1.5 shrink-0 rounded-full', {
   variants: {
     tone: {
-      armed: 'bg-accent',
+      /*
+       * **The offer and the capture are two marks, not one mark with two
+       * words** — and for one commit they were one mark with two words.
+       *
+       * `armed` used to be the filled accent and `recording` did not exist, so
+       * a live call on the agenda fell through to plain muted text. Fixing that
+       * by giving `recording` the *same* `StateDot` made it worse in a way a
+       * screenshot hides: measured side by side, armed « PRÊT » and recording
+       * « EN COURS » shared dot colour, size, weight, transform, tracking and
+       * label colour. Every visual property identical; an 11px four-glyph word
+       * against an 11px eight-glyph word was the whole difference — and because
+       * `arm` is illegal beside a live recording, the two can never appear
+       * together, so each has to be recognised alone, from the carrier they
+       * shared.
+       *
+       * HR-7's entire content is that these are different things. So the *fill*
+       * splits them, which is the carrier read first and from furthest away: an
+       * offer is **hollow** — the app would record this — and a capture is
+       * **filled** — it is recording this. Same hue, because VISION.md §6 gives
+       * orange to « armed or recording » and both are that.
+       *
+       * It also makes the three surfaces agree. The session header and the
+       * widget fill only while capture is running; with this, so does the
+       * agenda, and so does a paused widget. A rep who learns « filled orange
+       * means it is recording » on one surface is now right on all three.
+       */
+      armed: 'bg-transparent ring-1 ring-inset ring-accent',
+      recording: 'bg-accent',
       ok: 'bg-success',
       warn: 'bg-warn',
       down: 'bg-danger',
