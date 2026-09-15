@@ -442,12 +442,19 @@ the band the research gives it. Do not invent numbers: the file has them. A reve
 | G35-4 | The splash overflowed its own window by 112×149px | `ui-onboarding` | **done** — `75cf869` |
 | G35-5 | `bg-white/60`, the one surface colour no token named | `checks` | **done** — `75cf869` |
 | G35-6 | The calendar held 320px while the titles truncated at 960×600 | `ui-agenda` | **done** — `75cf869` |
-| G35-7 | Tailwind's own scales leaking past `theme.extend` | `checks` | in flight |
-| G35-8 | No exit motion anywhere outside the widget | `motion` | todo |
+| G35-7 | Tailwind's own scales leaking past `theme.extend` | `checks` | **done** — `73ba051`, `a72adae` |
+| G35-8 | No exit motion anywhere outside the widget | `motion` | **done** — `c420306`; `Échap` still skips it |
 | G35-9 | The Réglages sheet is a fixed 920×600 with no fade | `ui-reglages` | todo |
-| G35-10 | Two oranges twenty pixels apart in the rail | `ui-status` | todo |
+| G35-13 | Three row grammars in one agenda column | `ui-agenda` | **done** — `c420306` |
+| G35-14 | The selected segment is 1.08:1 | `ui-shared` | **done** — `0871352` |
+| G35-15 | Filled buttons are 2px shorter than outlined ones | `ui-shared` | **done** — `0871352` |
+| G35-16 | First run is three stroked cards | `ui-onboarding` | **done** — `16f341f` |
+| G35-17 | The notepad reads at 23ch at 960×600 | `ui-session` | todo — round 3's axis 3 |
+| G35-18 | Two spacing scales run in parallel (~240 numeric vs ~140 named) | `ui-shared` | todo |
+| G35-19 | The in-meeting pill is the loudest object on the session screen | `ui-session` | todo |
+| G35-10 | Two oranges twenty pixels apart in the rail | `ui-status` | **done** — `7237372` |
 | G35-11 | Chips are `rounded-sm`; every reference chip is a pill | `ui-shared` | todo |
-| G35-12 | The rail's five rows sit on two left edges | `ui-shared` | todo |
+| G35-12 | The rail's five rows sit on two left edges | `ui-shared` | **done** — `16f341f` |
 | — | A sliding thumb on `Segmented` | `motion` | **rejected — §6 allows 2–4px translate; the thumb travels ~80px, live during a call** |
 | | **The simplicity pass — round 34** | | *the user, on the screenshots* |
 | US-22 | The screen is named by what changed | `ui-agenda` `ui-history` | agenda half **done** — merged; history half in flight |
