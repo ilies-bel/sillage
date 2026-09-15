@@ -111,3 +111,10 @@ the baseline round 6 is measured against:
 Round 5's own « one thing », now shipped (`1b9e9d1`): the calendar grid drew one
 orange for « armed » and « recording » both, with a legend explaining only the
 second.
+
+**Round 6** writes its per-axis row here as part of the round, which is what
+round 5 did not.
+
+| Round | Surface | Commit | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Total |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 6 | widget | `eb8ad43` | 7 | 5.5 | 6.5 | 5 | 5.5 | 7 | 6 | 5.5 | 5.5 | **53.5** |
