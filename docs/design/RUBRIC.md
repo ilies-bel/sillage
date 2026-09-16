@@ -191,3 +191,44 @@ reuse `CALENDAR_CLAIM_MS` (30 min) as the cap, which invents no constant and
 degrades to today's behaviour on a long call; or give `meeting:create` an
 optional end and let the rep say, which is a form field the channel's docblock
 argues against. The second is a DEC.
+
+## Attempted and reverted: `PageTurn` over the content it points at
+
+Round 8's main « one thing », and the fix is not the one-liner it looks like.
+
+**The finding is real and unchanged.** `PageTurn` is `sticky bottom-0` *inside*
+the scroller, so it draws an opaque button on the text it is pointing at — five
+screens, three of them at once at the 960×600 minimum. It covers a client's email
+address on `session-demander`, « Texte normal » in the shortcut table, the « Se
+déconnecter » row in Réglages, a `## Contexte` heading in the compte-rendu, and
+« 15:03 · marqué · Marqué pendant l'appel » in Historique — the rep's own mark,
+behind a button telling them to go read it.
+
+**What was tried:** dock it one level out — `ReadingColumn` wraps the scroller and
+the turn in a flex column, so the button keeps every property its docblock argues
+for (reachable at every scroll position, at the foot of the column it turns,
+never inside a decision's rectangle) and stops being in front of a sentence. It
+is one call site.
+
+**What it broke:** `review-garde` fails with « la garde ne s'arme plus après une
+lecture honnête des deux colonnes ». Verified both ways — the stage passes with
+the change stashed and fails with it applied, at the same commit. The arming
+guard measures *what the rep was shown*, keyed to the scroller's own geometry,
+and docking the button changes that geometry and the DOM order of the two turn
+controls the stage's honest-read loop clicks by `.first()`.
+
+**Why it was reverted rather than pushed through.** That guard is the one
+measurement between a rep and an unread payload reaching a client's CRM
+(`POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb).
+A change that breaks it is not shippable on the strength of « the screenshots
+look better », and relaxing the stage to accept it would be precisely the shape
+this repo keeps cataloguing — a check edited to agree with the code it was
+written to judge.
+
+**What the real fix has to satisfy**, so the next round starts here rather than
+at the beginning: the turn must leave the scroller's flow *without* changing what
+`covered` measures, which means the coverage math has to key off a viewport the
+button is not inside — or the guard has to be told the button's height the way
+`data-unmeasured` already tells it about a column that holds more than it sends.
+The second is likely the honest one: the band a docked button occupies is exactly
+« what this column holds but does not show ».
