@@ -2094,6 +2094,26 @@ function Panel({
         </Button>
       </div>
 
+      {/*
+        **And the row reserves its own tallest state, so the window cannot move
+        under the finger.**
+
+        `danger` is the only filled variant here and it is 32.59 px against the
+        footer's 24 px text controls, so pressing *Terminer* grew the card 356 →
+        365 px. In the shipped window that is a `widget:resize`: a frameless,
+        always-on-top surface re-placing itself over the client's face at the
+        instant the rep is deciding whether to end a recording that cannot be
+        resumed. It also slid the row, which is how *Annuler* came to miss the
+        top 4.3 px — 18 % — of the rectangle it is supposed to cover.
+
+        The fix is the argument `Button.tsx` already makes one paragraph up
+        about width — « Reserving the width makes the two families one height
+        without changing a single colour » — applied to height, and the cheapest
+        form of it is to stop the filled variant being taller in the first
+        place: `py-0` on the danger button, with `Button`'s own `min-h-[24px]`
+        keeping the target floor. Both states of this row are 24 px now, so it
+        measures the same before and after the press. `widget-arret` asserts it.
+      */}
       <div className="border-subtle flex items-center justify-between gap-snug border-t px-inline py-snug">
         {/*
           **The row asks one question at a time, and it has to fit.**
@@ -2108,6 +2128,25 @@ function Panel({
           It also moved the right edge, which is what broke the rule below:
           right-aligned controls can only line up with each other if the row
           they are in does not reflow.
+        */}
+        {/*
+          **The consequence is in the label, because the row has no room for a
+          sentence.**
+
+          « Arrêter l'enregistrement | Annuler » asked nothing and stated
+          nothing: no question, and no word about what is lost, on the one act
+          on this surface that cannot be undone. The obvious repair — a line of
+          prose where *Ouvrir Sillage* and *Pause* were a moment ago — was tried
+          and measured: at 340 px the card holds « Arrêter l'enregistrement »,
+          « Annuler » and nothing else on that line, so even « Sans reprise. »
+          wrapped and grew the card **355.9 → 369.1 px**, which is the defect
+          above by another route.
+
+          « définitivement » costs no width — it is the same label length — and
+          it says the thing the rep cannot know: `end` is terminal.
+          `session:command` has no `resume`, and recording again would be a
+          second meeting. A confirmation that asks whether you meant it adds a
+          press; one that names what you did not know adds a fact.
         */}
         {confirmEnd ? (
           <span />
@@ -2185,7 +2224,14 @@ function Panel({
           <span className="flex items-center gap-tight">
             <Button
               variant="danger"
-              className="no-drag"
+              /*
+                `py-0`, so the filled rectangle is the same 24 px as the text
+                controls it replaces and the row cannot grow. `Button`'s base
+                carries `min-h-[24px]`, so the target floor is kept by the
+                component rather than by this padding — the padding was only
+                ever making it taller than its siblings.
+              */
+              className="no-drag py-0"
               onClick={() => {
                 setConfirmEnd(false)
                 onClose()
@@ -2196,7 +2242,7 @@ function Panel({
                 }).catch(() => undefined)
               }}
             >
-              Arrêter l’enregistrement
+              Arrêter définitivement
             </Button>
             <Button
               variant="text"

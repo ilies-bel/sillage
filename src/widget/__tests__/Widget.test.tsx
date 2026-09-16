@@ -372,7 +372,7 @@ test('ending the recording takes a second press, on a different control', async 
   expect(sent).toEqual([])
 
   fireEvent.click(screen.getByRole('button', { name: 'Terminer' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Arrêter l’enregistrement' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Arrêter définitivement' }))
   expect(sent).toEqual([
     { meetingId: 'm1', command: 'end', reason: 'terminée depuis le widget' },
   ])
@@ -1227,7 +1227,7 @@ test('ne rien presser n’empêche rien, et une mention qui échoue n’empêche
   await waitFor(() => expect(marked.length).toBe(2))
   await openPanel()
   fireEvent.click(screen.getByRole('button', { name: 'Terminer' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Arrêter l’enregistrement' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Arrêter définitivement' }))
   expect(ended).toEqual([{ meetingId: 'm1', command: 'end', reason: 'terminée depuis le widget' }])
 })
 

@@ -3169,27 +3169,68 @@ const SCREENS = {
         if (!rect) throw new Error(`« ${name} » n’est pas à l’écran`)
         return rect
       }
+      const cardHeight = async () => {
+        await settled(page)
+        return page.evaluate(
+          () => document.querySelector('.widget-panel-arrive')?.getBoundingClientRect().height ?? null,
+        )
+      }
       const trigger = await box('Terminer')
+      const before = await cardHeight()
       await page.getByRole('button', { name: 'Terminer', exact: true }).click()
-      const danger = await box('Arrêter l’enregistrement')
+      const danger = await box('Arrêter définitivement')
       const escape = await box('Annuler')
+      const after = await cardHeight()
+
+      /*
+       * **The window must not move under the finger.**
+       *
+       * `danger` is the only filled variant on this surface and it is 32.59 px
+       * against the footer's 24 px text controls, so this press grew the card
+       * 356 → 365. In the shipped window that is a `widget:resize`: a frameless
+       * always-on-top surface re-placing itself over the client's face at the
+       * instant the rep is deciding whether to end a recording that cannot be
+       * resumed. It is also what slid the row and broke the containment below.
+       *
+       * The row reserves its tallest state now (`min-h-gutter`), so this is 0.
+       */
+      if (before !== null && after !== null && Math.abs(after - before) > 0.5) {
+        throw new Error(
+          `la carte change de taille sous le doigt : ${before} → ${after} px — ` +
+            'la fenêtre se replace au moment de la décision irréversible',
+        )
+      }
 
       const intersects = (a, b) =>
         a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
       if (intersects(trigger, danger)) {
         throw new Error(
-          `« Arrêter l’enregistrement » recouvre « Terminer » — un double-clic arrête l’enregistrement : ` +
+          `« Arrêter définitivement » recouvre « Terminer » — un double-clic arrête l’enregistrement : ` +
             `${JSON.stringify(trigger)} ∩ ${JSON.stringify(danger)}`,
         )
       }
+      /*
+       * **Containment, on both axes — this tested overlap.**
+       *
+       * The `y` half read « escape.y <= trigger.y + trigger.height && escape.y +
+       * escape.height >= trigger.y », which is satisfied by a one-pixel touch.
+       * The docblock above it says « wide enough to **cover** it, so a second
+       * click at the same pixel cancels ». Measured on the shipped card, the
+       * escape missed the top **4.3 px — 18 %** of the trigger's height, because
+       * the filled danger button grew the row and `items-center` pushed
+       * *Annuler* down. The check passed the whole time.
+       *
+       * A check that passes while the property it states is false, on the one
+       * irreversible control in the product.
+       */
       const covers =
         escape.x <= trigger.x &&
         escape.x + escape.width >= trigger.x + trigger.width &&
-        escape.y <= trigger.y + trigger.height &&
-        escape.y + escape.height >= trigger.y
+        escape.y <= trigger.y &&
+        escape.y + escape.height >= trigger.y + trigger.height
       if (!covers) {
         throw new Error(
-          `« Annuler » ne couvre pas « Terminer » — le second clic ne tombe sur rien : ` +
+          `« Annuler » ne contient pas « Terminer » — le second clic peut tomber à côté : ` +
             `${JSON.stringify(escape)} vs ${JSON.stringify(trigger)}`,
         )
       }
