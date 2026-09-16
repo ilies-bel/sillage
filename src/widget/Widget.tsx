@@ -2112,7 +2112,21 @@ function Panel({
         not a control, and it is the same sentence in all three open states
         because it is the same guarantee.
       */}
-      <div className="border-subtle border-b px-inline py-tight">
+      {/*
+        **The chrome zones group by fill; the content zone is the card itself.**
+
+        This card carried a rule above the transcript, a rule above the composer
+        and a rule above the footer — three lines to say « these three bands are
+        not the conversation ». A fill says it once per band and says it without
+        drawing anything, which is what `--widget-soft` was raised to 1.54:1 to
+        make possible: until then a fill here was invisible and a line was the
+        only tool.
+
+        So the header and the action tray take the fill and the transcript keeps
+        the card's own ground. Three zones, no internal rules, and the boundary
+        is the change of surface rather than a stroke on top of it.
+      */}
+      <div className="bg-inner rounded-t-lg px-inline py-tight">
         <div className="flex items-baseline gap-snug">
           <h1
             /*
@@ -2217,6 +2231,7 @@ function Panel({
         group became a line. It is 1.54:1 now (`tokens.css` has the argument),
         which is enough to say « a different surface » without one.
       */}
+      <div className="bg-inner rounded-b-lg">
       <div className="flex items-center gap-tight px-inline py-snug">
         <input
           value={note}
@@ -2244,7 +2259,7 @@ function Panel({
             says it is unavailable by going muted (`nav`), and a control that is
             already muted has to say it by going faint.
           */
-          className="text-strong placeholder:text-muted bg-inner no-drag min-h-[24px] min-w-0 flex-1 rounded-sm px-snug py-hair text-ui disabled:cursor-not-allowed disabled:opacity-60"
+          className="text-strong placeholder:text-muted bg-card no-drag min-h-[24px] min-w-0 flex-1 rounded-sm px-snug py-hair text-ui disabled:cursor-not-allowed disabled:opacity-60"
         />
         <Button
           variant="nav"
@@ -2298,7 +2313,7 @@ function Panel({
         `widget-arret` asserts the card measures the same before and after the
         press, which is the property, and it is unchanged by this.
       */}
-      <div className="border-subtle flex h-10 items-center justify-between gap-snug border-t px-inline">
+      <div className="flex h-10 items-center justify-between gap-snug px-inline">
         {/*
           **The row asks one question at a time, and it has to fit.**
 
@@ -2445,6 +2460,7 @@ function Panel({
             Terminer
           </Button>
         )}
+      </div>
       </div>
     </div>
   )

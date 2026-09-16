@@ -279,6 +279,21 @@ for (const file of files) {
          */
         if (suffix === undefined) continue
         if (declared.has(suffix)) continue
+        /*
+         * **A side is not a rung.** `rounded-t-lg` spends the declared `lg`
+         * corner on one edge; the suffix parser saw `t-lg`, found no such key
+         * and reported the product's own scale as off it. A check that flags a
+         * legitimate rung teaches people to work around the check — which is how
+         * an arbitrary value gets written next time.
+         *
+         * Only `borderRadius` takes sides, and the logical variants are included
+         * because Tailwind emits them and this product is bilingual in neither
+         * direction yet.
+         */
+        if (group === 'borderRadius') {
+          const side = /^(?:t|r|b|l|tl|tr|br|bl|s|e|ss|se|es|ee)-(.+)$/.exec(suffix)
+          if (side !== null && declared.has(side[1])) continue
+        }
         // Only judge `text-` when the suffix is a size; it is also the colour
         // and the alignment prefix.
         if (prefix === 'text' && !isSize(suffix)) continue
