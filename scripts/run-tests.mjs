@@ -138,8 +138,39 @@ let rendererStatus = 0
 
 if (renderer.length > 0) {
   console.log(`\n── renderer (${renderer.length} files, vitest + jsdom) ──\n`)
-  const run = spawnSync('npx', ['vitest', 'run'], { cwd: ROOT, stdio: 'inherit' })
+  const run = spawnSync('npx', ['vitest', 'run'], { cwd: ROOT, encoding: 'utf8' })
+  process.stdout.write(run.stdout ?? '')
+  process.stderr.write(run.stderr ?? '')
   rendererStatus = run.status ?? 1
+
+  /*
+   * **A green exit code is not a run.**
+   *
+   * A worker that dies — « FATAL ERROR: Ineffective mark-compacts near heap
+   * limit », which is what an infinite render loop in a hook looks like from
+   * out here — takes its files with it, and vitest summarises the ones that
+   * finished and **exits 0**. Measured when this was written: 723 of 780 tests
+   * reported passing, 57 never ran, `npm test` said green, and the only trace
+   * was a stack trace in a log nobody reads.
+   *
+   * The file count is the one number that cannot be produced by a partial run:
+   * this script already knows how many test files are tracked, because it
+   * printed the figure in the banner above. Comparing the two is the same rule
+   * `--fade` and the graphics census landed on — a check that visited fewer
+   * things than it should must not be able to print the sentence of one that
+   * visited everything.
+   */
+  const counted = /Test Files\s+(\d+) passed(?:\s+\((\d+)\))?/.exec(run.stdout ?? '')
+  if (rendererStatus === 0 && counted) {
+    const ran = Number(counted[2] ?? counted[1])
+    if (ran !== renderer.length) {
+      console.error(
+        `\n✗ renderer: ${ran} fichier(s) de test joué(s) pour ${renderer.length} suivi(s) — ` +
+          'une partie de la suite n’a pas tourné (un worker mort sort en 0).',
+      )
+      rendererStatus = 1
+    }
+  }
 }
 
 process.exit((result.status ?? 1) || rendererStatus)

@@ -24,6 +24,7 @@ import { CalendarDays } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { formatAgo, formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
+import { useLeaving } from '../../app/useLeaving.ts'
 import { cn } from '../../lib/utils.ts'
 import {
   Button,
@@ -130,6 +131,9 @@ interface DayPaneProps {
   onArm: (eventId: string) => void
 }
 
+/** Declared once: a new lambda each render would re-fire `useLeaving`'s effect. */
+const entryKey = (entry: AgendaEntry): string => entry.key
+
 export function DayPane({
   entries,
   reason,
@@ -173,11 +177,18 @@ export function DayPane({
   /** The day holds calls; only the *upcoming* half of it is empty. */
   const suppressed = upcoming.length === 0 && past.length > 0 && when !== 'today'
 
+  /*
+   * The upcoming half, plus whatever has just been withdrawn from it, held for
+   * one `--motion` so it can leave. Only this half: `past` grows by a row
+   * arriving, never by one being taken away.
+   */
+  const leavingUpcoming = useLeaving(upcoming, entryKey)
+
   return (
     <div className="min-h-0">
-      {upcoming.length > 0 ? (
+      {upcoming.length > 0 || leavingUpcoming.length > upcoming.length ? (
         <List bare>
-          {upcoming.map((entry) => (
+          {leavingUpcoming.map((entry) => (
             <EntryRow
               key={entry.key}
               entry={entry}
@@ -185,6 +196,7 @@ export function DayPane({
               filled={entry.meetingId !== null && entry.meetingId === emphasis}
               onOpen={onOpen}
               onArm={onArm}
+              leaving={entry.leaving}
             />
           ))}
         </List>
@@ -289,6 +301,8 @@ export function DayPane({
 }
 
 interface EntryRowProps {
+  /** Withdrawn, and held for one `--motion` so it can leave — `useLeaving`. */
+  leaving?: boolean
   entry: AgendaEntry
   showDay: boolean
   /** This is the screen's one filled control — see `DayPaneProps.emphasis`. */
@@ -298,7 +312,7 @@ interface EntryRowProps {
   onArm: (eventId: string) => void
 }
 
-function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
+function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowProps) {
   const meetingId = entry.meetingId
   /**
    * Whether this row's verb is « Ouvrir ».
@@ -382,6 +396,16 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
       className={cn(
         'relative transition hover:bg-subtle',
         entry.armed && 'animate-rise-in',
+        /*
+          And the other end of it. The offer arrived over 150 ms of
+          `animate-rise-in` and was removed between two frames — VISION §6 asks
+          for « ease-out on the way in, ease-in on the way out » and only half of
+          it was built, which `--motion` has reported as « 0 qui s'en vont » on
+          every app screen for six rounds. It matters most on this row because
+          this row is the screen's one filled *Enregistrer*: a control that size
+          vanishing with no frame in between reads as a misclick.
+        */
+        leaving && 'leaving pointer-events-none',
       )}
     >
       {when}
