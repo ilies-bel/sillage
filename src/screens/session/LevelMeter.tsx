@@ -119,6 +119,31 @@ interface LevelMeterProps {
    * gives way, never the bar.
    */
   variant?: 'header' | 'pill'
+  /**
+   * **Frames are being dropped before the transcriber (`session:pause`), so
+   * every bar is a dropped bar.**
+   *
+   * This did not exist, and the component never mentioned the word — so the
+   * pill's meter ran identically whether the client's words were being kept or
+   * not. On the one surface built to be read across a desk, over a client's
+   * video, the loudest element (about 100px of moving blue, a third of the pill)
+   * said « en train d'écrire » through the one state whose entire meaning is
+   * that nothing is. The widget had already *removed* the clock in that state,
+   * precisely because it would have lied — so the product deleted its honest
+   * small signal and kept its dishonest large one. Round 4 found this exact
+   * shape on the recording dot; this is the same defect one state over.
+   *
+   * Grey rather than frozen or hidden, and the grey is not a new invention: it
+   * is `--meter-dropped`, « audio the transcriber will drop », which is exactly
+   * and completely what a paused frame is. The key under the header already
+   * reads « non transcrit » and now explains the whole strip.
+   *
+   * The bars keep moving. That is deliberate and it is the second reading a rep
+   * needs: the machine can still hear the room, so a paused meter that went flat
+   * would be indistinguishable from a dead microphone — which is the specific
+   * confusion DEC-38 built this instrument to end.
+   */
+  paused?: boolean
 }
 
 /** Bars on screen, and how wide the strip they sit in is, per variant. */
@@ -127,7 +152,7 @@ const SHAPE = {
   pill: { bars: 10, width: 76, height: 'h-6' },
 } as const
 
-export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
+export function LevelMeter({ meetingId, variant = 'header', paused = false }: LevelMeterProps) {
   const shape = SHAPE[variant]
   const [samples, setSamples] = useState<Sample[]>(SILENT)
   const [floor, setFloor] = useState(0)
@@ -200,8 +225,8 @@ export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
          * that never closes is legible even when both channels are silent.
          */
         <div key={index} className="flex flex-1 flex-col gap-px">
-          <Bar rms={sample.rep} floor={floor} channel="rep" />
-          <Bar rms={sample.far} floor={floor} channel="far" />
+          <Bar rms={sample.rep} floor={floor} channel="rep" paused={paused} />
+          <Bar rms={sample.far} floor={floor} channel="far" paused={paused} />
         </div>
       ))}
       </span>
@@ -240,6 +265,8 @@ interface BarProps {
   rms: number
   floor: number
   channel: 'rep' | 'far'
+  /** Nothing is being kept — see `LevelMeterProps.paused`. */
+  paused: boolean
 }
 
 /**
@@ -256,9 +283,14 @@ interface BarProps {
  * a grey bottom row is the call's own volume. That distinction is the whole
  * reason the second row is here.
  */
-function Bar({ rms, floor, channel }: BarProps) {
+function Bar({ rms, floor, channel, paused }: BarProps) {
   const rep = channel === 'rep'
-  const audible = rms >= floor && rms > 0
+  /*
+   * `paused` first, because it is the stronger fact. A frame above the floor
+   * that is being dropped before the transcriber is still a dropped frame, and
+   * the whole point of this tone is « this audio is not being kept ».
+   */
+  const audible = !paused && rms >= floor && rms > 0
 
   return (
     <span className={`flex flex-1 ${rep ? 'items-end' : 'items-start'}`}>

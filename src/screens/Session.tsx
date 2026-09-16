@@ -127,6 +127,24 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
   const initial = loaded.state.status === 'ready' ? loaded.state.value : null
   const current = state ?? initial?.meeting.state ?? null
   const recording = current === 'recording'
+  /*
+   * **Pause is a capture verb, and this screen draws the instrument it changes.**
+   *
+   * Only the widget can *take* the pause today, but the state is the meeting's,
+   * not the widget's — so the header meter here shows the same reading a rep is
+   * shown over their call. Without it, a rep who paused from the pill and then
+   * looked at the session screen saw the product's proof of life (DEC-38) moving
+   * exactly as it does while recording. One instrument wired two ways is two
+   * answers to one question.
+   *
+   * Seeded from the snapshot as well as the edge, for the reason the widget's
+   * health collection is: `recording:paused` is an edge broadcast, so a screen
+   * mounted *after* the pause would never hear it.
+   */
+  const [paused, setPaused] = useState(false)
+  useBroadcast('recording:paused', (payload) => {
+    if (payload.meetingId === meetingId) setPaused(payload.paused)
+  })
 
   /*
    * The compte-rendu, re-read when the machine moves.
@@ -250,7 +268,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
             className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-snug py-hair"
           >
             <Elapsed since={initial.meeting.startedAt} />
-            <LevelMeter meetingId={meetingId} />
+            <LevelMeter meetingId={meetingId} paused={paused} />
           </div>
         ) : null}
 

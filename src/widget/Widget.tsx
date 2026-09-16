@@ -1736,7 +1736,7 @@ function Pill({
       {meetingId === null ? (
         <span className="text-muted px-hair text-ui">Aucun enregistrement</span>
       ) : (
-        <LevelMeter meetingId={meetingId} variant="pill" />
+        <LevelMeter meetingId={meetingId} variant="pill" paused={paused} />
       )}
 
       {/*
