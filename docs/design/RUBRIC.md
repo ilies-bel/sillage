@@ -240,3 +240,45 @@ which sent this investigation after a regression that did not exist. Reproduce a
 smoke failure at a smoke size.
 
 140 stagings, 1275 + 781 tests, `npm run check` green.
+
+## Declined, with the measurement: the compte-rendu's « two grammars for one signal »
+
+Round 11's main « one thing » asked to « give `**` and `_` the gutter that `#`
+already has, and stop underlining the document at rest », on the grounds that the
+inline markers sit « at body colour » and that the followable rule makes the
+ranked list « read as a link list while the paragraphs above underline only their
+quotes: two grammars for one signal ».
+
+**Both premises are wrong, and the second is wrong in the shipped pixels.**
+Sampled on `review@1280×800`, the densest single-colour row under each:
+
+| rule | measured | token |
+|---|---|---|
+| a quotation, inside a paragraph | `rgb(98,112,123)` | `--text-muted` |
+| a whole followable line, in *Éléments retenus* | `rgb(211,222,230)` | `--border-card` |
+
+Two weights, not one — which is precisely what `CompteRenduDocument` says it does
+and why: « Every bullet being followable is the opposite situation: six
+consecutive rows … all ruled at that weight turned the section into a link farm
+and made the document harder to read than the thing it is evidence for. So the
+rest state is `--border-card`, which is the weight of a table rule … and hover
+and focus bring it up to the same rule a quotation wears, because at that point
+the rep has singled the line out. » The distinction the finding asks for is
+built, argued over twenty lines, and measurable.
+
+The first premise is wrong too: `parseInline` emits `**` and `_` as `marker`
+runs and the renderer draws them `text-muted select-none`, not at body colour.
+
+**And the gutter is not available to them.** The gutter works because `#`, `##`
+and `-` are *line-initial* — they can hang outside the measure without moving the
+text. `**` and `_` are mid-line by definition; there is no gutter for a marker
+that sits between two words, and giving them one would mean either indenting the
+prose or reordering the rep's own sentence.
+
+What survives of the finding, and is not fixed: the inline markers are welded to
+the word they mark with no optical separation, so `**Besoin**` reads as one token
+rather than a word between two marks. That is a real, small typographic cost and
+it is the only part of this worth spending on.
+
+Recorded rather than silently ignored, per `CLAUDE.md`: « If you think one is
+wrong, say so — don't silently build the other thing. »
