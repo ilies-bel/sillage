@@ -960,6 +960,93 @@ describe('a correction that would reach nothing is not offered', () => {
     )
     expect(screen.getByText(/L’opportunité n’est pas cochée/)).toBeTruthy()
   })
+
+  /*
+   * **The button counts what leaves, and the two halves of this were tested in
+   * disjoint tests until now.**
+   *
+   * Three tests above assert `readOnly`, the single sentence and the objet
+   * staying editable, and none of them reads the button; two elsewhere assert
+   * the exact string « Valider malgré 1 champ non vérifié » and never touch the
+   * checkbox. So the gate told the rep they were shipping past an unverified
+   * field that was not shipping, and the same sentence labelled the payload with
+   * an opportunity and the payload without — at the one human gate in the
+   * product, in front of a POST with no idempotency key and no delete verb.
+   */
+  test('the count on the button is what leaves, not what is unverified', async () => {
+    /*
+     * Two unverified rows on purpose, one of each kind: `account` is one of the
+     * two the CRM *task* ships whatever happens to the opportunity, `objections`
+     * is one of the nine typed. So the count must fall from 2 to 1 rather than
+     * vanish, and the button stays on screen to be read.
+     */
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'account' || f.key === 'objections'
+            ? { ...f, confidence: 'faible' as const }
+            : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.getByRole('button', { name: 'Valider malgré 2 champs non vérifiés' })).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /Opportunité/ }))
+    })
+
+    await waitFor(() =>
+      expect((document.getElementById('field-objections') as HTMLTextAreaElement).readOnly).toBe(
+        true,
+      ),
+    )
+    // One, not two: `objections` is no longer leaving.
+    expect(screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' })).toBeTruthy()
+
+    // The header keeps the measurement: it is what the product checked, and it
+    // does not change because a payload shrank.
+    expect(screen.getByText(/11 champs · 9 vérifiés/)).toBeTruthy()
+  })
+
+  /*
+   * And the way back to the sentence, because the count is a control: with every
+   * unverified row inert, pressing it used to focus a `readOnly` textarea — the
+   * dead control DEC-26 refuses — while the sentence saying where the correction
+   * goes sat 555 px above the top of its own scroller.
+   */
+  test('with nothing correctable in the rail, the count reaches the sentence', async () => {
+    // The one unverified row is a typed one, so with the opportunity gone there
+    // is nothing in the rail a rep can act on.
+    bridge.when('review:get', () =>
+      openGate({
+        intents: panel().intents.map((intent) =>
+          intent.kind === 'crm.opportunity'
+            ? { ...intent, available: false, reason: 'Compte non résolu — pas d’opportunité.' }
+            : intent,
+        ),
+        fields: panel().fields.map((f) =>
+          f.key === 'objections' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const notice = screen.getByText(/Les valeurs ci-dessous ne partiront pas/)
+    expect(notice.id).toBe('rail-inert-notice')
+
+    const count = screen.getByRole('button', { name: /11 champs · 10 vérifiés/ })
+    const objections = document.getElementById('field-objections') as HTMLTextAreaElement
+    await act(async () => {
+      fireEvent.click(count)
+    })
+    expect(document.activeElement).not.toBe(objections)
+  })
 })
 
 describe('the gate follows the machine', () => {

@@ -207,6 +207,16 @@ const EDIT_KEY: Record<ReviewField['key'], keyof ReviewEdits> = {
 }
 
 /** Rows whose value is prose rather than a word. */
+/**
+ * The sentence that says where a correction goes when nine rows cannot take one.
+ *
+ * It is reachable, not merely present: at 1280×800 it sits 555 px above the top
+ * of its own scroller when the gate opens on the first unverified row, so the
+ * rep who acts on the caveat never meets it. The header's count is the way back
+ * — see `focusFirstFaible`.
+ */
+const INERT_NOTICE_ID = 'rail-inert-notice'
+
 const MULTILINE = new Set<ReviewField['key']>([
   'besoin',
   'profils',
@@ -1662,9 +1672,47 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     : 'Rien n’est envoyé au client : aucun brouillon ne sera créé.'
 
   const faible = panel.fields.filter((field) => field.confidence === 'faible')
+  /*
+   * **What is unverified *and* leaving, which is not the same list — and the
+   * button had been counting the other one.**
+   *
+   * When the opportunity is not shipping, nine of the eleven rows go read-only
+   * (`typedInert`, and `INTERPRETIVE` is which nine). Their values go nowhere.
+   * *Valider* went on saying « Valider malgré 1 champ non vérifié » about
+   * `objections` — an `INTERPRETIVE` row — so at the one human gate in the
+   * product, in front of a `POST /v1/crm/tasks` with no idempotency key and a
+   * `CrmPort` with no delete verb, the rep was told they were shipping past an
+   * unverified field that was not shipping at all. If they acted on the caveat
+   * they landed on a `readOnly` textarea, and the sentence telling them the
+   * correction belongs in the compte-rendu was **555 px above the top of its own
+   * scroller** at 1280×800 (829 at 960×600).
+   *
+   * The sharper half: the label was byte-identical with and without an
+   * opportunity. Two materially different payloads, one sentence — the rep could
+   * not read the decision off the decision. Counting only what leaves makes the
+   * two differ on their own, with no new copy.
+   *
+   * The header above keeps counting *all* of them, and that is not an
+   * inconsistency: « 11 champs · 10 vérifiés » is the measurement this product
+   * makes about itself (DEC-21) and it does not change because a payload shrank.
+   * The button is about the act.
+   */
+  const shippingFaible = faible.filter(
+    (field) => typedInert === null || !INTERPRETIVE.has(field.key),
+  )
   const focusFirstFaible = () => {
-    const first = faible[0]
-    if (!first) return
+    /*
+     * The first doubt the rep can actually *act on*. Sending them to a
+     * `readOnly` box is the dead control DEC-26 refuses; when every unverified
+     * row is inert, the thing to reach is the sentence that says where the
+     * correction goes.
+     */
+    const first = shippingFaible[0] ?? null
+    if (first === null) {
+      const notice = document.getElementById(INERT_NOTICE_ID)
+      if (notice !== null) scrollToTop(notice)
+      return
+    }
     scrollToTop(document.getElementById(`row-${first.key}`))
     // Focus, not just scroll: the rep's next gesture is to correct the value,
     // and a screen reader gets the label read out instead of a silent jump.
@@ -2278,7 +2326,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             still is.
           */}
           {typedInert ? (
-            <p className="measure text-warn mb-snug text-ui">
+            <p id={INERT_NOTICE_ID} className="measure text-warn mb-snug scroll-mt-10 text-ui">
               {typedInert} Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à
               gauche, c’est lui qui part dans la tâche VerySwing.
             </p>
@@ -2490,7 +2538,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   says what it is about to do, and it looks like what it is about
                   to do.
                 */
-                variant={faible.length > 0 && !busy ? 'caution' : 'primary'}
+                variant={shippingFaible.length > 0 && !busy ? 'caution' : 'primary'}
                 block
                 className="mt-row py-snug"
                 onClick={() => void confirm()}
@@ -2498,11 +2546,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               >
                 {busy
                   ? 'Envoi…'
-                  : faible.length === 0
+                  : shippingFaible.length === 0
                     ? 'Valider'
-                    : faible.length === 1
+                    : shippingFaible.length === 1
                       ? 'Valider malgré 1 champ non vérifié'
-                      : `Valider malgré ${faible.length} champs non vérifiés`}
+                      : `Valider malgré ${shippingFaible.length} champs non vérifiés`}
               </Button>
             ) : (
               <div aria-hidden className="mt-row min-h-[35px]" />
@@ -2544,7 +2592,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 // already said by that control's own label and by the
                 // « Ce qui sera créé » list above the slot.
                 'measure mx-auto mt-tight text-center text-meta',
-                (faible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
+                (shippingFaible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
               )}
             >
               {pendingLine !== null && !busy
@@ -2565,8 +2613,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                     : 'Il reste des champs à lire, plus bas.'
                 : stalled && !busy
                   ? `La réécriture n’a pas démarré : ce que « Valider » envoie est le compte-rendu affiché à gauche, avec vos corrections.`
-                  : faible.length > 0 && !busy
-                    ? `${faible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
+                  : shippingFaible.length > 0 && !busy
+                    ? `${shippingFaible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
                     : reassurance}
             </p>
           </div>

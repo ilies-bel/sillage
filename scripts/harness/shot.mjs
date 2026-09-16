@@ -25,7 +25,7 @@
  *
  * Screens: splash · agenda · agenda-empty · agenda-semaine · agenda-liste ·
  * agenda-client · agenda-search · session · review · review-rail ·
- * review-rail-inerte · review-valider ·
+ * review-rail-inerte · review-valider · review-sans-opportunite-valider ·
  * widget-survol ·
  * review-transcription ·
  * review-transcription-introuvable · historique · reglages ·
@@ -2463,6 +2463,72 @@ const SCREENS = {
           `${bullets.total - bullets.sourced} puce(s) sur ${bullets.total} sans provenance — ` +
             'chacune est une affirmation qui part dans VerySwing sans moyen de la vérifier',
         )
+      }
+    },
+  },
+
+  /*
+   * **The count on the one press that writes into a client's CRM, in the state
+   * where nine of the eleven rows go nowhere.**
+   *
+   * `review-sans-opportunite` drives that state and stops at the sentence: it
+   * never reaches the button, and no `review-garde*` stage unchecks anything. So
+   * the gate went on printing « Valider malgré 1 champ non vérifié » over
+   * `objections` — a row that is `readOnly`, is not in the payload, and cannot be
+   * corrected from the view the button is in — with the explanatory sentence
+   * **555 px above the top of its own scroller** at 1280×800 and 829 at 960×600.
+   * The label was byte-identical with and without an opportunity: two materially
+   * different payloads, one sentence, in front of a `POST /v1/crm/tasks` with no
+   * idempotency key and a `CrmPort` with no delete verb.
+   *
+   * The gate has to be *armed* for the button to exist at all — « never draw an
+   * inert primary » — so this reads both columns to the end the way
+   * `review-valider` does, and then reads the label.
+   *
+   * Asked of the count rather than of a literal: the label is generated from it,
+   * and pinning the string would pass the day the count is wrong and the copy
+   * changes.
+   */
+  'review-sans-opportunite-valider': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS['review-sans-opportunite'].drive(page)
+      await page.waitForTimeout(900)
+      for (let i = 0; i < 40; i++) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ })
+        if ((await turn.count()) === 0) break
+        await turn.first().click()
+        await page.waitForTimeout(STAGING_TURN_MS)
+      }
+      const primary = page.getByRole('button', { name: /^Valider/ })
+      await primary.waitFor()
+      await settled(page)
+
+      const shipping = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('[id^="row-"]')]
+        return rows.filter((row) => {
+          const field = row.querySelector('textarea, input')
+          return field !== null && !field.readOnly && (row.textContent ?? '').includes('faible')
+        }).length
+      })
+      const label = (await primary.first().textContent()) ?? ''
+      const claimed = /Valider malgré (\d+) champ/.exec(label)
+      const counted = claimed === null ? 0 : Number(claimed[1])
+      if (counted !== shipping) {
+        throw new Error(
+          `« ${label.trim()} » compte ${counted} champ(s) non vérifié(s) alors que ${shipping} ` +
+            'partent : le bouton nomme un champ que la rep ne peut pas corriger ici',
+        )
+      }
+
+      /*
+       * And the sentence is reachable from the count, which is the other half:
+       * with nothing correctable in the rail, pressing the header's count used
+       * to focus a `readOnly` textarea — the dead control DEC-26 refuses.
+       */
+      const notice = page.locator('#rail-inert-notice')
+      if ((await notice.count()) === 0) {
+        throw new Error('la phrase qui dit où va la correction n’a pas d’ancre')
       }
     },
   },
@@ -6173,6 +6239,7 @@ const ECHO_DECLARED = [
       'review-citation-prose',
       'review-sans-entra',
       'review-sans-opportunite',
+      'review-sans-opportunite-valider',
       'review-modele',
       'review-modele-differe',
     ],
@@ -6213,6 +6280,7 @@ const ECHO_DECLARED = [
       'review-citation-prose',
       'review-sans-entra',
       'review-sans-opportunite',
+      'review-sans-opportunite-valider',
       'review-modele',
       'review-modele-differe',
     ],
