@@ -473,6 +473,21 @@ export function Widget() {
   const mark = useCallback(
     async (segmentId: string | null, text: string) => {
       if (meetingId === null) return
+      /*
+       * **Nothing is being kept, so there is no moment to mark.**
+       *
+       * `session:pause` drops frames before the transcriber, and a mark is a
+       * timestamp into the transcript — so a mark taken here points at audio
+       * that does not exist. The product already accepted this argument once, in
+       * the same state, about a quieter element: the pill *removes* its clock
+       * while paused because elapsed time stops meaning « how long this call has
+       * been written down ». Seven controls went on writing into the same gap.
+       *
+       * Guarded here as well as disabled below, because the guard is the fact
+       * and the disabled attribute is how it is shown. A control that looks
+       * available and does nothing is the inert primary this repo refuses.
+       */
+      if (paused) return
       try {
         await invoke('meeting:mark', { meetingId, note: text, segmentId })
         setAnnounced(text === '' ? 'Moment marqué.' : `Moment marqué : ${text}`)
@@ -518,7 +533,7 @@ export function Widget() {
         state.reload()
       }
     },
-    [meetingId, state.reload],
+    [meetingId, paused, state.reload],
   )
 
   /**
@@ -1690,28 +1705,40 @@ function Pill({
             rep reading this across a desk, over a client's video, the dot is
             the whole signal.
           */
-          data-graphic={meetingId === null ? 'aucun enregistrement' : 'enregistrement en cours'}
+          data-graphic={
+            meetingId === null
+              ? 'aucun enregistrement'
+              : paused
+                ? 'enregistrement en pause'
+                : 'enregistrement en cours'
+          }
           className={
             meetingId === null
               ? 'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-muted'
               : paused
                 ? /*
-                    **Paused is hollow, because nothing is being captured.**
-                    It wore the filled accent and a full moving meter while
-                    capture was suspended, which is the one reading this mark
-                    must never give. `StateDot` splits the same way on the
-                    agenda — an offer is a ring, a capture is a fill — so
-                    « filled orange means it is recording » is now true on all
-                    three surfaces a rep meets it on. The ring is `--accent` and
-                    not `--text-muted`: a paused call is still armed, and the
-                    hue is what says so.
+                    **Paused is a shape, because hollow was already spent.**
+                    It was `bg-transparent ring-1 ring-inset ring-accent` — the
+                    same 8px circle with a 1px annulus that *idle* draws, one
+                    hue apart. On the one surface in this product meant to be
+                    read from a metre away, over somebody else's video, two of
+                    the three states were the same glyph and the difference was
+                    orange-versus-grey at eight pixels.
+
+                    That is round 4's finding — a mark that says the same thing
+                    in two states, the reason this surface got a reviewer of its
+                    own — one state over. Subtraction cannot carry it: an
+                    emptied circle already means « there is nothing here ». Two
+                    bars is a shape idle cannot also be, it is what every
+                    transport control a rep has ever used means by pause, and it
+                    keeps the hue that says the call is still armed.
                   */
-                  'h-2 w-2 shrink-0 rounded-full bg-transparent ring-1 ring-inset ring-accent'
+                  'border-accent h-2 w-2 shrink-0 border-x-2 border-y-0 bg-transparent'
                 : /*
                   No ring. The mark wore a `--warn` boundary for one commit,
                   because `--accent` on the pill's old `--bg-card` ground was
                   2.41:1 and under 1.4.11's 3:1. The ground moved (`--widget-bg`
-                  in tokens.css) and the same dot on the same hue is **7.08:1**
+                  in tokens.css) and the same dot on the same hue is **5.11:1**
                   there, so the boundary has nothing left to do and a second
                   orange inside an 8px circle is only mud.
                 */
@@ -1801,10 +1828,21 @@ function Pill({
         <button
           type="button"
           onClick={onMark}
+          /*
+            Unavailable *with a stated reason*, which is the only other case this
+            product allows (`ui/Button.tsx`). While frames are being dropped a
+            mark would point at audio that was never kept — see `mark`.
+          */
+          disabled={paused}
+          title={paused ? 'En pause : rien n’est enregistré à marquer.' : undefined}
           aria-label={
-            marks === 0 ? 'Marquer ce moment' : `Marquer ce moment (${marks} déjà marqués)`
+            paused
+              ? 'Marquer ce moment — indisponible en pause'
+              : marks === 0
+                ? 'Marquer ce moment'
+                : `Marquer ce moment (${marks} déjà marqués)`
           }
-          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-hair rounded-sm px-hair transition"
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 disabled:hover:bg-transparent disabled:hover:text-muted inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-hair rounded-sm px-hair transition disabled:opacity-60"
         >
           <Bookmark />
           {marks > 0 ? (

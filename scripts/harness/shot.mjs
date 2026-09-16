@@ -4802,9 +4802,23 @@ async function contrast(page) {
        * that draw the same line must be able to say too. Here it runs the other
        * way — the *check* knew two of the three.
        */
-      const edge = parseFloat(style.borderTopWidth) > 0 && opaque(style.borderTopColor)
-        ? style.borderTopColor
-        : null
+      /*
+       * **Any side, not the top one.** A mark is not always bounded on all
+       * four: the widget's paused glyph is two vertical bars — `border-x-2
+       * border-y-0` — so reading `borderTopWidth` found 0 and reported « rien,
+       * 0:1 » about a shape it could see perfectly well. Same correction as
+       * teaching this check `border` in the first place, one axis further:
+       * whichever side is actually drawn is the ink.
+       */
+      const edge =
+        [
+          ['borderTopWidth', 'borderTopColor'],
+          ['borderRightWidth', 'borderRightColor'],
+          ['borderBottomWidth', 'borderBottomColor'],
+          ['borderLeftWidth', 'borderLeftColor'],
+        ]
+          .filter(([width, colour]) => parseFloat(style[width]) > 0 && opaque(style[colour]))
+          .map(([, colour]) => style[colour])[0] ?? null
       const ink = opaque(style.backgroundColor)
         ? style.backgroundColor
         : (rings.filter(opaque).pop() ?? edge)
