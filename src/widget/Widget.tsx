@@ -694,6 +694,59 @@ export function Widget() {
     [meetingId],
   )
 
+  /**
+   * **The privacy control answers like the one beside it, and not into a 1x1 box.**
+   *
+   * *Pause* is the only control on this surface a rep presses because something
+   * that must not be recorded has just started. `setPaused` returns `false` when
+   * the orchestrator holds no recording for this meeting — reachable in the
+   * ordinary way, the `EndOfMeetingWatch` gap, the same gap `meeting:mark`'s
+   * refusal names. Measured before this change, on a press that did not take: the
+   * label still read « Pause », the clock still counted, the pill still drew the
+   * `--accent` dot and said « Enregistrement en cours », and the whole receipt was
+   * one sentence inside the window's `sr-only` paragraph — a 1x1 box with
+   * `clip: rect(0,0,0,0)`. A rep looking at the surface saw a recording they
+   * believed they had stopped.
+   *
+   * So it takes `meeting:mark`'s two halves, fourteen lines up: a `role="alert"`
+   * card the rep can see, and a `widget:state` re-read, because a refusal is proof
+   * this window's copy is stale and the pill must stop claiming a recording the
+   * main process has already said is not happening.
+   *
+   * It lives here and not in `Panel` for the reason `mark` and `forget` do: the
+   * parent owns the channel, the card and the reload, and a presentational panel
+   * that reached for any of the three would be a second copy of the rule.
+   */
+  const pause = useCallback(
+    (next: boolean) => {
+      if (meetingId === null) return
+      const refusal = next
+        ? 'La pause n’a pas pu être prise.'
+        : 'L’enregistrement n’a pas pu reprendre.'
+      const refuse = () => {
+        setCard({ kind: 'refus', text: refusal })
+        state.reload()
+      }
+      void invoke('session:pause', { meetingId, paused: next })
+        .then(({ paused: now }) => {
+          if (now !== next) {
+            refuse()
+            return
+          }
+          /*
+            Nothing announced: the receipt for a pause that worked is the label
+            flipping to « Reprendre » and the row below it saying « En pause »,
+            both of which a screen reader reads already. A polite sentence on top
+            would read the same event twice — the rule `mark` states above. A
+            stale refusal does yield, the way it does there.
+          */
+          setCard((was) => (was?.kind === 'refus' ? null : was))
+        })
+        .catch(refuse)
+    },
+    [meetingId, state.reload],
+  )
+
   return (
     <Frame
       open={open}
@@ -770,7 +823,7 @@ export function Widget() {
               onMark={mark}
               onForget={forget}
               onClose={() => setOpen(false)}
-              onAnnounce={setAnnounced}
+              onPause={pause}
               paused={paused}
             />
           ) : null}
@@ -1985,10 +2038,11 @@ interface PanelProps {
   onForget: (markId: string) => void
   onClose: () => void
   /**
-   * Into the window's own `aria-live` region — the panel has none of its own,
-   * and a second one on a card this small would read every sentence twice.
+   * The panel asks; the window answers. It owns the channel, the `role="alert"`
+   * card and the `widget:state` re-read a refusal needs — see `pause` there, and
+   * `mark` above it for the same split.
    */
-  onAnnounce: (sentence: string) => void
+  onPause: (paused: boolean) => void
   paused: boolean
 }
 
@@ -2002,7 +2056,7 @@ function Panel({
   onMark,
   onForget,
   onClose,
-  onAnnounce,
+  onPause,
   paused,
 }: PanelProps) {
   const [note, setNote] = useState('')
@@ -2444,18 +2498,7 @@ function Panel({
             <Button
               variant="text"
               className="no-drag px-hair"
-              onClick={() =>
-                void invoke('session:pause', { meetingId, paused: !paused })
-                  .then(({ paused: now }) => {
-                    if (now === paused)
-                      onAnnounce(
-                        paused
-                          ? 'L’enregistrement n’a pas pu reprendre.'
-                          : 'La pause n’a pas pu être prise.',
-                      )
-                  })
-                  .catch(() => onAnnounce('La pause n’a pas pu être prise.'))
-              }
+              onClick={() => onPause(!paused)}
             >
               {paused ? 'Reprendre' : 'Pause'}
             </Button>

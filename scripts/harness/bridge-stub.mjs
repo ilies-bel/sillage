@@ -749,6 +749,8 @@ export function installAppBridge(config) {
    * created and stopped being so while the pill was still up. See the responder.
    */
   let REFUSE_MARKS = null
+  /** The press did not take — see `refusePause`. */
+  let REFUSE_PAUSE = false
 /** The call stopped while the pill was up — see `refuseMarks`. */
 let RECORDING_STOPPED = false
 
@@ -3114,8 +3116,21 @@ let RECORDING_STOPPED = false
               paused: false,
             },
           },
-    // Answers the request as if it had landed; the widget draws the answer.
     'session:pause': (payload) => {
+      /*
+        **A press that does not take is a thing this channel really does.**
+
+        `Orchestrator.setPaused` returns `false` when it holds no recording for
+        the meeting, and `register.ts` answers with the state *unchanged* — so the
+        widget sees back the opposite of what it asked for. That is the
+        `EndOfMeetingWatch` gap, the same gap `meeting:mark` refuses in, on the one
+        control a rep presses because something must not be recorded.
+
+        This entry honoured every request for as long as it existed, so no stage
+        and no check had ever drawn the refusal. There was a `refuseMarks()` and no
+        `refusePause()`, and the sentence lived only at its own definition site.
+      */
+      if (REFUSE_PAUSE) return { paused: !payload.paused }
       // Like the main process: the answer is one window's, the broadcast is every
       // window's, and the widget draws the broadcast.
       harness.emit('recording:paused', { meetingId: payload.meetingId, paused: payload.paused })
@@ -3266,6 +3281,16 @@ let RECORDING_STOPPED = false
      * fixture broken for whatever runs next is a stage that breaks the run
      * after it.
      */
+    /**
+     * The recording ended under the pill, so `session:pause` answers with the
+     * state unchanged and the press is refused — what `Orchestrator.setPaused`
+     * returning `false` looks like from this window.
+     *
+     * Reversible with `refusePause(false)`, for the reason `refuseMarks` is.
+     */
+    refusePause(on) {
+      REFUSE_PAUSE = on === undefined ? true : on === true
+    },
     refuseMarks(reason) {
       REFUSE_MARKS =
         reason === undefined

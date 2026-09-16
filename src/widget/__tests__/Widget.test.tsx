@@ -567,6 +567,51 @@ test('a mark that worked raises no notice', async () => {
 })
 
 /**
+ * **A refused pause is drawn, and the pill stops claiming the recording.**
+ *
+ * *Pause* is the only privacy control on this surface: a rep presses it because
+ * something that must not be recorded has just started. `Orchestrator.setPaused`
+ * returns `false` when it holds no recording for the meeting, and `register.ts`
+ * answers with the state *unchanged* — the `EndOfMeetingWatch` gap, the same one
+ * `meeting:mark` refuses in.
+ *
+ * Measured on the shipped window before this test existed: the label still read
+ * « Pause », the clock still counted, the pill still drew the `--accent` dot and
+ * said « Enregistrement en cours », and the entire receipt was one sentence in a
+ * 1×1 `clip: rect(0,0,0,0)` `aria-live` paragraph. The rep believed they were off
+ * the record. Nothing in the suite or the harness could produce it: the fixture
+ * honoured every request, and there was a `refuseMarks()` and no `refusePause()`.
+ *
+ * The second assertion is the half a card alone would not buy. A refusal is proof
+ * this window's copy is stale, so the re-read has to reach the pill — otherwise
+ * the loud half goes on saying a client is being written down while the quiet
+ * half explains that they are not.
+ */
+test('a pause that does not take is drawn, not only announced', async () => {
+  // The state comes back unchanged: the press did not land.
+  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    paused: !payload.paused,
+  }))
+  render(<Widget />)
+  await openPanel()
+
+  // The call ended under the pill — which is why the press was refused.
+  bridge.when('widget:state', () => ({ meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+
+  const notice = await screen.findByRole('alert')
+  expect(notice.textContent).toBe('La pause n’a pas pu être prise.')
+  // Not inside the visually-hidden region, which is the whole defect.
+  expect(notice.closest('.sr-only')).toBeNull()
+  expect(notice.closest('[data-card]')).not.toBeNull()
+
+  // And the surface stops claiming a recording it has just been told is not
+  // happening.
+  await waitFor(() => expect(screen.getByText('Aucun enregistrement')).toBeTruthy())
+})
+
+/**
  * **The stacking direction can change without this window asking.**
  *
  * `above` came back on the reply to `widget:resize` and nowhere else, so it was
