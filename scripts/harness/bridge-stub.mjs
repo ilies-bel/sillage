@@ -712,12 +712,14 @@ export function installAppBridge(config) {
       at: SEGMENTS[SEGMENTS.length - 3].receivedAt + 2_000,
       note: '',
       segmentId: SEGMENTS[SEGMENTS.length - 3].id,
+      by: 'rep',
     },
     {
       id: 'mark-2',
       at: SEGMENTS[SEGMENTS.length - 2].receivedAt - 1_000,
       note: 'revenir sur le plafond achats avant de proposer',
       segmentId: null,
+      by: 'rep',
     },
   ]
 
@@ -1455,12 +1457,14 @@ let RECORDING_STOPPED = false
         at: LEFORT_SEGMENTS[3].receivedAt + 2_000,
         note: '',
         segmentId: LEFORT_SEGMENTS[3].id,
+        by: 'rep',
       },
         {
           id: 'lefort-mark-2',
           at: at(-14, 15, 7),
           note: 'relancer les achats avant le 15',
           segmentId: null,
+          by: 'rep',
         },
       ],
       /*
@@ -3089,6 +3093,14 @@ let RECORDING_STOPPED = false
         at: now,
         note: payload.note || '',
         segmentId: payload.segmentId ?? null,
+        /*
+          Echoed rather than defaulted here, so a stage can tell the rep's marks
+          from the product's one — « Prévenir le client » passes `'product'`, and
+          the panel draws it with its own glyph and no delete. A fixture that
+          answered `'rep'` to everything would flatter exactly the defect
+          `MomentMark.by` was added to end.
+        */
+        by: payload.by ?? 'rep',
       }
       MARKS.push(mark)
       harness.emit('moment:marked', { meetingId: payload.meetingId, mark })

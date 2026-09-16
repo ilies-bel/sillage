@@ -1183,6 +1183,23 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
       // leave *the pill* where it was rather than a window edge.
       const pillTop = Math.max(0, Math.round((anchor?.top ?? frame.top) - frame.top))
       /*
+       * **The pill's width, published so the cards that hang from it can match.**
+       *
+       * `Refus` and `Mention` were `w-[260px]`, a number that matches one state
+       * of the pill approximately and the other not at all: measured, the pill
+       * is 272.28 recording and 189.56 idle, so the notice overhung by 1.14 px a
+       * side in one state and sat 35.2 px inside in the other. Four widths on one
+       * floating stack, none derived from another, scored on every review since
+       * the surface got its own.
+       *
+       * A custom property and not React state, deliberately: this is already the
+       * effect that measures the pill, a DOM write cannot re-enter the render
+       * that scheduled it, and the alternative — state set from a
+       * `ResizeObserver` — is exactly the loop that took the renderer suite to
+       * « heap out of memory » one round ago.
+       */
+      if (anchor) element.style.setProperty('--pill-w', `${Math.round(anchor.width)}px`)
+      /*
        * **`pillTop` is part of the key, and leaving it out was a 382-pixel
        * jump.**
        *
@@ -1485,7 +1502,9 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
+      /* The width of the pill it hangs from — see `--pill-w`. */
+      style={{ width: 'var(--pill-w, 260px)' }}
+      className="bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1563,7 +1582,9 @@ function Mention({
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
+      /* The width of the pill it hangs from — see `--pill-w`. */
+      style={{ width: 'var(--pill-w, 260px)' }}
+      className="bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>
@@ -1902,7 +1923,15 @@ function Elapsed({ since }: { since: number | null }) {
   }, [since])
   if (since === null) return null
   return (
-    <span className="text-strong shrink-0 tabular-nums text-ui" aria-label="Durée d’enregistrement">
+    <span
+      /*
+        The one number a rep glances at without stopping the conversation, so it
+        takes the same rung as the heading rather than the body's 12px. The pill
+        is content-sized, so it widens once and never moves again.
+      */
+      className="text-strong shrink-0 tabular-nums text-prose"
+      aria-label="Durée d’enregistrement"
+    >
       {formatElapsed(now - since)}
     </span>
   )
@@ -2059,7 +2088,24 @@ function Panel({
       */}
       <div className="border-subtle border-b px-inline py-tight">
         <div className="flex items-baseline gap-snug">
-          <h1 className="text-strong min-w-0 flex-1 truncate font-sans text-ui font-semibold">
+          <h1
+            /*
+              **A rung, because the surface had none.**
+
+              This was `text-ui font-semibold` — 12px — and the client's
+              transcribed words are `text-ui` at 12px too. `.widget-surface` maps
+              `--text-strong` and `--text-body` to the same `--widget-ink`, so
+              the card's title and the sentence the client just spoke were
+              identical in size *and* colour, separated by weight alone. Two
+              sizes on the whole window, 12 and 11, is a ratio of 1.09:1 — four
+              consecutive reviews scored this the weakest axis on the surface.
+
+              `--type-prose` is 15px and already on the scale, so this is a rung
+              the product has rather than a number chosen here: 1.25:1 against
+              the body, on the one line that says whose call this is, on a window
+              meant to be read from a metre away.
+            */
+            className="text-strong min-w-0 flex-1 truncate font-sans text-prose font-semibold">
             {heading.trim() === '' ? 'Réunion en cours' : heading}
           </h1>
         </div>
@@ -2489,7 +2535,16 @@ const logMask = (edges: { top: boolean; bottom: boolean }): string | undefined =
  * window a compliance question is answered from.
  */
 function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
-  const mine = mark.by === 'rep'
+  /*
+   * **Anything that is not the product's is the rep's**, which is the same
+   * sentence `MomentMark.by`'s default makes: every mark written before the
+   * field existed is theirs. Tested this way round rather than `=== 'rep'`
+   * because a mark that reaches this component without passing the schema — a
+   * fixture, a broadcast built by hand — would otherwise lose the rep's own
+   * bookmark and their way to take it back, which is the opposite of the
+   * failure this field was added to fix.
+   */
+  const mine = mark.by !== 'product'
   return (
     <li className="group flex gap-snug">
       {/*
