@@ -266,10 +266,29 @@
    * meaning what it means, and there is no second design to keep honest.
    */
   --widget-bg: #101c25; /* the ground itself — every ratio below is measured against it */
-  --widget-soft: #1b2a35; /*  1.18:1 on #101c25 — inner surfaces, the meter's track */
+  /*
+   * **A fill that can group, which 1.18:1 could not.**
+   *
+   * This was #1b2a35 — one and a fifth to one against the card it sits on, which
+   * is not a surface a rep can see. The consequence is the density score this
+   * surface has carried for five rounds: **every** group on a 340px card is a
+   * *stroke*, because the only fill available to group with was invisible. Eight
+   * stroke-bearing elements were counted, among them a bordered input inside a
+   * bordered row inside a bordered card — the axis's named failure, drawn
+   * literally, and drawn that way out of necessity rather than choice.
+   *
+   * #2a3d4a is 1.54:1: a step, still quiet, and enough to say « this is a
+   * different surface » without a line. The ink that lands on it keeps room to
+   * spare — `--widget-ink` 10.45:1, `--widget-ink-dim` 5.29:1, both well past AA
+   * — which is the constraint that decided the value rather than taste.
+   *
+   * What it buys, in `Widget.tsx`: the note field's own border goes, and the
+   * composer's `border-t` with it. Two strokes replaced by one fill.
+   */
+  --widget-soft: #2a3d4a; /*  1.54:1 on #101c25 — inner surfaces, the meter's track */
   --widget-border: #33485a; /*  1.82:1 on #101c25 — LIGHTER than the fill, which is the point */
-  --widget-ink: #f3f7fa; /* 16.05:1 on #101c25 · 13.64:1 on #1b2a35 */
-  --widget-ink-dim: #a3b4c1; /*  8.11:1 on #101c25 ·  6.90:1 on #1b2a35 */
+  --widget-ink: #f3f7fa; /* 16.05:1 on #101c25 · 10.45:1 on #2a3d4a */
+  --widget-ink-dim: #a3b4c1; /*  8.11:1 on #101c25 ·  5.29:1 on #2a3d4a */
 
   /*
    * The two semantics that had to be re-cut for the dark ground, and the one

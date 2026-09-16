@@ -2206,7 +2206,18 @@ function Panel({
         something was written, and both the field and *Marquer* now say they are
         unavailable with the same sentence the pill's control carries.
       */}
-      <div className="border-subtle flex items-center gap-tight border-t px-inline py-snug">
+      {/*
+        **No rule here any more — the field's own fill is the boundary.**
+
+        This row carried a `border-t` *and* held a bordered input, so the
+        composer was a box inside a box inside a bordered card: three boundaries
+        for one grouping, on a 340px surface, and the reason was upstream rather
+        than here. `--widget-soft` was 1.18:1 against the card — not a surface a
+        rep can see — so nothing on this window could group by fill and every
+        group became a line. It is 1.54:1 now (`tokens.css` has the argument),
+        which is enough to say « a different surface » without one.
+      */}
+      <div className="flex items-center gap-tight px-inline py-snug">
         <input
           value={note}
           onChange={(event) => setNote(event.target.value)}
@@ -2223,7 +2234,8 @@ function Panel({
           maxLength={MARK_NOTE_MAX}
           aria-label={paused ? 'Noter ce moment — indisponible en pause' : 'Noter ce moment'}
           placeholder="Noter ce moment…"
-          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-snug py-hair text-ui disabled:opacity-60"
+          /* `bg-inner` and no border — see the note above the row. */
+          className="text-strong placeholder:text-muted bg-inner no-drag min-h-[24px] min-w-0 flex-1 rounded-sm px-snug py-hair text-ui disabled:opacity-60"
         />
         <Button
           variant="nav"

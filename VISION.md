@@ -733,7 +733,7 @@ same hue (200°), darkened, ratios measured against white.
    single class in `index.css` that re-points the surface tokens, so no
    component chooses a palette and no second design exists to keep honest. */
 --widget-bg:      #101c25;   /*  the ground itself — every ratio below is measured against it */
---widget-soft:    #1b2a35;   /*  1.18:1 on #101c25 — inner surfaces, the meter's track */
+--widget-soft:    #2a3d4a;   /*  1.54:1 on #101c25 — inner surfaces, the meter's track */
 --widget-border:  #33485a;   /*  1.82:1 on #101c25 — LIGHTER than the fill, which is the point */
 
 /* And the claim above, made true. "Whichever way the video goes, one of the two
@@ -760,8 +760,8 @@ same hue (200°), darkened, ratios measured against white.
    composition on every smoke, because eight stages photographing this card over
    #f7f9fb is how the sentence above survived three rounds. */
 --widget-rim: rgb(255 255 255 / 70%);
---widget-ink:     #f3f7fa;   /* 16.05:1 on #101c25 · 13.64:1 on #1b2a35 */
---widget-ink-dim: #a3b4c1;   /*  8.11:1 on #101c25 ·  6.90:1 on #1b2a35 */
+--widget-ink:     #f3f7fa;   /* 16.05:1 on #101c25 · 10.45:1 on #2a3d4a */
+--widget-ink-dim: #a3b4c1;   /*  8.11:1 on #101c25 ·  5.29:1 on #2a3d4a */
 
 /* Two semantics re-cut for that ground: --danger and --warn are measured
    against white and land at 3.16:1 and 3.44:1 on it, under AA as text, on a
