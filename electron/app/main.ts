@@ -1876,6 +1876,18 @@ const boot = async (): Promise<void> => {
       // Never « synchronisation en cours » here: nothing will ever sync.
       initialReason: 'aucun calendrier connecté — les appels en cours sont détectés sans lui',
       orchestrator,
+      /*
+        **The rep's own meetings, so they claim their own conversations**
+        (`core/domain/arming.ts`'s `ownClaims`).
+
+        `null` bounds are unbounded, so the range is passed through as given; the
+        limit is generous because a claim window is at most ninety minutes wide
+        and a day rarely holds more. `listMeetings` already leaves out the
+        unaccepted ad-hoc offers, which is exactly right here: an offer nobody
+        took is not a conversation the rep placed.
+      */
+      ownMeetings: (from, to) => store.projections.listMeetings(200, { from, to }),
+
       meetingSignal: () => meetingApps.current(),
       refreshMeetingSignal: (wantProcessList) => meetingApps.refresh({ processList: wantProcessList }),
       diagnostics,
@@ -1897,6 +1909,17 @@ const boot = async (): Promise<void> => {
     agenda = new Agenda({
       calendar,
       orchestrator,
+      /*
+        **The rep's own meetings, so they claim their own conversations**
+        (`core/domain/arming.ts`'s `ownClaims`).
+
+        `null` bounds are unbounded, so the range is passed through as given; the
+        limit is generous because a claim window is at most ninety minutes wide
+        and a day rarely holds more. `listMeetings` already leaves out the
+        unaccepted ad-hoc offers, which is exactly right here: an offer nobody
+        took is not a conversation the rep placed.
+      */
+      ownMeetings: (from, to) => store.projections.listMeetings(200, { from, to }),
       meetingSignal: () => meetingApps.current(),
       refreshMeetingSignal: (wantProcessList) => meetingApps.refresh({ processList: wantProcessList }),
       diagnostics,

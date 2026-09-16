@@ -23,7 +23,9 @@ import type { ArmingDecision, MeetingContext, Sensitivity } from '../contracts/m
  * working, and there is still exactly one number.
  */
 export { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
-import { OVERRUN_GRACE_MS } from '../contracts/meeting.ts'
+import { OVERRUN_GRACE_MS, meetingAnchor } from '../contracts/meeting.ts'
+import type { Meeting } from '../contracts/meeting.ts'
+import { AD_HOC_NOMINAL_MS } from './adHoc.ts'
 
 /**
  * How early the window opens. Five minutes is the interval between "I am about
@@ -129,6 +131,49 @@ export const calendarClaims = (
   // rep is in is the one whose slot they reached first. The caller walks the rest.
   return claims.sort((a, b) => a.context.scheduledStart - b.context.scheduledStart)
 }
+
+/**
+ * **The meetings the rep placed here, claiming their own conversations.**
+ *
+ * `calendarClaims` answers this about Graph events, and for six rounds that was
+ * the only answer — so on the no-Entra build, which DEC-28 makes the first
+ * deliverable and DEC-31 writes the calendar for, a meeting the rep created in
+ * this app claimed nothing. Driven on the shipped class: the rep makes their
+ * 14:30, joins Teams at 14:29, and their meeting sits `idle` for the whole call
+ * while « Appel non planifié — Teams » arms and takes the notification. The day
+ * holds two rows for one conversation, and the anonymous one — no client, no
+ * subject, no account resolution, no VSA link, no Outlook recipients — wears the
+ * screen's only filled *Enregistrer*.
+ *
+ * **The end this needs is not a new decision.** `meeting:create` takes a
+ * `scheduledStart` and deliberately no duration — « the rep is walking into a
+ * call, and a required field there is a form between them and the one thing the
+ * product must not miss » — so a rep-placed meeting has exactly as much of an
+ * end as a detected one: none. `AD_HOC_NOMINAL_MS` is already the product's
+ * answer for that class of object, argued in `adHoc.ts` in the terms this needs
+ * (« it is not a claim about when the call will end … an hour is the bound that
+ * behaves like the ordinary case ») and spent on the same class by
+ * `adHocContext` and by `main.ts`'s `manualContext`. A round was lost to a note
+ * claiming that number did not exist.
+ *
+ * `eventId === null` only: a meeting made from an invite is already claimed by
+ * `calendarClaims`, and counting it twice would let a spent slot keep the
+ * detector quiet.
+ *
+ * The same window as a calendar claim — `CALENDAR_CLAIM_MS` before the anchor,
+ * `OVERRUN_GRACE_MS` after the bound — so « does anything account for the call
+ * happening now » has one shape whatever wrote the meeting down.
+ */
+export const ownClaims = (meetings: readonly Meeting[], now: number): readonly Meeting[] =>
+  meetings
+    .filter((meeting) => meeting.eventId === null)
+    .filter((meeting) => {
+      const start = meetingAnchor(meeting)
+      return now >= start - CALENDAR_CLAIM_MS && now < start + AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS
+    })
+    // Earliest first, for the reason `calendarClaims` sorts: the conversation the
+    // rep is in is the one whose slot they reached first.
+    .sort((a, b) => meetingAnchor(a) - meetingAnchor(b))
 
 /** The earliest claimant, which is what a caller wanting one event means. */
 export const calendarClaim = (

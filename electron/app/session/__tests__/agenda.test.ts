@@ -1852,3 +1852,61 @@ test('one event is enough for nextArmable to own the sentence again', async () =
   )
   h.store.close()
 })
+
+/**
+ * **A meeting the rep placed here claims its own conversation.**
+ *
+ * `#calendarOffersAt` and `#spent` both read `this.#window.events` — Graph — so
+ * on the build with no Entra registration, which DEC-28 makes the first
+ * deliverable and DEC-31 writes the calendar for, the only meetings that exist
+ * claimed nothing. Driven: the rep makes their 14:30 in the app, joins Teams at
+ * 14:29, and « Appel non planifié — Teams » armed instead and took the
+ * notification. The day held two rows for one conversation and the anonymous one
+ * — no client, no subject, no account resolution, no VSA link, no Outlook
+ * recipients — wore the screen's only filled *Enregistrer*.
+ *
+ * Top finding on that surface for three consecutive rounds, and a round was lost
+ * to a note of mine claiming the bound it needs did not exist. It does:
+ * `AD_HOC_NOMINAL_MS`, argued in `adHoc.ts` for exactly this class of object.
+ */
+test('a meeting the rep placed in the app stops the detector offering a second one', async () => {
+  const h = harness([], 'Teams', 'Teams')
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    meetingSignal: () => ({ running: 'Teams', inCall: 'Teams' }),
+    clock: () => T0,
+    onArmed: (a) => void h.armed.push(a),
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+  await agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+  await agenda.tick({ now: T0 + 60_000 })
+
+  assert.deepEqual(
+    h.armed.map((a) => a.subject),
+    [],
+    `le détecteur a proposé une seconde conversation : ${JSON.stringify(h.armed)}`,
+  )
+  assert.equal(h.orchestrator.stateOf(mine.id), 'idle', 'la réunion du commercial a changé d’état')
+  h.store.close()
+})
+
+/** And a caller that wires nothing keeps exactly the old behaviour. */
+test('without the port the unscheduled detector is unchanged', async () => {
+  const h = harness([], 'Teams', 'Teams')
+  h.orchestrator.create({ id: 'm-mine', title: 'Néovia Santé', clientName: null, scheduledStart: T0 })
+
+  await h.agenda.tick({ now: T0 })
+  await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+
+  assert.equal(h.armed.length, 1, 'le détecteur ne propose plus rien sans le port')
+  h.store.close()
+})

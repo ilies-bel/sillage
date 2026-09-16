@@ -17,17 +17,21 @@ import { EMPTY_WINDOW } from '../../core/contracts/calendar.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
-import { AFTER_THE_CALL } from '../../core/contracts/meeting.ts'
+import { AFTER_THE_CALL, meetingAnchor } from '../../core/contracts/meeting.ts'
+import type { Meeting } from '../../core/contracts/meeting.ts'
 import {
   ARM_LEAD_MS,
+  CALENDAR_CLAIM_MS,
   calendarClaims,
   nextArmable,
+  ownClaims,
   OVERRUN_GRACE_MS,
 } from '../../core/domain/arming.ts'
 import {
   adHocContext,
   adHocMeetingId,
   adHocTitle,
+  AD_HOC_NOMINAL_MS,
   decideAdHoc,
 } from '../../core/domain/adHoc.ts'
 import type { MeetingSignal } from '../../modules/capture/MeetingApps.ts'
@@ -114,6 +118,17 @@ export interface AgendaOptions {
    * seconds would be a notification every thirty seconds.
    */
   onArmed?: (armed: { meetingId: string; subject: string }) => void
+  /**
+   * **The meetings the rep placed in this app, so they can claim their own
+   * conversations** (`ownClaims`).
+   *
+   * A port rather than a store handle, for the reason every other boundary here
+   * is one: `Agenda` decides, `app/` wires. Optional because a caller that does
+   * not pass it gets exactly the behaviour this class had before — the
+   * calendar's claims and nothing else — which is what every existing test
+   * asserts.
+   */
+  ownMeetings?: (from: number, to: number) => readonly Meeting[]
   /**
    * What the calendar column says before the first tick has decided anything.
    *
@@ -429,11 +444,45 @@ export class Agenda {
    * twenty-five minutes out — a bounded deferral, which is what `decideAdHoc` wants.
    */
   #calendarOffersAt(now: number): number | null {
+    /*
+     * **Both kinds of claim, earliest first.**
+     *
+     * This read `this.#window.events` alone, which is Graph — so on a build with
+     * no Entra registration, the only meetings that exist are the rep's own and
+     * none of them claimed anything. See `ownClaims` for what that cost and why
+     * the bound it uses is not a new decision.
+     */
+    const offers: number[] = []
     for (const claim of calendarClaims(this.#window.events, now)) {
       if (this.#spent(claim.id)) continue
-      return claim.context.scheduledStart - ARM_LEAD_MS
+      offers.push(claim.context.scheduledStart - ARM_LEAD_MS)
+      break
     }
-    return null
+    for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
+      /*
+       * Keyed on the meeting itself, not on `meetingIdFor(eventId)`: these have
+       * no event, and « is the product finished with this conversation » has to
+       * be asked of the thing that holds the state.
+       */
+      const state = this.#options.orchestrator.stateOf(meeting.id)
+      if (state !== null && AFTER_THE_CALL.has(state)) continue
+      offers.push(meetingAnchor(meeting) - ARM_LEAD_MS)
+      break
+    }
+    return offers.length === 0 ? null : Math.min(...offers)
+  }
+
+  /**
+   * The rep's own meetings around `now`, or none when nothing is wired.
+   *
+   * The window is the claim window `ownClaims` applies, widened by the nominal
+   * bound so a meeting that started before `now` is still fetched and can still
+   * be found to be claiming.
+   */
+  #ownMeetings(now: number): readonly Meeting[] {
+    const read = this.#options.ownMeetings
+    if (read === undefined) return []
+    return read(now - AD_HOC_NOMINAL_MS - OVERRUN_GRACE_MS, now + CALENDAR_CLAIM_MS)
   }
 
   /**
