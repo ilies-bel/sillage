@@ -75,35 +75,41 @@
    * "this meeting is armed or recording" and nothing else — never a selected
    * tab, a primary button or a link. Brand blue marks selection and navigation.
    */
-  --accent: #ff8500; /*  2.44:1 on #ffffff — FILL AND DOT ONLY, never text */
   /*
-   * **The same meaning, on a ground where 2.44:1 is not enough.**
+   * **One orange, and it is this one.**
    *
-   * `--accent` is licensed as a fill, and as a fill beside a word it is fine:
-   * `StateDot` refuses to render without a visible label, so its dot is a second
-   * carrier of something already written down — the exemption WCAG 1.4.11
-   * allows. The calendar grid is the one place that is not true. A cell has a
-   * date and a dot; the legend under the grid explains the code but only the
-   * mark says which day carries it. Measured there, `--accent` is **2.25:1** on
-   * a selected day (`--brand-50`) and 2.18:1 on `--bg-subtle` under the pointer.
+   * #ff8500 is the client's own, and it shipped at 2.44:1 on white under a
+   * comment licensing it « FILL AND DOT ONLY, never text » — as though a fill
+   * were exempt. It is not: WCAG 1.4.11 holds a graphic *required to understand
+   * the content* to 3:1, and on the calendar grid the dot is the whole signal —
+   * a cell has a date and a mark, and only the mark says which day carries it.
+   * Measured there, #ff8500 is 2.25:1 on a selected day and 2.18:1 under the
+   * pointer. `StateDot` escapes the rule for a real reason and not a lucky one:
+   * it refuses to render without a visible label, so its dot is a second carrier
+   * of something already written down.
    *
-   * Darkening `--accent` itself was the obvious move and is the wrong one: at
-   * the 3:1 it would need (#d77000) it sits **1.49:1** from `--warn` #b45309,
-   * and the two share a screen in nine files — `StateDot`, `SectionNav`,
-   * `Button`, `Session`, `Historique`, `PendingGates`, `Reglages`,
-   * `TranscriptReader` and the widget. Trading a contrast floor for two
-   * semantics a rep cannot tell apart is not a fix.
+   * **The first fix was two tokens and that was worse.** `--accent-mark` gave
+   * the grid a darker orange and left `StateDot` on #ff8500, scoped on the
+   * argument that « CalendarGrid draws no `--warn` » — true of the component and
+   * false of the screen. Two reviewers found the same thing independently: on
+   * one agenda at 1280×800, a 6px filled dot meaning « enregistrement en cours »
+   * rendered in #ff8500 on a row and #d77000 in the grid 600px away, **1.39:1
+   * apart, for one state**. A palette that needs a second value for a meaning
+   * has not solved the meaning.
    *
-   * So it is scoped to the surface that needs it, which is the `--widget-*`
-   * argument again: a token re-cut for one ground rather than a palette bent to
-   * its worst case. `CalendarGrid` draws no `--warn` at all, so inside it there
-   * is one orange and it means what orange means everywhere — armed or
-   * recording, never a tab, a button or a link.
+   * So there is one value and it clears the floor on every ground the product
+   * paints: 3.38:1 on white, 3.35 on `--bg-card`, 3.21 on `--bg-canvas`, 3.03 on
+   * `--bg-subtle`, 3.13 on `--brand-50`, and 5.11 on the overlay's `--widget-bg`
+   * — so the widget needs no re-point either and the pill's dot is the same
+   * orange as the agenda's.
    *
-   * 3.01:1 on `--bg-subtle`, 3.11:1 on `--brand-50`, 3.25:1 on the grid's own
-   * canvas, 3.37:1 on white.
+   * **The cost, stated:** #d77000 is 1.48:1 from `--warn` #b45309 where #ff8500
+   * was 2.06:1, and the two share a screen. They are not confusable in practice
+   * because they are never the same *shape* — orange is a dot or a fill and
+   * nothing else (below), `--warn` is a sentence — but the margin is smaller
+   * than it was and that is the price of the floor, not a free win.
    */
-  --accent-mark: #d77000;
+  --accent: #d77000; /*  3.38:1 on #ffffff — FILL AND DOT ONLY, never text */
   --success: #2f855a; /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
   --warn: #b45309; /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
   --danger: #c53030; /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
@@ -356,9 +362,18 @@
    * thought of is the same instrument as a comment.
    *
    * 56 % is the first alpha that clears 3:1 on every one of the 256; 70 % is
-   * taken for margin and bottoms out at **3.42:1 on rgb(110,110,110)**. Pure
-   * white would only reach 4.17 — at mid grey nothing is far away, which is why
-   * this is a floor and not a ratio to maximise.
+   * taken for margin. Pure white would only reach 4.17 — at mid grey nothing is
+   * far away, which is why this is a floor and not a ratio to maximise.
+   *
+   * **And the 256 greys are not the worst case either**, which is the second
+   * correction this token has needed. Contrast is a function of luminance, so a
+   * grey sweep would cover every colour — if the carriers were opaque. The rim
+   * is not: it composites per channel in gamma space, so its result is not a
+   * function of the ground's luminance alone. rgb(210,0,64) and rgb(105) agree
+   * on luminance to four decimals and give **3.14:1 and 3.63:1**. Swept over all
+   * 16 777 216 grounds, the floor is **3.13:1 at rgb(212,0,0)** — saturated red,
+   * which a full-screen video reaches far more often than any grey.
+   * `widget-sombre` sweeps the cube on every smoke; it costs about 50 ms.
    *
    * `rgb(… / N%)` and not `color-mix`, for the reason `--bg-scrim` is: the
    * contrast detector cannot composite a `color(srgb …)` and reports the

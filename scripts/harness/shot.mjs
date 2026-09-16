@@ -2527,20 +2527,37 @@ const SCREENS = {
       }
 
       /*
-       * **Then every ground, not a host somebody thought of.**
+       * **Then every ground there is — all 16 777 216 of them.**
        *
-       * The first version of this stage painted one `HOST` — `#1f1f1f` — and
-       * asserted against it. That is the same instrument as the six-row table
-       * in `tokens.css` it was written to enforce, and it had the same hole:
-       * `#1f1f1f` is the rim's *best* point, so the stage passed while the
-       * property it claimed was false from about `#3a3a3a` to `#656565`,
-       * bottoming out at 2.38:1. A check whose sample is chosen by the same
-       * person who chose the value is not independent of it.
+       * This has been wrong twice, and both versions are worth keeping because
+       * they are one mistake at two scales: a sample chosen by the same person
+       * who chose the value is not independent of it.
+       *
+       * The first painted one `HOST`, `#1f1f1f`, and asserted against it — the
+       * same instrument as the six-row table in `tokens.css` it was written to
+       * enforce, with the same hole. `#1f1f1f` is the rim's *best* point, so the
+       * stage passed while the property was false from about `#3a3a3a` to
+       * `#656565`, bottoming out at 2.38:1.
+       *
+       * The second swept the 256 greys and justified it: « greys are the worst
+       * case — a saturated host is further from this desaturated card on at
+       * least one channel ». **Both halves of that are wrong.** Contrast is a
+       * function of luminance, not of per-channel distance, so the sentence
+       * argues about the wrong quantity. And the conclusion fails for a reason
+       * the sentence could not reach: the rim is *translucent*, so it composites
+       * per channel in gamma space and its result is therefore **not** a
+       * function of the ground's luminance alone. Measured — rgb(210,0,64) and
+       * rgb(105), whose luminances agree to four decimals, give **3.14:1 and
+       * 3.63:1**. Half a point apart at the same luminance.
+       *
+       * So the cube is swept. The true minimum is **3.13:1 at rgb(212,0,0)** —
+       * saturated red, which a full-screen video reaches far more often than any
+       * grey. With the transfer function in a lookup table and one table per
+       * carrier per channel, all 16.7 M grounds cost about 50 ms, which is the
+       * other half of the lesson: sampling never bought anything here.
        *
        * The card's own colours do not depend on what is behind it, so they are
-       * read once from the shipped composition and swept over all 256 greys
-       * here. Greys are the worst case: a saturated host is further from this
-       * desaturated card on at least one channel.
+       * read once from the shipped composition.
        */
       const measured = await page.evaluate(() => {
         const rgb = (value) => (value.match(/[\d.]+/g) || []).map(Number)
@@ -2578,12 +2595,22 @@ const SCREENS = {
         const c = v / 255
         return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
       }
-      const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-      const ratio = (a, b) => {
-        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
-        return (hi + 0.05) / (lo + 0.05)
+      /** The transfer function for all 256 byte values, once. */
+      const LUT = Float64Array.from({ length: 256 }, (_, i) => channel(i))
+      const lum = ([r, g, b]) =>
+        0.2126 * LUT[Math.round(r)] + 0.7152 * LUT[Math.round(g)] + 0.0722 * LUT[Math.round(b)]
+      const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      /*
+       * A carrier's luminance contribution for every possible ground byte,
+       * precomputed per channel. An opaque colour ignores the ground; a
+       * translucent one — the rim — composites into it, and that is the whole
+       * reason the cube below is swept rather than the luminance axis.
+       */
+      const carrier = ([r, g, b, a = 1]) => {
+        const mix = (c) =>
+          Float64Array.from({ length: 256 }, (_, i) => LUT[Math.round(a * c + (1 - a) * i)])
+        return [mix(r), mix(g), mix(b)]
       }
-      const flatten = ([r, g, b, a = 1], ground) => [r, g, b].map((c, i) => a * c + (1 - a) * ground[i])
 
       /*
        * 3:1 is the floor a non-text boundary is held to (WCAG 1.4.11), and the
@@ -2600,37 +2627,42 @@ const SCREENS = {
          * still separates it » — as a predicate. A shadow layer lighter than
          * the card is the rim; if none is, the composition has lost it.
          */
-        const hasRim = surface.shadows.some((layer) => lum(flatten(layer, [255, 255, 255])) > lum(surface.fill))
+        const hasRim = surface.shadows.some((layer) => lum(layer) > lum(surface.fill))
         if (!hasRim) {
           throw new Error(`${surface.name} : aucun liseré clair dans l’ombre — --widget-rim a quitté la composition`)
         }
+        const carriers = [surface.fill, surface.border, ...surface.shadows].map(carrier)
         let worst = Infinity
-        let worstGrey = 0
-        for (let v = 0; v <= 255; v++) {
-          const ground = [v, v, v]
-          const best = Math.max(
-            ratio(flatten(surface.fill, ground), ground),
-            ratio(flatten(surface.border, ground), ground),
-            ...surface.shadows.map((layer) => ratio(flatten(layer, ground), ground)),
-          )
-          if (best < worst) {
-            worst = best
-            worstGrey = v
+        let worstGround = null
+        for (let r = 0; r < 256; r++) {
+          for (let g = 0; g < 256; g++) {
+            for (let b = 0; b < 256; b++) {
+              const ground = 0.2126 * LUT[r] + 0.7152 * LUT[g] + 0.0722 * LUT[b]
+              let best = 0
+              for (const [cr, cg, cb] of carriers) {
+                const seen = ratio(0.2126 * cr[r] + 0.7152 * cg[g] + 0.0722 * cb[b], ground)
+                if (seen > best) best = seen
+              }
+              if (best < worst) {
+                worst = best
+                worstGround = [r, g, b]
+              }
+            }
           }
         }
         if (worst < FLOOR) {
           throw new Error(
-            `${surface.name} : sur rgb(${worstGrey},${worstGrey},${worstGrey}) le meilleur porteur du bord ` +
-              `est ${worst.toFixed(2)}:1 — rien ne sépare la fenêtre de l’appel (plancher ${FLOOR}:1)`,
+            `${surface.name} : sur rgb(${worstGround}) le meilleur porteur du bord est ` +
+              `${worst.toFixed(2)}:1 — rien ne sépare la fenêtre de l’appel (plancher ${FLOOR}:1)`,
           )
         }
         surface.worst = worst
-        surface.worstGrey = worstGrey
+        surface.worstGround = worstGround
       }
       console.log(
-        '   pire fond sur 256 gris: ' +
+        '   pire fond sur 16 777 216: ' +
           measured
-            .map((s) => `${s.name} ${s.worst.toFixed(2)}:1 @rgb(${s.worstGrey})`)
+            .map((s) => `${s.name} ${s.worst.toFixed(2)}:1 @rgb(${s.worstGround})`)
             .join(' | '),
       )
 
@@ -3363,6 +3395,31 @@ async function main() {
     process.exit(1)
   }
 
+  /*
+   * **A stage may borrow the viewport; it may not keep it.**
+   *
+   * `review-garde` drives the arming latch by resizing — 1600×1200, 1280×800,
+   * 1280×3000, 1280×800 — which is legitimate and is the whole assertion. What
+   * it did not do is give the size back, and nothing here noticed: the label
+   * below was printed from the size that was *asked for*, so every render of
+   * that stage at any size came out 1280×800 and was captioned with whatever
+   * the caller requested. `smoke.mjs`'s « every stage × two sizes » therefore
+   * measured that stage twice at one size, for an unknown number of rounds — on
+   * the screen whose entire subject is what fits in a window, and behind the one
+   * press that writes into a client's CRM.
+   *
+   * Restored rather than refused, because borrowing it is the right way to write
+   * that stage. The picture and every check below then describe the size on the
+   * label. The label itself is read back from the page further down, so it can
+   * no longer state a viewport nothing rendered — `CLAUDE.md`'s fourth shape, in
+   * the one tool this repo uses to avoid it.
+   */
+  const borrowed = page.viewportSize()
+  if (borrowed && (borrowed.width !== flags.viewport.width || borrowed.height !== flags.viewport.height)) {
+    await page.setViewportSize(flags.viewport)
+    await settled(page)
+  }
+
   // Nothing below measures a page that is still moving — see `settled`.
   await settled(page)
 
@@ -3968,9 +4025,16 @@ async function main() {
   }
 
   const unanswered = await page.evaluate(() => window.__harness?.unanswered ?? [])
+  const rendered = page.viewportSize()
   await browser.close()
 
-  const size = `${flags.viewport.width}×${flags.viewport.height}`
+  /*
+   * Read back from the page, never from the request. A caption is a measurement
+   * like any other — see the viewport restoration above for what this cost.
+   */
+  const size = rendered
+    ? `${rendered.width}×${rendered.height}`
+    : `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
   if (findings) report(findings, flags.scan, screen, flags.viewport)
   if (flags.scrollers) {

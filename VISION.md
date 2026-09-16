@@ -646,20 +646,23 @@ same hue (200°), darkened, ratios measured against white.
 --text-muted:     #62707b;   /*  5.09:1 on #ffffff ·  4.56:1 on #eef3f7 */
 
 /* semantic */
---accent:         #ff8500;   /*  2.44:1 on #ffffff — their orange, ONE meaning: armed /
-                                 recording. Fill and dot only; it cannot carry text. */
+--accent:         #d77000;   /*  3.38:1 on #ffffff — ONE meaning: armed / recording.
+                                 Fill and dot only; it cannot carry text. */
 
-/* The same meaning on a ground where 2.44:1 is not enough. --accent is a fill
-   beside a word: StateDot refuses to render without a visible label, so its dot
-   is a second carrier and 1.4.11 exempts it. The calendar grid is the one place
-   that is not true -- a cell has a date and a dot, and only the mark says which
-   day carries it. There --accent measures 2.25:1 on a selected day and 2.18:1
-   under the pointer. Darkening --accent itself would put it 1.49:1 from --warn,
-   which shares a screen with it in nine files, so it is scoped to the one
-   surface that needs it -- the same argument the overlay palette makes.
-   CalendarGrid draws no --warn, so inside it there is one orange and it means
-   what orange means everywhere. */
---accent-mark:    #d77000;   /*  3.37:1 on #ffffff — grid marks, no label beside them */
+/* It was the client's #ff8500 at 2.44:1, under a comment licensing it "fill and
+   dot only" as though a fill were exempt. It is not: 1.4.11 holds a graphic
+   required to understand the content to 3:1, and on the calendar grid the dot is
+   the whole signal — a cell has a date and a mark. StateDot escapes the rule for
+   a real reason: it refuses to render without a visible label, so its dot is a
+   second carrier. The first fix was a second token scoped to the grid, and two
+   reviewers independently found the same defect one level up — on one agenda, a
+   6px filled dot meaning "enregistrement en cours" drawn #ff8500 on a row and
+   #d77000 in the grid, 1.39:1 apart, for one state. A palette needing a second
+   value for a meaning has not solved the meaning. One value clears the floor on
+   every ground the product paints, the overlay's #101c25 included at 5.11:1, so
+   the widget needs no re-point. The cost, stated: 1.48:1 from --warn where
+   #ff8500 was 2.06:1. They never take the same shape — orange is a dot or a
+   fill, --warn is a sentence — but the margin is the price of the floor. */
 --success:        #2f855a;   /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
 --warn:           #b45309;   /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
 --danger:         #c53030;   /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
@@ -742,11 +745,15 @@ same hue (200°), darkened, ratios measured against white.
    The rim is the complement. It vanishes on paper (1.04:1) exactly where the
    fill is strongest (16.38:1), and carries the edge alone where the fill has
    nothing (8.66:1 on #1f1f1f). The floor is not at either end: it is the
-   crossover near rgb(110,110,110), where the fill has gone dim and the rim has
-   not yet brightened, and the best carrier there is 3.42:1. Swept over all 256
-   greys rather than over a list of hosts someone thought of — the first draft
-   of this rim reasoned from six named grounds, satisfied all six at 36 %, and
-   bottomed out at 2.38:1 in the band between them.
+   crossover where the fill has gone dim and the rim has not yet brightened, and
+   swept over all 16 777 216 grounds it is 3.13:1 at rgb(212,0,0). Swept, not
+   sampled, and twice: the first draft reasoned from six named hosts, satisfied
+   all six at 36 %, and bottomed out at 2.38:1 in the band between them; the
+   second swept the 256 greys on the argument that a saturated host is further
+   away per channel, which is the wrong quantity — contrast is a function of
+   luminance, and the rim composites per channel in gamma space, so its result is
+   not a function of the ground's luminance alone. rgb(210,0,64) and the grey of
+   equal luminance differ by 3.14:1 against 3.63:1.
 
    36 % of a stated case is the same instrument as a comment. tokens.css carries
    the sweep; `widget-sombre` in the harness re-runs it against the shipped

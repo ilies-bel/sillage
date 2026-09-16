@@ -223,8 +223,8 @@ const MARK_CLASS: Record<DayMark, string> = {
     called that « réunion prête ». The grid said *ready* about a call in
     progress.
   */
-  recording: 'bg-accent-mark',
-  armed: 'border border-accent-mark',
+  recording: 'bg-accent',
+  armed: 'border border-accent',
   captured: 'bg-brand-500',
   scheduled: 'border border-brand-500',
 }
