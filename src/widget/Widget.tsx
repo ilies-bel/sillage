@@ -2271,7 +2271,25 @@ function Panel({
         keeping the target floor. Both states of this row are 24 px now, so it
         measures the same before and after the press. `widget-arret` asserts it.
       */}
-      <div className="border-subtle flex items-center justify-between gap-snug border-t px-inline py-snug">
+      {/*
+        **A fixed height, so the surface can have a control ladder again.**
+
+        The stop confirmation grew this row 8.6px when it swapped in the filled
+        danger button, which moved a frameless always-on-top window under the
+        rep's finger at the instant of an irreversible decision. The fix was
+        `py-0` on that button — correct for the reflow, and it flattened the last
+        height difference on the surface: ten controls at exactly 24px, so
+        nothing on this card could be told apart by shape, and the one act that
+        cannot be undone was the same rectangle as the disclosure icon.
+
+        Reserving the row is the other way to buy the same property, and it buys
+        the ladder back: `h-10` is what the row already measured at rest
+        (24px + `py-snug` both sides), so the resting card does not change — and
+        a 28px control now fits inside it without moving anything.
+        `widget-arret` asserts the card measures the same before and after the
+        press, which is the property, and it is unchanged by this.
+      */}
+      <div className="border-subtle flex h-10 items-center justify-between gap-snug border-t px-inline">
         {/*
           **The row asks one question at a time, and it has to fit.**
 
@@ -2382,13 +2400,13 @@ function Panel({
             <Button
               variant="danger"
               /*
-                `py-0`, so the filled rectangle is the same 24 px as the text
-                controls it replaces and the row cannot grow. `Button`'s base
-                carries `min-h-[24px]`, so the target floor is kept by the
-                component rather than by this padding — the padding was only
-                ever making it taller than its siblings.
+                **The one control on this surface allowed to be taller**, now
+                that the row reserves its height and cannot be grown by it.
+                28px against the footer's 24: the only act here that cannot be
+                undone is the only one with a different shape, which is the
+                distinction ten identical rectangles could not make.
               */
-              className="no-drag py-0"
+              className="no-drag min-h-[28px] py-0"
               onClick={() => {
                 setConfirmEnd(false)
                 onClose()
