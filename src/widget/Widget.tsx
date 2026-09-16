@@ -87,13 +87,22 @@ import {
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { formatElapsed } from '../app/format.ts'
 import { LevelMeter } from '../screens/session/LevelMeter.tsx'
-import { Button } from '../ui/index.ts'
+import { Button, unavailable } from '../ui/index.ts'
 import {
   MENTION_COPY_STATE,
   MENTION_LABEL,
   MENTION_NOTE,
   MENTION_NOT_LOGGED,
 } from './mention.ts'
+
+/**
+ * Said the same way by every control the pause withdraws.
+ *
+ * One sentence in one place, because three controls say it — the pill's mark
+ * button, the panel's note field and its *Marquer* — and a reason typed three
+ * times is a reason that will stop agreeing with itself.
+ */
+const PAUSED_NO_MARK = 'En pause : rien n’est enregistré à marquer.'
 
 /**
  * How many turns the widget keeps.
@@ -1251,6 +1260,23 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
     }
     const observer = new ResizeObserver(send)
     observer.observe(element)
+    /*
+     * **And the pill, because the frame stopped being able to report it.**
+     *
+     * `--pill-w` is published from the pill's rect so the notices that hang from
+     * it can match its width. The notices are *sized by* that variable, so once
+     * one mounts it pins the frame's width — and then the pill shrinking inside
+     * it (recording 285.55 → idle 199.56) changes no border box the observer is
+     * watching. The variable kept the recording value and the refusal card
+     * overhung the idle pill by 43 px a side: worse than the `w-[260px]`
+     * constant it replaced, in the state `Refus` exists for.
+     *
+     * A consumer that pins the thing being measured is a measurement that stops
+     * arriving. Observing the pill itself is what makes the published number a
+     * reading rather than a memory.
+     */
+    const pillElement = element.querySelector('[data-pill]')
+    if (pillElement) observer.observe(pillElement)
 
     /*
      * **The deferred measurement, asked again the instant the pill stops moving.**
@@ -1870,7 +1896,7 @@ function Pill({
             mark would point at audio that was never kept — see `mark`.
           */
           disabled={paused}
-          title={paused ? 'En pause : rien n’est enregistré à marquer.' : undefined}
+          title={paused ? PAUSED_NO_MARK : undefined}
           aria-label={
             paused
               ? 'Marquer ce moment — indisponible en pause'
@@ -2165,6 +2191,21 @@ function Panel({
         )}
       </div>
 
+      {/*
+        **Paused, this row is unavailable — and the note survives.**
+
+        `mark()` refuses while frames are being dropped, correctly. Both routes
+        into it cleared the field *first*: driven on the shipped renderer, a rep
+        typing one-handed over a client's face and pressing the card's one accent
+        control got an empty field, zero `meeting:mark` calls, no card, no alert
+        and nothing in the live region. The guard turned a refusal into silent
+        data loss, on the only control here that had anything to lose — which is
+        worse than the defect it was added to fix.
+
+        `setNote('')` moves after the call, so nothing is cleared unless
+        something was written, and both the field and *Marquer* now say they are
+        unavailable with the same sentence the pill's control carries.
+      */}
       <div className="border-subtle flex items-center gap-tight border-t px-inline py-snug">
         <input
           value={note}
@@ -2172,22 +2213,26 @@ function Panel({
           onKeyDown={(event) => {
             if (event.key !== 'Enter') return
             event.preventDefault()
+            if (paused) return
             const text = note.trim()
-            setNote('')
             onMark(null, text)
+            setNote('')
           }}
+          disabled={paused}
+          title={paused ? PAUSED_NO_MARK : undefined}
           maxLength={MARK_NOTE_MAX}
-          aria-label="Noter ce moment"
+          aria-label={paused ? 'Noter ce moment — indisponible en pause' : 'Noter ce moment'}
           placeholder="Noter ce moment…"
-          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-snug py-hair text-ui"
+          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-snug py-hair text-ui disabled:opacity-60"
         />
         <Button
           variant="nav"
           className="no-drag px-hair"
+          {...unavailable(paused, PAUSED_NO_MARK)}
           onClick={() => {
             const text = note.trim()
-            setNote('')
             onMark(null, text)
+            setNote('')
           }}
         >
           Marquer
@@ -2443,7 +2488,7 @@ function TurnRow({
         type="button"
         onClick={onMark}
         disabled={paused}
-        title={paused ? 'En pause : rien n’est enregistré à marquer.' : undefined}
+        title={paused ? PAUSED_NO_MARK : undefined}
         aria-label={
           paused
             ? 'Marquer cette prise de parole — indisponible en pause'

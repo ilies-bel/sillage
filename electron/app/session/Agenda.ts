@@ -529,6 +529,27 @@ export class Agenda {
     return state !== null && AFTER_THE_CALL.has(state)
   }
 
+  /** `#spent`, keyed on a meeting that has no event — see `#calendarOffersAt`. */
+  #spentMeeting(meetingId: string): boolean {
+    const state = this.#options.orchestrator.stateOf(meetingId as MeetingId)
+    return state !== null && AFTER_THE_CALL.has(state)
+  }
+
+  /**
+   * Take back an offer made for a meeting the rep placed here.
+   *
+   * `disarm` and not a silent clear: an offer withdrawn is an event, the same
+   * way the calendar's is, so the log says the conversation ended without a
+   * recording rather than the row simply changing under the rep.
+   */
+  #withdrawOwn(meetingId: string): void {
+    if (this.#armed?.meetingId === meetingId) this.#armed = null
+    const state = this.#options.orchestrator.stateOf(meetingId as MeetingId)
+    if (state === 'armed') {
+      this.#options.orchestrator.dispatch(meetingId as MeetingId, 'disarm', 'conversation terminée')
+    }
+  }
+
   #over(eventId: string, now: number): boolean {
     const event = this.#window.events.find((candidate) => candidate.id === eventId)
     if (!event) return true
@@ -812,6 +833,41 @@ export class Agenda {
      * No `context`: the meeting exists — the rep made it — and `#arm` refuses to
      * invent one.
      */
+    /*
+     * **And the offer is taken back when the conversation is over.**
+     *
+     * The calendar's withdrawal below is guarded `#armed.eventId !== null`,
+     * which was written when `eventId: null` meant « ad-hoc » and `#adHocArmed`
+     * handled that case separately. It no longer does: `null` now means an
+     * ad-hoc meeting *or* one the rep placed here, and only the first of the two
+     * had an exit — so an offer made by the site below was **never** withdrawn.
+     *
+     * Driven: the rep places a 14:30, never joins, Teams merely open. `armed` at
+     * T−5, still `armed` at T+150 — ninety minutes past the bound `ownClaims`
+     * itself applies — with no `disarm` ever dispatched. And it does not stop
+     * there: `live` is then true every tick, so `#adHocSpent` latches and the
+     * detector is spent for the life of the process; a genuine unscheduled call
+     * at 17:00 got zero offers. `armed` is in `UPDATE_BLOCKING_STATES`, so every
+     * installer is refused with « une réunion est sur le point de démarrer »
+     * about a call that never happened. It survives a relaunch, because the row
+     * is in the store.
+     *
+     * That is the harm this file documents three times over — `#trackHold`,
+     * `#adHocArmed`, `#withdrawCalendar` — reintroduced on the fourth path, the
+     * one that replaced the third. The bound is `ownClaims`' own, from the same
+     * function, so « does anything account for the call happening now » keeps the
+     * single shape its docblock claims.
+     */
+    const standingOwn = this.#armed?.eventId === null ? this.#armed : null
+    if (standingOwn !== null && this.#adHocArmed !== standingOwn.meetingId) {
+      const placed = this.#ownMeetings(now).find((meeting) => meeting.id === standingOwn.meetingId)
+      const over =
+        placed === undefined ||
+        now >= meetingAnchor(placed) + AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS ||
+        this.#spentMeeting(standingOwn.meetingId)
+      if (over) this.#withdrawOwn(standingOwn.meetingId)
+    }
+
     if (signal.running !== null) {
       for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
         const state = this.#options.orchestrator.stateOf(meeting.id)

@@ -1925,3 +1925,53 @@ test('without the port the unscheduled detector is unchanged', async () => {
   assert.equal(h.armed.length, 1, 'le détecteur ne propose plus rien sans le port')
   h.store.close()
 })
+
+/**
+ * **An offer the rep never took is taken back — and the one the own-meeting site
+ * makes had no exit at all.**
+ *
+ * The calendar's withdrawal is guarded `#armed.eventId !== null`, written when
+ * `eventId: null` meant « ad-hoc » and `#adHocArmed` handled that separately. It
+ * no longer does: `null` now means an ad-hoc meeting *or* one the rep placed
+ * here, and only the first had a way out.
+ *
+ * Driven before the fix: `armed` at T+150, ninety minutes past the bound
+ * `ownClaims` itself applies. And it did not stop there — `live` is true every
+ * tick while a meeting is armed, so `#adHocSpent` latched and the detector was
+ * spent for the life of the process; `armed` is in `UPDATE_BLOCKING_STATES`, so
+ * every installer was refused with « une réunion est sur le point de démarrer »
+ * about a call that never happened; and the row survived a relaunch, because it
+ * is in the store.
+ */
+test('an offer for a meeting the rep placed here expires with the conversation', async () => {
+  const h = harness([], 'Teams', null)
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    // A conferencing app open all day, which is the ordinary Windows desk, and
+    // nobody ever in a call.
+    meetingSignal: () => ({ running: 'Teams', inCall: null }),
+    clock: () => T0,
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+  assert.equal(h.orchestrator.stateOf(mine.id), 'armed', 'la réunion placée n’a pas été proposée')
+
+  // Past `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS` — the bound `ownClaims` applies.
+  await agenda.tick({ now: T0 + 90 * 60_000 })
+
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'idle',
+    'l’offre survit à la conversation : elle bloque le détecteur et les mises à jour',
+  )
+  assert.equal(agenda.snapshot().armed, null, 'la pastille annonce encore une offre retirée')
+  h.store.close()
+})

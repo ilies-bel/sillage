@@ -376,7 +376,25 @@ export function installAppBridge(config) {
               ? 'idle'
               : 'recording',
       title: 'Néovia Santé — cadrage renfort data',
-      eventId: 'evt-neovia-cadrage',
+      /*
+        **No invite exists on a build with no Entra registration**, and this
+        carried one unconditionally — including on `agenda-appel-imprevu`, the
+        stage whose entire premise is that branch.
+
+        `ownClaims` filters `eventId === null`, so the fixture routed around the
+        feature it was supposed to photograph: driven at the port with this exact
+        shape, an event id produces « idle: Néovia » beside « armed: Appel non
+        planifié — Teams » and the anonymous row takes the notification, while
+        `null` produces one armed row carrying the client's name. The flagship
+        detection screenshot argued for the defect after the defect was fixed.
+
+        Seventh time this file has been caught unable to produce the input a
+        behaviour lives on, and the second where it produced an input the
+        shipped code cannot: `Orchestrator.create` stores `eventId: null`
+        whatever is passed, so an `idle` meeting holding an event id is
+        unreachable on a build with no calendar.
+      */
+      eventId: entra ? 'evt-neovia-cadrage' : null,
       clientName: 'Néovia Santé',
       scheduledStart: NEOVIA_SLOT,
       createdAt: NEOVIA_CREATED,

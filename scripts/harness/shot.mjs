@@ -3146,6 +3146,37 @@ const SCREENS = {
           )
         })
 
+      /*
+       * **The notice is as wide as the pill it hangs from.**
+       *
+       * It was `w-[260px]`, a constant matching one state of a content-sized
+       * pill approximately and the other not at all — 35px of overhang a side
+       * when idle. Replacing it with a measured `--pill-w` made the recording
+       * state exact and the idle state *worse* (43px), because the notice is
+       * sized by that variable and so pins the frame: the pill then shrank
+       * inside a border box the `ResizeObserver` was watching, nothing fired,
+       * and the published number kept the recording pill's width.
+       *
+       * A consumer that pins the thing being measured is a measurement that
+       * stops arriving, and neither a screenshot nor any other check could see
+       * it — both rectangles are drawn correctly, and only the pair is wrong.
+       */
+      const stack = await page.evaluate(() => {
+        const pill = document.querySelector('[data-pill]')?.getBoundingClientRect()
+        const notice = document.querySelector('[role="alert"]')?.closest('[data-card]')?.getBoundingClientRect()
+        return pill && notice
+          ? { pill: Math.round(pill.width * 100) / 100, notice: Math.round(notice.width * 100) / 100 }
+          : null
+      })
+      if (!stack) throw new Error('pastille ou notice introuvable pour la mesure de largeur')
+      if (Math.abs(stack.pill - stack.notice) > 1) {
+        throw new Error(
+          `la notice ne suit pas la pastille : pastille ${stack.pill}px, notice ${stack.notice}px ` +
+            `(${Math.round(Math.abs(stack.pill - stack.notice) / 2)}px de débord par côté)`,
+        )
+      }
+      console.log(`   pile: pastille ${stack.pill}px · notice ${stack.notice}px`)
+
       await page.evaluate(() => window.__harness.refuseMarks(null))
     },
   },
