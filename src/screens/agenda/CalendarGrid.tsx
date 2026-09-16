@@ -172,35 +172,34 @@ export function CalendarGrid({
  * state word stays where it belongs, on the row.
  */
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
+  /*
+    Read as a 2×2: filled in the left column, hollow in the right; blue on the
+    top row, orange on the bottom. That is the code's own two axes, so a rep
+    learns both from one glance instead of reading four entries in a line.
+  */
   { mark: 'captured', label: 'réunion enregistrée' },
-  { mark: 'armed', label: 'réunion prête' },
-  /*
-    The key gained its third entry with the mark. Until it did, one orange dot
-    stood for two opposite conditions and the legend explained only the second.
-  */
-  { mark: 'recording', label: 'enregistrement en cours' },
-  /*
-    The fourth, and it is the one the grid was already promising.
-
-    `MARK_CLASS.scheduled`'s docblock has said since it was written that a day
-    holding only invites « gets the outline of the blue dot: present, unfilled »
-    — and `DayCell` guarded `mark !== 'scheduled'`, so it drew nothing. The rule
-    was declared, argued in two docblocks, announced to a screen reader by
-    `MARK_NAME`, and rendered by no pixel: a state that existed in the
-    accessibility tree and nowhere else. Two reviewers found it in two rounds.
-
-    Drawn rather than deleted, because the docblock's argument is right: the list
-    beside the grid shows those meetings, and a grid that marks only the days the
-    rep has *acted on* disagrees with it. A hollow blue dot is « there is
-    something here », which is what a calendar is for.
-  */
   { mark: 'scheduled', label: 'réunion prévue' },
+  { mark: 'recording', label: 'enregistrement en cours' },
+  { mark: 'armed', label: 'réunion prête' },
 ]
 
 function Legend() {
   return (
     <div className="border-subtle mt-row border-t pt-row">
-      <ul className="text-muted flex flex-wrap gap-inline text-label">
+      {/*
+        **A 2×2 grid, because a key that reflows cannot teach a two-axis code.**
+
+        It was `flex flex-wrap`, so the four entries landed 2/2 at 1280 and
+        **2/1/1** at 960 — three ragged rows at the size `main.ts` declares as the
+        floor. The code has two dimensions: hue says *which kind* (blue is a
+        meeting, orange is a recording) and fill says *offered or happening*. A
+        wrap that puts them in an arbitrary order scrambles both, and the one
+        block whose whole job is to teach the code is the first thing to break.
+
+        Ordered so the columns are the two fills and the rows the two hues, which
+        is the code drawn as a table rather than a sentence.
+      */}
+      <ul className="text-muted grid grid-cols-2 gap-x-inline gap-y-tight text-label">
         {LEGEND.map(({ mark, label }) => (
           <li key={mark} className="flex items-center gap-tight">
             <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', MARK_CLASS[mark])} />
@@ -317,7 +316,13 @@ const MARK_NAME: Record<DayMark, string> = {
   recording: 'dont une en cours d’enregistrement',
   armed: 'dont une prête',
   captured: 'dont une enregistrée',
-  scheduled: 'aucune enregistrée',
+  /*
+    « réunion prévue », the same fact `LEGEND` draws — not « aucune enregistrée ».
+    This said what the day *lacked* while the dot says what it *holds*, so a
+    screen-reader rep and a sighted rep were told opposite things about the same
+    mark, under a docblock asserting the two track each other.
+  */
+  scheduled: 'dont une prévue',
 }
 
 const cellName = (day: DayKey, count: number, mark: DayMark | null): string => {
