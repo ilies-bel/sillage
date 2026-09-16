@@ -408,16 +408,41 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
     }
   }, [agenda])
 
+  /** The last refusal from `agenda:arm`, shown on the page — see `armNow`. */
+  const [refusal, setRefusal] = useState<string | null>(null)
+
   const armNow = useCallback(
     async (eventId: string) => {
       setBusy(true)
       try {
+        setRefusal(null)
         const { meetingId } = await invoke('agenda:arm', { eventId })
         agenda.set(await invoke('agenda:snapshot', {}))
         meetings.reload()
         onOpen(meetingId)
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.')
+        /*
+          **On the screen, not in Chromium's own chrome.**
+
+          This was `window.alert`. HR-10 is « one window, no modal chrome », and
+          this repo's own invariants say nothing Electron composes reaches a
+          rep's eyes — `preload.ts` exists to strip « Error invoking remote
+          method » for exactly that reason. A native modal is the strongest
+          version of what both forbid: it blocks the window, it is drawn by the
+          browser, and it arrives over a client call on the path HR-9 calls
+          primary.
+
+          The sentence inside it is worth keeping intact — `Agenda.armNow`
+          composes « Une réunion est déjà en cours d'enregistrement. Terminez-la,
+          puis reprenez celle-ci — elle reste proposée. », which names the
+          remedy and says the offer survives. It goes into the page's own
+          `role="alert"` instead, where a screen reader gets it too: the agenda
+          had no live region at all, so the one refusal a rep meets weekly was
+          announced by nothing.
+        */
+        setRefusal(
+          error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.',
+        )
       } finally {
         setBusy(false)
       }
@@ -688,6 +713,23 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               onOpen={onOpen}
             />
           ) : (
+            <>
+            {refusal === null ? null : (
+              /*
+                `role="alert"`, so it reaches a screen reader as well as an eye —
+                the agenda had no live region anywhere, and this is the one thing
+                on it that appears without a press and has to be read.
+              */
+              <div
+                role="alert"
+                className="border-warn bg-card text-body mb-row flex items-start gap-inline rounded-sm border px-inline py-snug text-ui"
+              >
+                <span className="min-w-0 flex-1">{refusal}</span>
+                <Button variant="text" className="shrink-0" onClick={() => setRefusal(null)}>
+                  Fermer
+                </Button>
+              </div>
+            )}
             <DayPane
               onArm={armNow}
               entries={inRange}
@@ -716,6 +758,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               }
               onOpen={onOpen}
             />
+            </>
           )}
 
           {/*

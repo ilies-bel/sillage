@@ -873,9 +873,38 @@ const announceMeeting = (
     if (!Notification.isSupported()) return
     const notification = new Notification({
       title: subject || 'Réunion',
-      // What it is offering, in one line, and it is an offer. « Enregistrer ? »
-      // and not « Enregistrement en cours » — nothing has started.
-      body: 'La réunion commence. Ouvrir Sillage pour l’enregistrer ?',
+      /*
+       * **What happened, not when — and no control whose availability moves.**
+       *
+       * « La réunion commence » was false on both paths this fires on, in
+       * opposite directions. The calendar path fires at
+       * `scheduledStart − ARM_LEAD_MS`, so up to **five minutes early**; the
+       * unscheduled path fires at `heldSince + AD_HOC_DWELL_MS`, so **at least
+       * twenty-five seconds late**, under a title reading « Appel non planifié »
+       * — one banner announcing that a meeting is beginning, about a call it has
+       * just labelled unplanned and already under way.
+       *
+       * And « pour l'enregistrer ? » names a control that can be refused:
+       * `Orchestrator.dispatch` allows one recording at a time, so arming is
+       * unavailable for as long as another call lasts.
+       *
+       * The rule for both is already written in this product, for its *other*
+       * notification, and argued at length there: « an OS notification is read
+       * at an instant this function cannot see … a notice sits in the
+       * notification centre until it is cleared, which on a working day is
+       * hours. A notification cannot be rewritten once shown, so the body may
+       * name no control whose availability moves. What is left is what happened,
+       * which is true at every instant it can be read » — `powerEvents.ts`'s
+       * `sleepInterruptedNotice`. It was derived once and applied to one of the
+       * two notifications the product sends.
+       *
+       * « a repéré » is the past tense of the only thing that is certainly true:
+       * the product noticed this call. « Ouvrir » is the click this notification
+       * already performs and is always available. What to do about it is left
+       * where HR-7 puts it — with the rep, on a screen, where the offer can
+       * still be refused honestly.
+       */
+      body: 'Sillage a repéré cet appel. Ouvrir pour décider.',
       silent: false,
     })
     notification.on('click', () => open(meetingId))
