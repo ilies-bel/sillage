@@ -257,6 +257,12 @@ export class Agenda {
    * of application, and a conferencing app releases the microphone when its call
    * ends, so « end one call, take another » arrives here as a different
    * `heldSince` and is offered.
+   *
+   * **And `#handBack` clears it on the other event, which for one round it did
+   * not.** A hold changing is « the rep took a different call »; an offer being
+   * withdrawn is « nothing accounts for the microphone now ». Both hand the
+   * detector back, and only the first was wired — see `#handBack` for what that
+   * cost the rep who stays on the line.
    */
   #adHocSpent = false
   /*
@@ -542,12 +548,55 @@ export class Agenda {
    * way the calendar's is, so the log says the conversation ended without a
    * recording rather than the row simply changing under the rep.
    */
-  #withdrawOwn(meetingId: string): void {
+  /**
+   * **Hand the microphone back to the detector.**
+   *
+   * `#adHocSpent` means « this conversation has already been offered for », and
+   * until this method only `#trackHold` cleared it — on a *change or loss* of
+   * the hold. That is the right clear for a rep who hangs up and dials again,
+   * and it is no clear at all for the rep who does not.
+   *
+   * The previous round moved the latch *below* the withdrawal, on the correct
+   * diagnosis that a stale offer is itself `live` and so spent the detector on
+   * its way out. That spares exactly one tick. `#adHocSpent` was already true
+   * from every earlier tick the stale offer stood, and nothing there clears it.
+   *
+   * Driven on the shipped class, no Entra, Teams held all day, a 14:30 placed
+   * and never joined — `scratch/r13det/caseB2.mjs`, and the regression test
+   * below is the same shape:
+   *
+   *     client call 15:20 → 17:30, nothing placed    offered at 15:20
+   *     client call 15:20 → 17:30, 14:30 placed      NO OFFER, 2 h 10
+   *     client call 15:50 → 17:30, 14:30 placed      offered at 15:50
+   *
+   * The 15:50 row passes only because the hold *begins* on the tick the
+   * withdrawal fires, so `#trackHold` clears the latch by coincidence. Every
+   * call that begins before the withdrawal and runs across it got nothing for
+   * its whole length — and the rep who places a 14:30 is precisely the rep
+   * whose real call starts near it. Switching Teams→Zoom mid-call unstuck it,
+   * so the product recovered from hanging up and not from staying on the line.
+   *
+   * Withdrawing is the event that means nothing accounts for the microphone, so
+   * it is the event that clears the latch, rather than a later tick noticing.
+   *
+   * **`#withdrawAdHoc` deliberately does not call this.** That offer was made
+   * for *this* hold, and a rep dismissing it is making a decision — « suppression
+   * is a decision, not a delay », which is the whole of `#adHocSpent`'s first
+   * paragraph. `#withdrawCalendar` does not either: its only caller is `armNow`,
+   * where the rep has just armed something and `live` re-latches on the next
+   * tick anyway.
+   */
+  #handBack(): void {
+    this.#adHocSpent = false
+  }
+
+  #withdrawOwn(meetingId: string, { handBack }: { handBack: boolean }): void {
     if (this.#armed?.meetingId === meetingId) this.#armed = null
     const state = this.#options.orchestrator.stateOf(meetingId as MeetingId)
     if (state === 'armed') {
       this.#options.orchestrator.dispatch(meetingId as MeetingId, 'disarm', 'conversation terminée')
     }
+    if (handBack) this.#handBack()
   }
 
   #over(eventId: string, now: number): boolean {
@@ -688,6 +737,17 @@ export class Agenda {
        * conditional on which event `nextArmable` happened to pick.
        */
       const expired = this.#armed.meetingId
+      /*
+       * **Which of the two reasons brought us here, because they hand the
+       * microphone to opposite places.** `#over` is « the slot came and went and
+       * nobody recorded it » — nothing accounts for the call, so the detector
+       * gets it back. `#spent` is « the rep recorded this and finished with it »,
+       * which is a *decision* about the conversation, and handing the detector
+       * back there re-offers the call the rep just ended as an unplanned one.
+       * The suite caught exactly that the first time this hand-back was wired
+       * unconditionally.
+       */
+      const recorded = this.#spent(this.#armed.eventId)
       this.#armed = null
       /*
        * **And the machine is told, which it never was.**
@@ -710,6 +770,14 @@ export class Agenda {
       if (this.#options.orchestrator.stateOf(expired) === 'armed') {
         this.#options.orchestrator.dispatch(expired, 'disarm', 'la réunion est passée sans enregistrement')
       }
+      /*
+       * The same hand-back the own-offer path makes, for the same reason and
+       * with the same cost when it is missing: a 14:30 in Outlook that came and
+       * went held this offer `armed` — therefore `live`, therefore spending the
+       * detector — for its whole slot plus the grace. A rep already on a client
+       * call across that boundary got no offer for the rest of it.
+       */
+      if (!recorded) this.#handBack()
     }
 
     let horizon =
@@ -857,11 +925,14 @@ export class Agenda {
     const standingOwn = this.#armed?.eventId === null ? this.#armed : null
     if (standingOwn !== null && this.#adHocArmed !== standingOwn.meetingId) {
       const placed = this.#ownMeetings(now).find((meeting) => meeting.id === standingOwn.meetingId)
+      // The same split as the calendar branch above: recorded-and-finished is a
+      // decision about this conversation, not a call nothing accounts for.
+      const recorded = this.#spentMeeting(standingOwn.meetingId)
       const over =
         placed === undefined ||
         now >= meetingAnchor(placed) + AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS ||
-        this.#spentMeeting(standingOwn.meetingId)
-      if (over) this.#withdrawOwn(standingOwn.meetingId)
+        recorded
+      if (over) this.#withdrawOwn(standingOwn.meetingId, { handBack: !recorded })
     }
 
     /*

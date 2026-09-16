@@ -1976,6 +1976,32 @@ test('an offer for a meeting the rep placed here expires with the conversation',
   await agenda.tick({ now: T0 - 60_000 })
   assert.equal(h.orchestrator.stateOf(mine.id), 'armed', 'la réunion placée n’a pas été proposée')
 
+  /*
+   * **The ticks in between, which are the whole of what this test was missing.**
+   *
+   * The first version jumped straight from the arm to T+90 — two ticks — and on
+   * neither of them does `#adHocSpent` latch: the arm happens *after* the latch
+   * line, and by T+90 the withdrawal above has already run and nothing is live.
+   * So the field this test's last assertion is about was never once true, and the
+   * assertion passed against the unfixed code. A schedule that skips the state
+   * that causes the harm is the same defect as an input that pins it shut, which
+   * is what the note above the signal records.
+   *
+   * The shipped `Agenda` ticks on `SYNC_INTERVAL_MS`, so an 80-minute stale
+   * offer is ~160 ticks with a meeting `armed`, every one of them spending the
+   * detector. Five minutes apart is enough to reproduce that and cheap.
+   */
+  // Up to, not past, the bound: `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS` is 80
+  // minutes, so these sixteen ticks all run with the offer still standing.
+  for (let at = T0; at < T0 + 75 * 60_000; at += 5 * 60_000) {
+    await agenda.tick({ now: at })
+  }
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'armed',
+    'l’offre placée devait tenir jusqu’à sa borne',
+  )
+
   // Past `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS` — the bound `ownClaims` applies.
   await agenda.tick({ now: T0 + 90 * 60_000 })
 
@@ -1998,10 +2024,16 @@ test('an offer for a meeting the rep placed here expires with the conversation',
   /*
    * **And the microphone goes back to the detector.**
    *
-   * `#adHocSpent` latched on the stale offer's own liveness, and it is cleared
-   * only by a *change* of hold — so a rep who never puts the call down got
-   * nothing for the rest of the process. Driven before the fix: zero offers for
-   * a live, audible client call.
+   * `#adHocSpent` latches on the stale offer's own liveness, once per tick for
+   * as long as it stands, and `#trackHold` clears it only on a *change* of hold
+   * — so a rep who never puts the call down got nothing for the rest of the
+   * process. Driven on the shipped class before the fix: a client call from
+   * 15:20 to 17:30 with a 14:30 placed got **zero offers for its whole length**,
+   * against a control with nothing placed offered at minute one.
+   *
+   * Moving the latch below the withdrawal was not enough and this is where that
+   * shows: it spares the one tick the withdrawal fires on, and the loop above
+   * has already set the field 18 times. `#handBack` clears it at the event.
    */
   await agenda.tick({ now: T0 + 95 * 60_000 })
   await agenda.tick({ now: T0 + 95 * 60_000 + AD_HOC_DWELL_MS })
