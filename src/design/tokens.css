@@ -103,15 +103,27 @@
    * — so the widget needs no re-point either and the pill's dot is the same
    * orange as the agenda's.
    *
-   * **The cost, stated:** #d77000 is 1.48:1 from `--warn` #b45309 where #ff8500
-   * was 2.06:1, and the two share a screen. They are not confusable in practice
-   * because they are never the same *shape* — orange is a dot or a fill and
-   * nothing else (below), `--warn` is a sentence — but the margin is smaller
-   * than it was and that is the price of the floor, not a free win.
+   * **The cost, and the claim that used to stand here was false.** #d77000 is
+   * 1.48:1 from the old `--warn` #b45309, and this paragraph defended that on
+   * the grounds that « they are never the same *shape* — orange is a dot or a
+   * fill, `--warn` is a sentence ». Two reviewers found three counter-examples
+   * on one screen: `StateDot`'s health family draws `warn` as a **filled dot**
+   * (`degraded`, in the same header), `Button`'s `caution` draws it as an
+   * **18 167 px² fill** on the gate, and the arming refusal draws it as an
+   * **outline**. Both designs are right — a traffic light wants a filled amber,
+   * and a ship button that carries a measured doubt wants to say so — so the
+   * shapes genuinely collide and the sentence was the thing that had to go.
+   *
+   * `--warn` moved instead, and by **hue** rather than by lightness, because
+   * lightness is the axis both tokens are pinned on: `--accent` must clear 3:1
+   * as a mark and `--warn` must clear 4.5:1 as text, which is what pushed two
+   * dark oranges together in the first place. #7d5f18 is hue 42° against
+   * `--accent`'s 31°, and every ratio improves with it — 1.76:1 between them
+   * where it was 1.48, and more than twice the RGB distance.
    */
   --accent: #d77000; /*  3.38:1 on #ffffff — FILL AND DOT ONLY, never text */
   --success: #2f855a; /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
-  --warn: #b45309; /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
+  --warn: #7d5f18; /*  5.96:1 on #ffffff ·  5.34:1 on #eef3f7 */
   --danger: #c53030; /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
   /*
    * **The pointer's answer on the two filled variants that had none.**
@@ -126,7 +138,7 @@
    * 6.64:1 and 6.92:1 against white, where the resting fills are 5.02 and 5.47 — a hover can only make the
    * button's own text *more* legible, never less.
    */
-  --warn-strong: #984407; /*  6.64:1 on #ffffff — the label rides on it */
+  --warn-strong: #664c13; /*  8.05:1 on #ffffff — the label rides on it */
   --danger-strong: #a92929; /*  6.92:1 on #ffffff — the label rides on it */
 
   /*
@@ -318,7 +330,7 @@
    * that legible rather than what breaks it. Measured the other way round —
    * the ink *on* each fill, which the `·` convention above cannot express
    * because it reads as this token against a second surface — `--widget-soft`
-   * is 6.09 on the red and 6.81 on the amber.
+   * is 4.67 on the red and 5.35 on the amber.
    *
    * `--brand-700` needs no new value. The scope points it at `--brand-300` —
    * the client's own #4dc2fb, which VISION.md §6 says « cannot carry text » and
@@ -327,7 +339,7 @@
    * for it.
    */
   --widget-danger: #f08a8a; /*  7.17:1 on #101c25 */
-  --widget-warn: #e8a33d; /*  8.02:1 on #101c25 */
+  --widget-warn: #d4ae55; /*  8.22:1 on #101c25 */
 
   /*
    * **The meter's two channels, on the overlay — and the reason the meter needs

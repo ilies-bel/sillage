@@ -664,7 +664,7 @@ same hue (200°), darkened, ratios measured against white.
    #ff8500 was 2.06:1. They never take the same shape — orange is a dot or a
    fill, --warn is a sentence — but the margin is the price of the floor. */
 --success:        #2f855a;   /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
---warn:           #b45309;   /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
+--warn:           #7d5f18;   /*  5.96:1 on #ffffff ·  5.34:1 on #eef3f7 */
 --danger:         #c53030;   /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
 
 /* The pointer's answer on the two filled variants that had none. `primary`
@@ -673,7 +673,7 @@ same hue (200°), darkened, ratios measured against white.
    the product that said nothing back to a pointer while every caption link did.
    The ratios that matter are the label's, because --bg-inner sits on both: a
    hover can only make the button's own text more legible, never less. */
---warn-strong:    #984407;   /*  6.64:1 on #ffffff — the label rides on it */
+--warn-strong:    #664c13;   /*  8.05:1 on #ffffff — the label rides on it */
 --danger-strong:  #a92929;   /*  6.92:1 on #ffffff — the label rides on it */
 
 /* spacing — five steps, each named after what it spaces. Derived from what the
@@ -777,11 +777,11 @@ same hue (200°), darkened, ratios measured against white.
    refusal and on « Terminer ». Same hues, lifted. Each carries the ink ratio
    for the case where it is a fill, because the widget's one filled red button
    takes --widget-soft as its label — measured the other way round, that ink is
-   6.09 on the red and 6.81 on the amber. --brand-700 needs no new value: the scope
+   4.67 on the red and 5.35 on the amber. --brand-700 needs no new value: the scope
    points it at --brand-300, the client's own #4dc2fb, which cannot carry text
    on white at 2.01:1 and is 8.58:1 here. */
 --widget-danger:  #f08a8a;   /*  7.17:1 on #101c25 */
---widget-warn:    #e8a33d;   /*  8.02:1 on #101c25 */
+--widget-warn:    #d4ae55;   /*  8.22:1 on #101c25 */
 
 /* The meter's channels on that ground. LevelMeter drew --brand-500 and
    --brand-700 — two TEXT steps borrowed for a graphic — and the overlay's
