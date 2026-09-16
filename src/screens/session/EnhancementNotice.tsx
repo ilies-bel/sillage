@@ -27,9 +27,10 @@
  * and the notes are already on disk in every one of these states — which is the
  * thing the copy has to convey before it conveys anything else.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EnhancementStatus } from '../../../electron/core/contracts/extraction.ts'
 import { invoke, useBroadcast } from '../../app/bridge.ts'
+import { useDeparture } from '../../app/useDismiss.ts'
 import { formatElapsed } from '../../app/format.ts'
 import { Button } from '../../ui/index.ts'
 
@@ -117,23 +118,54 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
     }
   }, [meetingId])
 
-  if (status.status === 'idle') return null
+  /*
+   * **The strip leaves instead of vanishing** (`app/useDismiss.ts`).
+   *
+   * Every other exit in this product is something the rep pressed. This one is
+   * not: `idle` arrives on a broadcast when the compte-rendu finishes being
+   * written, and « Rédaction du compte-rendu… » disappeared between two frames
+   * at the exact moment the document it was waiting for appeared in the column
+   * below. The one instant on this screen where something good happens,
+   * delivered as a flicker. `--motion` has reported « 0 qui s'en vont » on every
+   * app screen for seven rounds and two reviewers named this strip by name.
+   *
+   * **`notice` and not `status`, because the two differ for one `--motion`.**
+   * The status is already `idle` while the strip is still on screen leaving, and
+   * `idle` draws nothing — so reading the live one would fade out blank. What
+   * leaves is what was there. `useLeaving.test.tsx` pins the version of this
+   * that gets it wrong: a list of one keyed on a constant reports its departure
+   * out of a snapshot two states old, and would fade out saying « n'a pas pu
+   * être rédigé » over the compte-rendu it says failed.
+   */
+  const { shown, leaving } = useDeparture(status.status !== 'idle')
+  /*
+   * Typed as the states that *draw*, so the branches below need no impossible
+   * `idle` arm: `null` is « it has never been present », which is the one case
+   * where a held strip would have nothing to hold.
+   */
+  const drawn = useRef<Exclude<EnhancementStatus, { status: 'idle' }> | null>(null)
+  if (status.status !== 'idle') drawn.current = status
+
+  const notice = drawn.current
+  if (!shown || notice === null) return null
 
   return (
     <div
       role="status"
-      className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-snug"
+      className={`border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-snug${
+        leaving ? ' leaving' : ''
+      }`}
     >
-      {status.status === 'running' ? (
+      {notice.status === 'running' ? (
         <p className="text-body min-w-0 flex-1 measure text-ui">
           Rédaction du compte-rendu…{' '}
           <span className="text-muted">
             Deux à trois minutes selon la longueur de la réunion. Vos notes et la transcription sont
             déjà enregistrées ; vous pouvez continuer à écrire.
           </span>
-          <RunClock since={status.since} />
+          <RunClock since={notice.since} />
         </p>
-      ) : status.status === 'waitingForModel' ? (
+      ) : notice.status === 'waitingForModel' ? (
         <>
           {/*
             `.measure` and not the full strip. At 1440 this sentence ran to
@@ -166,9 +198,9 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
       ) : (
         <>
           <p className="text-body min-w-0 measure flex-1 text-ui">
-            {status.reason === null
+            {notice.reason === null
               ? 'Le compte-rendu n’a pas encore été rédigé.'
-              : `Le compte-rendu n’a pas pu être rédigé : ${status.reason}`}{' '}
+              : `Le compte-rendu n’a pas pu être rédigé : ${notice.reason}`}{' '}
             <span className="text-muted">La transcription et vos notes sont intactes.</span>
           </p>
           {/*

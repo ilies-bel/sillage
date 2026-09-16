@@ -389,6 +389,35 @@
    * restating it — so under `prefers-reduced-motion`, where that token is
    * `0ms`, the surface unmounts with no intermediate frame and this rule never
    * paints.
+   *
+   * **What wears this rule, and what was measured and left alone.**
+   *
+   * The paragraph above names three surfaces because three surfaces were
+   * measured vanishing. It says nothing about which of them were then fixed, and
+   * a reviewer counted: the rule was argued over thirty lines and `grep` found
+   * two callers. That is this file being wrong about the code, which is the
+   * thing `CLAUDE.md` keeps a tally of, so the scope is stated here rather than
+   * left to a grep.
+   *
+   * Three surfaces leave on it, and they are three different mechanisms because
+   * the reasons a thing goes are not one reason: the Réglages sheet, which the
+   * rep closes (`useDismiss`); the agenda's withdrawn offer, which drops out of
+   * a list (`useLeaving`); and the end-of-meeting notice, which goes when the
+   * world changes under it (`useDeparture`). The gesture, the row, the
+   * condition.
+   *
+   * The `source ▸` panel named above is the one this rule does **not** reach,
+   * and that is a decision rather than an omission. Every departure in
+   * `TranscriptReader` is one of two things. Most are a keystroke's direct
+   * consequence — the « les plus proches » box goes the instant a typed
+   * character finds a match — and holding one for 150ms puts « Aucun passage ne
+   * contient cette phrase » on screen beside a count reading « 3 passages ». An
+   * exit that contradicts the screen is worse than no exit. The rest are a
+   * replacement rather than a departure: a load state giving way to its own
+   * content, and the reader giving way to the document when the mode switch
+   * changes. Those want a crossfade, which needs both surfaces mounted at once
+   * and is a mechanism this product has not decided on. §6 asks for the second
+   * half of a motion, not for one on every removal.
    */
   .leaving {
     opacity: 0;

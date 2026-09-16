@@ -685,6 +685,88 @@ const SCREENS = {
    * analyse it. Unreachable on a machine that has one configured, which is why
    * it needs a scenario of its own rather than a click path.
    */
+  /**
+   * **The one exit nobody presses for** — the end-of-meeting notice going when
+   * the compte-rendu it was waiting for arrives.
+   *
+   * `reglages-sortie` beside it covers the gesture and they are different code:
+   * `useDismiss` intercepts a close, `useDeparture` holds a condition. It has to
+   * be a stage for the reason that one does — `.leaving` is on nothing at rest,
+   * so `--motion` against a settled screen measures a strip that never moves and
+   * passes.
+   *
+   * It also asserts **what** leaves, which is the half a unit test can state and
+   * only the shipped renderer can prove. The status is already `idle` while the
+   * strip is still on screen, and `idle` draws nothing — so a version reading the
+   * live status fades out blank, and one holding the row in a list fades out
+   * wearing the sentence from two states ago (`useLeaving.test.tsx` pins that).
+   * The text is read back mid-flight and has to still be the one the rep was
+   * looking at.
+   */
+  'session-attente-sortie': {
+    scenario: 'enhancement-attente',
+    async drive(page) {
+      await openAgenda(page)
+      await rowNamed(page, 'Néovia Santé — cadrage renfort data')
+        .getByRole('button', { name: OPEN_ROW })
+        .click()
+      await page.getByText('Compte-rendu en attente', { exact: false }).waitFor()
+
+      // A model appears and the run finishes: `idle`, on the broadcast, with
+      // nothing pressed. That is the path, not a convenience for the stage.
+      await page.evaluate(() =>
+        window.__harness.emit('enhancement:status', {
+          meetingId: 'm-neovia-cadrage',
+          status: { status: 'idle' },
+        }),
+      )
+      await page.waitForSelector('[role="status"].leaving', { timeout: 5_000 })
+
+      /*
+       * Two frames in, not at the instant the class lands: `getComputedStyle`
+       * reports the *current animated* value, so read immediately it is still the
+       * resting 1 and the assertion below would fail on a working exit. The same
+       * caveat `reglages-sortie` and `--contrast` carry. Well inside the 150ms
+       * the strip survives.
+       */
+      await page.waitForTimeout(60)
+      const exit = await page.evaluate(() => {
+        const el = document.querySelector('[role="status"].leaving')
+        if (!el) return null
+        const style = getComputedStyle(el)
+        const root = getComputedStyle(document.documentElement)
+        return {
+          text: el.textContent ?? '',
+          opacity: style.opacity,
+          duration: style.transitionDuration,
+          easing: style.transitionTimingFunction,
+          motion: root.getPropertyValue('--motion').trim(),
+          easeIn: root.getPropertyValue('--ease-in').trim(),
+          easeOut: root.getPropertyValue('--ease-out').trim(),
+        }
+      })
+      if (!exit) throw new Error('l’avis a disparu avant la mesure')
+      if (!exit.text.includes('Compte-rendu en attente')) {
+        throw new Error(
+          `l’avis s’en va en disant « ${exit.text.slice(0, 60)} » — attendu la phrase qui y était`,
+        )
+      }
+      // Going, not arriving.
+      if (Number(exit.opacity) >= 1) throw new Error(`opacité ${exit.opacity} — l’avis ne part pas`)
+      if (!exit.easing.includes(exit.easeIn)) {
+        throw new Error(`courbe de sortie ${exit.easing} — attendu --ease-in ${exit.easeIn}`)
+      }
+      if (exit.easing.includes(exit.easeOut)) {
+        throw new Error('la sortie porte la courbe d’entrée — c’est le clignotement de --ease-in')
+      }
+      if (!exit.duration.split(',').every((d) => d.trim() === '0.15s')) {
+        throw new Error(`durée de sortie ${exit.duration} — attendu --motion ${exit.motion}`)
+      }
+      // And it is gone afterwards rather than stranded: the hold is one --motion.
+      await page.waitForSelector('[role="status"].leaving', { state: 'detached', timeout: 5_000 })
+    },
+  },
+
   'session-attente': {
     scenario: 'enhancement-attente',
     async drive(page) {
@@ -2951,6 +3033,74 @@ const SCREENS = {
       */
       if ((await page.getByLabel('Durée d’enregistrement').count()) > 0) {
         throw new Error('la pilule d’attente porte une horloge — ce n’est plus l’état sans réunion')
+      }
+    },
+  },
+
+  /**
+   * **The panel with the capture in trouble — the state the widget exists for,
+   * and the one no stage had ever staged.**
+   *
+   * `grep -c 'capture:health'` over `bridge-stub.mjs` returned **0** before this
+   * stage. So the strip that reports a failing capture had never been
+   * photographed on the surface whose entire purpose is reporting capture
+   * health, and it shipped for a round carrying `border-subtle border-b` six
+   * lines below a comment reading « Three zones, no internal rules » — a fourth
+   * zone and an internal rule, with a fill change on one edge and a stroke on
+   * the other, in the one state that falsified the claim. Nothing could have
+   * caught it, which is the point: a claim about a conditional surface needs the
+   * condition staged, or the claim is prose.
+   *
+   * It asserts the rule is gone rather than only photographing it, for the
+   * reason `reglages-sortie` asserts for itself: the next person to reach for a
+   * separator here will reach for a line, and a screenshot does not object.
+   */
+  'widget-ennui': {
+    scenario: 'widget-ennui',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      const strip = page.getByText('La sortie audio de l’ordinateur a changé', { exact: false })
+      await strip.waitFor()
+      await settled(page)
+
+      /*
+       * The card groups by fill and by space. Anything the trouble strip draws
+       * on its own edges is a third idiom on a 340px card — and it was one.
+       */
+      const drawn = await strip.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return {
+          weight: style.fontWeight,
+          sides: (
+            [
+              ['borderTopWidth', 'borderTopStyle'],
+              ['borderRightWidth', 'borderRightStyle'],
+              ['borderBottomWidth', 'borderBottomStyle'],
+              ['borderLeftWidth', 'borderLeftStyle'],
+            ]
+          )
+            .filter(([w, k]) => parseFloat(style[w]) > 0 && style[k] !== 'none')
+            .map(([w]) => `${w}=${style[w]}`),
+          lines: el.getClientRects().length,
+        }
+      })
+      if (drawn.sides.length > 0) {
+        throw new Error(
+          `l’avis de capture porte un trait : ${drawn.sides.join(', ')} — la carte groupe par fond`,
+        )
+      }
+      /*
+       * A health reason is a sentence, sometimes two lines of one. `⚠ faible` is
+       * this product's mark — short, semibold *and* coloured — and a whole
+       * paragraph in bold gold emphasises nothing inside itself. The colour is
+       * the mark here; the weight must not be.
+       */
+      if (Number(drawn.weight) >= 600) {
+        throw new Error(`l’avis de capture est en ${drawn.weight} — une phrase n’est pas une marque`)
       }
     },
   },

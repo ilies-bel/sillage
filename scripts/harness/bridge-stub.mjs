@@ -1677,6 +1677,40 @@ let RECORDING_STOPPED = false
       crm: { state: 'ok' },
       mail: { state: 'ok' },
     },
+    /*
+      **A capture in trouble while the call is running — the widget's whole
+      reason for existing, and the one state no stage had ever staged.**
+
+      `grep -c 'capture:health'` over this file returned 0. So the panel's
+      `trouble` strip had never been photographed, and it shipped for a round
+      carrying an internal rule six lines below a comment claiming the card had
+      none. A fixture missing a state is a claim nothing can falsify.
+
+      The sentence is `capture/index.ts`'s `#checkOutputRoute`, word for word,
+      and it is the right one for this surface for a reason beyond convenience:
+      it is the only capture failure that happens *during* a call, which is the
+      only time this window is on screen. `degraded` and never `down` — the
+      microphone is still arriving and the meeting is still being recorded
+      (DEC-32) — and it names the side, which is what the strip has to convey.
+
+      Two lines at the card's 340px, deliberately: the strip is a sentence and
+      the round that added this also stopped it being set in bold gold, so the
+      stage has to carry the case that shows why.
+    */
+    'widget-ennui': {
+      capture: {
+        state: 'degraded',
+        reason:
+          'La sortie audio de l’ordinateur a changé pendant l’appel — le son du client peut ne plus être capté. Terminez et redémarrez l’enregistrement pour le reprendre.',
+        since: now - 40 * 1000,
+        retryable: true,
+      },
+      transcribe: { state: 'ok' },
+      calendar: { state: 'ok' },
+      llm: { state: 'ok' },
+      crm: { state: 'ok' },
+      mail: { state: 'ok' },
+    },
     mixed: {
       capture: { state: 'ok' },
       transcribe: { state: 'ok' },

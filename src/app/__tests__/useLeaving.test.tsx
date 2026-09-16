@@ -127,3 +127,72 @@ describe('prefers-reduced-motion needs no branch', () => {
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
   })
 })
+
+/** Declared once, the way this hook's own callers are told to declare it. */
+const NOTICE_KEY = () => 'notice'
+
+describe('a list of one cannot serve a condition', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      getPropertyValue: () => '150ms',
+    } as unknown as CSSStyleDeclaration)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  /**
+   * **The measurement that bought a third hook.**
+   *
+   * The end-of-meeting notice is one surface whose presence is a condition, and
+   * the obvious economy is to spend this hook on it: a list of nought or one
+   * rows, keyed on a constant so a change of status is the same row rather than
+   * a departure beside an arrival. It does not work, and the reason is in the
+   * effect rather than in the caller.
+   *
+   * `previous.current` is refreshed *inside* the effect, and the effect is keyed
+   * on `signature` — the keys, joined — plus `keyOf`. With a constant key the
+   * signature never moves while the row is present, and `DayPane` already
+   * carries the instruction that makes `keyOf` stable too (« a new lambda each
+   * render would re-fire `useLeaving`'s effect »). Both deps held, the effect
+   * never runs, and `previous` still holds the payload the row was mounted
+   * with. When the condition finally goes false the departure is reported out of
+   * that stale snapshot.
+   *
+   * On the notice that is the path `failed → running → idle`: the strip would
+   * fade out saying « n'a pas pu être rédigé » at the moment the compte-rendu it
+   * says failed appears underneath it. Passing an inline lambda instead only
+   * trades the defect for the one `DayPane` names — an effect on every render of
+   * a live list.
+   *
+   * `useDeparture` holds the *condition* rather than the row, and the caller
+   * keeps its own last-drawn payload. Pinned here rather than argued in a
+   * comment, because the next person to see two hooks where one would do will
+   * try exactly this.
+   */
+  test('keyed on a constant, it leaves wearing a stale payload', () => {
+    const Notice = ({ items }: { items: readonly Row[] }) => {
+      const shown = useLeaving(items, NOTICE_KEY)
+      return (
+        <ul>
+          {shown.map((row) => (
+            <li key="notice" data-leaving={row.leaving ? 'true' : undefined}>
+              {row.key}
+            </li>
+          ))}
+        </ul>
+      )
+    }
+
+    const view = render(<Notice items={[{ key: 'échec' }]} />)
+    // The payload changes while the key does not, so the effect does not run.
+    view.rerender(<Notice items={[{ key: 'rédaction' }]} />)
+    expect(keys()).toEqual(['rédaction'])
+
+    // Now it goes — reported out of `previous.current`, two states behind.
+    view.rerender(<Notice items={[]} />)
+    expect(leaving()).toEqual(['échec'])
+  })
+})

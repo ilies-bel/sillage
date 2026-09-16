@@ -897,6 +897,30 @@ machine) or in `core/domain/` — never in an IPC handler.
   refuses a reply naming a Graph attendee outside a citation, so the rule was enforced before
   it was written down — stating it in `REGISTRE` turns a refused extraction into a usable one.
 
+- **Nine and ten: a claim about a card, and a claim about a rule.** Both were written in
+  the same round, by the author of the code they described, and both were found by a
+  reviewer rather than by anything that runs.
+
+  `aea9987` removed the widget card's three internal rules in favour of a fill and wrote
+  « Three zones, no internal rules » in the file. Six lines below that comment the
+  capture-trouble strip carried `border-subtle border-b` — a fourth zone, an internal rule,
+  and a fill change on one edge against a stroke on the other. The claim was unfalsifiable
+  rather than merely wrong: `grep -c 'capture:health' scripts/harness/bridge-stub.mjs`
+  returned **0**, so no stage had ever staged a troubled capture and the card had never once
+  been photographed in the state that contradicts it — on the surface whose whole purpose is
+  reporting capture health. The fix that keeps is `widget-ennui`, which stages it and asserts
+  the absence of a stroke rather than photographing it.
+
+  `.leaving`'s docblock named three surfaces it was written for — the Réglages sheet, the
+  `source ▸` panel, « every notice ». It named them as a *measurement* of what was vanishing,
+  which was accurate, and a reader takes a list like that for scope. Thirty lines of argument,
+  two callers. The rule now states what wears it (three mechanisms: the gesture, the row, the
+  condition) and, separately, what was measured and deliberately left alone and why.
+
+  The pattern in both: prose written at the moment of a fix, describing the fix's intent
+  rather than its reach, in a file where nothing could disagree. A claim about a conditional
+  surface needs the condition staged, or the claim is prose.
+
 - **The harness fixture is checked, not trusted** (`modules/extract/__tests__/harnessFixture.test.ts`).
   It has now been caught lying three times, each time flattering the app: four invented
   headings at half the real length; a `degraded` Outlook row and a Whisper download the app

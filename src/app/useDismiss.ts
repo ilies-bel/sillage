@@ -88,3 +88,62 @@ export function useDismiss(onClose: () => void): Dismiss {
 
   return { leaving, dismiss }
 }
+
+/**
+ * The surface's condition goes false, it wears the exit for one `--motion`,
+ * then it goes — for the departures **nobody presses for**.
+ *
+ * The third shape on this ladder, and the three are not interchangeable:
+ *
+ *   · `useDismiss`   a surface the rep closes      — the gesture is intercepted
+ *   · `useLeaving`   a row removed from a list     — the item is held in place
+ *   · `useDeparture` a surface the *world* removes — the condition is held true
+ *
+ * `useDismiss` cannot serve this case because there is no gesture to intercept:
+ * the end-of-meeting notice goes when the compte-rendu finishes being written,
+ * which is a broadcast arriving from the main process. `useLeaving` cannot,
+ * because a list of one keyed on a constant reports its departure out of
+ * `previous.current`, which its effect only refreshes when the *keys* change —
+ * so a strip that went `failed → running → idle` would fade out wearing the
+ * sentence from two states ago. Measured on that exact path before this hook
+ * existed.
+ *
+ * **`shown` is derived during render, not in an effect**, and that is the whole
+ * of the difficulty. An effect runs after the commit, so `shown = present ||
+ * leaving` computed from state would return false on the frame the condition
+ * flips: the surface unmounts, the effect then sets `leaving`, and it remounts
+ * wearing the exit — one frame of nothing, in the middle of the fade that
+ * exists to remove exactly that. Adjusting state during render is React's own
+ * escape hatch for state derived from props; it re-runs this component before
+ * committing anything, and no child sees the intermediate.
+ *
+ * The duration is read off `--motion` by `motionMs`, never written here, for
+ * the reason stated above it.
+ */
+export interface Departure {
+  /** Render the surface: true while it is present, and for one `--motion` after. */
+  shown: boolean
+  /** Wear `.leaving`. True only while it is on its way out. */
+  leaving: boolean
+}
+
+export function useDeparture(present: boolean): Departure {
+  const [state, setState] = useState<'out' | 'in' | 'leaving'>(present ? 'in' : 'out')
+  const was = useRef(present)
+
+  if (was.current !== present) {
+    was.current = present
+    // Back before it finished leaving: it never left, and no ghost accumulates.
+    setState(present ? 'in' : 'leaving')
+  }
+
+  useEffect(() => {
+    if (state !== 'leaving') return
+    const timer = setTimeout(() => setState((s) => (s === 'leaving' ? 'out' : s)), motionMs())
+    // Cleared when the condition comes back *and* on unmount, so a screen torn
+    // down mid-exit leaves no timer writing into a tree that is gone.
+    return () => clearTimeout(timer)
+  }, [state])
+
+  return { shown: state !== 'out', leaving: state === 'leaving' }
+}

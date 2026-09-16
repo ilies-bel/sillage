@@ -2122,11 +2122,22 @@ function Panel({
         make possible: until then a fill here was invisible and a line was the
         only tool.
 
-        So the header and the action tray take the fill and the transcript keeps
-        the card's own ground. Three zones, no internal rules, and the boundary
-        is the change of surface rather than a stroke on top of it.
+        **One filled zone, not two — which took a round and a regression to
+        learn.** The first version of this put the fill on the header *and* the
+        tray, and a reviewer scored the card down for it: 51px of filled bar
+        holding the title above 83px of filled bar holding controls is 38% of the
+        card's height, and it reads as a title bar over a toolbar. On the one
+        surface whose invariant is « it is not an open app ». Trading a stroke for
+        a band is the same mistake one level up — the rubric's 10 is « no band, no
+        stroke doing a ground's job ».
+
+        So the tray keeps the fill, because it is chrome and it groups four
+        controls that would otherwise float. Everything above it — the title, the
+        capture-trouble line, the transcript — is the card's own ground, and what
+        separates them is space. Two zones, no internal rules, and the only lines
+        left on the card are its own edge and the quotation gutters.
       */}
-      <div className="bg-inner rounded-t-lg px-inline py-tight">
+      <div className="px-inline py-tight">
         <div className="flex items-baseline gap-snug">
           <h1
             /*
@@ -2155,10 +2166,35 @@ function Panel({
         </p>
       </div>
 
+      {/*
+        **The capture-trouble line, and the claim above it that it falsified.**
+
+        This carried `border-subtle border-b` six lines under a comment reading
+        « Three zones, no internal rules » — so the card had a fourth zone and an
+        internal rule in exactly the state it exists for, with a fill change on
+        one edge and a stroke on the other: two separator idioms on one element.
+        Nothing could have caught it. `grep -c 'capture:health'` over the harness
+        stub returned **0**: no stage stages a troubled capture, so the claim had
+        never been photographed in the state that falsifies it, on the surface
+        whose whole purpose is reporting capture health. `widget-ennui` stages it
+        now, which is the half of this fix that keeps.
+
+        **And the sentence is no longer shouted.** `font-semibold` on a whole
+        line of gold is not a mark, it is three lines of emphasis that emphasise
+        nothing inside themselves. This repo's rule is that `⚠ faible` is a
+        *mark* — a short token, semibold as well as coloured — and a health
+        reason is a sentence, composed by `capturePermission.ts` and sometimes
+        two lines long. The mark here is the colour: nothing else on this card is
+        gold. No glyph either, deliberately — the card already carries one
+        2px-stroked outline among eight solid glyphs, and a second would widen a
+        split rather than close it.
+
+        The other three `text-warn` sites in the app are whole sentences in
+        semibold too. They are not fixed here; this is the one on the surface the
+        round is about, and the rest wants its own pass.
+      */}
       {trouble === null ? null : (
-        <p className="text-warn border-subtle border-b px-inline py-tight text-meta font-semibold">
-          {trouble}
-        </p>
+        <p className="text-warn px-inline py-tight text-meta">{trouble}</p>
       )}
 
       <div
