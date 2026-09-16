@@ -2004,7 +2004,7 @@ test('a meeting the rep placed here arms on a call the machine cannot name', asy
 /*
  * **And the hold has to be this meeting's, which is what the fix above cost.**
  *
- * `ownClaims` claims eighty-five minutes. Reading « is anything holding a
+ * `ownClaims` claims a hundred and ten minutes. Reading « is anything holding a
  * microphone » across all of it arms a meeting under a client's name for any
  * blip in that window — driven, a sixty-second voice note seventy-five minutes
  * past the slot did it. That raises DEC-46's notification about a meeting that
@@ -2096,7 +2096,7 @@ test('a voice note long after the slot is not the meeting it lands inside', asyn
   }
   assert.equal(h.orchestrator.stateOf(mine.id), 'idle', 'rien ne tenait le micro')
 
-  // A Slack voice message at T0+75, inside `ownClaims`' eighty-five minutes.
+  // A Slack voice message at T0+75, inside `ownClaims`' eighty minutes past the anchor.
   const note = T0 + 75 * 60_000
   held = 'Slack'
   await agenda.tick({ now: note })
@@ -2120,6 +2120,160 @@ test('a voice note long after the slot is not the meeting it lands inside', asyn
   assert.ok(
     armed.some((a) => a.subject.startsWith('Appel non planifié')),
     `le détecteur ne propose plus rien non plus : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
+  h.store.close()
+})
+
+/*
+ * **The origin bound is a boundary, and for three rounds nothing held it.**
+ *
+ * `#accountingOwnClaims` refuses a placed meeting when the microphone hold
+ * *began* too long after the anchor — the rule that stops a voice note seventy-
+ * five minutes past a slot arming a client's meeting. The rule is right and the
+ * number was never chosen: it was `OVERRUN_GRACE_MS`, picked by analogy to
+ * « the same boundary `#over` uses », and `#over` reads
+ * `event.context.scheduledEnd`, which a meeting with `eventId === null` does not
+ * have and cannot have — `Meeting` carries no `scheduledEnd` at all. So the
+ * analogy named a boundary that is unreachable for exactly the meetings this
+ * filter runs on, and the product refused the rep's own meeting for any client
+ * who joined more than twenty minutes late.
+ *
+ * Driven before the change, on the shipped class: a client dialling a browser
+ * link at 14:55 for a 14:30 meeting got « Appel non planifié — Navigateur »
+ * with `clientName: null`, while the named row sat `idle`; pressing the named
+ * row armed it and then refused to start, leaving `liveStates` at
+ * `["recording","armed"]` — which blocks every installer and is escapable only
+ * by stopping the recording that is under way.
+ *
+ * The number now comes from the product's own statement of how long an
+ * unplanned conversation runs. `ownClaims` holds the *slot* live for
+ * `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS` past the anchor and assumes exactly
+ * `AD_HOC_NOMINAL_MS` of duration when it synthesises one
+ * (`adHoc.ts`'s `scheduledEnd: heldSince + AD_HOC_NOMINAL_MS`). So: the slot is
+ * live for eighty minutes, a hold that *begins* inside the first sixty is this
+ * conversation, and one beginning in the last twenty is another call that
+ * merely overlaps the tail.
+ *
+ * The two assertions are one minute either side of that line, as literals. A
+ * bound widened to the slot's own eighty minutes fails the second; a bound left
+ * at twenty fails the first. Both were green before this test existed.
+ */
+test('a client who joins late is still the meeting the rep placed', async () => {
+  const run = async (lateMin: number) => {
+    const h = harness([], null, null)
+    const mine = h.orchestrator.create({
+      id: 'm-mine',
+      title: 'Néovia Santé',
+      clientName: 'Néovia Santé',
+      scheduledStart: T0,
+    })
+    let held: string | null = null
+    const armed: { subject: string }[] = []
+    const agenda = new Agenda({
+      calendar: h.calendar,
+      orchestrator: h.orchestrator,
+      ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+      // A browser link: `running` is null, so this is the `micOnly` class the
+      // bound actually bites on — Meet, a Teams web join, Livestorm, Aircall.
+      meetingSignal: () => ({ running: null, inCall: held }),
+      clock: () => T0,
+      onArmed: (a) => void armed.push(a),
+    })
+
+    // Nobody holds a microphone through the slot itself: the client is late.
+    const join = T0 + lateMin * 60_000
+    for (let at = T0 - 10 * 60_000; at < join; at += 5 * 60_000) {
+      await agenda.tick({ now: at })
+    }
+    held = 'Navigateur'
+    await agenda.tick({ now: join })
+    await agenda.tick({ now: join + AD_HOC_DWELL_MS })
+    await agenda.tick({ now: join + 60_000 })
+
+    const state = h.orchestrator.stateOf(mine.id)
+    h.store.close()
+    return { state, subjects: armed.map((a) => a.subject) }
+  }
+
+  const inside = await run(59)
+  assert.equal(
+    inside.state,
+    'armed',
+    `un client en retard de 59 minutes perd sa réunion nommée : ${JSON.stringify(inside.subjects)}`,
+  )
+  assert.ok(
+    inside.subjects.includes('Néovia Santé'),
+    `la notification DEC-46 ne nomme pas le client : ${JSON.stringify(inside.subjects)}`,
+  )
+
+  const outside = await run(61)
+  assert.notEqual(
+    outside.state,
+    'armed',
+    'un micro pris 61 minutes après le créneau a proposé la réunion d’un client',
+  )
+  // And the refusal costs the rep nothing: the anonymous offer is the right one
+  // for a conversation nothing accounts for.
+  assert.ok(
+    outside.subjects.some((s) => s.startsWith('Appel non planifié')),
+    `le détecteur ne propose plus rien non plus : ${JSON.stringify(outside.subjects)}`,
+  )
+})
+
+/*
+ * **Twenty-five seconds, not « more than one tick ».**
+ *
+ * `AD_HOC_DWELL_MS` is the whole of the safety argument at the named-arm site:
+ * `adHoc.ts` spends a page on « a Slack voice message, a dictation, "test your
+ * microphone" in Teams' settings, a browser tab asking for permission », and
+ * the number that argument produces had no assertion on it here. The test above
+ * this one ticks at Δ0 and at Δ`AD_HOC_DWELL_MS`, which pins « more than zero »
+ * and nothing else — weakening the guard to `now - heldSince > 0` left all 1282
+ * node tests green, and a six-second voice note then armed a client's meeting
+ * under the client's name.
+ *
+ * The middle tick is the assertion. It is a literal and not the constant,
+ * because a test that reads the constant it is pinning cannot see the constant
+ * move.
+ */
+test('the dwell is twenty-five seconds, not one tick', async () => {
+  assert.equal(AD_HOC_DWELL_MS, 25_000, 'le palier a bougé : ce test le tient en clair')
+
+  const h = harness([], null, null)
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    meetingSignal: () => ({ running: null, inCall: 'Navigateur' }),
+    clock: () => T0,
+  })
+
+  const origin = T0 - 60_000
+  await agenda.tick({ now: origin })
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'idle',
+    'un micro tenu un instant a suffi à proposer la réunion d’un client',
+  )
+
+  await agenda.tick({ now: origin + 24_000 })
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'idle',
+    'vingt-quatre secondes de micro ont proposé la réunion d’un client : une note vocale suffit',
+  )
+
+  await agenda.tick({ now: origin + 25_000 })
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'armed',
+    'le palier de vingt-cinq secondes ne déclenche plus rien',
   )
   h.store.close()
 })

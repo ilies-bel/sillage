@@ -484,11 +484,29 @@ export class Agenda {
    * they are the same question and two copies of it are two answers. `#spent`'s
    * docblock says the same thing about the calendar's half.
    *
-   * `ownClaims` bounds a placed meeting to eighty-five minutes around its
-   * anchor, which is right for « is this slot still live » and is not, on its
+   * `ownClaims` bounds a placed meeting to a hundred and ten minutes around its
+   * anchor — `CALENDAR_CLAIM_MS` before it, `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS`
+   * after — which is right for « is this slot still live » and is not, on its
    * own, evidence that the microphone being held belongs to *this* conversation.
-   * A hold that **began** after `OVERRUN_GRACE_MS` past the anchor is another
-   * call: the same boundary `#over` uses to decide a slot is behind the rep.
+   * A hold that **began** past `AD_HOC_NOMINAL_MS` after the anchor is another
+   * call.
+   *
+   * That number was `OVERRUN_GRACE_MS` for two rounds, and it was not a decision:
+   * this docblock justified it as « the same boundary `#over` uses », and `#over`
+   * reads `event.context.scheduledEnd` — which a meeting with `eventId === null`
+   * does not have and cannot have, because `Meeting` carries no `scheduledEnd` at
+   * all. The analogy named a boundary unreachable for exactly the meetings this
+   * filter runs on, and the cost was that any client joining more than twenty
+   * minutes late lost their own named meeting to an anonymous row.
+   *
+   * The bound now comes from the product's own statement of how long an unplanned
+   * conversation runs: `ownClaims` holds the slot live for
+   * `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS` and `adHocContext` synthesises exactly
+   * `AD_HOC_NOMINAL_MS` of duration. So the slot is live for eighty minutes, a
+   * hold beginning inside the first sixty is this conversation, and one beginning
+   * in the last twenty is another call overlapping the tail. Both sides of that
+   * line are held by « a client who joins late is still the meeting the rep
+   * placed », one minute either side, as literals.
    *
    * It has to be one predicate and not a check at the arm site, because the two
    * readers interlock. Refusing to arm while still letting the meeting *claim*
@@ -508,7 +526,7 @@ export class Agenda {
       if (state !== null && AFTER_THE_CALL.has(state)) return false
       return (
         this.#heldSince === null ||
-        this.#heldSince <= meetingAnchor(meeting) + OVERRUN_GRACE_MS
+        this.#heldSince <= meetingAnchor(meeting) + AD_HOC_NOMINAL_MS
       )
     })
   }
@@ -1118,7 +1136,7 @@ export class Agenda {
      *
      * Adding `signal.inCall` above made this site fire on strictly more inputs
      * without adding the rule that makes a hold mean something. `ownClaims`
-     * claims eighty-five minutes; the site asked only « is *anything* holding a
+     * claims a hundred and ten minutes; the site asked only « is *anything* holding a
      * microphone ». Driven on the shipped class — one meeting placed at 14:30,
      * no Entra, **no real call at any point**:
      *

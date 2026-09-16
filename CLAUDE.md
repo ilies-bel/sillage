@@ -166,7 +166,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code thirteen times — three of them numbers that were computed and written down as numbers that were observed; measure before trusting a sentence.
+- A comment is not a check. Prose in this repo has been wrong about the code sixteen times — four of them numbers that were computed and written down as numbers that were observed, and one of those four was repeated at four sites and then quoted back by a reviewer as the basis for a recommendation; measure before trusting a sentence.
 - A test is not a caller.
 
 ## Commands
