@@ -71,6 +71,26 @@ export const MomentMarkSchema = z.object({
    * drawn as a moment, in time, claiming nothing about the turns either side.
    */
   segmentId: z.string().min(1).nullable().default(null),
+  /**
+   * **Whose act this was**, because « a mark is the rep's » was a rule with no
+   * field behind it.
+   *
+   * One thing in this product writes a mark that the rep did not make: the
+   * widget's « Prévenir le client », which records that the disclosure was read
+   * out (US-11). It went through this same channel with a note, so it was
+   * indistinguishable from a moment the rep pressed — and three written rules
+   * broke at once. « A mark is the rep's and is never inferred onto a sentence »:
+   * this one was the product's. « Taking one back is an event, never a delete »:
+   * the panel drew it with the rep's own bookmark and a *Retirer ce moment
+   * marqué* ×, so the rep could erase the record that they had asked. And the
+   * pill's counter — the number a rep glances at to decide whether they caught
+   * anything — went 2 → 3 on a press that marked nothing, over-reporting by the
+   * number of times they did the honest thing.
+   *
+   * Defaulted, so every mark already in a rep's log parses as theirs, which is
+   * what they are: nothing but this one call site has ever passed anything else.
+   */
+  by: z.enum(['rep', 'product']).default('rep'),
 })
 export type MomentMark = z.infer<typeof MomentMarkSchema>
 

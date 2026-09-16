@@ -1192,7 +1192,7 @@ export const handlers: Handlers = {
    * put a mark before the turn it followed on a machine whose windows disagree
    * by a second.
    */
-  'meeting:mark': ({ meetingId, note, segmentId }, deps) => {
+  'meeting:mark': ({ meetingId, note, segmentId, by }, deps) => {
     const { store, orchestrator } = deps
     const meeting = store.projections.getMeeting(meetingId)
     if (!meeting) throw refuse(`réunion inconnue: ${meetingId}`)
@@ -1205,6 +1205,7 @@ export const handlers: Handlers = {
       at: (deps.clock ?? Date.now)(),
       note: note ?? '',
       segmentId: segmentId ?? null,
+      by: by ?? 'rep',
     }
     store.append(meetingId, { type: 'moment.marked', mark })
     deps.broadcastMark?.(meetingId, mark)

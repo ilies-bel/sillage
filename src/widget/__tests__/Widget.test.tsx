@@ -168,7 +168,7 @@ test('a note is marked on the meeting and drawn when the log says so', async () 
   let asked: unknown = null
   bridge.when('meeting:mark', (payload) => {
     asked = payload
-    return { id: 'mk1', at: STARTED + 90_000, note: payload.note ?? '', segmentId: null }
+    return { id: 'mk1', at: STARTED + 90_000, note: payload.note ?? '', segmentId: null , by: 'rep' as const }
   })
   render(<Widget />)
   await openPanel()
@@ -188,7 +188,7 @@ test('a note is marked on the meeting and drawn when the log says so', async () 
   act(() => {
     bridge.emit('moment:marked', {
       meetingId: 'm1',
-      mark: { id: 'mk1', at: STARTED + 90_000, note: 'plafond achats', segmentId: null },
+      mark: { id: 'mk1', at: STARTED + 90_000, note: 'plafond achats', segmentId: null, by: 'rep' as const },
     })
   })
   expect(await screen.findByText('plafond achats')).toBeTruthy()
@@ -213,7 +213,7 @@ test('a mark can be taken back, and the list follows the log', async () => {
   act(() => {
     bridge.emit('moment:marked', {
       meetingId: 'm1',
-      mark: { id: 'mk1', at: STARTED + 1_000, note: 'plafnod achats', segmentId: null },
+      mark: { id: 'mk1', at: STARTED + 1_000, note: 'plafnod achats', segmentId: null, by: 'rep' as const },
     })
   })
   fireEvent.click(await screen.findByRole('button', { name: 'Retirer ce moment marqué' }))
@@ -242,7 +242,7 @@ test('the pill marks a moment with the panel closed, and counts them', async () 
   const asked: unknown[] = []
   bridge.when('meeting:mark', (payload) => {
     asked.push(payload)
-    return { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null }
+    return { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null, by: 'rep' as const }
   })
   render(<Widget />)
 
@@ -256,7 +256,7 @@ test('the pill marks a moment with the panel closed, and counts them', async () 
   act(() => {
     bridge.emit('moment:marked', {
       meetingId: 'm1',
-      mark: { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null },
+      mark: { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null, by: 'rep' as const },
     })
   })
   expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()
@@ -286,7 +286,7 @@ test('what arrived while the panel was shut is there when it opens', async () =>
     })
     bridge.emit('moment:marked', {
       meetingId: 'm1',
-      mark: { id: 'mk1', at: STARTED + 1_000, note: 'à revoir', segmentId: null },
+      mark: { id: 'mk1', at: STARTED + 1_000, note: 'à revoir', segmentId: null, by: 'rep' as const },
     })
   })
 
@@ -305,7 +305,7 @@ test('marking a turn names that turn, so the reader does not have to guess', asy
   let asked: { segmentId?: string | null } = {}
   bridge.when('meeting:mark', (payload) => {
     asked = payload
-    return { id: 'mk1', at: STARTED + 90_000, note: '', segmentId: payload.segmentId ?? null }
+    return { id: 'mk1', at: STARTED + 90_000, note: '', segmentId: payload.segmentId ?? null , by: 'rep' as const }
   })
   render(<Widget />)
   await openPanel()
@@ -330,7 +330,7 @@ test('a mark made in the other window arrives here', async () => {
   act(() => {
     bridge.emit('moment:marked', {
       meetingId: 'm1',
-      mark: { id: 'mk9', at: STARTED + 10_000, note: 'vu depuis l’app', segmentId: null },
+      mark: { id: 'mk9', at: STARTED + 10_000, note: 'vu depuis l’app', segmentId: null, by: 'rep' as const },
     })
   })
   expect(await screen.findByText('vu depuis l’app')).toBeTruthy()
@@ -490,6 +490,7 @@ test('a mark that worked raises no notice', async () => {
     at: STARTED + 1_000,
     note: '',
     segmentId: null,
+    by: 'rep' as const,
   }))
   render(<Widget />)
 
@@ -615,7 +616,7 @@ for (const first of ['widget:leave', 'session:changed'] as const) {
     await act(async () => {
       bridge.emit('moment:marked', {
         meetingId: 'm1',
-        mark: { id: 'k1', at: STARTED + 30_000, note: '', segmentId: null },
+        mark: { id: 'k1', at: STARTED + 30_000, note: '', segmentId: null, by: 'rep' as const },
       })
     })
     const marked = await screen.findByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })
@@ -979,7 +980,7 @@ test('la phrase part au presse-papiers et nulle part ailleurs', async () => {
   const marks: unknown[] = []
   bridge.when('meeting:mark', (payload) => {
     marks.push(payload)
-    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null , by: 'rep' as const }
   })
   try {
     render(<Widget />)
@@ -997,7 +998,12 @@ test('la phrase part au presse-papiers et nulle part ailleurs', async () => {
 
     // What the log was told, which is the weakest true claim available: the
     // sentence was copied. Never that it was said, never that anybody agreed.
-    expect(marks).toEqual([{ meetingId: 'm1', note: MENTION_NOTE(true), segmentId: null }])
+    // `by: 'product'` is the point: the disclosure is the product's act, not a
+    // moment the rep chose, and until that field existed the two were the same
+    // row — counted in the pill's number and deletable with the rep's own ×.
+    expect(marks).toEqual([
+      { meetingId: 'm1', note: MENTION_NOTE(true), segmentId: null, by: 'product' },
+    ])
     expect(MENTION_NOTE(true)).toBe('Phrase d’information sur la transcription copiée.')
   } finally {
     clipboard.restore()
@@ -1020,6 +1026,7 @@ test('la phrase est à l’écran, dans une carte, pour être lue à voix haute'
     at: STARTED + 30_000,
     note: MENTION_NOTE(true),
     segmentId: null,
+    by: 'rep' as const,
   }))
   try {
     render(<Widget />)
@@ -1062,6 +1069,7 @@ test('rien ne prétend que le client a donné son accord', async () => {
     at: STARTED + 30_000,
     note: MENTION_NOTE(true),
     segmentId: null,
+    by: 'rep' as const,
   }))
   try {
     render(<Widget />)
@@ -1096,7 +1104,7 @@ test('un presse-papiers qui refuse est dit, et le journal garde le fait plus fai
   const marks: Array<{ note?: string }> = []
   bridge.when('meeting:mark', (payload) => {
     marks.push(payload)
-    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null , by: 'rep' as const }
   })
   render(<Widget />)
   await screen.findByLabelText('Durée d’enregistrement')
@@ -1162,6 +1170,7 @@ test('une carte écartée ne revient pas quand le journal répond', async () => 
             at: STARTED + 30_000,
             note: MENTION_NOTE(true),
             segmentId: null,
+            by: 'product' as const,
           })
       }),
   )
@@ -1212,6 +1221,7 @@ test('ne rien presser n’empêche rien, et une mention qui échoue n’empêche
       at: STARTED + 1_000,
       note: String(payload.note),
       segmentId: null,
+      by: payload.by ?? ('rep' as const),
     }
   })
   render(<Widget />)
@@ -1250,7 +1260,7 @@ test('une fenêtre qui s’en va ne dessine pas de nouvelle carte, et écrit qua
   const marks: unknown[] = []
   bridge.when('meeting:mark', (payload) => {
     marks.push(payload)
-    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null }
+    return { id: 'mk-mention', at: STARTED + 30_000, note: String(payload.note), segmentId: null , by: 'rep' as const }
   })
   let release: (() => void) | null = null
   const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
@@ -1378,7 +1388,7 @@ test('la phrase revient dès que le refus est écarté, sans réécrire au journ
   bridge.when('meeting:mark', (payload) => {
     reached.push(payload)
     if (refuse) throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
-    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null }
+    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null, by: payload.by ?? ('rep' as const) }
   })
   try {
     render(<Widget />)
@@ -1420,7 +1430,7 @@ test('une phrase déjà inscrite au journal n’y est pas inscrite deux fois', a
   const reached: string[] = []
   bridge.when('meeting:mark', (payload) => {
     reached.push(String(payload.note))
-    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null }
+    return { id: `mk${reached.length}`, at: STARTED, note: String(payload.note), segmentId: null, by: payload.by ?? ('rep' as const) }
   })
   try {
     render(<Widget />)
@@ -1511,7 +1521,7 @@ test('une marque réussie annonce, n’écarte pas la phrase, et solde le refus'
   let refuse = true
   bridge.when('meeting:mark', (payload) => {
     if (refuse) throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
-    return { id: 'mk1', at: STARTED, note: String(payload.note), segmentId: null }
+    return { id: 'mk1', at: STARTED, note: String(payload.note), segmentId: null , by: 'rep' as const }
   })
   try {
     render(<Widget />)
@@ -1580,8 +1590,8 @@ test('une réunion qui porte déjà des marques ne fait mesurer la fenêtre qu�
     const asks = watchAsks()
     bridge.when('widget:state', () =>
       recording([
-        { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null },
-        { id: 'mk2', at: STARTED + 2_000, note: 'plafond achats', segmentId: null },
+        { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null, by: 'rep' as const },
+        { id: 'mk2', at: STARTED + 2_000, note: 'plafond achats', segmentId: null, by: 'rep' as const },
       ]),
     )
     render(<Widget />)
@@ -1634,7 +1644,7 @@ test('une réunion sans marque ne fait pas mesurer la fenêtre davantage', async
  */
 test('un second enregistrement dans la même fenêtre porte ses propres marques', async () => {
   bridge.when('widget:state', () =>
-    recording([{ id: 'mk1', at: STARTED + 1_000, note: 'premier appel', segmentId: null }]),
+    recording([{ id: 'mk1', at: STARTED + 1_000, note: 'premier appel', segmentId: null, by: 'rep' as const }]),
   )
   render(<Widget />)
   expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()

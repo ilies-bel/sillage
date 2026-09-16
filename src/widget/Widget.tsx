@@ -652,6 +652,13 @@ export function Widget() {
     try {
       await invoke('meeting:mark', {
         meetingId,
+        /*
+          **The product's act, said so.** This records that the disclosure was
+          read out (US-11) and the rep pressed a button to do it — but the mark
+          is not theirs, and until `by` existed it was indistinguishable from
+          one. See `MomentMark.by` for the three rules that broke.
+        */
+        by: 'product',
         note: MENTION_NOTE(copied),
         segmentId: null,
       })
@@ -691,7 +698,15 @@ export function Widget() {
             title={meeting?.clientName ?? (meeting?.title || null)}
             startedAt={meeting?.startedAt ?? null}
             meetingId={meetingId}
-            marks={marks.length}
+            /*
+              **The rep's own, which is what the number claims to be.**
+
+              It was `marks.length`, and « Prévenir le client » writes a mark —
+              so the count a rep glances at to decide whether they caught
+              anything went up on a press that marked nothing, over-reporting by
+              the number of times they made the disclosure.
+            */
+            marks={marks.filter((mark) => mark.by === 'rep').length}
             open={open}
             above={above}
             placed={placed}
@@ -2436,7 +2451,18 @@ const logMask = (edges: { top: boolean; bottom: boolean }): string | undefined =
   return undefined
 }
 
+/**
+ * A mark in the transcript, and the two kinds are drawn apart.
+ *
+ * The rep's carries their bookmark and a way to take it back — « taking one back
+ * is an event, never a delete » (`meeting:forget` appends). The product's single
+ * entry, the US-11 disclosure, carries neither: it is not a moment the rep
+ * chose, so the bookmark would be a false attribution, and the × would let them
+ * erase the record that the client was told — which is the one line in this
+ * window a compliance question is answered from.
+ */
 function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
+  const mine = mark.by === 'rep'
   return (
     <li className="group flex gap-snug">
       {/*
@@ -2457,10 +2483,17 @@ function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) 
         The note stays `text-strong`, because the rep wrote it on purpose.
       */}
       <span
-        aria-label="Moment marqué"
+        /*
+          The rep's bookmark for the rep's marks. The product's one entry — the
+          US-11 disclosure — is not a moment they chose, so wearing their glyph
+          would be a false attribution on the row a compliance question is
+          answered from. It gets the speech mark the mention control already
+          uses, and its own name.
+        */
+        aria-label={mine ? 'Moment marqué' : 'Information donnée au client'}
         className="text-muted flex w-12 shrink-0 items-start justify-end pt-px text-meta leading-relaxed"
       >
-        <Bookmark />
+        {mine ? <Bookmark /> : <Speech />}
       </span>
       <span className="text-strong border-subtle min-w-0 flex-1 border-l pl-snug text-ui leading-relaxed">
         {mark.note === '' ? 'Moment marqué.' : mark.note}
@@ -2479,16 +2512,24 @@ function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) 
         is appended and the fold drops the pair, so the log still says what
         happened and when.
       */}
-      <button
-        type="button"
-        onClick={() => onForget(mark.id)}
-        aria-label="Retirer ce moment marqué"
-        className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
-      >
-        <span aria-hidden className="text-ui leading-none">
-          ×
-        </span>
-      </button>
+      {/*
+        Only the rep's. Theirs is a mistake they can correct; the product's is
+        the record that the client was told, and a × beside it would let a rep
+        erase the proof they asked — on the one surface where that question is
+        answered.
+      */}
+      {!mine ? null : (
+        <button
+          type="button"
+          onClick={() => onForget(mark.id)}
+          aria-label="Retirer ce moment marqué"
+          className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+        >
+          <span aria-hidden className="text-ui leading-none">
+            ×
+          </span>
+        </button>
+      )}
     </li>
   )
 }

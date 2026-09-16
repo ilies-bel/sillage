@@ -27,6 +27,7 @@ const mark = (id: string, at: number, segmentId: string | null = null): MomentMa
   at,
   note: '',
   segmentId,
+  by: 'rep',
 })
 
 const shape = (rows: ReturnType<typeof interleaveMarks>) =>

@@ -514,6 +514,11 @@ export const invokeChannels = {
       note: z.string().trim().max(MARK_NOTE_MAX).default(''),
       /** The turn the rep pressed on, or null for the pill's own button. */
       segmentId: z.string().min(1).nullable().default(null),
+      /**
+       * Whose act it was — see `MomentMark.by`. Defaulted to the rep, because
+       * every caller but one is the rep pressing a button.
+       */
+      by: z.enum(['rep', 'product']).default('rep'),
     }),
     response: MomentMarkSchema,
   },
