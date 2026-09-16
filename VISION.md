@@ -785,9 +785,11 @@ same hue (200°), darkened, ratios measured against white.
 
 /* And the two steps a control moves TO. The scope in index.css re-cut every
    token a control wears at rest and none of the three it hovers to, so every
-   :hover on this surface reached back into the light ramp: « Marquer » landed
-   at 1.30:1 and « Terminer » — the one act here that cannot be undone — at
-   1.63:1. The label does not dim under the pointer, it goes. Brighter and not
+   :hover on this surface reached back into the light ramp: « Marquer » and
+   « Ouvrir Sillage » landed at 1.18:1 on the tray they sit on, and « Terminer »
+   — the one act here that cannot be undone — at 1.63:1. (Stated first as
+   1.30:1, which is the same collapse measured against --widget-bg, a ground
+   those two controls are not drawn on.) The label does not dim under the pointer, it goes. Brighter and not
    darker, because on #101c25 deepening a control walks it into the ground; the
    step from rest is stated against the light palette's own, which is 1.265 for
    danger and 1.350 for warn. --brand-900 needs no new value: it takes

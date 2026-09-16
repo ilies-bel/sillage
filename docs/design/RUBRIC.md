@@ -145,6 +145,9 @@ round 5 did not.
 | 14 | widget | `01c74f5` | 7.5 | 6 | 5 | 5.5 | 5 | 5 | 4 | 5 | 5 | **48** |
 | 14 | main | `01c74f5` | 6.5 | 6 | 5.5 | 5 | 6 | 5.5 | 6 | 5.5 | 6.5 | **52.5** |
 | 14 | detection | `7ac4017` | 7 | 7.5 | 6 | 5 | 6.5 | 6 | 5 | 5.5 | 5 | **53.5** |
+| 15 | widget | `9e73fba` | 7 | 6 | 5.5 | 5.5 | 5.5 | 4.5 | 5.5 | 5 | 5 | **49.5** |
+| 15 | main | `9e73fba` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | 5.5 | 6.5 | **52.5** |
+| 15 | detection | `9e73fba` | 7 | 7.5 | 6 | 5 | 6 | 6 | 5 | 5.5 | 5 | **53** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -158,6 +161,36 @@ timestamped every measurement it kept to 17:44–18:05, and verified that
 So the numbers stand; what does not is the method, and the cost of the collision
 was borne by the reviewer rather than by me.
 
+
+## Retired: the palette campaign, and the measurement that was right about the wrong thing
+
+For three rounds the named next spend was « move `--brand-500` darker to buy
+headroom, then spread the ground ladder so a fill can group ». The arithmetic
+behind it is exact and round 15 reproduced every figure — `--brand-500` 3.005:1
+on `--bg-subtle`, `--warn` 3.029, `--text-muted` 4.559, three tokens with five
+thousandths of headroom between them and their floors.
+
+**The conclusion drawn from it does not follow, and understated the bill by two
+orders of magnitude.** The whole light ground ladder spans L\* 95.58 → 100.00 —
+**4.42 units**. For a ground-on-ground step to clear the 3:1 WCAG 1.4.11 asks of
+a mark identifying a control, the darker ground has to sit at `rgb(146,146,146)`,
+**L\* 60.6**: a mid grey. There is no light palette in which a field rail's
+ground is a mid grey. Freeing `--brand-500` does not unlock this. Nothing does,
+because the premise — that a *ground* can identify a control — is wrong.
+
+What replaces it: **stop asking the ground to identify the control and give the
+control a mark.** `--text-muted` is 4.559:1 on `--bg-subtle` and 5.093:1 on
+white; it clears 3:1 on every ground in the file today, with no token moving. A
+leading rule on the editable edge of a field is one declaration, reads as a
+marker rather than a box, keeps the ground grammar the rail just bought, and
+works identically on the white document column where the ground trick cannot
+work at all — which is also what collapses the screen's three field grammars
+into one.
+
+Recorded here rather than quietly dropped, because the campaign was named as
+« the one thing » twice and is written into `4b7bdc8`'s commit message as a
+constraint on a future commit. It is not a constraint. It is a dead end that
+measured correctly all the way to the wrong door.
 
 ## Retracted: the « blocked on a decision » section was wrong
 

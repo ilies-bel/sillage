@@ -921,6 +921,44 @@ machine) or in `core/domain/` — never in an IPC handler.
   rather than its reach, in a file where nothing could disagree. A claim about a conditional
   surface needs the condition staged, or the claim is prose.
 
+- **Eleven, twelve and thirteen: three in one commit, and one of them was never measured
+  at all.** `4b7bdc8` fixed a real defect — `.widget-surface` re-points every token a
+  control wears at rest and none of the three it hovers to — and wrote three things about
+  it that a reviewer then drove and broke.
+
+  **Eleven: a ratio against a ground the control is not drawn on.** The table said the
+  `nav` pair rests at 8.58:1 and collapses to 1.30:1. Those are the numbers against
+  `--widget-bg`; « Marquer » and « Ouvrir Sillage » sit on the **tray**, which is
+  `--widget-soft`, where the real figures are 5.59:1 and **1.18:1**. This is the same
+  instrument `--brand-500`'s own paragraph two hundred lines above was written to retire —
+  « a ratio quoted against a ground nothing is drawn on is the same instrument as a
+  comment » — reintroduced in the same file, by someone who had just read it.
+
+  **Twelve: a candidate written down as an observation.** The same table carried a third
+  row, `caution` « 5.35:1 → 1.40:1 », as one of three measured defects. `caution` has no
+  consumer on that surface at all: `grep -rn 'variant="caution"' src/` returns
+  `Review.tsx` and a unit test. The number was computed while choosing a value and then
+  stated as a thing that had been seen. That is worse in kind than prose that has drifted
+  out of date — a fabricated measurement in the file whose entire authority is that its
+  numbers were measured — and nothing in the repo could have caught it, because
+  `tokens.test.ts` recomputes the ratios and has no way to ask whether a token declared
+  inside a scope is *read* inside it.
+
+  **Thirteen: a transition that does not exist.** The next commit's docblock said
+  `TRANSITIONS` reaches `aborted` by `armed → abort`. Driven, `dispatch(id, 'start')`
+  returns `{ok: true, from: 'armed', to: 'recording'}` with the meeting **already**
+  `aborted`, because `#openDevices` runs on the edge into `recording` and both abort sites
+  are synchronous inside it. The shipped path is `armed → recording → aborted`, and the
+  distinction is load-bearing precisely there, because it is what decides whether a
+  recording existed.
+
+  The three share a shape the earlier entries do not: none is a claim that went stale.
+  Each was written *at the moment of measuring*, by the person holding the numbers, and
+  each records a number that was computed rather than a number that was observed. The
+  working rule that follows: a ratio is not a measurement until something has drawn it —
+  state the surface it was read off, and if no stage draws that surface, say the token is
+  a re-point and not a repair.
+
 - **The harness fixture is checked, not trusted** (`modules/extract/__tests__/harnessFixture.test.ts`).
   It has now been caught lying three times, each time flattering the app: four invented
   headings at half the real length; a `degraded` Outlook row and a Whisper download the app

@@ -2529,7 +2529,18 @@ function Panel({
         ) : (
           <Button
             variant="text"
-            className="no-drag text-danger hover:text-danger px-hair"
+            /*
+              `hover:text-danger-strong`, and it used to be `hover:text-danger`
+              — the rest colour, pinned, cancelling the `text` variant's own
+              `hover:text-body`. This was the only per-instance hover override on
+              the surface, so it was the only control whose hover no sibling
+              covered, and it is the word that stops the recording: everything
+              else on the card brightened under the pointer, including « Annuler »
+              four pixels away. Inside `.widget-surface` the token resolves to
+              `--widget-danger-strong` #f9b0b0 — 6.36:1 on the tray against 4.67
+              at rest, a step of 1.363.
+            */
+            className="no-drag text-danger hover:text-danger-strong px-hair"
             onClick={() => setConfirmEnd(true)}
           >
             Terminer
