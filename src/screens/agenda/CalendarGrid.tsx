@@ -179,6 +179,22 @@ const LEGEND: readonly { mark: DayMark; label: string }[] = [
     stood for two opposite conditions and the legend explained only the second.
   */
   { mark: 'recording', label: 'enregistrement en cours' },
+  /*
+    The fourth, and it is the one the grid was already promising.
+
+    `MARK_CLASS.scheduled`'s docblock has said since it was written that a day
+    holding only invites « gets the outline of the blue dot: present, unfilled »
+    — and `DayCell` guarded `mark !== 'scheduled'`, so it drew nothing. The rule
+    was declared, argued in two docblocks, announced to a screen reader by
+    `MARK_NAME`, and rendered by no pixel: a state that existed in the
+    accessibility tree and nowhere else. Two reviewers found it in two rounds.
+
+    Drawn rather than deleted, because the docblock's argument is right: the list
+    beside the grid shows those meetings, and a grid that marks only the days the
+    rep has *acted on* disagrees with it. A hollow blue dot is « there is
+    something here », which is what a calendar is for.
+  */
+  { mark: 'scheduled', label: 'réunion prévue' },
 ]
 
 function Legend() {
@@ -256,7 +272,7 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
         that flickers all morning.
       */}
       <span aria-hidden className="flex h-1.5 items-center">
-        {mark && mark !== 'scheduled' ? (
+        {mark ? (
           /*
             `data-graphic`, because here the dot is the whole signal.
 
@@ -281,12 +297,16 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
 /**
  * French, and the whole state of the cell — the dot is decoration over this.
  *
- * All three marks, because the legend under the grid promises three meanings and
+ * All four marks, because the legend under the grid promises four meanings and
  * only two used to survive into the accessible tree: `captured` and `scheduled`
  * both fell through to the bare count, so a recorded meeting and an untouched
  * Outlook invite announced identically. The distinction existed solely as
  * filled-versus-outlined on a 6px dot at 2.94:1 — colour and shape alone, which
  * is the one thing this grid's own comments say it must never be.
+ *
+ * And for a while `scheduled` was the opposite defect: it survived here, was
+ * spoken, and was drawn by nothing, because `DayCell` guarded
+ * `mark !== 'scheduled'`. A state in the accessibility tree and on no pixel.
  *
  * The wording tracks `LEGEND` deliberately: what the eye is told and what the
  * screen reader is told are the same three sentences.
