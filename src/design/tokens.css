@@ -342,6 +342,45 @@
   --widget-warn: #d4ae55; /*  8.22:1 on #101c25 */
 
   /*
+   * **And the hover steps, because the scope re-pointed every value a control
+   * rests at and not one it moves to.**
+   *
+   * `.widget-surface` in `index.css` re-cut `--bg-*`, `--text-*`, `--border-*`,
+   * `--brand-700`, `--danger`, `--warn` and the three meter channels — every
+   * token a control wears at rest. `--brand-900`, `--danger-strong` and
+   * `--warn-strong` are the three the ramp keeps for `:hover`, and all three
+   * stayed at their light values on a dark ground. Measured on the shipped
+   * surface, with `--widget-soft` as the ink because that is what
+   * `text-inner` resolves to inside the scope:
+   *
+   * | control | rest | hover | shipped |
+   * |---|---|---|---|
+   * | `nav` — « Marquer », « Ouvrir Sillage » | 8.58:1 | `--brand-900` #02334b | **1.30:1** |
+   * | `danger` — « Terminer » | 4.67:1 | `--danger-strong` #a92929 | **1.63:1** |
+   * | `caution` | 5.35:1 | `--warn-strong` #664c13 | **1.40:1** |
+   *
+   * The label does not dim on hover, it *goes*. On « Terminer », which is the
+   * one act on this surface that cannot be undone, the word disappears at the
+   * moment the pointer is on it — and every ratio in this file was true,
+   * because not one of them had been asked about a hover.
+   *
+   * **Brighter, not darker, and that is the whole re-cut.** On paper a control
+   * deepens to say « you are on me »; on a ground of #101c25 deepening walks it
+   * into the ground. Each value below is the same hue lifted, and the step
+   * from rest is stated beside the light palette's own so the surfaces can be
+   * compared: light `--danger` → `--danger-strong` is 1.265, `--warn` → 1.350,
+   * `--brand-700` → `--brand-900` is 2.120.
+   *
+   * `--brand-900` takes `--brand-100` rather than a new value — one step up the
+   * ramp from the `--brand-300` the scope already gives `--brand-700`, for a
+   * step of **1.597**. Not `--brand-50` #ebf8ff, which measures **1.005:1**
+   * against `--widget-ink`: a hovered link that has become ordinary ink has
+   * lost the one thing that said it was a link.
+   */
+  --widget-danger-strong: #f9b0b0; /*  9.77:1 on #101c25 — ink on it 6.36, step from rest 1.363 */
+  --widget-warn-strong: #e6c684; /* 10.52:1 on #101c25 — ink on it 6.85, step from rest 1.279 */
+
+  /*
    * **The meter's two channels, on the overlay — and the reason the meter needs
    * tokens of its own at all.**
    *

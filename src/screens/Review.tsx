@@ -2284,7 +2284,65 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             </p>
           ) : null}
 
-          <List as="div" className="bg-card">
+          {/*
+            **A ground, so the rules can come off. Measured, before and after.**
+
+            This rail drew eleven value boxes on three nested grounds and let
+            fifty-eight strokes do all the grouping. Sampled on the shipped
+            `review@1280×800`:
+
+            | surface | token | on what it sits | ratio | ΔL* |
+            |---|---|---|---|---|
+            | the `<aside>` | `--bg-card-soft` `rgb(249,251,253)` | the column | — | — |
+            | this container | `--bg-card` `rgb(253,254,254)` | the aside | 1.027:1 | 1.06 |
+            | a value box | `--bg-inner` `rgb(255,255,255)` | this container | **1.010:1** | **0.42** |
+
+            A just-noticeable difference in L* is about 1. At 0.42 the box and
+            the thing it sits on are the same colour, so the only reason a rep
+            can see eleven fields is that each one is drawn inside three
+            concentric strokes — the container's `border-card`, the `divide-y`
+            between rows, and every field's own `border-subtle` — fifty-eight in
+            total, counted in the page.
+
+            Inverted rather than darkened. The container takes `--bg-subtle`,
+            the darkest ground the palette owns and the one this rail *already*
+            wore on its read-only fields, and the editable field keeps white:
+
+            | pair | ratio | ΔL* |
+            |---|---|---|
+            | container on the aside | 1.077:1 | 2.94 |
+            | a value box on the container | 1.117:1 | **4.42** |
+
+            Ten times the step, from tokens that already exist, and white now
+            means the same thing here that it means in the notepad to the left:
+            you may type in this. A field the gate cannot ship loses its fill
+            entirely and becomes text on the ground — which is what it is.
+
+            **What this costs, stated rather than omitted.** `--border-subtle`
+            on white is 1.226:1, ΔL* 8.01. As an *edge*, one hairline is
+            stronger than the 4.42 fill replacing it. What it is not is a
+            *region*: a 1px line at ΔL* 8 bounds a shape, a filled area at
+            ΔL* 4.4 is one, and eleven of the first read as a form to fill in
+            while eleven of the second read as eleven values to check. The
+            second is the job. It is also what the reference does — see the
+            `bare` prop on `ui/List.tsx` for the same argument about rows.
+
+            **Still open, and not fixed here.** Neither the old stroke (1.226:1)
+            nor the new fill (1.117:1) clears the 3:1 that WCAG 1.4.11 asks of
+            a mark required to identify a control, which this repo holds itself
+            to elsewhere (see `--warn` in `tokens.css`). Closing that needs the
+            ground ladder spread past `--bg-subtle`, and the ladder cannot move
+            down until `--brand-500` does: it measures **3.005:1** on
+            `--bg-subtle` against a 3:1 floor, with `--warn` at 3.029 and
+            `--text-muted` at 4.559 against 4.5 right behind it. Three tokens,
+            five thousandths of headroom between them and the floor. That is a
+            palette commit, not a line in this one.
+
+            Not a `List`: `List` is rows with a control on the right, and its
+            hairlines exist because two such rows with nothing between them read
+            as one row with two buttons. These are labelled fields.
+          */}
+          <div className="bg-subtle rounded-lg">
             {panel.fields.map((field) => (
               <FieldRow
                 key={field.key}
@@ -2295,7 +2353,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 inert={INTERPRETIVE.has(field.key) ? typedInert : null}
               />
             ))}
-          </List>
+          </div>
 
           {panel.accountCandidates.length > 0 ? (
             <div className="mt-snug">
@@ -2680,8 +2738,14 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
             // `.measure` here rather than on a wrapper: `ch` resolves at the
             // element's own size, and these are `--type-ui` inside a rail sized
             // for `--type-copy` — 78 characters a line at 1440 and above.
-            'measure text-strong border-subtle mt-hair w-full resize-none rounded-sm border px-snug py-hair text-ui [field-sizing:content]',
-            inert === null ? 'bg-inner' : 'bg-subtle',
+            'measure text-strong mt-hair w-full resize-none rounded-sm px-snug py-hair text-ui [field-sizing:content]',
+            // No stroke: the fill is the boundary, because the container
+            // above is a ground and not white. The mail draft in the left
+            // column keeps its hairline for the opposite reason — it sits on
+            // `--bg-inner`, where a white field has no edge to give. One
+            // grammar, a field is a white box, and one forced exception.
+            // An inert field takes the ground, so it is text, not a box.
+            inert === null ? 'bg-inner' : 'bg-transparent',
           )}
         />
       ) : (
@@ -2692,8 +2756,8 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           onChange={(event) => onChange(event.target.value)}
           readOnly={inert !== null}
           className={cn(
-            'text-strong placeholder:text-muted border-subtle mt-hair w-full rounded-sm border px-snug py-hair text-ui',
-            inert === null ? 'bg-inner' : 'bg-subtle',
+            'text-strong placeholder:text-muted mt-hair w-full rounded-sm px-snug py-hair text-ui',
+            inert === null ? 'bg-inner' : 'bg-transparent',
           )}
         />
       )}

@@ -262,6 +262,16 @@
   --danger: var(--widget-danger);
   --warn: var(--widget-warn);
   /*
+    And the three steps a control moves *to*, which this scope had never
+    re-pointed — so every `:hover` on this surface reached back into the light
+    ramp and painted a near-black onto a dark card. « Marquer » at 1.30:1,
+    « Terminer » at 1.63:1: the label does not dim under the pointer, it goes.
+    `tokens.css` carries the table and the reason these go brighter.
+  */
+  --brand-900: var(--brand-100);
+  --danger-strong: var(--widget-danger-strong);
+  --warn-strong: var(--widget-warn-strong);
+  /*
     And the meter, which is a graphic and must not follow the text re-point
     above: `--brand-700 → --brand-300` is right for a link and collapses the
     two channels to 1.51:1 for a bar. `tokens.css` carries the numbers.

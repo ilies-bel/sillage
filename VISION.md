@@ -783,6 +783,21 @@ same hue (200°), darkened, ratios measured against white.
 --widget-danger:  #f08a8a;   /*  7.17:1 on #101c25 */
 --widget-warn:    #d4ae55;   /*  8.22:1 on #101c25 */
 
+/* And the two steps a control moves TO. The scope in index.css re-cut every
+   token a control wears at rest and none of the three it hovers to, so every
+   :hover on this surface reached back into the light ramp: « Marquer » landed
+   at 1.30:1 and « Terminer » — the one act here that cannot be undone — at
+   1.63:1. The label does not dim under the pointer, it goes. Brighter and not
+   darker, because on #101c25 deepening a control walks it into the ground; the
+   step from rest is stated against the light palette's own, which is 1.265 for
+   danger and 1.350 for warn. --brand-900 needs no new value: it takes
+   --brand-100, one rung above the --brand-300 the scope already hands
+   --brand-700, for a step of 1.597. Not --brand-50, which is 1.005:1 against
+   --widget-ink — a hovered link that has become ordinary ink is no longer a
+   link. */
+--widget-danger-strong: #f9b0b0;   /*  9.77:1 on #101c25 — ink on it 6.36, step from rest 1.363 */
+--widget-warn-strong:   #e6c684;   /* 10.52:1 on #101c25 — ink on it 6.85, step from rest 1.279 */
+
 /* The meter's channels on that ground. LevelMeter drew --brand-500 and
    --brand-700 — two TEXT steps borrowed for a graphic — and the overlay's
    --brand-700 re-point (right for text) collapsed them from 2.06:1 to 1.51:1 on

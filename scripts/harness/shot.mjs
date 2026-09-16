@@ -24,7 +24,8 @@
  *                    `down` and not retryable.
  *
  * Screens: splash · agenda · agenda-empty · agenda-semaine · agenda-liste ·
- * agenda-client · agenda-search · session · review · review-valider ·
+ * agenda-client · agenda-search · session · review · review-rail · review-valider ·
+ * widget-survol ·
  * review-transcription ·
  * review-transcription-introuvable · historique · reglages ·
  * agenda-appel-imprevu · agenda-sans-entra · session-sans-entra · review-sans-entra ·
@@ -1158,6 +1159,133 @@ const SCREENS = {
       */
       await page.getByText('⚠ faible').first().waitFor()
       await page.waitForTimeout(600)
+    },
+  },
+
+  /*
+   * **The gate's field rail groups by ground, and this is the number.**
+   *
+   * The rail drew eleven value boxes on three nested grounds and let the
+   * strokes do the grouping. Measured on the shipped page before the change:
+   * the `<aside>` `rgb(249,251,253)`, the container `rgb(253,254,254)`, a value
+   * box `rgb(255,255,255)` — **1.010:1** between the last two, and
+   * **fifty-eight** border sides inside the container, counted here.
+   *
+   * **Why ΔL\*, and not the contrast ratio this repo measures everywhere
+   * else.** WCAG's ratio is the right instrument for a mark against its ground
+   * and the wrong one for two near-white grounds against each other: it is a
+   * ratio, so at the dark end a hair of luminance buys a large number and at
+   * the light end a visible step buys almost none. The widget's old
+   * `--widget-soft` #1b2a35 was thrown out as « too faint to group with » at
+   * **1.176:1** — a larger ratio than anything the light palette can state, on
+   * a step that is ΔL* 6.64. CIE L* is perceptually uniform and comparable
+   * across both ends, a just-noticeable difference is about 1, and the floor
+   * below is 2.5 — two and a half JNDs, which is the least a *region* can be
+   * and still be one.
+   *
+   * Shipped today: the container is ΔL* **2.94** from the aside, a value box
+   * ΔL* **4.42** from the container, and there are **no** horizontal rules
+   * inside it. Falsified against all three ways back: `bg-card` on the
+   * container (box falls to 0.42), the field's `border-subtle border`, and the
+   * container's `divide-y`.
+   */
+  'review-rail': {
+    scenario: 'review',
+    expand: true,
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await settled(page)
+
+      const rail = await page.evaluate(() => {
+        const srgb = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        const parse = (css) => (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+        const lstar = (css) => {
+          const [r, g, b] = parse(css).map((v) => srgb(v / 255))
+          const y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+          return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (y * 24389) / 27
+        }
+        const first = document.querySelector('[id^="row-"]')
+        if (!first) return null
+        const container = first.parentElement
+        const aside = container.closest('aside')
+        const ground = getComputedStyle(container).backgroundColor
+        const asideGround = getComputedStyle(aside).backgroundColor
+
+        /*
+         * Editable only. A field the gate cannot ship deliberately has *no*
+         * fill — it is text on the ground, which is what read-only means here —
+         * so asking it for a step would be asking for the box back.
+         */
+        const boxes = [...container.querySelectorAll('textarea, input')]
+          .filter((el) => !el.readOnly)
+          .map((el) => ({
+            key: el.id,
+            fill: getComputedStyle(el).backgroundColor,
+            step: Math.abs(lstar(getComputedStyle(el).backgroundColor) - lstar(ground)),
+          }))
+
+        /*
+         * Top and bottom only, for the reason `widget-ennui` states: an
+         * « internal rule » is a horizontal separator, the job the ground took
+         * over. A vertical border inside this container is the quotation gutter
+         * an open `source ▸` hangs its citation in, which the rail keeps.
+         */
+        const ruled = []
+        for (const el of container.querySelectorAll('*')) {
+          const style = getComputedStyle(el)
+          for (const [w, k] of [
+            ['borderTopWidth', 'borderTopStyle'],
+            ['borderBottomWidth', 'borderBottomStyle'],
+          ]) {
+            if (parseFloat(style[w]) > 0 && style[k] !== 'none') {
+              ruled.push(`${el.tagName.toLowerCase()}.${el.className.toString().slice(0, 30)} ${w}`)
+            }
+          }
+        }
+        const outer = getComputedStyle(container)
+        for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+          if (parseFloat(outer[`border${side}Width`]) > 0 && outer[`border${side}Style`] !== 'none') {
+            ruled.push(`le conteneur lui-même ${side}`)
+          }
+        }
+
+        return {
+          rows: container.querySelectorAll('[id^="row-"]').length,
+          ground,
+          asideGround,
+          band: Math.abs(lstar(ground) - lstar(asideGround)),
+          boxes,
+          ruled,
+        }
+      })
+
+      if (!rail) throw new Error('le rail de champs est introuvable')
+      if (rail.rows < 11) throw new Error(`${rail.rows} ligne(s) dans le rail, 11 attendues`)
+
+      const FLOOR = 2.5
+      if (rail.band < FLOOR) {
+        throw new Error(
+          `le rail ne se détache pas de la colonne : ΔL* ${rail.band.toFixed(2)} ` +
+            `(${rail.ground} sur ${rail.asideGround}), plancher ${FLOOR}`,
+        )
+      }
+      const flat = rail.boxes.filter((b) => b.step < FLOOR)
+      if (flat.length > 0) {
+        throw new Error(
+          `${flat.length} champ(s) sur ${rail.boxes.length} ne se détachent pas de leur fond : ` +
+            flat
+              .slice(0, 3)
+              .map((b) => `${b.key} ΔL* ${b.step.toFixed(2)} (${b.fill} sur ${rail.ground})`)
+              .join(' · ') +
+            ` — plancher ${FLOOR}`,
+        )
+      }
+      if (rail.ruled.length > 0) {
+        throw new Error(
+          `${rail.ruled.length} trait(s) horizontal(aux) dans le rail : ` +
+            `${rail.ruled.slice(0, 3).join(' · ')} — il groupe par fond`,
+        )
+      }
     },
   },
 
@@ -3338,6 +3466,134 @@ const SCREENS = {
        */
       if (Number(drawn.weight) >= 600) {
         throw new Error(`l’avis de capture est en ${drawn.weight} — une phrase n’est pas une marque`)
+      }
+    },
+  },
+
+  /*
+   * **Nothing in this harness had ever moved a pointer.**
+   *
+   * Seventy-three stages, ten measured checks, every ratio in `tokens.css`
+   * recomputed by a unit test — and all of it describes a product at rest. A
+   * `:hover` rule is a second palette nobody had ever asked a number of, and on
+   * the one surface with its own ground the answer was that there wasn't one:
+   * `.widget-surface` re-points every token a control *wears* — `--bg-*`,
+   * `--text-*`, `--border-*`, `--brand-700`, `--danger`, `--warn`, the meters —
+   * and none of the three it *moves to*. So every hover on the widget reached
+   * back into the light ramp and painted a near-black onto a dark card:
+   * « Marquer » and « Ouvrir Sillage » at **1.30:1**, « Terminer » at
+   * **1.63:1**. Not dimmed under the pointer — gone.
+   *
+   * The check is the one `--contrast` already makes, asked of a state the page
+   * only enters when someone is pointing at it. Two claims, and the second is
+   * why the first cannot pass vacuously: **every control clears AA while
+   * hovered**, and **every control answers the pointer at all**.
+   *
+   * The second claim was « at least one control changes » for one draft, and
+   * that draft passed the mutation it exists to catch: stripping the `hover:`
+   * rule off all four `Button` variants left twelve other controls on the
+   * surface still moving, so the stage went green over four dead ones. The
+   * claim is now asked of each control rather than of the page, which is both
+   * stronger and the thing DEC-26 already says — a control that does not answer
+   * the pointer looks like one that is not there.
+   */
+  'widget-survol': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await settled(page)
+
+      /*
+       * `Terminer` opens a confirmation whose « Terminer » is the `danger`
+       * variant — the filled red rectangle, and the only irreversible act on
+       * this surface. It is reached, not skipped, because the collapse is worst
+       * there: the label rides *on* the fill, so a hover that moves the fill
+       * moves the ground under the word.
+       */
+      const end = page.getByRole('button', { name: /^Terminer/ }).first()
+      if (await end.count()) await end.click()
+      await settled(page)
+
+      const controls = page.locator('button:visible')
+      const total = await controls.count()
+      if (total < 3) throw new Error(`${total} contrôle(s) visibles — la mise en scène n’a pas ouvert le panneau`)
+
+      const readPaint = (handle) =>
+        handle.evaluate((el) => {
+          const walk = (node) => {
+            for (let n = node; n && n !== document.documentElement; n = n.parentElement) {
+              const bg = getComputedStyle(n).backgroundColor
+              if (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg
+            }
+            return getComputedStyle(document.documentElement).backgroundColor
+          }
+          const style = getComputedStyle(el)
+          return {
+            name: (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30),
+            ink: style.color,
+            ground: walk(el),
+            size: parseFloat(style.fontSize),
+            weight: Number(style.fontWeight),
+            // What « the hover is visible » is asked of, below.
+            paint: `${style.color}|${style.backgroundColor}|${style.borderTopColor}|${style.textDecorationLine}|${style.opacity}`,
+          }
+        })
+
+      const srgb = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      const lum = (css) => {
+        const [r, g, b] = (css.match(/[\d.]+/g) ?? []).slice(0, 3).map((v) => srgb(Number(v) / 255))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+        return (hi + 0.05) / (lo + 0.05)
+      }
+
+      const failures = []
+      const inert = []
+      let moved = 0
+      for (let i = 0; i < total; i += 1) {
+        const control = controls.nth(i)
+        const rest = await readPaint(control)
+        await control.hover({ force: true })
+        // A hover is a transition like any other — `MOTION_CEILING_MS` is what
+        // the rest of this file waits for a class to land, and this waits the same.
+        await page.waitForTimeout(STAGING_TURN_MS)
+        const over = await readPaint(control)
+        if (over.paint !== rest.paint) moved += 1
+        else inert.push(over.name || '(sans nom)')
+
+        /*
+         * AA, at the size the control actually draws: 3:1 is the large-text
+         * floor and it wants 18.66px at 700 or 24px, which no control on this
+         * surface reaches. The size is read rather than assumed so that the
+         * floor cannot be the wrong one after a type change.
+         */
+        const large = over.size >= 24 || (over.size >= 18.66 && over.weight >= 700)
+        const floor = large ? 3 : 4.5
+        const measured = ratio(over.ink, over.ground)
+        if (measured < floor) {
+          failures.push(
+            `« ${over.name} » ${measured.toFixed(2)}:1 sous le pointeur ` +
+              `(${over.ink} sur ${over.ground}, au repos ${ratio(rest.ink, rest.ground).toFixed(2)}:1), plancher ${floor}`,
+          )
+        }
+      }
+
+      if (inert.length > 0) {
+        throw new Error(
+          `${inert.length} contrôle(s) sur ${total} ne changent pas sous le pointeur : ` +
+            `${inert.join(' · ')} — ${moved} bouge(nt)`,
+        )
+      }
+      if (failures.length > 0) {
+        throw new Error(
+          `${failures.length} contrôle(s) sur ${total} passent sous AA au survol : ${failures.join(' · ')}`,
+        )
       }
     },
   },
@@ -5709,6 +5965,7 @@ const ECHO_DECLARED = [
   {
     stages: [
       'review',
+      'review-rail',
       'review-valider',
       'review-garde',
       'review-garde-citation',
@@ -5747,6 +6004,7 @@ const ECHO_DECLARED = [
   {
     stages: [
       'review',
+      'review-rail',
       'review-valider',
       'review-garde',
       'review-garde-citation',
