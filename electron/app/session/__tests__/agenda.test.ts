@@ -1943,6 +1943,131 @@ test('without the port the unscheduled detector is unchanged', async () => {
  * about a call that never happened; and the row survived a relaunch, because it
  * is in the store.
  */
+/*
+ * **The microphone, read the way `decideArming` reads it.**
+ *
+ * Five of the nine applications `MEETING_APPS` supports are `micOnly` — a
+ * browser tab, a Slack huddle, Aircall, FaceTime — and `matchMeetingApp`
+ * refuses to name them, because they are open all day. They hold the
+ * microphone and never produce `meetingAudio`. The calendar path has always
+ * armed on that alone; the site that arms a meeting the rep placed here read
+ * `running` only, so on those five the rep's own row never armed at all.
+ *
+ * The harness's own default is why nothing caught it: `harness([], null, 'Teams')`
+ * puts a string in `running` for every fixture that reaches the site, so
+ * « `running` is null and the microphone is held » is a shape no test built.
+ */
+test('a meeting the rep placed here arms on a call the machine cannot name', async () => {
+  const h = harness([], null, 'Navigateur')
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    // A Google Meet tab: nothing to report by name, the microphone held.
+    meetingSignal: () => ({ running: null, inCall: 'Navigateur' }),
+    clock: () => T0,
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'armed',
+    'la réunion placée n’arme pas sur un appel navigateur : rien à enregistrer en une pression',
+  )
+  assert.equal(agenda.snapshot().armed?.meetingId, mine.id)
+  h.store.close()
+})
+
+/*
+ * **A start that failed is not a call the rep recorded.**
+ *
+ * `aborted` is in `AFTER_THE_CALL` — correctly, *Historique* asks that set « is
+ * this behind the rep » — and the hand-back decision was reading the same set to
+ * answer « did the rep record this ». `armed → abort` is what a press of
+ * *Enregistrer* reaches when there is no transcription provider or no capture,
+ * so the rep whose start failed lost the detector for the rest of the call while
+ * the rep who pressed nothing kept it.
+ *
+ * The assertion is that the two now behave the same, which is the whole claim:
+ * an abort is a non-event for the detector, not a decision about the
+ * conversation. It is deliberately not « hand it back at once » — the offer
+ * still stands until `ownClaims`' bound, exactly as it does when nobody presses
+ * anything, and making the failed press *better* than silence would be a
+ * different decision than this one.
+ */
+test('a start that failed gives the detector back the call it never recorded', async () => {
+  const run = async (abort: boolean) => {
+    const h = harness([], 'Teams', 'Teams')
+    const mine = h.orchestrator.create({
+      id: 'm-mine',
+      title: 'Néovia Santé',
+      clientName: 'Néovia Santé',
+      scheduledStart: T0,
+    })
+    const armed: { subject: string }[] = []
+    const agenda = new Agenda({
+      calendar: h.calendar,
+      orchestrator: h.orchestrator,
+      ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+      meetingSignal: () => ({ running: 'Teams', inCall: 'Teams' }),
+      clock: () => T0,
+      onArmed: (a) => void armed.push(a),
+    })
+
+    await agenda.tick({ now: T0 - 60_000 })
+    assert.equal(h.orchestrator.stateOf(mine.id), 'armed')
+
+    /*
+     * **Ticks before the press, and they are the whole test.**
+     *
+     * `#adHocSpent` latches on the top-of-tick liveness of the standing offer,
+     * and the arm above happens *after* that line — so a run that aborts on the
+     * very next tick never once has the field set, and passes against the
+     * unfixed code. The rep presses *Enregistrer* a minute or two into the call,
+     * not in the same instant the row lights up.
+     */
+    for (let at = T0 - 50_000; at < T0; at += 10_000) {
+      await agenda.tick({ now: at })
+    }
+
+    if (abort) {
+      // What *Enregistrer* reaches with no capture device — `Orchestrator.ts:636`.
+      h.orchestrator.dispatch(mine.id, 'abort', 'capture indisponible')
+      assert.equal(h.orchestrator.stateOf(mine.id), 'aborted')
+    }
+
+    // The rep stays on the call. Ticks at the shipped rate would be ~160 of
+    // these; five minutes apart reproduces the latch and is cheap.
+    for (let at = T0; at < T0 + 95 * 60_000; at += 5 * 60_000) {
+      await agenda.tick({ now: at })
+    }
+    await agenda.tick({ now: T0 + 95 * 60_000 })
+    await agenda.tick({ now: T0 + 95 * 60_000 + AD_HOC_DWELL_MS })
+    h.store.close()
+    return armed.map((a) => a.subject)
+  }
+
+  const silent = await run(false)
+  const failed = await run(true)
+
+  assert.ok(
+    silent.some((subject) => subject.startsWith('Appel non planifié')),
+    `le témoin est faux : le rep qui ne presse rien doit être relancé — ${JSON.stringify(silent)}`,
+  )
+  assert.ok(
+    failed.some((subject) => subject.startsWith('Appel non planifié')),
+    'après un démarrage en échec le détecteur reste muet pour le reste de l’appel : ' +
+      `${JSON.stringify(failed)} contre ${JSON.stringify(silent)} sans la pression`,
+  )
+})
+
 test('an offer for a meeting the rep placed here expires with the conversation', async () => {
   const h = harness([], 'Teams', null)
   const mine = h.orchestrator.create({

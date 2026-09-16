@@ -535,10 +535,42 @@ export class Agenda {
     return state !== null && AFTER_THE_CALL.has(state)
   }
 
-  /** `#spent`, keyed on a meeting that has no event — see `#calendarOffersAt`. */
-  #spentMeeting(meetingId: string): boolean {
-    const state = this.#options.orchestrator.stateOf(meetingId as MeetingId)
-    return state !== null && AFTER_THE_CALL.has(state)
+  /**
+   * Did the rep actually **record** this conversation, or did the start fail?
+   *
+   * `#spent` is the right predicate for « may this slot still be armed » and the
+   * wrong one for « may the detector have the microphone back », and the two had
+   * been sharing it. `AFTER_THE_CALL` answers « is this behind the rep » — which
+   * is what *Historique* asks and why `aborted` belongs in it — but `aborted` is
+   * precisely « nothing was recorded ». `TRANSITIONS` reaches it by
+   * `armed → abort`, and `Orchestrator` dispatches that from the two places a
+   * press of *Enregistrer* can fail: « aucun fournisseur de transcription »
+   * (`Orchestrator.ts:431`) and « capture indisponible » (`:636`).
+   *
+   * So the rep whose start **failed** was worse off than the rep who pressed
+   * nothing. Driven on the shipped class — a 14:30 placed here, Teams holding
+   * the microphone 14:28 → 17:00, one continuous call:
+   *
+   * | the rep | offers over the call |
+   * |---|---|
+   * | presses nothing | `14:25 Néovia` · `15:50 Appel non planifié — Teams` |
+   * | presses *Enregistrer*, capture unavailable | `14:25 Néovia`, then nothing for 2 h 29 |
+   *
+   * The row reads « Réunion abandonnée. » and carries no *Réessayer*, by design
+   * — a `failed` push gets a sentence naming the cause, never a button. The
+   * state is terminal, so nothing re-arms it; and because `#adHocSpent` latched
+   * on every tick the offer stood and was never handed back, the detector is
+   * silent for the rest of the call too. The only path left is *Démarrer une
+   * réunion*, which makes a meeting with no client, no subject and no
+   * `scheduledStart`.
+   *
+   * `aborted` is left in `AFTER_THE_CALL` and read out here rather than removed
+   * there: two readers ask that set two different questions, and the one that is
+   * wrong about `aborted` is this one.
+   */
+  #recorded(meetingId: MeetingId): boolean {
+    const state = this.#options.orchestrator.stateOf(meetingId)
+    return state !== null && AFTER_THE_CALL.has(state) && state !== 'aborted'
   }
 
   /**
@@ -747,7 +779,7 @@ export class Agenda {
        * The suite caught exactly that the first time this hand-back was wired
        * unconditionally.
        */
-      const recorded = this.#spent(this.#armed.eventId)
+      const recorded = this.#recorded(meetingIdFor(this.#armed.eventId))
       this.#armed = null
       /*
        * **And the machine is told, which it never was.**
@@ -927,7 +959,7 @@ export class Agenda {
       const placed = this.#ownMeetings(now).find((meeting) => meeting.id === standingOwn.meetingId)
       // The same split as the calendar branch above: recorded-and-finished is a
       // decision about this conversation, not a call nothing accounts for.
-      const recorded = this.#spentMeeting(standingOwn.meetingId)
+      const recorded = this.#recorded(standingOwn.meetingId as MeetingId)
       const over =
         placed === undefined ||
         now >= meetingAnchor(placed) + AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS ||
@@ -955,7 +987,47 @@ export class Agenda {
       .some((state) => state === 'armed' || state === 'recording')
     if (live) this.#adHocSpent = true
 
-    if (signal.running !== null) {
+    /*
+     * **Either signal, because `decideArming` says either signal — and this was
+     * the one place in the product where the two arm sites disagreed.**
+     *
+     * The calendar path reads both: `nextArmable` is handed `signal.running`
+     * *and* `signal.inCall`, and `decideArming` arms on `micHeldBy` alone with
+     * the reason spelled out beside it — « It also covers the `micOnly`
+     * applications — a browser tab, a Slack huddle, Aircall — which
+     * `matchMeetingApp` refuses to report by name because they are open all day,
+     * and which therefore never produce `meetingAudio` at all. » This site read
+     * `signal.running` only, so for those five of the nine supported
+     * applications the rep's **own placed meeting never armed**.
+     *
+     * Driven, no Entra, a 14:30 placed here and the call running 14:28 → 16:00:
+     *
+     * | application | what the rep was offered |
+     * |---|---|
+     * | Teams desktop (`running="Teams"`) | `14:25 Néovia Santé — cadrage` · `15:50 Appel non planifié` |
+     * | Google Meet tab (`running=null`, mic held) | `15:50 Appel non planifié — Navigateur` |
+     * | Slack huddle | `15:50 Appel non planifié — Slack` |
+     * | Aircall | `15:50 Appel non planifié — Aircall` |
+     *
+     * Nothing recordable by one press for `AD_HOC_NOMINAL_MS +
+     * OVERRUN_GRACE_MS` — **80 minutes of a 92-minute call** — and the detector
+     * is silenced the whole time as well, because `#calendarOffersAt` returns
+     * the placed meeting's own claim, so `decideAdHoc` answers « cet appel est
+     * au calendrier » about an offer that is never going to be made. What
+     * finally arrives has no client name, no `scheduledStart` and no account to
+     * resolve, with nine minutes left.
+     *
+     * It is worst on the build that ships first: with no Entra registration
+     * there are no invites (DEC-28, DEC-31), so **every** meeting is one the rep
+     * placed, and this is the only site that arms them.
+     *
+     * Why the suite was green: `agenda.test.ts`'s harness is
+     * `harness([], null, 'Teams')` — `running` is a string in every fixture that
+     * reaches here, so `running: null` with a held microphone is a combination
+     * no test constructed. `check:ports` and `check:surfaces` see a called
+     * method; the two `micOnly` branches are `core/domain` constants, not a port.
+     */
+    if (signal.running !== null || signal.inCall !== null) {
       for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
         const state = this.#options.orchestrator.stateOf(meeting.id)
         if (state !== null && AFTER_THE_CALL.has(state)) continue

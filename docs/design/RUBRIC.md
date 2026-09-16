@@ -144,6 +144,20 @@ round 5 did not.
 | 13 | main | `aea9987` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 6 | 6 | 6 | 6.5 | **53.5** |
 | 14 | widget | `01c74f5` | 7.5 | 6 | 5 | 5.5 | 5 | 5 | 4 | 5 | 5 | **48** |
 | 14 | main | `01c74f5` | 6.5 | 6 | 5.5 | 5 | 6 | 5.5 | 6 | 5.5 | 6.5 | **52.5** |
+| 14 | detection | `7ac4017` | 7 | 7.5 | 6 | 5 | 6.5 | 6 | 5 | 5.5 | 5 | **53.5** |
+
+**Round 14 detection was measured against a tree I was editing under it, and that
+is my error, not the reviewer's.** The round's own instructions say a review runs
+against a clean baseline and never beside an implementing agent. It ran beside
+one: `HEAD` stayed `7ac4017` throughout, but from 18:03 I was saving into the
+main checkout — `Review.tsx`, `shot.mjs`, `index.css`, `tokens.css`, `VISION.md`
+— so `smoke.mjs` ran red at 18:12 under a stage of mine that had not yet been
+declared, and one `npm test` caught a half-written file. The reviewer noticed,
+timestamped every measurement it kept to 17:44–18:05, and verified that
+`electron/` — where all nine of its findings live — is untouched in that diff.
+So the numbers stand; what does not is the method, and the cost of the collision
+was borne by the reviewer rather than by me.
+
 
 ## Retracted: the « blocked on a decision » section was wrong
 
