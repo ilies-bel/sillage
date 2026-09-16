@@ -262,7 +262,22 @@ function turnGrammar(label) {
  */
 async function readToTheEnd(page, column, { mustPress = true } = {}) {
   await column.waitFor()
-  const turn = column.locator('.turn-ground button')
+  /*
+   * Inside the column, **or** in the row docked under it — `ReadingColumn` puts
+   * the turn below the scroller now, so it stops covering the text it points
+   * at, and its DOM position moves from « inside » to « sibling ». Still scoped
+   * to this column: the wrapper holds exactly one scroller and one turn, so a
+   * press cannot land on another column's control. `Review`'s own
+   * `main.fade-below` keeps its turn inside, which is why both are tried.
+   *
+   * The harness's own advice on a failing stage, taken: « c'est le sélecteur
+   * qu'il faut rendre moins littéral ». The property asserted below — an
+   * overflowing column offers a turn, and every press moves something — is
+   * unchanged.
+   */
+  const turn = column
+    .locator('.turn-ground button')
+    .or(column.locator('xpath=..').locator('> .turn-ground button'))
   const state = () =>
     column.evaluate((el) => ({
       above: el.dataset.above,
@@ -894,7 +909,10 @@ const SCREENS = {
           have left this loop `break`ing on the first iteration and failing two
           lines below with a sentence about the beat instead of about the button.
         */
-        const turn = column.locator('.turn-ground button')
+        // Same reach as `readToTheEnd`: the turn is the scroller's sibling now.
+        const turn = column
+          .locator('.turn-ground button')
+          .or(column.locator('xpath=..').locator('> .turn-ground button'))
         if ((await turn.count()) === 0) break
         const before = await column.evaluate((el) => el.scrollTop)
         await turn.first().click()

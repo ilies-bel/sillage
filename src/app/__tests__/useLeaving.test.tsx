@@ -64,6 +64,24 @@ describe('a removed row leaves instead of vanishing', () => {
     expect(keys()).toEqual(['a'])
   })
 
+  test('it leaves from the line it occupied, not from the bottom', () => {
+    /*
+     * The case the first version of this test could not see: it removed the
+     * *last* of two rows, which is the one position where appending a leaver and
+     * holding it in place produce the same array. Two reviewers found the
+     * append by reading the code. On the agenda it meant a withdrawn offer
+     * jumped past every meeting still ahead of the rep and then faded.
+     */
+    const view = render(<List items={[{ key: 'a' }, { key: 'b' }, { key: 'c' }]} />)
+    view.rerender(<List items={[{ key: 'a' }, { key: 'c' }]} />)
+
+    expect(keys()).toEqual(['a', 'b', 'c'])
+    expect(leaving()).toEqual(['b'])
+
+    act(() => void vi.advanceTimersByTime(150))
+    expect(keys()).toEqual(['a', 'c'])
+  })
+
   test('a row that comes back mid-exit stops leaving and does not double', () => {
     // A list that flickers — an offer withdrawn and re-made inside 150ms — must
     // not end up with a ghost beside the live row.

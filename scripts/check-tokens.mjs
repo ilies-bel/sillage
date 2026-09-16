@@ -226,6 +226,11 @@ const SPACING_STEPS = (() => {
 })()
 /** Tailwind's numeric spacing: `n` → `n × 4px`, plus the literal `px` → 1px. */
 const stepPx = (suffix) => (suffix === 'px' ? 1 : Number(suffix) * 4)
+/** `px-snug.5` and friends — a named step with a decimal glued to it. */
+const DEAD_STEP = new RegExp(
+  String.raw`(?<![\w-])((?:p|m)(?:[xytblr])?|gap(?:-[xy])?|space-[xy])-(hair|snug|tight|inline|row|block|gutter)\.(\d+)`,
+  'g',
+)
 const SPACING = new RegExp(
   String.raw`(?<![\w-])((?:p|m)(?:[xytblr])?|gap(?:-[xy])?|space-[xy])-(px|\d+(?:\.\d+)?)(?![\w-])`,
   'g',
@@ -236,6 +241,7 @@ const offScale = []
 const deadAlpha = []
 const cancelled = []
 const renamed = []
+const dead = []
 let checked = 0
 let exempted = 0
 
@@ -280,6 +286,25 @@ for (const file of files) {
         offScale.push(`${file}:${i + 1}: ${match[0]} — ${group} declares ${known}\n      ${line.trim()}`)
       }
     }
+    /*
+     * **A named step with a decimal after it is a class that does not exist.**
+     *
+     * The codemod that took spacing from 27.8 % to 85 % matched `px-2` *inside*
+     * `px-2.5` and wrote `px-snug.5` — twelve of them, across seven files.
+     * Tailwind emits no such rule, so the element's padding silently became
+     * whatever it inherited: the widget's pill computed `padding-left: 0px` for
+     * two rounds with its recording dot starting one pixel inside the border.
+     *
+     * Same shape as `ring-card`, `bg-muted/30` and `decoration-card` — the class
+     * name reads right, nothing resolves, and no screenshot shows an error — and
+     * the fourth rule above could not see it, because that one polices off-scale
+     * *values* and this is a value that never reaches CSS at all. 140 stagings
+     * and eight measured checks passed over all twelve.
+     */
+    for (const match of line.matchAll(DEAD_STEP)) {
+      dead.push(`${file}:${i + 1}: ${match[0]} — \`--space-${match[2]}\` has no \`.${match[3]}\` rung; Tailwind emits nothing\n      ${line.trim()}`)
+    }
+
     SPACING.lastIndex = 0
     for (const match of line.matchAll(SPACING)) {
       const name = SPACING_STEPS.get(stepPx(match[2]))
@@ -302,6 +327,18 @@ if (cancelled.length > 0) {
   console.error(`\nutilities that cancel each other — the class is right and the rule never applies (${cancelled.length}):\n`)
   for (const v of cancelled) console.error(`  ${v}`)
   console.error('\nDrop the display utility, or drop the clamp — the two cannot both be meant.\n')
+  process.exit(1)
+}
+
+if (dead.length > 0) {
+  console.error(
+    `\nspacing classes Tailwind does not emit — a named step with a decimal (${dead.length}):\n`,
+  )
+  for (const v of dead) console.error(`  ${v}`)
+  console.error(
+    '\nThe element keeps whatever it inherited and no check downstream can see it.\n' +
+      'Write the numeric utility (`px-2.5`) or name the rung in tokens.css.\n',
+  )
   process.exit(1)
 }
 

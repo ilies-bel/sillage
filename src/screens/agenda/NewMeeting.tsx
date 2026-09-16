@@ -305,14 +305,14 @@ export function NewMeeting({
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Objet (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-snug.5 py-tight text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-2.5 py-tight text-ui"
       />
       <input
         value={client}
         onChange={(event) => setClient(event.target.value)}
         placeholder="Client (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-snug.5 py-tight text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-2.5 py-tight text-ui"
       />
 
       <label className="text-muted flex items-center gap-snug text-ui">
@@ -322,7 +322,7 @@ export function NewMeeting({
           value={clock}
           aria-label="Heure de la réunion"
           onChange={(event) => setClock(event.target.value)}
-          className="bg-inner border-card text-strong w-24 rounded-sm border px-snug.5 py-tight text-ui tabular-nums"
+          className="bg-inner border-card text-strong w-24 rounded-sm border px-2.5 py-tight text-ui tabular-nums"
         />
       </label>
 

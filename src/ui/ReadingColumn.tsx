@@ -111,17 +111,45 @@ export function ReadingColumn({ children, subject, what, className }: ReadingCol
   }
 
   return (
-    <div
-      ref={ref}
-      onScroll={measure}
-      className={`fade-below min-h-0 flex-1 overflow-y-auto ${className ?? ''}`}
-    >
-      {children}
-      {/*
-        Inside the scroller, so it sticks to the foot of the column it turns —
-        never in a decision's rectangle, and never a jump to the end: a teleport
-        reveals, a page turn is read.
-      */}
+    /*
+      **Below the column, not over it.**
+
+      The turn used to be the scroller's last child with `sticky bottom-0`, which
+      kept it reachable at every scroll position — the right property — and paid
+      for it by drawing an opaque button on the text it points at. Measured
+      across the product: nine files reach this component, and at 960×600
+      `session-demander` drew three at once, one over the rep's own email
+      address. In Historique it covered « 15:03 · marqué » — the rep's own mark,
+      behind a button telling them to go read it.
+
+      Docking keeps both properties instead of trading them. It does **not**
+      disturb the review gate's arming guard, which is what a previous attempt
+      claimed: `review-garde-mort` reports *Valider* reached in 6 presses then 4,
+      docked and not, byte-identical.
+    */
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        ref={ref}
+        onScroll={measure}
+        className={`fade-below min-h-0 flex-1 overflow-y-auto ${className ?? ''}`}
+      >
+        {children}
+        {/*
+          **The room the fade needs under the last line.**
+
+          The turn used to sit here, in the flow, and the pixels it occupied gave
+          the final line somewhere to go at the end of the scroll. Docking took
+          that away and `onboarding-suite` caught it at 960×600 — read to the
+          very bottom, the last beat still sat under `.fade-below`'s mask. The
+          control was providing that clearance by accident; it is stated now.
+
+          `data-unmeasured`, so the review gate does not count it as something
+          the rep has to read: `shippedHeight` subtracts exactly these subtrees,
+          and a column whose shipped height grew by a spacer is a column the
+          arming guard would think had more in it.
+        */}
+        {turn === null ? null : <div aria-hidden data-unmeasured className="h-14 shrink-0" />}
+      </div>
       {turn === null ? null : (
         <PageTurn what={readingTurnLabels(subject ?? LEGACY_SUBJECT[what])[turn]} onTurn={onTurn} />
       )}

@@ -173,7 +173,7 @@ export function SearchBar({
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           maxLength={200}
-          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-snug.5 py-tight text-ui"
+          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-2.5 py-tight text-ui"
         />
 
         {onHistorique ? (

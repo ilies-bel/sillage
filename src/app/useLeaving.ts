@@ -34,6 +34,8 @@ export function useLeaving<T extends object>(
   const [leaving, setLeaving] = useState<readonly T[]>([])
   const previous = useRef<readonly T[]>(items)
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  /** Where a row sat in the list it was removed from, so it can leave from there. */
+  const departedAt = useRef(new Map<string, number>())
 
   /*
    * **Keyed on the keys, not on the array** — and the first draft was not, which
@@ -54,6 +56,7 @@ export function useLeaving<T extends object>(
   useEffect(() => {
     const live = new Set(items.map(keyOf))
     const gone = previous.current.filter((item) => !live.has(keyOf(item)))
+    for (const item of gone) departedAt.current.set(keyOf(item), previous.current.indexOf(item))
     previous.current = items
 
     // Back before it finished leaving: stop the timer and let the live one render.
@@ -82,6 +85,7 @@ export function useLeaving<T extends object>(
         key,
         setTimeout(() => {
           timers.current.delete(key)
+          departedAt.current.delete(key)
           setLeaving((was) => {
             const next = was.filter((other) => keyOf(other) !== key)
             return next.length === was.length ? was : next
@@ -102,5 +106,27 @@ export function useLeaving<T extends object>(
   }, [])
 
   if (leaving.length === 0) return items
-  return [...items, ...leaving.map((item) => ({ ...item, leaving: true }))]
+  /*
+   * **Spliced back where it was, not appended** — the docblock above says « in
+   * their old position » and the first draft did not do it. Two reviewers found
+   * the same thing by reading: `[...items, ...leaving]` puts a withdrawn row at
+   * the *bottom* of the day, so on the one stage this hook was written for the
+   * 14:29 offer jumps past the 14:30 meeting still ahead of the rep and then
+   * fades. A worse frame than none.
+   *
+   * Nothing could see it. `useLeaving.test.tsx` removed the *last* of two rows —
+   * the one position where appending and holding are the same array — and
+   * `--motion` reads a resting frame, where `.leaving` is on nothing. The test
+   * below now removes a middle row, which is the case that tells them apart.
+   *
+   * The index is the one the item had in the previous list, so a row leaves from
+   * the line it occupied and the rows under it close up afterwards rather than
+   * during.
+   */
+  const out: (T & { leaving?: boolean })[] = [...items]
+  for (const item of leaving) {
+    const at = departedAt.current.get(keyOf(item))
+    out.splice(at === undefined || at > out.length ? out.length : at, 0, { ...item, leaving: true })
+  }
+  return out
 }

@@ -127,6 +127,9 @@ round 5 did not.
 | 8 | widget | `8d6b5ab` | 8 | 5 | 6.5 | 4.5 | 6 | 6 | 5.5 | 5.5 | 5.5 | **52.5** |
 | 8 | main | `8d6b5ab` | 7 | 6.5 | 6 | 6 | 6.5 | 5.5 | 6.5 | 6.5 | 6.5 | **57** |
 | 8 | detection | `8d6b5ab` | 6.5 | 7.5 | 7.5 | 5 | 6.5 | 6 | 6.5 | 6.5 | 6 | **58** |
+| 9 | widget | `fb55045` | 7.5 | 5 | 6 | 4.5 | 5.5 | 6 | 6 | 5 | 5.5 | **51** |
+| 9 | main | `fb55045` | 7 | 6.5 | 6 | 6 | 6.5 | 5.5 | 6.5 | 6.5 | 6.5 | **57** |
+| 9 | detection | `fb55045` | 6.5 | 7.5 | 7.5 | 5 | 6 | 6 | 6 | 6.5 | 6 | **57** |
 
 ## Retracted: the « blocked on a decision » section was wrong
 
@@ -192,59 +195,42 @@ degrades to today's behaviour on a long call; or give `meeting:create` an
 optional end and let the rep say, which is a form field the channel's docblock
 argues against. The second is a DEC.
 
-## Attempted and reverted: `PageTurn` over the content it points at
+## Retracted twice, then shipped: `PageTurn` over the content it points at
 
-Round 8's main « one thing », and the fix is not the one-liner it looks like.
+**The « blocked by the arming guard » write-up was wrong, and the round-9 main
+reviewer took it apart correctly.** It claimed docking « changes the viewport the
+guard measures » and that « every fix that removes it » does the same. It named a
+Playwright `for (let i = 0; i < 40; i++)` in the *driver* as « the one
+measurement between a rep and an unread payload reaching a client's CRM ». It
+said « re-applied and measured » about a run that measured the `review` stage
+being clean and never quoted the one number that settles it.
 
-**The finding is real and unchanged.** `PageTurn` is `sticky bottom-0` *inside*
-the scroller, so it draws an opaque button on the text it is pointing at — five
-screens, three of them at once at the 960×600 minimum. It covers a client's email
-address on `session-demander`, « Texte normal » in the shortcut table, the « Se
-déconnecter » row in Réglages, a `## Contexte` heading in the compte-rendu, and
-« 15:03 · marqué · Marqué pendant l'appel » in Historique — the rep's own mark,
-behind a button telling them to go read it.
+That number is `review-garde-mort`, which presses until the gate arms and reports
+the count. Measured both ways at the same commit: ***Valider* reached in 6
+presses then 4, docked and not — byte-identical.** The guard was never touched.
+Second time this session a « blocked » claim of mine did not survive the first
+real measurement, after the first one was retracted for the same reason.
 
-**What was tried:** dock it one level out — `ReadingColumn` wraps the scroller and
-the turn in a flex column, so the button keeps every property its docblock argues
-for (reachable at every scroll position, at the foot of the column it turns,
-never inside a decision's rectangle) and stops being in front of a sentence. It
-is one call site.
+**What the dock actually cost**, now that it is known rather than asserted:
 
-**What it broke:** `review-garde` fails with « la garde ne s'arme plus après une
-lecture honnête des deux colonnes ». Verified both ways — the stage passes with
-the change stashed and fails with it applied, at the same commit. The arming
-guard measures *what the rep was shown*, keyed to the scroller's own geometry,
-and docking the button changes that geometry and the DOM order of the two turn
-controls the stage's honest-read loop clicks by `.first()`.
+- `readToTheEnd` and `onboarding-suite` each hold their own copy of
+  `column.locator('.turn-ground button')`, scoped *inside* the scroller. Docking
+  moves the control to the scroller's sibling, so both found nothing —
+  `session-remonter` reported « no page turn on an overflowing column » and
+  `onboarding-suite` broke out of its loop without pressing anything. The
+  property each asserts is unchanged; the locator encoded where the control
+  lived. Widened to reach the sibling, still scoped to one column, which is the
+  harness's own printed advice on a failing stage.
+- The in-flow button was providing the clearance `.fade-below` needs under the
+  last line, by accident. Docked, the final beat of onboarding step 3 stayed
+  under the mask at 960×600. That clearance is a `data-unmeasured` spacer now, so
+  `shippedHeight` subtracts it and the gate does not count a spacer as something
+  the rep must read.
 
-**Why it was reverted rather than pushed through.** That guard is the one
-measurement between a rep and an unread payload reaching a client's CRM
-(`POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb).
-A change that breaks it is not shippable on the strength of « the screenshots
-look better », and relaxing the stage to accept it would be precisely the shape
-this repo keeps cataloguing — a check edited to agree with the code it was
-written to judge.
+One more trap worth recording: a single `shot.mjs` run defaults to **1440×900**,
+a size `smoke.mjs` never uses. `onboarding-suite` fails there with « rien sous la
+ligne de flottaison » on a clean tree, because at 1440 the step genuinely fits —
+which sent this investigation after a regression that did not exist. Reproduce a
+smoke failure at a smoke size.
 
-**Second attempt, and the mechanism is now known.** Re-applied and measured:
-the `review` stage is clean with the change (no hidden scrollers, no prose
-overrun, geometry intact), so the layout is not what breaks. What breaks is
-arithmetic. Docking gives the button its own row in the pane, which permanently
-costs every column the button's height of *reading viewport* — and `clientHeight`
-is exactly what the guard's `seen` ranges are built from
-(`seen.current[column] = { from: scrollTop, to: scrollTop + clientHeight }`). A
-smaller viewport is a smaller band per turn, a column that used to fit now does
-not, and the honest-read loop's forty turns stop being enough.
-
-So occlusion is *inherent* to a sticky control over content — padding only
-clears the last line, and a bottom-anchored element sits at the viewport edge
-whatever is behind it — and every fix that removes it changes the viewport the
-guard measures. That is the whole finding, and it is one sentence long now
-instead of a guess.
-
-**What the real fix has to satisfy**, so the next round starts here rather than
-at the beginning: the turn must leave the scroller's flow *without* changing what
-`covered` measures, which means the coverage math has to key off a viewport the
-button is not inside — or the guard has to be told the button's height the way
-`data-unmeasured` already tells it about a column that holds more than it sends.
-The second is likely the honest one: the band a docked button occupies is exactly
-« what this column holds but does not show ».
+140 stagings, 1275 + 781 tests, `npm run check` green.

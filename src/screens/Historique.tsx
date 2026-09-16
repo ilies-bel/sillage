@@ -467,7 +467,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
         </UiRow>
       </button>
 
-      <Matches matches={row.matches} className="px-block pb-snug.5" />
+      <Matches matches={row.matches} className="px-block pb-2.5" />
       <PushFailure intents={row.intents} />
 
       {expanded ? <Record meetingId={meeting.id} intents={row.intents} onReady={settle} /> : null}
@@ -516,7 +516,7 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
   if (failed.length === 0) return null
 
   return (
-    <div className="px-block pb-snug.5">
+    <div className="px-block pb-2.5">
       {failed.map((intent) => (
         <p key={intent.intentId} className="text-ui">
           <span className="text-warn">{intent.label} — échec.</span>{' '}

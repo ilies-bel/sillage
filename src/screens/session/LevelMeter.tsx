@@ -135,8 +135,16 @@ interface LevelMeterProps {
    *
    * Grey rather than frozen or hidden, and the grey is not a new invention: it
    * is `--meter-dropped`, « audio the transcriber will drop », which is exactly
-   * and completely what a paused frame is. The key under the header already
-   * reads « non transcrit » and now explains the whole strip.
+   * and completely what a paused frame is.
+   *
+   * **The key does not carry it on the pill, and the first version of this
+   * paragraph said it did.** « The existing « non transcrit » key explains the
+   * whole strip » is true in the header and false on the widget, which returns
+   * `null` for both `.meter-key` spans — so the one surface that most needed the
+   * legend is the one without it. What carries the reading there is the word
+   * beside the meter: the pill replaces its clock with « En pause » in the same
+   * state, for the same reason. Two carriers, not three, and the claim is now
+   * the size of the evidence.
    *
    * The bars keep moving. That is deliberate and it is the second reading a rep
    * needs: the machine can still hear the room, so a paused meter that went flat

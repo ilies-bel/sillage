@@ -1455,7 +1455,7 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-snug.5 py-tight"
+      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1533,7 +1533,7 @@ function Mention({
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-snug.5 py-tight"
+      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>
@@ -1649,7 +1649,7 @@ function Pill({
         already right, and restating it would be a declaration that changes
         nothing. The *panel* is the one that has to follow `above`.
       */
-      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-snug self-center rounded-lg border py-tight pl-snug.5 pr-tight ${
+      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-snug self-center rounded-lg border py-tight pl-2.5 pr-tight ${
         placed ? 'widget-arrived' : 'widget-arriving'
       }`}
     >
