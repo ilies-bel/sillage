@@ -119,7 +119,9 @@ import type { ProviderSection } from '../core/contracts/settings.ts'
 import type { ConnectorHealth } from '../core/contracts/health.ts'
 import type { DiagEnvironment, DiagRecorder } from '../core/contracts/diagnostics.ts'
 import { TRANSCRIPTION_LANGUAGE } from '../core/contracts/transcript.ts'
+import { meetingAnchor } from '../core/contracts/meeting.ts'
 import type { Meeting, MeetingContext } from '../core/contracts/meeting.ts'
+import { AD_HOC_NOMINAL_MS } from '../core/domain/adHoc.ts'
 import type { EnhancementStatus } from '../core/contracts/extraction.ts'
 
 const isDev = !app.isPackaged
@@ -986,8 +988,33 @@ const manualContext = (meeting: Meeting): MeetingContext => ({
   onlineMeetingJoinUrl: null,
   categories: [],
   sensitivity: 'normal',
-  scheduledStart: meeting.startedAt ?? meeting.createdAt,
-  scheduledEnd: meeting.endedAt ?? meeting.updatedAt,
+  /*
+   * **`meetingAnchor`, not `startedAt ?? createdAt`** — the one anchor for when
+   * a meeting is (`core/contracts/meeting.ts`). This read the two later fields
+   * and skipped the first, so a meeting the rep *placed* at 14:30 on the app's
+   * own calendar got a context saying it was at 14:00, the moment they typed it.
+   * `meeting:create` takes `scheduledStart` and `NewMeeting.tsx` sends it: « a
+   * meeting that is not in anybody's Exchange still belongs in it ».
+   */
+  scheduledStart: meetingAnchor(meeting),
+  /*
+   * **And a bound rather than a timestamp of the past.**
+   *
+   * This was `meeting.endedAt ?? meeting.updatedAt`, and on a meeting that has
+   * not ended `updatedAt` is *now* — so the context of a call about to happen
+   * claimed it was already over, and everything downstream that asks « is this
+   * slot still live » answered no.
+   *
+   * `AD_HOC_NOMINAL_MS` is the number, and it is not a new decision:
+   * `core/domain/adHoc.ts` already made it for the same class of object — a call
+   * with no stated end — and `adHocContext`'s docblock names this function as
+   * its mirror. « `scheduledEnd` *bounds* the session …; it is not a claim about
+   * when the call will end … An hour is the bound that behaves like the ordinary
+   * case. » A rep-placed meeting has exactly as much of an end as a detected
+   * one: none. `EndOfMeetingWatch` still ends a call on silence rather than on
+   * this clock.
+   */
+  scheduledEnd: meeting.endedAt ?? meetingAnchor(meeting) + AD_HOC_NOMINAL_MS,
   seriesMasterId: null,
   timeZone: 'Europe/Paris',
 })

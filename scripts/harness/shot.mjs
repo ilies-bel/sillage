@@ -3192,7 +3192,12 @@ const SCREENS = {
        * instant the rep is deciding whether to end a recording that cannot be
        * resumed. It is also what slid the row and broke the containment below.
        *
-       * The row reserves its tallest state now (`min-h-gutter`), so this is 0.
+       * Both states measure 24 px now — `py-0` on the danger button, with
+       * `Button`'s own `min-h-[24px]` keeping the target floor — so this is 0.
+       * (An earlier draft of this comment claimed a `min-h-gutter` on the row.
+       * There is none; the row carries `py-snug` and nothing else. Prose wrong
+       * about the code, in a paragraph about a check that was wrong about the
+       * code.)
        */
       if (before !== null && after !== null && Math.abs(after - before) > 0.5) {
         throw new Error(

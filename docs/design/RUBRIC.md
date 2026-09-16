@@ -124,8 +124,40 @@ round 5 did not.
 | 7 | widget | `94cc4b0` | 8 | 5 | 6.5 | 5 | 6 | 6.5 | 6 | 5 | 5.5 | **53.5** |
 | 7 | detection | `94cc4b0` | 6.5 | 7.5 | 7.5 | 5.5 | 6.5 | 6 | 6 | 6.5 | 6 | **58** |
 | 7 | main | `94cc4b0` | 7 | 7 | 6.5 | 6 | 6 | 5.5 | 6.5 | 7 | 6.5 | **58** |
+| 8 | widget | `8d6b5ab` | 8 | 5 | 6.5 | 4.5 | 6 | 6 | 5.5 | 5.5 | 5.5 | **52.5** |
+| 8 | main | `8d6b5ab` | 7 | 6.5 | 6 | 6 | 6.5 | 5.5 | 6.5 | 6.5 | 6.5 | **57** |
+| 8 | detection | `8d6b5ab` | 6.5 | 7.5 | 7.5 | 5 | 6.5 | 6 | 6.5 | 6.5 | 6 | **58** |
 
-## Open, and blocked on a decision rather than on effort
+## Retracted: the « blocked on a decision » section was wrong
+
+**The block did not survive one grep, and the round-8 reviewer found it in
+minutes.** The section below claimed « there is no default meeting length
+anywhere in the codebase to borrow ». There is: `AD_HOC_NOMINAL_MS = 60 * 60_000`
+in `core/domain/adHoc.ts`, and its docblock is *verbatim the argument the section
+said still had to be made* — « `scheduledEnd` **bounds** the session …; it is not
+a claim about when the call will end, and for an unscheduled call there is
+nothing to claim. An hour is the bound that behaves like the ordinary case. »
+`adHocContext` names `main.ts`'s `manualContext` as its mirror, one file away. A
+rep-placed meeting and a detected call are the same object: no invite, no stated
+end. The product decided this, wrote the constant, wrote the reasoning, shipped
+it — and I wrote a section saying the question was open.
+
+The other two premises were no better. `manualContext` already synthesised a
+`scheduledEnd`, and it was `meeting.endedAt ?? meeting.updatedAt`, which on a
+meeting that has not ended resolves to *now* — a context claiming the call is
+already over, which is a bug that was hiding inside the same gap. And « `#arm` is
+written around `CalendarEvent` » is effort, not a decision: `#armAdHoc` arms a
+non-`CalendarEvent` meeting today.
+
+Both stated candidate answers were also wrong. `CALENDAR_CLAIM_MS` (30 min) is
+the *worse* one, because a claim shorter than the call reopens the duplicate at
+minute 31; and the form field relitigates DEC-31.
+
+Kept below rather than deleted, because « prose in this repo has been wrong about
+the code » is a counted invariant and this is an instance of it that cost a
+round — written by the person who also wrote the rule.
+
+## What the section said (wrong, kept for the record)
 
 Round 7's detection « one thing » is not fixed, and the reason is worth writing
 down rather than leaving as a silent gap.

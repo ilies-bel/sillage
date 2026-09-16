@@ -26,7 +26,7 @@ Signal colours, and the one rule that is not obvious:
 
 | Token | Value | Rule |
 |---|---|---|
-| `--accent` | `#ff8500` | **2.44:1 — fill and dot only, never text.** It means exactly one thing: armed, or recording. It is not a primary-button colour. |
+| `--accent` | `#d77000` | **3.38:1 — fill and dot only, never text.** It clears 3:1 as a *graphic* (WCAG 1.4.11) and is still under AA as text, which is why the rule is unchanged. It means exactly one thing: armed, or recording — and that, not the ratio, is why it is not a primary-button colour. It was the client's `#ff8500` at 2.44:1 until the calendar grid proved a mark can be the only carrier. |
 | `--success` | `#2f855a` | 4.54:1 — dot only |
 | `--warn` | `#b45309` | 5.02:1 — the `⚠ faible` mark, the caution primary |
 | `--danger` | `#c53030` | 5.47:1 — one caller: the widget's second press, which ends a recording |

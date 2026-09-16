@@ -15,7 +15,8 @@
  *
  * On colour: `--accent` is not a button fill here. VISION.md §6 gives orange
  * exactly one meaning — armed or recording — and explicitly excludes primary
- * buttons. It is also 2.44:1 against white, so the white-on-orange *Valider* and
+ * buttons. It is also 3.38:1 against white — clearing 3:1 as a graphic and still
+ * under AA as text, so the white-on-orange *Valider* and
  * *Démarrer* that the screens carry today are unreadable to anyone who needs
  * contrast. `primary` is `--brand-700` (6.28:1 with white on it), which is the
  * step of the ramp VISION.md §6 nominates for exactly this.

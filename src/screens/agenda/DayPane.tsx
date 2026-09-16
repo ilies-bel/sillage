@@ -392,8 +392,9 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm }: EntryRowProps) {
         The accent dot and the word it means, as one thing. VISION.md §6 asks
         for quiet, so it is 6px and it does not pulse; it carries a text label
         because colour alone cannot state a condition that changes what a
-        button does. And the orange stays on the dot: `--accent` is 2.44:1, so
-        `text-accent` on the word *Prêt* would render it at 2.41:1 on the card.
+        button does. And the orange stays on the dot: `--accent` is 3.38:1 — the
+        floor a *graphic* is held to — so `text-accent` on the word *Prêt* would
+        render it at 3.35:1 on the card, short of the 4.5 a word needs.
         `StateDot` makes that unspellable.
       */}
       {/*

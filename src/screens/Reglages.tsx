@@ -1223,7 +1223,8 @@ function ProviderLine({
           <span className={`block text-copy ${row.selectable ? 'text-strong' : 'text-muted'}`}>
             {row.label}
             {/*
-              *Utilisé* used to be `text-accent` — 2.41:1, and orange borrowed for
+              *Utilisé* used to be `text-accent` — 2.41:1 then, 3.35:1 since the
+              accent moved, still under AA for a word — and orange borrowed for
               a meaning it does not have. Selection is brand blue (VISION.md §6),
               and `--brand-900` on `--brand-100` is 10.55:1.
             */}

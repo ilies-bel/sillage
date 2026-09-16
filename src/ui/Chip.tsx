@@ -7,7 +7,11 @@
  * Agenda and Réglages both write out longhand.
  *
  * Deliberately absent: an orange chip. `--accent` means armed or recording, it
- * is 2.44:1 on white, and a filled orange chip with text on it cannot be read.
+ * is 3.38:1 on white — it clears 3:1 as a graphic and is still under AA as text,
+ * so a filled orange chip with text on it cannot be read. The ratio moved when
+ * the grid proved a mark can be the only carrier; the conclusion did not, and the
+ * stronger reason never depended on it: orange means armed or recording and
+ * nothing else, so a chip in it would be claiming a state.
  * The armed state is a `StateDot`, where the orange is on the dot and the word
  * beside it is legible.
  */

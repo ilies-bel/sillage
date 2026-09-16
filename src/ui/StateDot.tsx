@@ -13,9 +13,10 @@
  * `armed` is `--accent`, which VISION.md §6 gives exactly one meaning: this
  * meeting is armed or recording. Never a selected tab, never a primary button,
  * never a link. And note where the orange is: on the dot, not on the text.
- * `--accent` is 2.44:1 on white and cannot carry a label — the screens that
+ * `--accent` is 3.38:1 on white: it clears 3:1 as a graphic, which is what a dot
+ * is held to, and is still under AA as text, so it cannot carry a label — the screens that
  * currently write `text-accent` on the words *Prêt*, *Utilisé* and
- * *Enregistrement* are rendering them at 2.41:1.
+ * *Enregistrement* are rendering them at 3.35:1, still short of the 4.5 a word needs.
  */
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../lib/utils.ts'

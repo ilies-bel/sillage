@@ -211,8 +211,9 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         <span aria-hidden className="border-subtle h-4 shrink-0 border-l" />
 
         {/*
-          The orange belongs on the dot, not on the word. `--accent` is 2.44:1
-          on white and 2.41:1 on the card, so the `text-accent` this line used
+          The orange belongs on the dot, not on the word. `--accent` is 3.38:1
+          on white and 3.35:1 on the card — a graphic's floor, not a word's, so
+          the `text-accent` this line used
           to carry made the one label on screen that must never be missed the
           least readable thing in the header. `StateDot` keeps the colour where
           it works and the label at `--text-muted`.

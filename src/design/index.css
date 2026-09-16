@@ -74,21 +74,36 @@
   /*
    * Keyboard-first (HR-10), so focus must always be visible.
    *
-   * `--brand-500`, not `--accent`. VISION.md §6 gives orange exactly one
-   * meaning — this meeting is armed or recording — and a ring that follows the
-   * tab key around the screen spends the whole call claiming it. `--brand-500`
-   * is the step of the ramp the palette nominates for borders, focus rings and
-   * other non-text UI, at 3.05:1 on white — over the 3:1 WCAG asks of a focus
-   * indicator, which the orange at 2.44:1 was under.
+   * `--brand-500`, not `--accent`, and the **first** sentence is the reason —
+   * which matters, because the second one has since expired.
+   *
+   * VISION.md §6 gives orange exactly one meaning, « this meeting is armed or
+   * recording », and a ring that follows the tab key around the screen spends
+   * the whole call claiming it. That was always the argument. Beside it stood a
+   * contrast argument — « the orange at 2.44:1 was under » the 3:1 WCAG asks of
+   * a focus indicator — and `--accent` is 3.38:1 now, so it clears that floor
+   * and the sentence would license exactly what the first one forbids. Written
+   * down rather than deleted: a rule whose stated reason stops being true is a
+   * rule somebody will reopen, and the meaning argument does not need the ratio.
    */
   /*
-   * `--brand-700`, not `--brand-500`. The 500 clears 3:1 on white and on the
-   * card — and the ring does not only land on those. Measured on the surfaces
-   * it actually rides over: 2.41:1 on a selected `--brand-50` chip, 2.89:1 on
-   * the back link, 2.94:1 on `--bg-card-soft`, 2.98:1 on a hovered row. Two
-   * independent measurement passes, on different screens, found the same thing.
-   * A focus indicator that fails 1.4.11 on the controls a keyboard user visits
-   * most is the one place the ramp's "non-text UI" step is not good enough.
+   * `--brand-700`, not `--brand-500` — and this reason expired too, so here is
+   * the one that replaces it.
+   *
+   * It read: the 500 clears 3:1 on white and on the card, and the ring does not
+   * only land on those — 2.41:1 on a selected `--brand-50` chip, 2.89:1 on the
+   * back link, 2.94:1 on `--bg-card-soft`, 2.98:1 on a hovered row, found twice
+   * by two independent passes. All four of those numbers were taken at
+   * `--brand-500: #059ce5`, which measured 3.05:1 on white and *2.73:1 on
+   * `--bg-subtle`* — a step licensed for « non-text UI » that failed the floor
+   * on every ground the product actually paints. The token is `#0594da` now and
+   * clears 3:1 everywhere: 3.36 on white, 3.10 on a selected chip, 3.01 at its
+   * worst.
+   *
+   * So the 500 would now pass, and the 700 stays anyway. A focus ring is the one
+   * mark a keyboard user cannot afford to lose track of, and 6.28:1 at its worst
+   * is unmistakable on every surface in the product rather than three hundredths
+   * above a floor. That is a smaller claim than the old one and it is true.
    */
   :focus-visible {
     outline: 2px solid var(--brand-700);
