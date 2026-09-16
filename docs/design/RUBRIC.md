@@ -124,3 +124,38 @@ round 5 did not.
 | 7 | widget | `94cc4b0` | 8 | 5 | 6.5 | 5 | 6 | 6.5 | 6 | 5 | 5.5 | **53.5** |
 | 7 | detection | `94cc4b0` | 6.5 | 7.5 | 7.5 | 5.5 | 6.5 | 6 | 6 | 6.5 | 6 | **58** |
 | 7 | main | `94cc4b0` | 7 | 7 | 6.5 | 6 | 6 | 5.5 | 6.5 | 7 | 6.5 | **58** |
+
+## Open, and blocked on a decision rather than on effort
+
+Round 7's detection « one thing » is not fixed, and the reason is worth writing
+down rather than leaving as a silent gap.
+
+**A meeting the rep creates in this app never arms, and the detector then offers
+a second, anonymous one for the same conversation.** `#calendarOffersAt` and
+`#spent` both iterate `this.#window.events` — Graph only — so on the no-Entra
+build (DEC-28's first deliverable, DEC-31's explicit case) a meeting placed on
+the app's own calendar claims nothing. Driven on the shipped class: the rep's
+14:30 stays `idle`, « Appel non planifié — Teams » arms instead, and the day
+holds two rows for one call, the anonymous one wearing the only filled
+*Enregistrer*. Pressing it records into a meeting with no client, no subject and
+no `scheduledStart`, losing the account resolution, the VSA link and the Outlook
+draft's recipients.
+
+It is blocked because **the product has never decided how long a rep-placed
+meeting claims the microphone.** `meeting:create` takes `scheduledStart` and
+deliberately no duration — « the rep is walking into a call, and a required field
+there is a form between them and the one thing the product must not miss » — and
+`Meeting` has no `scheduledEnd`. A claim window needs an end, and there is no
+default meeting length anywhere in the codebase to borrow.
+
+Half the fix makes the product worse, which is why no half shipped. Deferring the
+detector to a meeting the agenda cannot arm leaves the rep with **no** offer
+instead of a duplicate one. Arming it needs `#arm`, which is written around
+`CalendarEvent`, to become event-agnostic. Both halves need the same missing
+number.
+
+The two candidate answers, so the next round argues rather than rediscovers:
+reuse `CALENDAR_CLAIM_MS` (30 min) as the cap, which invents no constant and
+degrades to today's behaviour on a long call; or give `meeting:create` an
+optional end and let the rep say, which is a form field the channel's docblock
+argues against. The second is a DEC.
