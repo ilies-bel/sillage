@@ -2111,6 +2111,7 @@ function Panel({
                   key={row.key}
                   segment={row.segment}
                   onMark={() => onMark(row.segment.id, '')}
+                  paused={paused}
                 />
               ),
             )}
@@ -2358,7 +2359,27 @@ function Speech() {
   )
 }
 
-function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () => void }) {
+/**
+ * One spoken turn, and the control that marks it.
+ *
+ * `paused` reaches here because the guard has to. `mark()` refusing at the
+ * source is the fact and it shipped a round ago; disabling the *pill's* control
+ * shipped with it — and these five did not, so on the same card, in the same
+ * state, five identical 24px buttons accepted a press and silently did nothing
+ * while « Retirer ce moment marqué » beside them still worked. A control that
+ * looks available and changes nothing is the inert primary this repo refuses,
+ * and it was worse here than a missing guard: the rep got the affordance of
+ * marking a turn whose audio was never kept.
+ */
+function TurnRow({
+  segment,
+  onMark,
+  paused,
+}: {
+  segment: TranscriptSegment
+  onMark: () => void
+  paused: boolean
+}) {
   return (
     <li className="group flex gap-snug">
       <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
@@ -2375,7 +2396,13 @@ function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () =
       <button
         type="button"
         onClick={onMark}
-        aria-label="Marquer cette prise de parole"
+        disabled={paused}
+        title={paused ? 'En pause : rien n’est enregistré à marquer.' : undefined}
+        aria-label={
+          paused
+            ? 'Marquer cette prise de parole — indisponible en pause'
+            : 'Marquer cette prise de parole'
+        }
         /*
           Always in the layout, only *visible* on hover and focus: an affordance
           that appears on hover changes the width of every line under the
