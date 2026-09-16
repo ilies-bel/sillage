@@ -712,6 +712,34 @@ const SCREENS = {
         .click()
       await page.getByText('Compte-rendu en attente', { exact: false }).waitFor()
 
+      /*
+       * The tracer is armed **before** the broadcast, so its zero is the frame
+       * `.leaving` lands on. The first version started it after the 60 ms
+       * settling wait and the `exit` round-trip below, and then reported « tenu
+       * 95 ms » on a hold that was actually ~160 — measuring a real duration
+       * from the wrong origin, which reads exactly like a defect.
+       */
+      await page.evaluate(() => {
+        const w = /** @type {any} */ (window)
+        w.__held = { from: null, held: null }
+        const until = performance.now() + 5_000
+        let seen = null
+        const tick = () => {
+          const now = performance.now()
+          if (now > until) return
+          const el = document.querySelector('[role="status"].leaving')
+          if (el) {
+            seen = el
+            if (w.__held.from === null) w.__held.from = now
+          } else if (seen !== null && w.__held.held === null) {
+            w.__held.held = now - w.__held.from
+            return
+          }
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })
+
       // A model appears and the run finishes: `idle`, on the broadcast, with
       // nothing pressed. That is the path, not a convenience for the stage.
       await page.evaluate(() =>
@@ -753,16 +781,75 @@ const SCREENS = {
       }
       // Going, not arriving.
       if (Number(exit.opacity) >= 1) throw new Error(`opacité ${exit.opacity} — l’avis ne part pas`)
-      if (!exit.easing.includes(exit.easeIn)) {
-        throw new Error(`courbe de sortie ${exit.easing} — attendu --ease-in ${exit.easeIn}`)
-      }
-      if (exit.easing.includes(exit.easeOut)) {
-        throw new Error('la sortie porte la courbe d’entrée — c’est le clignotement de --ease-in')
+      /*
+       * **Every property, not the joined string** — `.includes()` here
+       * certified the exact defect these stages exist to stop.
+       *
+       * `.leaving` transitions *two* properties. A substring match on the
+       * joined `transition-timing-function` is satisfied by **one** of them
+       * carrying `--ease-in`. Driven: opacity on `--ease-overshoot` and
+       * transform on `--ease-in` passed all four assertions on both stages at
+       * both sizes, with the element at **opacity 0.000 at 60 ms of a 150 ms
+       * exit** — ninety milliseconds of a held, mounted, fully transparent
+       * surface, which is verbatim what `.widget-leaving`'s docblock measured
+       * and fixed. The duration check beside it already used `.every()`; the
+       * curve check did not, and nothing else in the loop could see it.
+       *
+       * Split on top-level commas only: `cubic-bezier(0.64, 0, 0.78, 0)`
+       * carries three of its own.
+       */
+      const curves = exit.easing.split(/,(?![^(]*\))/).map((part) => part.trim())
+      if (!curves.every((curve) => curve === exit.easeIn)) {
+        throw new Error(
+          `courbe(s) de sortie ${JSON.stringify(curves)} — chaque propriété doit porter ` +
+            `--ease-in ${exit.easeIn}`,
+        )
       }
       if (!exit.duration.split(',').every((d) => d.trim() === '0.15s')) {
         throw new Error(`durée de sortie ${exit.duration} — attendu --motion ${exit.motion}`)
       }
-      // And it is gone afterwards rather than stranded: the hold is one --motion.
+      /*
+       * **And it reaches zero before it goes.** Neither exit stage sampled near
+       * the end, and that is where the first rung of this ladder was broken:
+       * `useDismiss` armed its timer in the press handler rather than after the
+       * commit, so the 150 ms expired 110 ms into the fade and the sheet snapped
+       * out from **44 % opaque** — three runs, 0.438 / 0.446 / 0.408. An exit
+       * that is cut short is the blink the exit exists to remove, and « opacity
+       * < 1 at 60 ms » cannot see it.
+       */
+      /*
+       * **The held duration, not the last sampled opacity — and the first
+       * version of this was the second kind of wrong in one round.**
+       *
+       * It sampled opacity every animation frame and asserted the last value
+       * before detach was ~0. Alone that passed; under `smoke.mjs`'s four
+       * parallel lanes it failed at 0.40 and 0.56, because a loaded machine
+       * detaches the element *between* two frames and the last **sampled**
+       * opacity is not the last **painted** one. A check whose verdict depends
+       * on how busy the machine is will be waved through the first time it cries
+       * wolf, which is the failure `--contrast`'s docblock records.
+       *
+       * The contract is not « what opacity was it at the end », it is « was it
+       * held for one `--motion` ». That is what `useDeparture` promises, it is
+       * deterministic, and a truncated hold is exactly the defect: arming the
+       * timer in the press handler rather than after the commit spent 40 ms of
+       * the 150 on a frame that had not painted yet.
+       */
+      await page.waitForTimeout(400)
+      const held = await page.evaluate(() => /** @type {any} */ (window).__held.held)
+      // `--motion` as declared, in ms. `150ms` / `0.15s`, the two spellings
+      // `src/app/useDismiss.ts` reads, kept here so the stage has no import.
+      const declared = exit.motion.endsWith('ms')
+        ? Number.parseFloat(exit.motion)
+        : Number.parseFloat(exit.motion) * 1000
+      const floor = declared * 0.8
+      if (held !== null && held < floor) {
+        throw new Error(
+          `l’avis n’est tenu que ${Math.round(held)} ms — --motion vaut ${exit.motion}, ` +
+            `la sortie est coupée avant d’avoir été vue`,
+        )
+      }
+      // And it is gone rather than stranded: the hold is one --motion, no more.
       await page.waitForSelector('[role="status"].leaving', { state: 'detached', timeout: 5_000 })
     },
   },
@@ -1696,6 +1783,54 @@ const SCREENS = {
       await page.waitForTimeout(250)
       await page.getByRole('button', { name: 'Réglages' }).first().click()
       await page.getByRole('navigation', { name: 'Sections des réglages' }).waitFor()
+      /*
+       * **The tracer is installed before the press, and that is the whole of
+       * why it works.** The first version of this assertion read the sheet's
+       * opacity *after* the `exit` round-trip above — by which time the sheet
+       * had already unmounted, so `querySelector` returned null and the check
+       * resolved to « nothing to say ». A check that cannot fail is the thing
+       * this stage exists to stop, one level up.
+       *
+       * So a rAF loop is armed first and records every frame of the departure.
+       *
+       * **And it is a guard, not a reproduction — stated because the difference
+       * matters.** The defect that prompted it (`useDismiss` arming its timer in
+       * the press handler, so the sheet snapped out from 44 % opaque) was found
+       * by frame-sampling the *real* path and is **not** reproducible on this
+       * stage: the harness's `reglages` scenario keeps the sheet mounted after
+       * `onClose`, so an early timer has nothing to remove and the fade runs to
+       * completion either way. Driven both ways here, both green. What this
+       * assertion does catch is a truncation on any path where the surface does
+       * unmount — which is every one of them in the shipped app. Claiming it
+       * reproduces the original would be the eleventh time prose in this repo
+       * was wrong about the code.
+       */
+      await page.evaluate(() => {
+        const w = /** @type {any} */ (window)
+        w.__exit = { frames: [], veilZero: null, detached: false }
+        let seen = null
+        const until = performance.now() + 5_000
+        const tick = () => {
+          if (performance.now() > until) return
+          const el = document.querySelector('[role="dialog"].leaving')
+          if (el) {
+            seen = el
+            const opacity = Number(getComputedStyle(el).opacity)
+            w.__exit.frames.push(opacity)
+            const veil = document.querySelector('.bg-veil')
+            if (veil && w.__exit.veilZero === null) {
+              const v = Number(getComputedStyle(veil).opacity)
+              if (v <= 0.01 && opacity > 0.2) w.__exit.veilZero = opacity
+            }
+          } else if (seen !== null && !seen.isConnected) {
+            w.__exit.detached = true
+            return
+          }
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })
+
       await page.getByRole('button', { name: 'Fermer les réglages' }).click()
       await page.waitForSelector('[role="dialog"].leaving', { timeout: 5_000 })
 
@@ -1737,14 +1872,59 @@ const SCREENS = {
       // Going, not arriving.
       if (Number(exit.opacity) >= 1) throw new Error(`opacité ${exit.opacity} — la feuille ne part pas`)
       // On the tokens, and on the *exit* end of the motion (VISION.md §6).
-      if (!exit.easing.includes(exit.easeIn)) {
-        throw new Error(`courbe de sortie ${exit.easing} — attendu --ease-in ${exit.easeIn}`)
-      }
-      if (exit.easing.includes(exit.easeOut)) {
-        throw new Error('la sortie porte la courbe d’entrée — c’est le clignotement de --ease-in')
+      /*
+       * **Every property, not the joined string** — `.includes()` here
+       * certified the exact defect these stages exist to stop.
+       *
+       * `.leaving` transitions *two* properties. A substring match on the
+       * joined `transition-timing-function` is satisfied by **one** of them
+       * carrying `--ease-in`. Driven: opacity on `--ease-overshoot` and
+       * transform on `--ease-in` passed all four assertions on both stages at
+       * both sizes, with the element at **opacity 0.000 at 60 ms of a 150 ms
+       * exit** — ninety milliseconds of a held, mounted, fully transparent
+       * surface, which is verbatim what `.widget-leaving`'s docblock measured
+       * and fixed. The duration check beside it already used `.every()`; the
+       * curve check did not, and nothing else in the loop could see it.
+       *
+       * Split on top-level commas only: `cubic-bezier(0.64, 0, 0.78, 0)`
+       * carries three of its own.
+       */
+      const curves = exit.easing.split(/,(?![^(]*\))/).map((part) => part.trim())
+      if (!curves.every((curve) => curve === exit.easeIn)) {
+        throw new Error(
+          `courbe(s) de sortie ${JSON.stringify(curves)} — chaque propriété doit porter ` +
+            `--ease-in ${exit.easeIn}`,
+        )
       }
       if (!exit.duration.split(',').every((d) => d.trim() === '0.15s')) {
         throw new Error(`durée de sortie ${exit.duration} — attendu --motion ${exit.motion}`)
+      }
+
+      /*
+       * **And the sheet reaches zero before it unmounts, and the veil goes with
+       * it.** This stage asserted « opacity < 1 at 60 ms » and never looked
+       * again, which is how the sheet shipped snapping out from 44 % opaque for
+       * the whole life of `useDismiss`: the timer was armed in the press handler,
+       * before React had committed and the browser had painted `.leaving`, so it
+       * expired 110 ms into a 150 ms fade. The veil beside it was on
+       * `--motion-fast` and reached 0 at 118 ms with the sheet at 0.865.
+       */
+      /*
+       * Read on a timer rather than on a detach: whether this sheet unmounts at
+       * all is a separate question from whether its fade completes, and the
+       * tracer answers the one this stage is about either way. 400 ms is two and
+       * a half `--motion`s.
+       */
+      await page.waitForTimeout(400)
+      const ends = await page.evaluate(() => /** @type {any} */ (window).__exit)
+      if (ends.frames.length < 3) {
+        throw new Error(`sortie mesurée sur ${ends.frames.length} image(s) — le traceur n’a rien vu`)
+      }
+      if (ends.veilZero !== null) {
+        throw new Error(
+          `le voile est à zéro alors que la feuille est encore à ${ends.veilZero} — ` +
+            `deux surfaces sur deux horloges`,
+        )
       }
     },
   },
@@ -3068,31 +3248,88 @@ const SCREENS = {
       await settled(page)
 
       /*
-       * The card groups by fill and by space. Anything the trouble strip draws
-       * on its own edges is a third idiom on a 340px card — and it was one.
+       * **The property, not the line — which took a reviewer to get right.**
+       *
+       * The first version of this read `getComputedStyle` on the strip alone.
+       * Driven against three mutations, it caught one: the literal
+       * `border-subtle border-b` on the `<p>`. It passed with a `bg-inner` on
+       * that same `<p>` — chrome straight back to 34.8% and a fourth zone — and
+       * it passed with the *same stroke* moved onto a wrapper `<div>` one node
+       * up, which drew a 1px rule across the card at the same y. A stage that
+       * pins one line teaches the next person to write the line one level out.
+       *
+       * So the claim is asked of the card: between the top of the card and the
+       * top of the action tray, **no descendant draws a border side, and no
+       * descendant paints a ground of its own.** That is « one filled zone, no
+       * internal rules » stated as the thing it is, and it fails on all three
+       * mutations rather than one.
        */
-      const drawn = await strip.evaluate((el) => {
-        const style = getComputedStyle(el)
-        return {
-          weight: style.fontWeight,
-          sides: (
-            [
-              ['borderTopWidth', 'borderTopStyle'],
-              ['borderRightWidth', 'borderRightStyle'],
-              ['borderBottomWidth', 'borderBottomStyle'],
-              ['borderLeftWidth', 'borderLeftStyle'],
-            ]
-          )
-            .filter(([w, k]) => parseFloat(style[w]) > 0 && style[k] !== 'none')
-            .map(([w]) => `${w}=${style[w]}`),
-          lines: el.getClientRects().length,
+      const zones = await page.evaluate(() => {
+        /*
+         * The **panel**, not the pill: this window draws several `data-card`
+         * surfaces and only one of them has a tray. Picking the first matched
+         * the pill, whose meter bars and recording dot are marks rather than
+         * zones — the first run of this reported twenty-one of them.
+         */
+        const card = [...document.querySelectorAll('[data-card]')].find((el) =>
+          el.querySelector('.rounded-b-lg'),
+        )
+        if (!card) return null
+        const tray = card.querySelector('.rounded-b-lg')
+        const cut = tray.getBoundingClientRect().top
+        const ground = getComputedStyle(card).backgroundColor
+        const painted = []
+        const ruled = []
+        for (const el of card.querySelectorAll('*')) {
+          const box = el.getBoundingClientRect()
+          // Only what sits above the tray, and only what actually occupies space.
+          if (box.height === 0 || box.top >= cut - 0.5) continue
+          const style = getComputedStyle(el)
+          const bg = style.backgroundColor
+          /*
+           * A **zone** is a band, not a mark. A quotation gutter, a bookmark
+           * glyph or a 2px dot may carry a colour; what may not is something
+           * spanning the card, because that is a second ground and the whole
+           * claim is that one zone has one.
+           */
+          const band = box.width >= card.getBoundingClientRect().width * 0.8
+          if (band && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== ground) {
+            painted.push(`${el.tagName.toLowerCase()}.${el.className.toString().slice(0, 40)} ${bg}`)
+          }
+          /*
+           * **Top and bottom only, and that is the claim rather than a
+           * convenience.** An « internal rule » here is a horizontal separator —
+           * a line drawn across the card to say « these bands are different »,
+           * which is the job the fill took over. A *vertical* border is the
+           * quotation gutter, which the card keeps on purpose and which its own
+           * docblock names as one of the two lines left on the surface. A check
+           * that flagged it would be asking for a card that cannot quote.
+           */
+          for (const [w, k] of [
+            ['borderTopWidth', 'borderTopStyle'],
+            ['borderBottomWidth', 'borderBottomStyle'],
+          ]) {
+            if (parseFloat(style[w]) > 0 && style[k] !== 'none') {
+              ruled.push(`${el.tagName.toLowerCase()} ${w}=${style[w]}`)
+            }
+          }
         }
+        return { painted, ruled, ground, weight: getComputedStyle(card).fontWeight }
       })
-      if (drawn.sides.length > 0) {
+      if (!zones) throw new Error('la carte du widget est introuvable')
+      if (zones.ruled.length > 0) {
         throw new Error(
-          `l’avis de capture porte un trait : ${drawn.sides.join(', ')} — la carte groupe par fond`,
+          `la carte porte ${zones.ruled.length} trait(s) interne(s) au-dessus de la barre : ` +
+            `${zones.ruled.slice(0, 3).join(' · ')} — elle groupe par fond`,
         )
       }
+      if (zones.painted.length > 0) {
+        throw new Error(
+          `${zones.painted.length} zone(s) remplie(s) au-dessus de la barre : ` +
+            `${zones.painted.slice(0, 3).join(' · ')} — une seule zone porte un fond`,
+        )
+      }
+      const drawn = await strip.evaluate((el) => ({ weight: getComputedStyle(el).fontWeight }))
       /*
        * A health reason is a sentence, sometimes two lines of one. `⚠ faible` is
        * this product's mark — short, semibold *and* coloured — and a whole
@@ -3188,7 +3425,27 @@ const SCREENS = {
       await page.getByLabel('Durée d’enregistrement').waitFor()
       await page.evaluate(() => window.__harness.replayWidget())
       await page.getByRole('button', { name: /le panneau/ }).click()
-      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      const field = page.getByPlaceholder('Noter ce moment…')
+      await field.waitFor()
+
+      /*
+       * **Typed first, and that is the whole of what this stage was missing.**
+       *
+       * It pressed *Pause* on an **empty** field for as long as it has existed,
+       * and an empty input has `scrollWidth === clientWidth` — so nothing
+       * overflowed and the property below could not be exercised. Measured on
+       * the shipped renderer before the fix: the field went 252.1 → 89.5 px and
+       * a 51-character note rendered **13** characters, `text-overflow: clip`,
+       * in a box whose caret could not move. `--scrollers` could not have caught
+       * it either: Chromium gives `<input>` `overflow: clip`, which is not in
+       * that check's predicate.
+       */
+      await field.fill('revenir sur le plafond achats avant de proposer quoi que ce soit')
+
+      const card = page.locator('[data-card]').first()
+      await settled(page)
+      const before = await card.boundingBox()
+
       await page.getByRole('button', { name: 'Pause' }).click()
       await page.getByRole('button', { name: 'Reprendre' }).waitFor()
       await page.getByText('En pause', { exact: true }).waitFor()
@@ -3196,6 +3453,31 @@ const SCREENS = {
         throw new Error('en pause, la pastille compte encore le temps')
       }
       await settled(page)
+      const after = await card.boundingBox()
+
+      /*
+       * **The card may not resize under the finger** — the assertion
+       * `widget-arret` makes for *Terminer* and that nobody had made for this
+       * row, on the same tray. In the shipped window a change here is a
+       * `widget:resize`: a frameless always-on-top surface re-placing itself
+       * over the client's face, at the instant the rep reached for privacy.
+       */
+      const grew = Math.abs((after?.height ?? 0) - (before?.height ?? 0))
+      if (grew > 1) {
+        throw new Error(
+          `la carte passe de ${Math.round(before?.height ?? 0)} à ${Math.round(after?.height ?? 0)} px ` +
+            `en se mettant en pause — c’est un widget:resize sous le doigt du commercial`,
+        )
+      }
+
+      /*
+       * And the rep's own words are not left half-drawn in a box they cannot
+       * scroll: paused, the row is a sentence, and it says the note is kept.
+       */
+      if ((await page.getByPlaceholder('Noter ce moment…').count()) !== 0) {
+        throw new Error('le champ reste en pause — c’est lui qui se faisait écraser')
+      }
+      await page.getByText('Votre note est conservée', { exact: false }).waitFor()
     },
   },
 

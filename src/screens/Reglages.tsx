@@ -541,7 +541,12 @@ function Sheet({
         surface is one too many.
       */}
       <div
-        className={cn('bg-veil absolute inset-0 transition-opacity ease-in', leaving && 'opacity-0')}
+        className={cn(
+          // `duration-motion`, not the default 90ms: the veil and the sheet are one
+          // surface and must leave on one clock — see `tailwind.config.js`.
+          'bg-veil absolute inset-0 transition-opacity duration-motion ease-in',
+          leaving && 'opacity-0',
+        )}
         aria-hidden
         onClick={onClose}
       />

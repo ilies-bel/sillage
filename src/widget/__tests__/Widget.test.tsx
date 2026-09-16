@@ -426,6 +426,73 @@ test('Pause asks the main process and draws its answer, never its own press', as
   expect(sent[1]).toEqual({ meetingId: 'm1', paused: false })
 })
 
+/**
+ * **The rep's half-typed note survives a pause, and the row says so.**
+ *
+ * The composer used to stay on screen paused, with the field `disabled` and
+ * `unavailable()`'s 43-character sentence stacked inside the same flex row.
+ * Measured on the shipped renderer: the field went **252.1 → 89.5 px** and the
+ * card **355.6 → 376 px**. A 51-character note rendered **13** characters,
+ * `text-overflow: clip`, in a box whose caret could not move — so the rep could
+ * not read it, finish it, or tell whether it had survived. A rep pauses because
+ * something they should not record just started, which is precisely the moment
+ * they are mid-sentence.
+ *
+ * Nothing in the suite could see it. `widget-pause` presses *Pause* on an
+ * **empty** field, and an empty input has `scrollWidth === clientWidth`, so
+ * nothing overflows; `--scrollers` is blind to `<input>` besides. This test
+ * types first, which is the whole difference.
+ */
+test('a note typed before Pause is kept, and the row says it is', async () => {
+  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    paused: payload.paused,
+  }))
+  render(<Widget />)
+  await openPanel()
+
+  const typed = 'revenir sur le plafond achats avant de proposer quoi que ce soit'
+  fireEvent.change(screen.getByPlaceholderText('Noter ce moment…'), {
+    target: { value: typed },
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+  await act(async () => {
+    bridge.emit('recording:paused', { meetingId: 'm1', paused: true })
+  })
+
+  // No crippled field: the row is a sentence, and it answers the question the
+  // 13-character box left open.
+  expect(screen.queryByPlaceholderText('Noter ce moment…')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Marquer' })).toBeNull()
+  expect(screen.getByText(/Votre note est conservée/)).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reprendre' }))
+  await act(async () => {
+    bridge.emit('recording:paused', { meetingId: 'm1', paused: false })
+  })
+
+  // Back, untouched — not trimmed, not cleared.
+  const back = screen.getByPlaceholderText('Noter ce moment…') as HTMLInputElement
+  expect(back.value).toBe(typed)
+})
+
+/** With nothing typed there is nothing to promise, so the row does not promise it. */
+test('paused with an empty field, the row states the reason and nothing more', async () => {
+  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    paused: payload.paused,
+  }))
+  render(<Widget />)
+  await openPanel()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+  await act(async () => {
+    bridge.emit('recording:paused', { meetingId: 'm1', paused: true })
+  })
+
+  expect(screen.getByText('En pause : rien n’est enregistré à marquer.')).toBeTruthy()
+  expect(screen.queryByText(/Votre note est conservée/)).toBeNull()
+})
+
 test('with nothing recording it says so and offers no controls', async () => {
   bridge.when('widget:state', () => ({ meeting: null, mentionSentence: MENTION_SENTENCE_DEFAULT }))
   render(<Widget />)

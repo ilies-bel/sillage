@@ -2268,22 +2268,61 @@ function Panel({
         which is enough to say « a different surface » without one.
       */}
       <div className="bg-inner rounded-b-lg">
-      <div className="flex items-center gap-tight px-inline py-snug">
+      {/*
+        **Paused, the row says so instead of crippling itself — and it took a
+        measurement to see that it had been.**
+
+        `unavailable()` stacks its sentence under the control inside a
+        `inline-flex flex-col` wrapper, on the argument (`Button.tsx`) that the
+        wrapper « occupies the space the bare button did ». In a *header* row
+        that is true. Here the sibling is `flex-1` and the sentence is 43
+        characters, so the wrapper's intrinsic width won: measured on the
+        shipped renderer, pressing *Pause* took the note field **252.1 → 89.5
+        px** and the card **355.6 → 376 px**.
+
+        What that costs is the rep's own words. A rep pauses because something
+        they should not record just started, which is the one moment they are
+        mid-sentence; `MARK_NOTE_MAX` is 280 and a 51-character note rendered
+        **13** characters, `text-overflow: clip`, in a field that is `disabled`
+        so the caret cannot move and nothing on screen says there is more. They
+        could not read it, finish it, or tell whether it survived. And the 20.4
+        px is a `widget:resize` — a frameless always-on-top surface re-placing
+        itself over the client's face — which is verbatim the harm the note
+        below this one congratulates itself for having ended on the *other* row
+        of this same tray.
+
+        So the paused row draws the sentence and nothing else. The note is held
+        in state and comes back untouched on *Reprendre*, and the sentence says
+        so, because « is my note still there » was the question the crippled
+        field left unanswered. One line either way, one width either way:
+        `widget-pause` now asserts the card measures the same across the press,
+        the assertion `widget-arret` makes for *Terminer* and that nobody had
+        made for this row.
+
+        Nothing is drawn disabled, so `unavailable()` is not needed and the
+        dead-control rule (DEC-26) is satisfied the way it prefers — by the
+        control not being there, with the reason in its place.
+      */}
+      {paused ? (
+        <div className="flex h-[38px] items-center px-inline">
+          <p role="status" className="text-muted min-w-0 text-meta">
+            {note.trim() === '' ? PAUSED_NO_MARK : `${PAUSED_NO_MARK} Votre note est conservée.`}
+          </p>
+        </div>
+      ) : (
+      <div className="flex h-[38px] items-center gap-tight px-inline">
         <input
           value={note}
           onChange={(event) => setNote(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter') return
             event.preventDefault()
-            if (paused) return
             const text = note.trim()
             onMark(null, text)
             setNote('')
           }}
-          disabled={paused}
-          title={paused ? PAUSED_NO_MARK : undefined}
           maxLength={MARK_NOTE_MAX}
-          aria-label={paused ? 'Noter ce moment — indisponible en pause' : 'Noter ce moment'}
+          aria-label="Noter ce moment"
           placeholder="Noter ce moment…"
           /* `bg-inner` and no border — see the note above the row. */
           /*
@@ -2300,7 +2339,6 @@ function Panel({
         <Button
           variant="nav"
           className="no-drag px-hair"
-          {...unavailable(paused, PAUSED_NO_MARK)}
           onClick={() => {
             const text = note.trim()
             onMark(null, text)
@@ -2310,6 +2348,7 @@ function Panel({
           Marquer
         </Button>
       </div>
+      )}
 
       {/*
         **And the row reserves its own tallest state, so the window cannot move

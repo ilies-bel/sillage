@@ -272,6 +272,25 @@ module.exports = {
        */
       transitionDuration: {
         DEFAULT: 'var(--motion-fast)',
+        /*
+         * **The other half of the rung below, and it was missing for the same
+         * reason.** `--ease-in` was declared and unreachable from a utility, so
+         * the Réglages veil reached for `transition-opacity`, got `DEFAULT`, and
+         * left on the arriving curve. `in:` fixed the curve. Nobody checked the
+         * *duration*, which `DEFAULT` also supplies: `--motion-fast` is 90 ms and
+         * the sheet beside it spends `--motion`'s 150 ms.
+         *
+         * Frame-sampled on the shipped sheet: the veil reached **opacity 0.000
+         * at 118 ms with the sheet still at 0.865**, so for the last ~50 ms a
+         * full-height panel floated over a completely undimmed agenda. A
+         * backdrop snapping out from under a pane that is still fading is the
+         * sheet reading as two surfaces on two clocks — which is what
+         * `reglages-sortie`'s own docblock says it exists to prevent, one
+         * property away from what it checked.
+         *
+         * A rule with no way to obey it is a rule that will be broken, twice.
+         */
+        motion: 'var(--motion)',
       },
       transitionTimingFunction: {
         DEFAULT: 'var(--ease-out)',

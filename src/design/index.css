@@ -406,9 +406,8 @@
    * world changes under it (`useDeparture`). The gesture, the row, the
    * condition.
    *
-   * The `source ▸` panel named above is the one this rule does **not** reach,
-   * and that is a decision rather than an omission. Every departure in
-   * `TranscriptReader` is one of two things. Most are a keystroke's direct
+   * **`TranscriptReader` does not get this rule, and that is a decision.** Every
+   * departure in it is one of two things. Most are a keystroke's direct
    * consequence — the « les plus proches » box goes the instant a typed
    * character finds a match — and holding one for 150ms puts « Aucun passage ne
    * contient cette phrase » on screen beside a count reading « 3 passages ». An
@@ -418,6 +417,21 @@
    * changes. Those want a crossfade, which needs both surfaces mounted at once
    * and is a mechanism this product has not decided on. §6 asks for the second
    * half of a motion, not for one on every removal.
+   *
+   * **And `source ▸` is not in that file — which is the eleventh time prose
+   * here has been wrong about the code, inside the paragraph added to fix the
+   * tenth.** The panel this rule named as declined is `Review.tsx`'s
+   * `{open ? <div data-unmeasured …> : null}`, toggled by a
+   * `<button aria-expanded>` beside each field. Its only departure is a second
+   * press on that same button: nothing replaces it, nothing contradicts it, no
+   * count goes stale. It is verbatim `useDismiss`'s declared case — a surface
+   * the rep closes — and the argument above, which is sound, is about a
+   * different component that happens to be reached from the same word.
+   *
+   * Measured: eleven panels on the review gate, 438px of DEC-21 evidence
+   * between them, `transition: all 0s`, gone one frame after the press. It is
+   * **open**, not declined. Naming it as open is the minimum; the fix is one
+   * `useDismiss` per panel and it is not in this commit.
    */
   .leaving {
     opacity: 0;

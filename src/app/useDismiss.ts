@@ -79,12 +79,44 @@ export function useDismiss(onClose: () => void): Dismiss {
     [],
   )
 
+  /*
+   * **The timer is armed after the commit, not in the handler — and for one
+   * round it was not.**
+   *
+   * `dismiss()` used to call `setLeaving(true)` and `setTimeout(onClose,
+   * motionMs())` in the same synchronous press handler. The transition does not
+   * begin until React commits and the browser paints `.leaving`, some 40 ms
+   * later, so the 150 ms timer expired **110 ms into a 150 ms fade** — and
+   * `--ease-in` is back-loaded by design (mean progress 0.173), so almost all of
+   * the visible change is in the part that got cut.
+   *
+   * Frame-sampled on the shipped sheet, three runs: last painted opacity
+   * **0.438 / 0.446 / 0.408**. It snapped out from 44 % opaque, which is the
+   * blink this whole family exists to remove — on the first rung of the ladder,
+   * for as long as the ladder has existed.
+   *
+   * `useLeaving` and `useDeparture` were always right because both arm in an
+   * effect. This is now the same shape, and the measurement agrees: the notice
+   * runs 0.998 → **0.000 at 210 ms** and detaches at 225 ms. A full fade.
+   *
+   * `onClose` is read through a ref so a caller passing a fresh lambda each
+   * render cannot restart the timer half way through the exit — the effect
+   * depends on `leaving` alone, which moves once.
+   */
+  const latest = useRef(onClose)
+  latest.current = onClose
+
+  useEffect(() => {
+    if (!leaving) return
+    const id = setTimeout(() => latest.current(), motionMs())
+    timer.current = id
+    return () => clearTimeout(id)
+  }, [leaving])
+
   const dismiss = useCallback(() => {
     // Two presses during the exit are one departure, not two navigations.
-    if (timer.current !== null) return
     setLeaving(true)
-    timer.current = setTimeout(onClose, motionMs())
-  }, [onClose])
+  }, [])
 
   return { leaving, dismiss }
 }
