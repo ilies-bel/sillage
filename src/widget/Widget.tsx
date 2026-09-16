@@ -2235,7 +2235,16 @@ function Panel({
           aria-label={paused ? 'Noter ce moment — indisponible en pause' : 'Noter ce moment'}
           placeholder="Noter ce moment…"
           /* `bg-inner` and no border — see the note above the row. */
-          className="text-strong placeholder:text-muted bg-inner no-drag min-h-[24px] min-w-0 flex-1 rounded-sm px-snug py-hair text-ui disabled:opacity-60"
+          /*
+            `disabled:cursor-not-allowed` because `Button`'s base carries it and
+            this field sits 4px from one: two controls withdrawn by one rule
+            were answering the pointer two ways, the button with the product's
+            cursor and the input with the browser's default. The *opacity* pair
+            is not the same kind of difference and is left alone — a blue control
+            says it is unavailable by going muted (`nav`), and a control that is
+            already muted has to say it by going faint.
+          */
+          className="text-strong placeholder:text-muted bg-inner no-drag min-h-[24px] min-w-0 flex-1 rounded-sm px-snug py-hair text-ui disabled:cursor-not-allowed disabled:opacity-60"
         />
         <Button
           variant="nav"

@@ -667,6 +667,15 @@ same hue (200°), darkened, ratios measured against white.
 --warn:           #b45309;   /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
 --danger:         #c53030;   /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
 
+/* The pointer's answer on the two filled variants that had none. `primary`
+   hovers to --brand-900, a step the ramp already had; caution and danger had no
+   darker step, which is why the three filled variants were the only controls in
+   the product that said nothing back to a pointer while every caption link did.
+   The ratios that matter are the label's, because --bg-inner sits on both: a
+   hover can only make the button's own text more legible, never less. */
+--warn-strong:    #984407;   /*  6.64:1 on #ffffff — the label rides on it */
+--danger-strong:  #a92929;   /*  6.92:1 on #ffffff — the label rides on it */
+
 /* spacing — five steps, each named after what it spaces. Derived from what the
    screens already repeat, not from a generic 4/8/16 ladder. */
 --space-hair:     4px;    /* a caption under its line, the meter's bars */
@@ -783,7 +792,7 @@ same hue (200°), darkened, ratios measured against white.
    computes to 1.98:1 here, so the third reading gets a value too. */
 --widget-meter-rep:     #8ad8fb;   /* 10.94:1 on #101c25 */
 --widget-meter-client:  #1176a8;   /*  3.44:1 on #101c25 */
---widget-meter-dropped: #7b8b97;   /*  4.92:1 on #101c25 */
+--widget-meter-dropped: #5d6b76;   /*  3.15:1 on #101c25 */
 ```
 
 `--text-muted` was `#7d8c98` in the first draft of this palette. It measures 3.27:1 on

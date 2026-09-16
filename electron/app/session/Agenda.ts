@@ -776,9 +776,6 @@ export class Agenda {
        * rule it named was never applied at all. See `AdHocInput.spent` for the
        * paths that went through that hole and this one.
        */
-    const live = this.#options.orchestrator
-      .liveStates()
-      .some((state) => state === 'armed' || state === 'recording')
     /*
      * **Suppression is a decision, not a delay** — see `#adHocSpent`.
      *
@@ -809,7 +806,6 @@ export class Agenda {
      * above, so it is already inside `liveStates()`: lifting the latch out of
      * the branch is the whole fix, and it needs no second condition.
      */
-    if (live) this.#adHocSpent = true
 
     /*
      * **And the meeting the rep placed here arms, which is the half that was
@@ -867,6 +863,26 @@ export class Agenda {
         this.#spentMeeting(standingOwn.meetingId)
       if (over) this.#withdrawOwn(standingOwn.meetingId)
     }
+
+    /*
+     * **After the withdrawal, not before it.**
+     *
+     * This latched on `live` at the top of the tick, and a stale own-offer is
+     * itself `live` — so the offer about to be taken back spent the detector on
+     * its way out, and `#adHocSpent` is only ever cleared by `#trackHold` on a
+     * *change* of microphone hold. A rep on one continuous call across the
+     * withdrawal therefore never got another offer.
+     *
+     * Driven, no Entra, Teams open: the rep places a 14:30, never joins, and
+     * takes a real client call from 15:50 to 17:30 — **zero offers, zero rows**
+     * for the whole of it, against a control run with no placed meeting which is
+     * offered at minute one. Taking back a stale offer has to hand the
+     * microphone back to the detector; it was what took it away.
+     */
+    const live = this.#options.orchestrator
+      .liveStates()
+      .some((state) => state === 'armed' || state === 'recording')
+    if (live) this.#adHocSpent = true
 
     if (signal.running !== null) {
       for (const meeting of ownClaims(this.#ownMeetings(now), now)) {

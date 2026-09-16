@@ -84,7 +84,10 @@ module.exports = {
         accent: 'var(--accent)',
         success: 'var(--success)',
         warn: 'var(--warn)',
+        /* The hover step for the two filled variants — see tokens.css. */
+        'warn-strong': 'var(--warn-strong)',
         danger: 'var(--danger)',
+        'danger-strong': 'var(--danger-strong)',
       },
       borderColor: {
         DEFAULT: 'var(--border-subtle)',

@@ -1951,14 +1951,26 @@ test('an offer for a meeting the rep placed here expires with the conversation',
     clientName: 'Néovia Santé',
     scheduledStart: T0,
   })
+  /*
+   * **The microphone is held throughout, which is the input the first version of
+   * this test pinned shut.**
+   *
+   * It ran `inCall: null` — the one branch where `#trackHold` clears
+   * `#adHocSpent` on every tick — so the half of the harm its own docblock
+   * describes could not fail. An assertion written around the part that is not
+   * fixed defends the part that is not fixed.
+   *
+   * Held from before the offer to well past its bound, the way a rep on one long
+   * call actually holds it.
+   */
+  const armed: { subject: string }[] = []
   const agenda = new Agenda({
     calendar: h.calendar,
     orchestrator: h.orchestrator,
     ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
-    // A conferencing app open all day, which is the ordinary Windows desk, and
-    // nobody ever in a call.
-    meetingSignal: () => ({ running: 'Teams', inCall: null }),
+    meetingSignal: () => ({ running: 'Teams', inCall: 'Teams' }),
     clock: () => T0,
+    onArmed: (a) => void armed.push(a),
   })
 
   await agenda.tick({ now: T0 - 60_000 })
@@ -1972,6 +1984,31 @@ test('an offer for a meeting the rep placed here expires with the conversation',
     'idle',
     'l’offre survit à la conversation : elle bloque le détecteur et les mises à jour',
   )
-  assert.equal(agenda.snapshot().armed, null, 'la pastille annonce encore une offre retirée')
+  /*
+   * Not « armed is null »: with the microphone still held, the detector takes
+   * the conversation back the moment the stale offer is withdrawn, so something
+   * else legitimately stands here. What must be gone is *this* meeting.
+   */
+  assert.notEqual(
+    agenda.snapshot().armed?.meetingId,
+    mine.id,
+    'la pastille annonce encore la réunion retirée',
+  )
+
+  /*
+   * **And the microphone goes back to the detector.**
+   *
+   * `#adHocSpent` latched on the stale offer's own liveness, and it is cleared
+   * only by a *change* of hold — so a rep who never puts the call down got
+   * nothing for the rest of the process. Driven before the fix: zero offers for
+   * a live, audible client call.
+   */
+  await agenda.tick({ now: T0 + 95 * 60_000 })
+  await agenda.tick({ now: T0 + 95 * 60_000 + AD_HOC_DWELL_MS })
+
+  assert.ok(
+    armed.some((a) => a.subject.startsWith('Appel non planifié')),
+    `le micro n’est pas rendu au détecteur après le retrait : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
   h.store.close()
 })

@@ -80,6 +80,24 @@ import { cn } from '../lib/utils.ts'
  * finger, and adding motion to it is a decision for DEC-4, not for a motion
  * round.
  */
+/*
+ * **The three filled variants answer the pointer now, and only the press stays
+ * withheld.**
+ *
+ * `bordered`, `nav`, `text` and `link` each carried a `hover:` and a 1px press.
+ * `primary`, `caution` and `danger` carried neither — so the product's decisive
+ * controls were the only ones a rep could point at that said nothing back, while
+ * every caption link did. On the agenda the two families sit on the same right
+ * edge about a hundred pixels apart and the *less* important one responded.
+ *
+ * The argument that withheld the press is about a control **moving** under a
+ * finger 63 ms before a page turn repaints in the same rectangle, and it is
+ * still right — `enabled:active:translate-y-px` stays off all three. But it was
+ * scoped by *variant* when the reason was scoped by *consequence*, so a purely
+ * navigational *Ouvrir* inherited a rule written about an endpoint with no
+ * idempotency key. A background change neither moves anything nor paints under a
+ * label mid-press.
+ */
 const button = cva(
   'inline-flex min-h-[24px] shrink-0 items-center justify-center transition disabled:cursor-not-allowed',
   {
@@ -103,7 +121,7 @@ const button = cva(
        */
       /** One per view at most. Brand blue marks action and navigation. */
       primary:
-        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
+        'bg-brand-700 hover:bg-brand-900 text-inner disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /**
        * The primary, when what it ships carries a doubt the app measured.
        *
@@ -118,7 +136,8 @@ const button = cva(
        * it still ships (DEC-4). Only the colour and the label change, and they
        * change because the payload did.
        */
-      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
+      caution:
+        'bg-warn hover:bg-warn-strong text-inner disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /**
        * The way back out of a screen — *‹ Calendrier*, and only that.
        *
@@ -144,7 +163,8 @@ const button = cva(
        * different rectangle from the label the rep just pressed, and a bordered
        * copy of it would not be.
        */
-      danger: 'bg-danger text-inner rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
+      danger:
+        'bg-danger hover:bg-danger-strong text-inner rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
       text: 'text-muted hover:text-body disabled:opacity-60 enabled:active:translate-y-px text-ui',
       /** The same, when it needs to read as a link rather than a control. */

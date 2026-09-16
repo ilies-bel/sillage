@@ -113,6 +113,21 @@
   --success: #2f855a; /*  4.54:1 on #ffffff ·  4.07:1 on #eef3f7 — dot only */
   --warn: #b45309; /*  5.02:1 on #ffffff ·  4.50:1 on #eef3f7 */
   --danger: #c53030; /*  5.47:1 on #ffffff ·  4.90:1 on #eef3f7 */
+  /*
+   * **The pointer's answer on the two filled variants that had none.**
+   *
+   * `primary` hovers to `--brand-900`, a step the ramp already had; `caution`
+   * and `danger` had no darker step at all, which is why the three filled
+   * variants were the only controls in this product that said nothing back to a
+   * pointer while every caption link did. One step down each, far enough to be
+   * seen and near enough to stay the same colour.
+   *
+   * The ratios that matter are the label's, because `text-inner` sits on both:
+   * 6.64:1 and 6.92:1 against white, where the resting fills are 5.02 and 5.47 — a hover can only make the
+   * button's own text *more* legible, never less.
+   */
+  --warn-strong: #984407; /*  6.64:1 on #ffffff — the label rides on it */
+  --danger-strong: #a92929; /*  6.92:1 on #ffffff — the label rides on it */
 
   /*
    * Provenance by colour (DEC-5), Granola's convention: what the rep typed is
@@ -342,7 +357,21 @@
    * a channel is dying. A value rather than a mix here, because the mix is
    * derived from an ink token and this has to clear a graphics floor.
    */
-  --widget-meter-dropped: #7b8b97; /*  4.92:1 on #101c25 */
+  /*
+   * **And it must not be louder than a channel that is still there.**
+   *
+   * This was #7b8b97 — **4.92:1** on the ground, against the live far side's
+   * 3.44:1. So the on-screen ranking was rep (10.94) → *dropped* → live client,
+   * and the tone that means « this side went away » sat above the side that had
+   * not. On the instrument DEC-38 makes the proof of life, on a pill that drops
+   * the two-word key for width, where tone is the only thing left saying which
+   * bar is which.
+   *
+   * #5d6b76 is 3.15:1: still over the 3:1 a graphic is held to, so the third
+   * reading is still a reading, and now the quietest of the three — which is
+   * the order the meaning asks for.
+   */
+  --widget-meter-dropped: #5d6b76; /*  3.15:1 on #101c25 */
 
   /*
    * **The edge that does not depend on which way the call goes.**
