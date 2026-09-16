@@ -1788,3 +1788,67 @@ test('a snapshot never offers a meeting the machine calls ended', async () => {
   )
   h.store.close()
 })
+
+/**
+ * **The sentence written for the no-Microsoft branch was never observable.**
+ *
+ * `main.ts` passes `initialReason` — « aucun calendrier connecté — les appels en
+ * cours sont détectés sans lui » — in the branch built over `NULL_CALENDAR`,
+ * and `#tick` overwrote it from `nextArmable` before `#publish` had ever run. So
+ * the published snapshot only ever carried « aucune réunion dans la fenêtre »:
+ * true, and on a build with no calendar at all, useless. It describes a window
+ * the rep cannot fill and says nothing about the detector still running — which
+ * is the one thing that branch needs said, on the build DEC-28 makes the first
+ * deliverable.
+ *
+ * Bounded to a fold that holds nothing, so a real calendar takes the line back
+ * on its first event.
+ */
+test('a build with no calendar keeps saying why, in every snapshot', async () => {
+  const h = harness([], null, null)
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    meetingSignal: () => ({ running: null, inCall: null }),
+    clock: () => T0,
+    onChanged: (s) => void h.snapshots.push(s),
+    initialReason: 'aucun calendrier connecté — les appels en cours sont détectés sans lui',
+  })
+
+  await agenda.tick({ now: T0 })
+  await agenda.tick({ now: T0 + 60_000 })
+
+  assert.equal(
+    agenda.snapshot().reason,
+    'aucun calendrier connecté — les appels en cours sont détectés sans lui',
+    'la phrase de la branche sans Microsoft a été écrasée au premier tick',
+  )
+  assert.ok(
+    h.snapshots.every(
+      (s) => s.reason === 'aucun calendrier connecté — les appels en cours sont détectés sans lui',
+    ),
+    `une phrase publiée dit autre chose : ${JSON.stringify(h.snapshots.map((s) => s.reason))}`,
+  )
+  h.store.close()
+})
+
+/** And a real calendar takes the line back the moment it holds anything. */
+test('one event is enough for nextArmable to own the sentence again', async () => {
+  const h = harness([event('AAA')], null, null)
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    meetingSignal: () => ({ running: null, inCall: null }),
+    clock: () => T0,
+    initialReason: 'aucun calendrier connecté — les appels en cours sont détectés sans lui',
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+
+  assert.notEqual(
+    agenda.snapshot().reason,
+    'aucun calendrier connecté — les appels en cours sont détectés sans lui',
+    'la phrase de repli masque la vraie réponse d’un calendrier qui a des événements',
+  )
+  h.store.close()
+})

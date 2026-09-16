@@ -135,6 +135,24 @@ export class Agenda {
   // is a sync in progress, not a fault — naming it "non synchronisé" reports a
   // one-second startup as a problem with their calendar.
   #reason = 'synchronisation du calendrier en cours…'
+  /**
+   * The caller's sentence for a fold that holds nothing — see `initialReason`.
+   *
+   * Kept as well as applied, because applying it once was the same as not
+   * applying it at all. `#tick` sets `#reason` from `nextArmable` before
+   * `#publish` has ever run, so over `NULL_CALENDAR` the sentence `main.ts`
+   * writes for the no-Microsoft branch — « aucun calendrier connecté — les
+   * appels en cours sont détectés sans lui » — was overwritten on the first tick
+   * and **never reached a published snapshot**. Measured: at boot it is the
+   * caller's, after one tick it is « aucune réunion dans la fenêtre », and the
+   * published list only ever contains the second.
+   *
+   * That is worse than a sentence that is briefly wrong. On the branch DEC-28
+   * makes the first deliverable, the calendar column's only explanation of
+   * itself named what is *absent* and said nothing about the detector that is
+   * still running — and the one line that did say so was unobservable.
+   */
+  #emptyReason: string | null = null
   #timer: ReturnType<typeof setTimeout> | null = null
   #stopped = false
   /*
@@ -222,7 +240,10 @@ export class Agenda {
 
   constructor(options: AgendaOptions) {
     this.#options = options
-    if (options.initialReason) this.#reason = options.initialReason
+    if (options.initialReason) {
+      this.#reason = options.initialReason
+      this.#emptyReason = options.initialReason
+    }
     this.#clock = options.clock ?? Date.now
     this.#diagnostics = options.diagnostics ?? NULL_RECORDER
     this.#window = options.calendar.window()
@@ -501,7 +522,25 @@ export class Agenda {
      */
     const candidates = this.#window.events.filter((event) => !this.#spent(event.id))
     const choice = nextArmable(candidates, now, signal.running, signal.inCall)
-    this.#reason = choice.decision.reason
+    /*
+     * **The caller's sentence survives an empty fold.**
+     *
+     * `nextArmable` answers « aucune réunion dans la fenêtre », which is true
+     * and, on a build with no calendar at all, useless: it describes a window
+     * the rep cannot fill and does not mention that unscheduled calls are still
+     * detected. `main.ts` passes the sentence that is true for that branch and
+     * this used to discard it on the first tick.
+     *
+     * Bounded to a fold that holds nothing, so it cannot mask a real answer: the
+     * moment a calendar has a single event, `nextArmable` owns the line again.
+     * On `NULL_CALENDAR` that never happens, which is exactly the branch the
+     * sentence was written for. The ad-hoc branch below still overwrites it with
+     * something more specific when a call is actually under way.
+     */
+    this.#reason =
+      this.#emptyReason !== null && this.#window.events.length === 0
+        ? this.#emptyReason
+        : choice.decision.reason
 
     if (choice.decision.action === 'arm' && choice.event) {
       this.#arm(choice.event)
