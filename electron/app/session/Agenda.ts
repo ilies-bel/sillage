@@ -18,7 +18,7 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { ConnectorHealth } from '../../core/contracts/health.ts'
 import { AFTER_THE_CALL, meetingAnchor } from '../../core/contracts/meeting.ts'
-import type { Meeting } from '../../core/contracts/meeting.ts'
+import type { Meeting, MeetingContext, MeetingId } from '../../core/contracts/meeting.ts'
 import {
   ARM_LEAD_MS,
   CALENDAR_CLAIM_MS,
@@ -138,6 +138,24 @@ export interface AgendaOptions {
    * starts. `main.ts` passes the sentence that is true for that branch.
    */
   initialReason?: string
+}
+
+/**
+ * The three facts `#arm` works from, which is less than an event.
+ *
+ * `context` is consulted in exactly one branch — the create — and a meeting the
+ * rep placed in this app exists already, so it is `null` there. One `#arm`
+ * rather than a second entry point is this class's own rule: « the meeting id,
+ * the subject and `MeetingContext` are composed in one place, so a rep-armed
+ * meeting and a clock-armed one cannot drift ».
+ */
+interface ArmTarget {
+  meetingId: MeetingId
+  /** The invite this came from, or `null` for a meeting the rep placed here. */
+  eventId: string | null
+  subject: string
+  /** Only for creating a meeting that does not exist yet; `null` never creates. */
+  context: MeetingContext | null
 }
 
 export class Agenda {
@@ -332,7 +350,15 @@ export class Agenda {
   armNow(eventId: string): { meetingId: string } {
     const event = this.#window.events.find((candidate) => candidate.id === eventId)
     if (!event) throw new Error('Cet événement n’est plus dans le calendrier affiché.')
-    this.#arm(event, false)
+    this.#arm(
+      {
+        meetingId: meetingIdFor(event.id),
+        eventId: event.id,
+        subject: event.context.subject,
+        context: event.context,
+      },
+      false,
+    )
     /*
      * Read back rather than returned from `#arm`: `#arm` has three exits — a
      * standing offer it keeps, a fresh arming, and a refusal that clears
@@ -592,7 +618,12 @@ export class Agenda {
         : choice.decision.reason
 
     if (choice.decision.action === 'arm' && choice.event) {
-      this.#arm(choice.event)
+      this.#arm({
+        meetingId: meetingIdFor(choice.event.id),
+        eventId: choice.event.id,
+        subject: choice.event.context.subject,
+        context: choice.event.context,
+      })
     } else if (
       this.#armed &&
       this.#armed.eventId !== null &&
@@ -758,6 +789,43 @@ export class Agenda {
      * the branch is the whole fix, and it needs no second condition.
      */
     if (live) this.#adHocSpent = true
+
+    /*
+     * **And the meeting the rep placed here arms, which is the half that was
+     * missing.**
+     *
+     * `ownClaims` stopped the detector offering a second, anonymous row for a
+     * conversation the rep had already named — and nothing took its place, so on
+     * the build DEC-28 makes the first deliverable the product noticed the call,
+     * silenced its own detector, armed nothing and notified nothing. That is
+     * exactly the failure this repo's own notes predicted when only one half
+     * could be built (« deferring the detector to a meeting the agenda cannot
+     * arm leaves the rep with no offer instead of a duplicate one ») and it
+     * shipped for one round.
+     *
+     * The conjunction is the calendar path's, with the parts that exist: a
+     * conversation claiming *now*, and a meeting app actually making sound.
+     * `decideAdHoc` reads the same microphone signal for the same reason, so
+     * « the rep is in a call » has one source. `#arm` re-checks the meeting's own
+     * state and refuses beside a live recording, so nothing here needs to.
+     *
+     * No `context`: the meeting exists — the rep made it — and `#arm` refuses to
+     * invent one.
+     */
+    if (signal.running !== null) {
+      for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
+        const state = this.#options.orchestrator.stateOf(meeting.id)
+        if (state !== null && AFTER_THE_CALL.has(state)) continue
+        if (now < meetingAnchor(meeting) - ARM_LEAD_MS) continue
+        this.#arm({
+          meetingId: meeting.id as MeetingId,
+          eventId: null,
+          subject: meeting.title,
+          context: null,
+        })
+        break
+      }
+    }
 
     if (!calendarOffered) {
       const adHoc = decideAdHoc({
@@ -1004,8 +1072,8 @@ export class Agenda {
    * meeting half an hour away, and the click of that notification then navigated them
    * somewhere they had not asked to go.
    */
-  #arm(event: CalendarEvent, notify = true): void {
-    const meetingId = meetingIdFor(event.id)
+  #arm(target: ArmTarget, notify = true): void {
+    const { meetingId, subject } = target
     /*
      * **Already armed is not « nothing to do »: the call may have ended since.**
      *
@@ -1061,10 +1129,17 @@ export class Agenda {
     // which is exactly the restart case `meetingIdFor` exists for.
     const existing = this.#options.orchestrator.session(meetingId)
     if (!existing) {
+      /*
+       * A target with no context cannot be created here and must not be: it is a
+       * meeting the rep made in this app, which exists in the store already. If
+       * the session is missing, something else removed it, and inventing a
+       * replacement would put a meeting with no client on the rep's record.
+       */
+      if (target.context === null) return
       this.#options.orchestrator.create({
         id: meetingId,
-        title: event.context.subject || 'Réunion',
-        context: event.context,
+        title: target.context.subject || 'Réunion',
+        context: target.context,
       })
     }
 
@@ -1177,12 +1252,12 @@ export class Agenda {
      */
     this.#withdrawCalendar(meetingId)
     this.#refused.delete(meetingId)
-    this.#armed = { meetingId, eventId: event.id, subject: event.context.subject }
+    this.#armed = { meetingId, eventId: target.eventId, subject }
     // After the state is set and before the diagnostic, so a listener that
     // throws cannot leave the agenda armed-but-unrecorded — and it is wrapped,
     // because a notification is never a reason a meeting fails to arm (DEC-26).
     try {
-      if (notify) this.#options.onArmed?.({ meetingId, subject: event.context.subject })
+      if (notify) this.#options.onArmed?.({ meetingId, subject })
     } catch {
       // The offer is on screen either way; the notification is the extra.
     }
@@ -1201,8 +1276,18 @@ export class Agenda {
        * fifty-character string with `[string:50]`, which is the whole of what a
        * support reader needs: a meeting was armed, and it had a subject.
        */
-      message: 'réunion armée depuis le calendrier',
-      detail: { start: event.context.scheduledStart, subject: event.context.subject },
+      /*
+        **One literal, and « depuis le calendrier » is dropped rather than
+        branched.** A meeting the rep placed in this app arms through this same
+        method now, so the old sentence is no longer true of every caller — and
+        `check:diag` is right to refuse the ternary that would have said which:
+        a recorded message must be a literal this product wrote, because that is
+        what makes `origin: 'foreign'` mean anything. Which kind it was is
+        already in the record: a calendar arming carries a `start`, and a
+        rep-placed one carries `null`.
+      */
+      message: 'réunion armée',
+      detail: { start: target.context?.scheduledStart ?? null, subject },
       meetingId,
     })
   }

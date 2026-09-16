@@ -1890,12 +1890,27 @@ test('a meeting the rep placed in the app stops the detector offering a second o
   await agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
   await agenda.tick({ now: T0 + 60_000 })
 
+  /*
+   * **One offer, and it is the rep's own meeting.**
+   *
+   * The first version of this test asserted `[]` — no offer at all — because
+   * only half the fix existed: `ownClaims` silenced the detector and nothing
+   * armed what it had deferred to. That shipped for a round and the next review
+   * priced it as a regression, correctly: on the build DEC-28 makes the first
+   * deliverable the product noticed the call and then did nothing about it. An
+   * assertion written against half a feature is an assertion that defends the
+   * half.
+   */
   assert.deepEqual(
     h.armed.map((a) => a.subject),
-    [],
-    `le détecteur a proposé une seconde conversation : ${JSON.stringify(h.armed)}`,
+    ['Néovia Santé'],
+    `attendu une seule offre, celle du commercial : ${JSON.stringify(h.armed)}`,
   )
-  assert.equal(h.orchestrator.stateOf(mine.id), 'idle', 'la réunion du commercial a changé d’état')
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'armed',
+    'la réunion que le commercial a placée n’est pas proposée',
+  )
   h.store.close()
 })
 

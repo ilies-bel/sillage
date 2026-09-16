@@ -1786,6 +1786,27 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         column that ran out.
       */}
       <div className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-1">
+        {/*
+          **The turn docks under the column, the way `ReadingColumn` docks its
+          own.**
+
+          `PageTurn` is `sticky bottom-0`, which keeps it reachable at every
+          scroll position — the right property — and pays for it by drawing an
+          opaque, shadowed button on the text it points at. `ReadingColumn` was
+          fixed by rendering it as the scroller's *sibling*, where `sticky` has
+          nothing to stick to; this screen does not use `ReadingColumn` (its own
+          docblock says why) and so kept the defect on the one surface where the
+          covered pixels are a payload about to be written into a client's CRM:
+          measured at 960×600, « Remonter dans ce qui part » drawn over the third
+          line of *Contexte technique*, a value that ships to VerySwing verbatim.
+
+          The arming guard is untouched by construction rather than by
+          assertion: the clearance spacer below carries `data-unmeasured`, which
+          `shippedHeight` subtracts, so the column's shipped height is what it
+          always was. `review-garde-mort` still reports *Valider* reached in 6
+          presses then 4.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main
           ref={docRef}
           onScroll={measure}
@@ -2127,65 +2148,68 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               carries its own, and two would be a screen asking a rep to guess
               which of them the guard is about.
             */}
-            {below === 'document' && !busy ? (
-              mode === 'transcription' ? (
-                /*
-                  **The escape, as the control — because there is no page of *this*
-                  document left to turn here.**
-
-                  What the guard is waiting on is the compte-rendu, and in this tab the
-                  compte-rendu is not in the column: the box holds the transcript, which
-                  ships nothing and is measured by nothing. So the only control that can
-                  reach the unread pixels is the one that *leaves this tab*, and the
-                  previous version offered a page turn instead — which moved the
-                  transcript, forever, under a sentence naming the compte-rendu (see
-                  `unread` for the two measurements).
-
-                  It was labelled « Lire la suite de la transcription », which was the
-                  round before this one's fix: the label had been the compte-rendu's on
-                  both tabs, so it was made to name what was in the column. Naming it
-                  correctly is what made it possible to see that it should not be there —
-                  the honest label described a control that could not do the job the slot
-                  is for.
-
-                  The escape already existed — one click on « Lecture », two inches up —
-                  and nothing on screen named it, which is the whole cost this closes:
-                  minutes and trust, not a lost compte-rendu. It is a live control and not
-                  a sentence, because « while it is withheld the primary slot holds the
-                  control that *shows* the rest » (DEC-4, DEC-21), and this is that
-                  control: one press and the blocking document is on screen, at the
-                  position the rep left it, with its own page turn under it.
-
-                  It confirms nothing, it contributes no coverage, and it is not in
-                  *Valider*'s rectangle — the two pair with `review-garde-citation`, which
-                  asks that following a citation stay free, and `review-garde-tapis`, which
-                  asks that the way back exist.
-
-                  `setFocus(null)` for the reason the *Segmented* handler does it: leaving
-                  the transcript forgets which citation it was opened on, so coming back
-                  cold opens at the top of the call rather than on a field the rep has
-                  since stopped thinking about.
-                */
-                <PageTurn
-                  what="Revenir au compte-rendu"
-                  onTurn={() => {
-                    setFocus(null)
-                    setMode('lecture')
-                  }}
-                />
-              ) : (
-                <PageTurn
-                  what={
-                    unreadIsAbove('document')
-                      ? 'Remonter dans le compte-rendu'
-                      : 'Lire la suite du compte-rendu'
-                  }
-                  onTurn={() => turn('document')}
-                />
-              )
-            ) : null}
           </div>
+          {/* The clearance `.fade-below` needs under the last line — see above. */}
+          <div aria-hidden data-unmeasured className="h-gutter shrink-0" />
         </main>
+          {below === 'document' && !busy ? (
+            mode === 'transcription' ? (
+              /*
+                **The escape, as the control — because there is no page of *this*
+                document left to turn here.**
+
+                What the guard is waiting on is the compte-rendu, and in this tab the
+                compte-rendu is not in the column: the box holds the transcript, which
+                ships nothing and is measured by nothing. So the only control that can
+                reach the unread pixels is the one that *leaves this tab*, and the
+                previous version offered a page turn instead — which moved the
+                transcript, forever, under a sentence naming the compte-rendu (see
+                `unread` for the two measurements).
+
+                It was labelled « Lire la suite de la transcription », which was the
+                round before this one's fix: the label had been the compte-rendu's on
+                both tabs, so it was made to name what was in the column. Naming it
+                correctly is what made it possible to see that it should not be there —
+                the honest label described a control that could not do the job the slot
+                is for.
+
+                The escape already existed — one click on « Lecture », two inches up —
+                and nothing on screen named it, which is the whole cost this closes:
+                minutes and trust, not a lost compte-rendu. It is a live control and not
+                a sentence, because « while it is withheld the primary slot holds the
+                control that *shows* the rest » (DEC-4, DEC-21), and this is that
+                control: one press and the blocking document is on screen, at the
+                position the rep left it, with its own page turn under it.
+
+                It confirms nothing, it contributes no coverage, and it is not in
+                *Valider*'s rectangle — the two pair with `review-garde-citation`, which
+                asks that following a citation stay free, and `review-garde-tapis`, which
+                asks that the way back exist.
+
+                `setFocus(null)` for the reason the *Segmented* handler does it: leaving
+                the transcript forgets which citation it was opened on, so coming back
+                cold opens at the top of the call rather than on a field the rep has
+                since stopped thinking about.
+              */
+              <PageTurn
+                what="Revenir au compte-rendu"
+                onTurn={() => {
+                  setFocus(null)
+                  setMode('lecture')
+                }}
+              />
+            ) : (
+              <PageTurn
+                what={
+                  unreadIsAbove('document')
+                    ? 'Remonter dans le compte-rendu'
+                    : 'Lire la suite du compte-rendu'
+                }
+                onTurn={() => turn('document')}
+              />
+            )
+          ) : null}
+        </div>
 
         {/*
           Floor and ceiling rather than a bare `flex-[2]`, for the reason the
@@ -2314,6 +2338,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               : panel.interlocuteurs.map((a) => a.name || a.email).join(', ')}
           </p>
 
+
+          {/* The clearance `.fade-below` needs under the last line. */}
+          <div aria-hidden data-unmeasured className="h-gutter shrink-0" />
+          </div>
           {below === 'rail' && !busy ? (
             <PageTurn
               // The rail's own ground, so the gradient ends in the colour the
@@ -2327,8 +2355,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               onTurn={() => turn('rail')}
             />
           ) : null}
-
-          </div>
 
           <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
             <fieldset>
