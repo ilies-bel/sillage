@@ -119,6 +119,16 @@ export function useDismiss(onClose: () => void): Dismiss {
  *
  * The duration is read off `--motion` by `motionMs`, never written here, for
  * the reason stated above it.
+ *
+ * **The previous value is a ref, and `react-doctor` flags every one of those.**
+ * React's own page on this pattern stores it in state instead, which would cost
+ * a second `useState` and remove the finding. Kept as a ref because the finding
+ * is not a defect here and the repo already spends this idiom in five places:
+ * the mutation is guarded by the comparison it feeds, so it is idempotent, and
+ * under StrictMode's double invocation the first pass mutates and schedules
+ * while the second sees them equal and schedules nothing. Measured rather than
+ * reasoned — `useDismiss.test.tsx` runs the exit inside `<StrictMode>` and
+ * asserts it fires once and for exactly one `--motion`.
  */
 export interface Departure {
   /** Render the surface: true while it is present, and for one `--motion` after. */

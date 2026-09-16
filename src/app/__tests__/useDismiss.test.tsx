@@ -14,7 +14,7 @@
  * to do something twice.
  */
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { useRef } from 'react'
+import { StrictMode, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { durationMs, useDeparture, useDismiss } from '../useDismiss.ts'
 
@@ -233,5 +233,54 @@ describe('useDeparture under prefers-reduced-motion', () => {
     view.rerender(<Strip label={null} />)
     act(() => void vi.advanceTimersByTime(0))
     expect(strip()).toBeNull()
+  })
+})
+
+describe('useDeparture under StrictMode', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      getPropertyValue: () => '150ms',
+    } as unknown as CSSStyleDeclaration)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  /*
+   * The hook compares against a ref mutated during render, which `react-doctor`
+   * reports and which React's own page on this pattern writes with state
+   * instead. The mutation is guarded by the comparison it feeds, so the
+   * double invocation mutates and schedules on the first pass and sees them
+   * equal on the second — asserted here rather than argued in the docblock,
+   * because « it is idempotent » is exactly the kind of sentence this repo has
+   * been wrong about ten times.
+   */
+  const Wrapped = ({ label }: { label: string | null }) => (
+    <StrictMode>
+      <Strip label={label} />
+    </StrictMode>
+  )
+
+  test('the exit fires once and lasts exactly one --motion', () => {
+    const view = render(<Wrapped label="attente" />)
+    expect(strip()?.className).toBe('')
+    view.rerender(<Wrapped label={null} />)
+    expect(strip()?.className).toBe('leaving')
+    expect(strip()?.textContent).toBe('attente')
+    act(() => void vi.advanceTimersByTime(149))
+    expect(strip()).not.toBeNull()
+    act(() => void vi.advanceTimersByTime(1))
+    expect(strip()).toBeNull()
+  })
+
+  test('coming back mid-exit still cancels it', () => {
+    const view = render(<Wrapped label="a" />)
+    view.rerender(<Wrapped label={null} />)
+    view.rerender(<Wrapped label="a" />)
+    expect(strip()?.className).toBe('')
+    act(() => void vi.advanceTimersByTime(300))
+    expect(strip()).not.toBeNull()
   })
 })
