@@ -1974,7 +1974,23 @@ test('a meeting the rep placed here arms on a call the machine cannot name', asy
     clock: () => T0,
   })
 
+  /*
+   * **One tick is not a call, and this test used to take it for one.**
+   *
+   * The named offer requires `AD_HOC_DWELL_MS` of continuous hold, for the
+   * reason `decideAdHoc` requires it of the anonymous one: a microphone held for
+   * an instant is a dictation, a voice note, a browser tab. The first version of
+   * this test ticked once and asserted the arm, so it passed against a site that
+   * armed a client's meeting on any hold at all.
+   */
   await agenda.tick({ now: T0 - 60_000 })
+  assert.equal(
+    h.orchestrator.stateOf(mine.id),
+    'idle',
+    'un micro tenu un instant a suffi à proposer la réunion d’un client',
+  )
+
+  await agenda.tick({ now: T0 - 60_000 + AD_HOC_DWELL_MS })
 
   assert.equal(
     h.orchestrator.stateOf(mine.id),
@@ -1982,6 +1998,129 @@ test('a meeting the rep placed here arms on a call the machine cannot name', asy
     'la réunion placée n’arme pas sur un appel navigateur : rien à enregistrer en une pression',
   )
   assert.equal(agenda.snapshot().armed?.meetingId, mine.id)
+  h.store.close()
+})
+
+/*
+ * **And the hold has to be this meeting's, which is what the fix above cost.**
+ *
+ * `ownClaims` claims eighty-five minutes. Reading « is anything holding a
+ * microphone » across all of it arms a meeting under a client's name for any
+ * blip in that window — driven, a sixty-second voice note seventy-five minutes
+ * past the slot did it. That raises DEC-46's notification about a meeting that
+ * is not starting, takes the day's one filled *Enregistrer*, and if the rep
+ * accepts it the compte-rendu and the VerySwing task go to a client who was not
+ * on the call, through a POST with no idempotency key and no delete verb.
+ *
+ * A hold that *begins* past `OVERRUN_GRACE_MS` is another conversation, which is
+ * the boundary `#over` already uses. `decideAdHoc` offers that one anonymously,
+ * and the assertion below is that it does — refusing the named offer must not
+ * cost the rep the anonymous one.
+ */
+/*
+ * **The other direction of `#recorded`, at the site that had never been asked.**
+ *
+ * `a calendar call that ends mid-slot is not re-offered as an unplanned one`
+ * pins this for an invite, and patching `#recorded` there goes red. The
+ * rep-placed site had no equivalent: replace the whole predicate with
+ * `const recorded = false` and the suite stayed green — 77 tests and 2084 in
+ * total, on the line the commit that introduced it was named after.
+ *
+ * Driven, that is a rep who records their own placed call and presses
+ * *Terminer* while still talking being offered **the same conversation a second
+ * time** ninety minutes later, anonymously, with a second OS notification and a
+ * second row on the day. « One conversation, one offer » is documented four
+ * times in `Agenda.ts` and was held at neither end of this branch.
+ */
+test('a call the rep placed and recorded is not re-offered as an unplanned one', async () => {
+  const h = harness([], 'Teams', 'Teams')
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  const armed: { subject: string }[] = []
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    meetingSignal: () => ({ running: 'Teams', inCall: 'Teams' }),
+    clock: () => T0,
+    onArmed: (a) => void armed.push(a),
+  })
+
+  await agenda.tick({ now: T0 - 60_000 })
+  assert.equal(h.orchestrator.stateOf(mine.id), 'armed', 'la réunion placée n’a pas été proposée')
+
+  // Recorded, then finished well inside the slot — with the rep still talking.
+  h.orchestrator.dispatch(mine.id, 'start', null)
+  h.orchestrator.dispatch(mine.id, 'end', null)
+
+  // Past `AD_HOC_NOMINAL_MS + OVERRUN_GRACE_MS`, and the microphone never drops.
+  for (let at = T0; at < T0 + 95 * 60_000; at += 5 * 60_000) {
+    await agenda.tick({ now: at })
+  }
+  await agenda.tick({ now: T0 + 95 * 60_000 + AD_HOC_DWELL_MS })
+
+  assert.equal(
+    armed.length,
+    1,
+    `la même conversation a été proposée ${armed.length} fois : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
+  h.store.close()
+})
+
+test('a voice note long after the slot is not the meeting it lands inside', async () => {
+  const h = harness([], null, null)
+  const mine = h.orchestrator.create({
+    id: 'm-mine',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0,
+  })
+  let held: string | null = null
+  const armed: { subject: string }[] = []
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    meetingSignal: () => ({ running: null, inCall: held }),
+    clock: () => T0,
+    onArmed: (a) => void armed.push(a),
+  })
+
+  // Nothing at all through the slot itself: the rep never took this meeting.
+  for (let at = T0 - 10 * 60_000; at < T0 + 70 * 60_000; at += 5 * 60_000) {
+    await agenda.tick({ now: at })
+  }
+  assert.equal(h.orchestrator.stateOf(mine.id), 'idle', 'rien ne tenait le micro')
+
+  // A Slack voice message at T0+75, inside `ownClaims`' eighty-five minutes.
+  const note = T0 + 75 * 60_000
+  held = 'Slack'
+  await agenda.tick({ now: note })
+  await agenda.tick({ now: note + AD_HOC_DWELL_MS })
+  await agenda.tick({ now: note + 60_000 })
+
+  assert.notEqual(
+    h.orchestrator.stateOf(mine.id),
+    'armed',
+    'une note vocale a proposé la réunion d’un client 75 minutes après son créneau',
+  )
+  assert.ok(
+    !armed.some((a) => a.subject === 'Néovia Santé'),
+    `notification DEC-46 pour une réunion qui ne démarre pas : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
+  /*
+   * And the anonymous offer still arrives — the refusal above must cost the rep
+   * nothing. This is the offer that is correct for a conversation nothing on the
+   * calendar accounts for.
+   */
+  assert.ok(
+    armed.some((a) => a.subject.startsWith('Appel non planifié')),
+    `le détecteur ne propose plus rien non plus : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
   h.store.close()
 })
 

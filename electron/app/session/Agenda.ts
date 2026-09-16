@@ -31,6 +31,7 @@ import {
   adHocContext,
   adHocMeetingId,
   adHocTitle,
+  AD_HOC_DWELL_MS,
   AD_HOC_NOMINAL_MS,
   decideAdHoc,
 } from '../../core/domain/adHoc.ts'
@@ -475,6 +476,43 @@ export class Agenda {
    * arm. Every claimant is inside `CALENDAR_CLAIM_MS`, so the answer is never more than
    * twenty-five minutes out — a bounded deferral, which is what `decideAdHoc` wants.
    */
+  /**
+   * The rep's own meetings that account for the conversation happening **now**.
+   *
+   * One answer to one question, for the two places that ask it — may this
+   * meeting be armed, and does it already account for the microphone — because
+   * they are the same question and two copies of it are two answers. `#spent`'s
+   * docblock says the same thing about the calendar's half.
+   *
+   * `ownClaims` bounds a placed meeting to eighty-five minutes around its
+   * anchor, which is right for « is this slot still live » and is not, on its
+   * own, evidence that the microphone being held belongs to *this* conversation.
+   * A hold that **began** after `OVERRUN_GRACE_MS` past the anchor is another
+   * call: the same boundary `#over` uses to decide a slot is behind the rep.
+   *
+   * It has to be one predicate and not a check at the arm site, because the two
+   * readers interlock. Refusing to arm while still letting the meeting *claim*
+   * the conversation silences `decideAdHoc` too — `calendarClaim` defers to this
+   * — and the rep gets neither the named offer nor the anonymous one, which is
+   * the same total silence, by a new route, that this site was fixed for twice.
+   * Driven: with the refusal at the arm site alone, a voice note seventy-five
+   * minutes past the slot produced no offer of any kind.
+   *
+   * `#heldSince` is the start of the current continuous hold and `#trackHold`
+   * resets it on a lost hold and on a change of application, so « end one call,
+   * take another » arrives here as a new origin.
+   */
+  #accountingOwnClaims(now: number): readonly Meeting[] {
+    return ownClaims(this.#ownMeetings(now), now).filter((meeting) => {
+      const state = this.#options.orchestrator.stateOf(meeting.id)
+      if (state !== null && AFTER_THE_CALL.has(state)) return false
+      return (
+        this.#heldSince === null ||
+        this.#heldSince <= meetingAnchor(meeting) + OVERRUN_GRACE_MS
+      )
+    })
+  }
+
   #calendarOffersAt(now: number): number | null {
     /*
      * **Both kinds of claim, earliest first.**
@@ -490,14 +528,12 @@ export class Agenda {
       offers.push(claim.context.scheduledStart - ARM_LEAD_MS)
       break
     }
-    for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
-      /*
-       * Keyed on the meeting itself, not on `meetingIdFor(eventId)`: these have
-       * no event, and « is the product finished with this conversation » has to
-       * be asked of the thing that holds the state.
-       */
-      const state = this.#options.orchestrator.stateOf(meeting.id)
-      if (state !== null && AFTER_THE_CALL.has(state)) continue
+    /*
+     * `#accountingOwnClaims` asks « is the product finished with this
+     * conversation » — keyed on the meeting itself, since these have no event —
+     * and « does the microphone being held belong to it ».
+     */
+    for (const meeting of this.#accountingOwnClaims(now)) {
       offers.push(meetingAnchor(meeting) - ARM_LEAD_MS)
       break
     }
@@ -542,10 +578,29 @@ export class Agenda {
    * wrong one for « may the detector have the microphone back », and the two had
    * been sharing it. `AFTER_THE_CALL` answers « is this behind the rep » — which
    * is what *Historique* asks and why `aborted` belongs in it — but `aborted` is
-   * precisely « nothing was recorded ». `TRANSITIONS` reaches it by
-   * `armed → abort`, and `Orchestrator` dispatches that from the two places a
-   * press of *Enregistrer* can fail: « aucun fournisseur de transcription »
-   * (`Orchestrator.ts:431`) and « capture indisponible » (`:636`).
+   * precisely « nothing was recorded ». `Orchestrator` dispatches it from the two
+   * places a press of *Enregistrer* can fail: « aucun fournisseur de
+   * transcription » (`Orchestrator.ts:431`) and « capture indisponible »
+   * (`:636`).
+   *
+   * **Not `armed → abort`, which is what this paragraph said for one round.**
+   * Driven: `dispatch(id, 'start')` returns `{ ok: true, from: 'armed', to:
+   * 'recording' }` and the meeting is *already* `aborted` when it returns,
+   * because `#openDevices` runs on the edge into `recording` and both abort
+   * sites are synchronous inside it. The shipped path is
+   * `armed → recording → aborted`. The distinction is load-bearing exactly here,
+   * because it is what decides whether a recording existed.
+   *
+   * **And the predicate below is correct by an accident that will not last.**
+   * `TRANSITIONS` also allows `abort` from `recording`, `ended`, `extracting`
+   * and `awaiting_confirmation`, and `session:command`'s Zod enum already
+   * exposes the verb to the renderer — `grep -rn "command: 'abort'" src/`
+   * returns nothing, so no caller exists yet. The first one anybody wires (a
+   * « Annuler l'enregistrement » control is the obvious next feature) makes this
+   * answer « nothing was recorded » about a forty-minute conversation, hand the
+   * microphone back, and offer the same call again anonymously. When that verb
+   * gets a caller, this predicate needs the *reason* for the abort and not the
+   * state alone.
    *
    * So the rep whose start **failed** was worse off than the rep who pressed
    * nothing. Driven on the shipped class — a 14:30 placed here, Teams holding
@@ -622,6 +677,35 @@ export class Agenda {
     this.#adHocSpent = false
   }
 
+  /**
+   * The opposite event: **this hold is accounted for, and the rep did it.**
+   *
+   * `#handBack` clears the latch when nothing accounts for the microphone. Its
+   * complement was written as the *absence* of a hand-back — `{ handBack: false }`
+   * — and that is not the same thing, because it only preserves a latch that
+   * something else had to have set. `#adHocSpent` latches on the top-of-tick
+   * liveness of a standing offer, so a rep who arms, records and presses
+   * *Terminer* between two ticks never once has it set: the withdrawal
+   * faithfully declines to hand back a microphone that was never taken, and
+   * `decideAdHoc` then offers the conversation the rep has just recorded.
+   *
+   * Driven on the shipped class, a rep who records their own placed call and
+   * ends it while still talking: `["Néovia Santé", "Appel non planifié — Teams"]`
+   * — two rows on the day and two OS notifications for one conversation, ninety
+   * minutes apart, the second one anonymous. « One conversation, one offer » is
+   * documented four times in this file and was held at neither end of this
+   * branch. The *calendar* half survives the same schedule, which is what made
+   * this read as a latch-timing accident rather than a missing statement.
+   *
+   * So the decision is stated rather than inferred: a conversation the rep
+   * recorded spends the hold it was recorded on, whatever any tick happened to
+   * observe. `#trackHold` still clears it when the hold changes or is lost,
+   * which is « the rep took a different call » and is a different conversation.
+   */
+  #spendHold(): void {
+    this.#adHocSpent = true
+  }
+
   #withdrawOwn(meetingId: string, { handBack }: { handBack: boolean }): void {
     if (this.#armed?.meetingId === meetingId) this.#armed = null
     const state = this.#options.orchestrator.stateOf(meetingId as MeetingId)
@@ -629,6 +713,7 @@ export class Agenda {
       this.#options.orchestrator.dispatch(meetingId as MeetingId, 'disarm', 'conversation terminée')
     }
     if (handBack) this.#handBack()
+    else this.#spendHold()
   }
 
   #over(eventId: string, now: number): boolean {
@@ -1027,10 +1112,60 @@ export class Agenda {
      * no test constructed. `check:ports` and `check:surfaces` see a called
      * method; the two `micOnly` branches are `core/domain` constants, not a port.
      */
-    if (signal.running !== null || signal.inCall !== null) {
-      for (const meeting of ownClaims(this.#ownMeetings(now), now)) {
-        const state = this.#options.orchestrator.stateOf(meeting.id)
-        if (state !== null && AFTER_THE_CALL.has(state)) continue
+    /*
+     * **And the microphone has to be tied to the meeting, which for one round it
+     * was not — the previous fix to this site produced the next round's finding.**
+     *
+     * Adding `signal.inCall` above made this site fire on strictly more inputs
+     * without adding the rule that makes a hold mean something. `ownClaims`
+     * claims eighty-five minutes; the site asked only « is *anything* holding a
+     * microphone ». Driven on the shipped class — one meeting placed at 14:30,
+     * no Entra, **no real call at any point**:
+     *
+     * | what happened | what the rep was offered |
+     * |---|---|
+     * | nothing open, no microphone | nothing (correct) |
+     * | a browser dictation, 60 s at 15:40 | the client's 14:30 row, armed |
+     * | a Slack voice message, 60 s at 15:45 | the client's 14:30 row, armed |
+     *
+     * A voice note arms a meeting under a client's name seventy-five minutes
+     * past its slot: it raises DEC-46's notification — the one thing in this
+     * product that navigates without the rep pressing anything inside it — about
+     * a meeting that is not starting, takes the day's only filled *Enregistrer*,
+     * and holds `armed` for five minutes after the microphone is released, which
+     * is in `UPDATE_BLOCKING_STATES`, so every installer is refused meanwhile
+     * with « une réunion est sur le point de démarrer ». On one continuous but
+     * *unrelated* call the rep is offered the wrong client's name for an hour and
+     * then gets a second notification for the same conversation.
+     *
+     * If the rep takes it, the compte-rendu, the account resolution and the
+     * VerySwing task all go to a client who was not on the call — and
+     * `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete
+     * verb. That is not the same size of mistake as the one it replaced:
+     * offering nothing costs a recording the rep can start by hand, and this
+     * product already writes that asymmetry down.
+     *
+     * Both halves of the rule are one call-site away and already shipped.
+     * `decideAdHoc` refuses to offer anything until `AD_HOC_DWELL_MS` of
+     * continuous hold, because a microphone held for an instant is not a call;
+     * `#heldSince` is the start of the current hold, reset by `#trackHold` on a
+     * lost hold and on a change of application. And a hold that *begins* after
+     * `OVERRUN_GRACE_MS` past the anchor is a different conversation, which is
+     * the same boundary `#over` already uses to decide a slot is behind the rep
+     * — `decideAdHoc` offers that one anonymously, which is the right answer for
+     * it.
+     *
+     * The `running` half keeps neither test on purpose: « a meeting application
+     * is open near the slot » is the anticipation `ARM_LEAD_MS` exists for and
+     * the calendar path arms on the same signal (DEC-46 — « a rep who is talking
+     * is not looking for a button »). It is the *microphone* disjunct that needs
+     * evidence, because it is the one that fires on an application the product
+     * cannot name.
+     */
+    const dwelt =
+      this.#heldSince !== null && now - this.#heldSince >= AD_HOC_DWELL_MS
+    if (signal.running !== null || (signal.inCall !== null && dwelt)) {
+      for (const meeting of this.#accountingOwnClaims(now)) {
         if (now < meetingAnchor(meeting) - ARM_LEAD_MS) continue
         this.#arm({
           meetingId: meeting.id as MeetingId,
