@@ -170,7 +170,7 @@ export function AskPanel({
           onChange={(event) => setQuestion(event.target.value)}
           aria-label="Poser une question sur cet appel"
           placeholder="Poser une question sur cet appel…"
-          className="text-strong placeholder:text-muted bg-inner border-card min-w-0 flex-1 rounded-sm border px-2 py-1.5 text-ui"
+          className="text-strong placeholder:text-muted bg-inner border-card min-w-0 flex-1 rounded-sm border px-snug py-tight text-ui"
         />
         {/*
           Disabled only while a question is in flight — never for an empty box.
@@ -228,7 +228,7 @@ export function AskPanel({
         rest honest: nothing goes below a fold in silence.
       */}
       {offered !== null && failure === null && !busy ? (
-        <div className="ask-action mt-2 shrink-0">
+        <div className="ask-action mt-snug shrink-0">
           {/*
             The glyph names the artefact the label does not: a relance is a
             mail, and the chip sits in a row of questions that are not. It is
@@ -251,7 +251,7 @@ export function AskPanel({
         by what has been asked keeps the offer honest without ever repeating one.
       */}
       {failure === null && !busy && remaining.length > 0 ? (
-        <ul className="ask-suggestions mt-2 flex shrink-0 flex-wrap gap-1.5">
+        <ul className="ask-suggestions mt-snug flex shrink-0 flex-wrap gap-tight">
           {remaining.map((suggestion) => (
             <li key={suggestion}>
               <button
@@ -263,7 +263,7 @@ export function AskPanel({
                 // `min-h-[24px]`, WCAG 2.2 target size: `py-0.5` around
                 // `--type-meta` resolves to twenty-three pixels, and these sit
                 // in a wrapped row where a miss lands on the chip below.
-                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-2 py-0.5 text-meta transition"
+                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-snug py-0.5 text-meta transition"
               >
                 {suggestion}
               </button>
@@ -273,7 +273,7 @@ export function AskPanel({
       ) : null}
 
       {failure ? (
-        <p role="alert" className="text-danger mt-2 measure text-ui">
+        <p role="alert" className="text-danger mt-snug measure text-ui">
           {failure}
         </p>
       ) : null}
@@ -346,7 +346,7 @@ function Answer({
    */
   const partial =
     answer.readFrom == null ? null : (
-      <p className="text-warn measure mt-1 text-meta">
+      <p className="text-warn measure mt-hair text-meta">
         Seule la fin de l’appel a été lue, à partir de {formatOffset(answer.readFrom)} — la
         question porte peut-être sur un passage antérieur.
       </p>
@@ -354,7 +354,7 @@ function Answer({
 
   if (!answer.answered) {
     return (
-      <div className="mt-3">
+      <div className="mt-inline">
         <Question>{answer.question}</Question>
         <p className="text-muted measure text-ui">
           {answer.readFrom == null
@@ -367,7 +367,7 @@ function Answer({
   }
 
   return (
-    <div className="mt-3">
+    <div className="mt-inline">
       <Question>{answer.question}</Question>
       {partial}
       <p className="text-body measure whitespace-pre-wrap text-copy leading-relaxed">
@@ -375,7 +375,7 @@ function Answer({
       </p>
 
       {answer.citations.length > 0 ? (
-        <ul className="mt-2 space-y-1">
+        <ul className="mt-snug space-y-hair">
           {answer.citations.map((citation) => {
             const at = citation.span.startMs
             // A quote the model gave no channel for is nobody's turn to claim.
@@ -407,7 +407,7 @@ function Answer({
                       dead button (DEC-26).
                     */
                     disabled={onLocate === undefined}
-                    className="hover:bg-subtle flex w-full gap-2 rounded-sm px-1 py-0.5 text-left transition disabled:hover:bg-transparent"
+                    className="hover:bg-subtle flex w-full gap-snug rounded-sm px-hair py-0.5 text-left transition disabled:hover:bg-transparent"
                   >
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {time}
@@ -432,7 +432,7 @@ function Answer({
              * than as the citation being wrong.
              */
             return (
-              <li key={citation.span.quote} className="flex gap-2 px-1 py-0.5">
+              <li key={citation.span.quote} className="flex gap-snug px-hair py-0.5">
                 <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                   {/* No time claimed, because there is nowhere to point. */}
                   {time}
@@ -456,5 +456,5 @@ function Answer({
 
 /** The rep's own question, above the answer, in their own words. */
 function Question({ children }: { children: string }) {
-  return <p className="text-muted mb-1 measure text-meta">{children}</p>
+  return <p className="text-muted mb-hair measure text-meta">{children}</p>
 }

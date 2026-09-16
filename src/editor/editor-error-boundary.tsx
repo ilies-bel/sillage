@@ -89,7 +89,7 @@ export class EditorErrorBoundary extends Component<
       return (
         <div
           role="alert"
-          className="border-card bg-card-soft text-body flex items-center justify-between gap-3 rounded-sm border px-3 py-2 text-copy"
+          className="border-card bg-card-soft text-body flex items-center justify-between gap-inline rounded-sm border px-inline py-snug text-copy"
         >
           <span>
             L’éditeur n’a pas pu s’afficher. L’enregistrement continue.
@@ -97,7 +97,7 @@ export class EditorErrorBoundary extends Component<
           <button
             type="button"
             onClick={this.retry}
-            className="border-card bg-inner text-body hover:bg-subtle shrink-0 rounded-sm border px-2 py-1 text-ui font-medium"
+            className="border-card bg-inner text-body hover:bg-subtle shrink-0 rounded-sm border px-snug py-hair text-ui font-medium"
           >
             Recharger l’éditeur
           </button>

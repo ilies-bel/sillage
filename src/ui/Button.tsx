@@ -42,7 +42,7 @@ import { cn } from '../lib/utils.ts'
  * this ships to are on Windows laptops with trackpads (HR-2). A 19px `nav` or
  * `text` control sits in a dense rail beside eleven others, and a miss costs a
  * click that lands on the row below — which on the review gate is a field
- * nobody meant to touch. Measured rather than eyeballed: `py-1.5` looks
+ * nobody meant to touch. Measured rather than eyeballed: `py-tight` looks
  * generous in the source and resolves to nineteen pixels once the line-height
  * under `--type-ui` lands, which is what `shot.mjs --targets` found on eight
  * controls of the gate alone.
@@ -86,7 +86,7 @@ const button = cva(
     variant: {
       /** The default control: a bordered chip of a button on a card. */
       bordered:
-        'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle enabled:active:translate-y-px rounded-sm border px-3 py-1.5 text-ui font-medium',
+        'border-card bg-inner text-strong hover:bg-subtle disabled:bg-subtle disabled:text-muted disabled:hover:bg-subtle enabled:active:translate-y-px rounded-sm border px-inline py-tight text-ui font-medium',
       /*
        * **`border border-transparent` on every filled variant, and it is
        * alignment rather than decoration.**
@@ -102,7 +102,7 @@ const button = cva(
        */
       /** One per view at most. Brand blue marks action and navigation. */
       primary:
-        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
+        'bg-brand-700 text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /**
        * The primary, when what it ships carries a doubt the app measured.
        *
@@ -117,7 +117,7 @@ const button = cva(
        * it still ships (DEC-4). Only the colour and the label change, and they
        * change because the payload did.
        */
-      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
+      caution: 'bg-warn text-inner disabled:bg-subtle disabled:text-muted rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /**
        * The way back out of a screen — *‹ Calendrier*, and only that.
        *
@@ -143,7 +143,7 @@ const button = cva(
        * different rectangle from the label the rep just pressed, and a bordered
        * copy of it would not be.
        */
-      danger: 'bg-danger text-inner rounded-sm border border-transparent px-3 py-1.5 text-ui font-medium',
+      danger: 'bg-danger text-inner rounded-sm border border-transparent px-inline py-tight text-ui font-medium',
       /** Header links, *Réessayer*, pane toggles. Density over decoration. */
       text: 'text-muted hover:text-body disabled:opacity-60 enabled:active:translate-y-px text-ui',
       /** The same, when it needs to read as a link rather than a control. */

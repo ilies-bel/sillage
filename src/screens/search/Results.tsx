@@ -96,7 +96,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
         them they meant.
       */}
       {truncated ? (
-        <p className="text-muted mt-2 text-ui">
+        <p className="text-muted mt-snug text-ui">
           Les premiers résultats — l’historique les porte tous.
         </p>
       ) : null}

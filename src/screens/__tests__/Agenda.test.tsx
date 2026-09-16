@@ -786,7 +786,7 @@ describe('the search is the only entry into the past', () => {
     // search returned nothing. The screen says nothing matched — because it
     // has no corpus to search and never tries.
     bridge.when('meeting:list', () => [
-      meeting('m-1', { title: 'Acme — TJM à revoir', clientName: 'Acme SA' }),
+      meeting('m-hair', { title: 'Acme — TJM à revoir', clientName: 'Acme SA' }),
     ])
     searched({ rows: [] })
     signedOut()
@@ -870,8 +870,8 @@ describe('the search is the only entry into the past', () => {
   test('the backlog states its own size, and the size does not move', async () => {
     const rows = [
       { ...historyRow({ title: 'Nordis — cadrage', clientName: null }), status: 'À valider' },
-      { ...historyRow({ title: 'Lefort — CV' }), meeting: meeting('m-2'), status: 'À valider' },
-      { ...historyRow({ title: 'Sodexial — staffing' }), meeting: meeting('m-3'), status: 'À valider' },
+      { ...historyRow({ title: 'Lefort — CV' }), meeting: meeting('m-snug'), status: 'À valider' },
+      { ...historyRow({ title: 'Sodexial — staffing' }), meeting: meeting('m-inline'), status: 'À valider' },
     ]
     searched({ clients: [], rows })
     signedOut()

@@ -20,7 +20,7 @@
  * That is the exact failure the gutter exists to prevent, and it is invisible in
  * a DOM test: the text is present, the box is the wrong size. `GUTTER` is
  * measured against the widest marker in the vocabulary (`### `, four monospace
- * characters at `--type-meta`, plus the 6px `mr-1.5`) with room to spare, and
+ * characters at `--type-meta`, plus the 6px `mr-tight`) with room to spare, and
  * `scripts/harness/geometry.mjs` measures the painted rects.
  *
  * Set at `--type-prose`, the same size as the rep's own notepad — and this
@@ -93,7 +93,7 @@ interface CompteRenduDocumentProps {
  * The gutter every marker hangs in.
  *
  * `pl-10` is 40px against `### `, the widest marker in the vocabulary, which
- * measures 31px at `--type-meta` plus its 6px `mr-1.5`. The three callers each
+ * measures 31px at `--type-meta` plus its 6px `mr-tight`. The three callers each
  * used to pass their own `pl-6` — 24px, narrower than the thing it had to hold —
  * and the session pane passed none at all. A caller may add margins and a
  * `.measure`; it never sets this.
@@ -238,7 +238,7 @@ export function CompteRenduDocument({
                     type="button"
                     onClick={() => onQuote(sourced)}
                     aria-label={`Voir la source dans la transcription : ${line.text}`}
-                    className="group text-body hover:text-strong hover:bg-inner focus-visible:bg-inner decoration-card hover:decoration-muted focus-visible:decoration-muted -mx-1 min-h-[24px] rounded-sm px-1 text-left underline decoration-dotted decoration-from-font underline-offset-4 transition"
+                    className="group text-body hover:text-strong hover:bg-inner focus-visible:bg-inner decoration-card hover:decoration-muted focus-visible:decoration-muted -mx-hair min-h-[24px] rounded-sm px-hair text-left underline decoration-dotted decoration-from-font underline-offset-4 transition"
                   >
                     <Prose text={line.text} />
                     {/*
@@ -252,7 +252,7 @@ export function CompteRenduDocument({
                     */}
                     <Search
                       aria-hidden
-                      className="text-brand ml-1 inline size-3.5 -translate-y-px opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
+                      className="text-brand ml-hair inline size-3.5 -translate-y-px opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
                     />
                   </button>
                 ) : (
@@ -379,7 +379,7 @@ function Marker({ children }: { children: string }) {
     <span
       // `geometry.mjs` measures every one of these against the box it hangs in.
       data-hangs="marqueur"
-      className="text-muted absolute top-0 right-full mr-1.5 select-none whitespace-pre font-mono text-meta leading-relaxed"
+      className="text-muted absolute top-0 right-full mr-tight select-none whitespace-pre font-mono text-meta leading-relaxed"
     >
       {children}
     </span>

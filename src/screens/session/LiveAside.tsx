@@ -77,7 +77,7 @@ export function LiveAside({ meetingId, signals, recipe, recording, onHide }: Liv
         verb takes a second line at that size and shares the first everywhere
         else.
       */}
-      <header className="flex flex-wrap items-center justify-between gap-inline gap-y-1 px-4 pb-2 pt-4">
+      <header className="flex flex-wrap items-center justify-between gap-inline gap-y-hair px-row pb-snug pt-row">
         <Segmented
           label="Vue de la colonne"
           options={VIEWS}

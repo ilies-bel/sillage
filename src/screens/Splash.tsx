@@ -113,7 +113,7 @@ export function Splash({ state }: SplashProps) {
         <div className="bg-brand-300 absolute left-0 top-0 h-96 w-96 -translate-x-1/3 -translate-y-1/3 rounded-full opacity-70 blur-3xl" />
         <div className="bg-brand-100 absolute bottom-0 right-0 h-[28rem] w-[28rem] translate-x-1/4 translate-y-1/3 rounded-full blur-3xl" />
       </div>
-      <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim px-8 py-10 backdrop-blur-xl">
+      <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim px-gutter py-10 backdrop-blur-xl">
         {/*
           The mark, drawn rather than loaded. It carried the archived
           predecessor's circled monogram at 1.04:1 — white artwork on
@@ -124,7 +124,7 @@ export function Splash({ state }: SplashProps) {
           there to make a raster read as an app icon. A mark stands on its own,
           and VISION §6's « shadows barely there » is about panes.
         */}
-        <Logo className="mb-4 h-16 w-16" />
+        <Logo className="mb-row h-16 w-16" />
         {/*
           The wordmark. Fraunces at display size, which is the one place
           `--display-tracking` is a setting rather than a smudge.

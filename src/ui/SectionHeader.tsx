@@ -5,7 +5,7 @@
  * The rule and the type already live in `.pane-label` in `src/design/index.css`
  * — a component class rather than eight copies of six utilities. This wrapper
  * adds the two things every one of its fifteen call sites also writes by hand:
- * the heading level, and the `mb-3` under it.
+ * the heading level, and the `mb-inline` under it.
  *
  * It is not a re-implementation. `.pane-label` stays the single definition; if
  * the accent rule ever changes width, it changes in one CSS rule and not here.
@@ -31,7 +31,7 @@
  * **And do not reach for the space it costs as the argument, because two of the
  * three cost none.** Measured on the shipped renderer at 1280×800 and 960×600:
  * on the session pane, where the eyebrow had a line of its own, it was 29 px —
- * 17 of ink plus the `mb-3` — and the compte-rendu's reading column took every
+ * 17 of ink plus the `mb-inline` — and the compte-rendu's reading column took every
  * one of them back. In the signal rail and at the gate it sat on a baseline row
  * beside a control taller than itself (« Masquer »; *Copier* and the view
  * switch), so deleting it moved **nothing**: both columns are to the pixel where
@@ -69,5 +69,5 @@ export interface SectionHeaderProps {
 }
 
 export function SectionHeader({ children, as: Tag = 'h2', className }: SectionHeaderProps) {
-  return <Tag className={cn('pane-label mb-3', className)}>{children}</Tag>
+  return <Tag className={cn('pane-label mb-inline', className)}>{children}</Tag>
 }

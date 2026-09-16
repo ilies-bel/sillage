@@ -116,7 +116,7 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE }: SignalRailProps
         class would have masked nothing and exempted the element from the check,
         which is the worst of both.
       */}
-      <ReadingColumn subject={{ determiner: 'la', noun: 'fiche' }} className="slate px-4 pb-4">
+      <ReadingColumn subject={{ determiner: 'la', noun: 'fiche' }} className="slate px-row pb-row">
         {/*
         `SLATE_LIST` — the hairline lives here, once, instead of as seven edge
         strokes. `divide-y` draws between the rows and never around the set, so
@@ -221,7 +221,7 @@ function Slot({ label, found }: SlotProps) {
       The hairline between rows belongs to the list, not to the row; see
       `SLATE_LIST` below.
     */
-    <li className="slate-row flex items-baseline gap-inline py-1.5">
+    <li className="slate-row flex items-baseline gap-inline py-tight">
       {/* 64px, not 72: every pixel here is a pixel the value does not get,
           and the longest label in the slate (« Démarrage ») fits. */}
       <span className="slate-label text-muted w-16 shrink-0 text-meta">{label}</span>

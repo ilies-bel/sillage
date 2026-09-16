@@ -281,7 +281,7 @@ export function DayPane({
             any day, including a past one, and the header's copy is at the top of
             a screen the rep has scrolled away from.
           */}
-          {suppressed && action ? <div className="mt-2">{action}</div> : null}
+          {suppressed && action ? <div className="mt-snug">{action}</div> : null}
         </section>
       ) : null}
     </div>

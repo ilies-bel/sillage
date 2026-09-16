@@ -98,17 +98,17 @@ export function TranscriptPane({ turns, live, finding }: TranscriptPaneProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {finding ? (
-        <div className="shrink-0 px-4 pb-2">
+        <div className="shrink-0 px-row pb-snug">
           <input
             ref={box}
             value={needle}
             onChange={(event) => setNeedle(event.target.value)}
             placeholder="Chercher dans l’appel…"
             aria-label="Chercher dans l’appel"
-            className="border-card bg-card text-body min-h-[24px] w-full rounded-sm border px-2 py-1 text-ui"
+            className="border-card bg-card text-body min-h-[24px] w-full rounded-sm border px-snug py-hair text-ui"
           />
           {trimmed === '' ? null : (
-            <p role="status" className="text-muted mt-1 text-meta">
+            <p role="status" className="text-muted mt-hair text-meta">
               {matches.size === 0
                 ? 'Aucune prise de parole ne contient ce mot.'
                 : `${matches.size} prise${matches.size > 1 ? 's' : ''} de parole surlignée${
@@ -125,7 +125,7 @@ export function TranscriptPane({ turns, live, finding }: TranscriptPaneProps) {
           const element = event.currentTarget
           stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
+        className="min-h-0 flex-1 overflow-y-auto px-row pb-row"
       >
         {turns.length === 0 ? (
           /*
@@ -139,14 +139,14 @@ export function TranscriptPane({ turns, live, finding }: TranscriptPaneProps) {
               : 'Aucune prise de parole n’a été transcrite pendant cet appel.'}
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-snug">
             {turns.map((turn) => {
               const found = matches.has(turn.id)
               return (
                 <li
                   key={turn.id}
-                  className={`flex gap-2 rounded-sm py-1 ${
-                    found ? 'border-brand-500 border-l-2 pl-1.5' : ''
+                  className={`flex gap-snug rounded-sm py-hair ${
+                    found ? 'border-brand-500 border-l-2 pl-tight' : ''
                   }`}
                 >
                   {/*
@@ -181,7 +181,7 @@ export function TranscriptPane({ turns, live, finding }: TranscriptPaneProps) {
         rep has just turned a live transcript on beside their own document, and
         « will this end up in my notes » is the first thing they will wonder.
       */}
-      <p className="text-muted border-subtle shrink-0 border-t px-4 py-2 text-meta">
+      <p className="text-muted border-subtle shrink-0 border-t px-row py-snug text-meta">
         Le texte n’entre jamais dans vos notes.
       </p>
     </div>

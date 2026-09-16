@@ -46,7 +46,7 @@ const ACCOUNT = {
 }
 
 const meeting = (over: Partial<Meeting> = {}): Meeting => ({
-  id: 'm-1',
+  id: 'm-hair',
   state: 'awaiting_confirmation',
   title: 'Néovia Santé — cadrage renfort data',
   // The ordinary case: this meeting came from an invite, so it has attendees.
@@ -86,7 +86,7 @@ const open = (options: { entra?: boolean; over?: Partial<Meeting> } = {}) => {
           reason: 'aucune inscription Entra sur cette installation.',
         } as const),
   )
-  return render(<Session meetingId="m-1" onBack={() => {}} onReview={() => {}} />)
+  return render(<Session meetingId="m-hair" onBack={() => {}} onReview={() => {}} />)
 }
 
 const chip = () => screen.queryByRole('button', { name: FOLLOW_UP.label })
@@ -236,7 +236,7 @@ describe('pressing it is a read, like everything else here', () => {
 
     const asked = bridge.calls.filter((call) => call.channel === 'meeting:ask')
     expect(asked).toHaveLength(1)
-    expect(asked[0]?.payload).toEqual({ meetingId: 'm-1', question: FOLLOW_UP.question })
+    expect(asked[0]?.payload).toEqual({ meetingId: 'm-hair', question: FOLLOW_UP.question })
 
     // The chip's label is never the last word on what was asked: the question
     // itself is on screen, above the answer, as every question here is.

@@ -74,7 +74,7 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
   const others = RECIPES.filter((other) => other.id !== current)
 
   return (
-    <div className="mb-3">
+    <div className="mb-inline">
       {/*
         The whole label is inside the button, so the accessible name says what
         the control is about — « Modèle : Prise de besoin commercial » — rather
@@ -87,20 +87,20 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((shown) => !shown)}
-        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-1 rounded-sm border px-2 py-0.5 text-meta transition"
+        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-hair rounded-sm border px-snug py-0.5 text-meta transition"
       >
         {`Modèle : ${recipe.title}`}
         <span aria-hidden>{open ? '▾' : '▸'}</span>
       </button>
 
       {failure ? (
-        <p role="alert" className="text-danger measure mt-1 text-meta">
+        <p role="alert" className="text-danger measure mt-hair text-meta">
           {failure}
         </p>
       ) : null}
 
       {open ? (
-        <div className="border-subtle bg-card-soft mt-1.5 rounded-sm border p-2">
+        <div className="border-subtle bg-card-soft mt-tight rounded-sm border p-snug">
           {/* What the document on screen was shaped by, in the recipe's own words. */}
           <p className="text-muted measure text-meta">{recipe.description}</p>
 
@@ -116,7 +116,7 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
           */}
           <p
             className={cn(
-              'measure mt-2 text-meta',
+              'measure mt-snug text-meta',
               edited > 0 ? 'text-warn font-semibold' : 'text-muted',
             )}
           >
@@ -131,7 +131,7 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
 
           <ul>
             {others.map((other) => (
-              <li key={other.id} className="mt-2">
+              <li key={other.id} className="mt-snug">
                 <Button
                   variant="bordered"
                   /*
@@ -157,7 +157,7 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
                   rep needs before pressing, and it is declared once in
                   `recipes.ts` rather than written again here.
                 */}
-                <p className="text-muted measure mt-1 text-meta">{other.description}</p>
+                <p className="text-muted measure mt-hair text-meta">{other.description}</p>
               </li>
             ))}
           </ul>

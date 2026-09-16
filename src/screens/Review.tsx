@@ -1684,7 +1684,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         and does not reach the client, and a primary reading « Valider ». What the
         header owes is the call, so that is what it carries.
       */}
-      <header className="border-subtle flex shrink-0 items-center gap-inline border-b px-gutter py-3">
+      <header className="border-subtle flex shrink-0 items-center gap-inline border-b px-gutter py-inline">
         <Button variant="nav" onClick={onBack}>
           ‹ Calendrier
         </Button>
@@ -1763,7 +1763,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
       </header>
 
       {failure ? (
-        <p role="alert" className="text-danger border-subtle border-b px-gutter py-1.5 text-ui">
+        <p role="alert" className="text-danger border-subtle border-b px-gutter py-tight text-ui">
           {failure}
         </p>
       ) : null}
@@ -1828,7 +1828,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               nine at 960×600, driven, with no press that fails to move a
               scroller.
             */}
-            <div className="mb-3 flex items-center justify-end gap-inline">
+            <div className="mb-inline flex items-center justify-end gap-inline">
               {/*
                 The way out of the app.
 
@@ -1957,7 +1957,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   last press cost none.
                 */}
                 {stalledNote !== null ? (
-                  <p role="status" className="text-warn measure mb-3 text-meta font-semibold">
+                  <p role="status" className="text-warn measure mb-inline text-meta font-semibold">
                     {stalledNote}
                   </p>
                 ) : null}
@@ -1988,7 +1988,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   so the sentence that accounts for it goes where the eye already
                   is: one muted line between the toolbar and the first heading.
                 */}
-                <CompteRenduMarkersNote className="text-muted border-subtle mb-3 border-b pb-2 text-meta" />
+                <CompteRenduMarkersNote className="text-muted border-subtle mb-inline border-b pb-snug text-meta" />
                 {/*
                   **The two halves of this screen are two documents, and only
                   one of them is edited here.**
@@ -2010,7 +2010,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   once, where the confusion happens.
                 */}
                 {faible.length > 0 ? (
-                  <p className="text-muted measure mb-3 text-meta">
+                  <p className="text-muted measure mb-inline text-meta">
                     {/* Conditional, because the first half was a false statement
                         on exactly the gate where it mattered: it asserted that
                         corrections « vont dans l'opportunité » two inches above
@@ -2053,7 +2053,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 value={edits.compteRendu}
                 onChange={(event) => set('compteRendu', event.target.value)}
                 rows={Math.max(20, edits.compteRendu.split('\n').length + 2)}
-                className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-3 text-copy leading-relaxed [field-sizing:content]"
+                className="text-body border-subtle bg-inner w-full resize-none rounded-sm border p-inline text-copy leading-relaxed [field-sizing:content]"
               />
             )}
 
@@ -2254,7 +2254,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             still is.
           */}
           {typedInert ? (
-            <p className="measure text-warn mb-2 text-ui">
+            <p className="measure text-warn mb-snug text-ui">
               {typedInert} Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à
               gauche, c’est lui qui part dans la tâche VerySwing.
             </p>
@@ -2274,7 +2274,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           </List>
 
           {panel.accountCandidates.length > 0 ? (
-            <div className="mt-2">
+            <div className="mt-snug">
               {/*
                 The label states the *verb*, not the category.
 
@@ -2289,7 +2289,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               <p className="text-muted text-meta">
                 Rattacher plutôt à une autre société du groupe :
               </p>
-              <ul className="mt-1 flex flex-wrap gap-1.5">
+              <ul className="mt-hair flex flex-wrap gap-tight">
                 {panel.accountCandidates.map((candidate) => (
                   <li key={candidate.accountId ?? candidate.name}>
                     <Chip
@@ -2307,7 +2307,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             </div>
           ) : null}
 
-          <p className="text-muted mt-3 text-ui">
+          <p className="text-muted mt-inline text-ui">
             <span className="text-body">Interlocuteurs</span> :{' '}
             {panel.interlocuteurs.length === 0
               ? 'aucun au calendrier'
@@ -2332,7 +2332,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
 
           <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
             <fieldset>
-              <SectionHeader as="legend" className="mb-2">
+              <SectionHeader as="legend" className="mb-snug">
                 Ce qui sera créé
               </SectionHeader>
               {intents.map((intent) => (
@@ -2408,7 +2408,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 */
                 variant={faible.length > 0 && !busy ? 'caution' : 'primary'}
                 block
-                className="mt-4 py-2"
+                className="mt-row py-snug"
                 onClick={() => void confirm()}
                 {...unavailable(busy, 'Envoi en cours. Ne fermez pas la fenêtre.')}
               >
@@ -2421,7 +2421,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                       : `Valider malgré ${faible.length} champs non vérifiés`}
               </Button>
             ) : (
-              <div aria-hidden className="mt-4 min-h-[35px]" />
+              <div aria-hidden className="mt-row min-h-[35px]" />
             )}
             {/*
               The sub-line, and while there is no button above it, it is the
@@ -2459,7 +2459,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 // the foot of that column acts on; the rule it used to recite is
                 // already said by that control's own label and by the
                 // « Ce qui sera créé » list above the slot.
-                'measure mx-auto mt-1.5 text-center text-meta',
+                'measure mx-auto mt-tight text-center text-meta',
                 (faible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
               )}
             >
@@ -2557,8 +2557,8 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
       of the scroller with a row's worth of margin over it, so what a rep lands
       on is a whole field.
     */
-    <div id={`row-${field.key}`} className="scroll-mt-10 px-3 py-2">
-      <div className="flex items-baseline gap-2">
+    <div id={`row-${field.key}`} className="scroll-mt-10 px-inline py-snug">
+      <div className="flex items-baseline gap-snug">
         <label className="text-muted w-28 shrink-0 text-meta" htmlFor={`field-${field.key}`}>
           {field.label}
         </label>
@@ -2612,7 +2612,7 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="text-muted hover:text-body -my-1 ml-auto inline-flex min-h-[24px] shrink-0 items-center text-meta"
+          className="text-muted hover:text-body -my-hair ml-auto inline-flex min-h-[24px] shrink-0 items-center text-meta"
         >
           {`source ${open ? '▾' : '▸'}`}
         </button>
@@ -2654,7 +2654,7 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
             // `.measure` here rather than on a wrapper: `ch` resolves at the
             // element's own size, and these are `--type-ui` inside a rail sized
             // for `--type-copy` — 78 characters a line at 1440 and above.
-            'measure text-strong border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui [field-sizing:content]',
+            'measure text-strong border-subtle mt-hair w-full resize-none rounded-sm border px-snug py-hair text-ui [field-sizing:content]',
             inert === null ? 'bg-inner' : 'bg-subtle',
           )}
         />
@@ -2666,7 +2666,7 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           onChange={(event) => onChange(event.target.value)}
           readOnly={inert !== null}
           className={cn(
-            'text-strong placeholder:text-muted border-subtle mt-1 w-full rounded-sm border px-2 py-1 text-ui',
+            'text-strong placeholder:text-muted border-subtle mt-hair w-full rounded-sm border px-snug py-hair text-ui',
             inert === null ? 'bg-inner' : 'bg-subtle',
           )}
         />
@@ -2688,7 +2688,7 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           The same mark *Demander* carries, for the same reason, in the other
           column.
         */
-        <div data-unmeasured className="mt-1">
+        <div data-unmeasured className="mt-hair">
           {/*
             `.measure` on the paragraph: it holds the quote itself, which is the longest
             prose on the row — 88 characters a line at `--type-meta`, measured on
@@ -2760,8 +2760,8 @@ interface MailDraftProps {
  */
 function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
   return (
-    <section className="mt-5">
-      <div className="mb-2 flex items-center gap-inline">
+    <section className="mt-block">
+      <div className="mb-snug flex items-center gap-inline">
         {/*
           « (brouillon) » is a promise about what will be created, so it is only
           made when one will be. With no Microsoft account the Outlook intent is
@@ -2795,7 +2795,7 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         which is the wrapper-versus-element failure this rule already records at eighty,
         on the same screen, one press before the VerySwing task and the Outlook draft.
       */}
-      <p className="text-muted measure mb-1 text-meta">
+      <p className="text-muted measure mb-hair text-meta">
         À :{' '}
         {to.length === 0
           ? 'aucun destinataire — aucun brouillon ne sera créé, le texte reste copiable'
@@ -2805,7 +2805,7 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         aria-label="Objet du brouillon"
         value={subject}
         onChange={(event) => onSubject(event.target.value)}
-        className="text-strong bg-inner border-subtle w-full rounded-sm border px-2 py-1 text-ui"
+        className="text-strong bg-inner border-subtle w-full rounded-sm border px-snug py-hair text-ui"
       />
       {/*
         Sized to the draft, not to a guess. `rows={8}` clipped a fourteen-line
@@ -2836,7 +2836,7 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
           the screen green. CLAUDE.md's own invariant names this draft as one of
           the surfaces sharing the measure. It never has.
         */
-        className="measure text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
+        className="measure text-body bg-inner border-subtle mt-hair w-full resize-none rounded-sm border px-snug py-hair text-ui leading-relaxed [field-sizing:content]"
       />
     </section>
   )
@@ -2895,7 +2895,7 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
 
   return (
     <div
-      className={`flex items-start gap-2 py-1 text-ui ${
+      className={`flex items-start gap-snug py-hair text-ui ${
         intent.available && !degraded ? 'text-body' : 'text-muted'
       }`}
     >
@@ -2980,9 +2980,9 @@ function ClosedGate({
   return (
     <Centered>
       <p className="text-body text-copy">{reason}</p>
-      {note ? <p className="text-body measure mt-1.5 text-ui">{note}</p> : null}
+      {note ? <p className="text-body measure mt-tight text-ui">{note}</p> : null}
       {state === 'recording' ? (
-        <p className="text-muted mt-1.5 text-ui">
+        <p className="text-muted mt-tight text-ui">
           Le compte-rendu sera prêt à la fin de la réunion.
         </p>
       ) : null}
@@ -2993,7 +2993,7 @@ function ClosedGate({
 
 function BackLink({ onBack }: { onBack: () => void }) {
   return (
-    <Button variant="link" onClick={onBack} className="mt-3">
+    <Button variant="link" onClick={onBack} className="mt-inline">
       Retour
     </Button>
   )

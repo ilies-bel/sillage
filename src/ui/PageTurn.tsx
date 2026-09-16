@@ -58,7 +58,7 @@ export function PageTurn({
       band it floats over stays scrollable and selectable.
     */
     <div
-      className="turn-ground pointer-events-none sticky bottom-0 z-10 flex justify-center pb-2 pt-8"
+      className="turn-ground pointer-events-none sticky bottom-0 z-10 flex justify-center pb-snug pt-gutter"
       {...(ground ? { style: { ['--turn-ground' as string]: ground } } : {})}
     >
       <Button variant="bordered" className="pointer-events-auto shadow-card" onClick={onTurn}>

@@ -122,7 +122,7 @@ export function EnhancementNotice({ meetingId, onReglages }: EnhancementNoticePr
   return (
     <div
       role="status"
-      className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-2"
+      className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-snug"
     >
       {status.status === 'running' ? (
         <p className="text-body min-w-0 flex-1 measure text-ui">

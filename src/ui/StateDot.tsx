@@ -111,7 +111,7 @@ export function StateDot({ tone, label, className, labelClassName }: StateDotPro
   }
 
   return (
-    <span className={cn('text-muted inline-flex shrink-0 items-center gap-2 text-ui', className)}>
+    <span className={cn('text-muted inline-flex shrink-0 items-center gap-snug text-ui', className)}>
       <span aria-hidden className={dot({ tone })} />
       <span className={labelClassName}>{label}</span>
     </span>

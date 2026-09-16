@@ -59,7 +59,7 @@ export interface RailProps {
 const GLYPH_VALIDER = 'M20 6 9 17l-5-5'
 
 const ITEM =
-  'flex w-full items-center gap-2 border-l-2 border-transparent px-row py-2 text-left text-ui transition active:translate-y-px'
+  'flex w-full items-center gap-snug border-l-2 border-transparent px-row py-snug text-left text-ui transition active:translate-y-px'
 
 export function Rail({
   current,

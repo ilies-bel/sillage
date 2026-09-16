@@ -152,6 +152,22 @@
    * gutter), not from a generic 4/8/16 ladder that would match nothing. An
    * unused token is a token that will drift, so there are five and not twelve.
    */
+  /*
+   * **The two rungs the first count missed.**
+   *
+   * The paragraph above says this scale is « derived from what the screens
+   * already repeat ». It was, from an incomplete count: measured across `src/`,
+   * 8px appears **105** times and 4px **75**, more than any named step — so the
+   * two values the product repeats most were the two it could not name, and 180
+   * declarations sat off the scale by construction rather than by choice.
+   *
+   * `snug` is a glyph to the word it belongs to (`SectionNav`, `Rail`,
+   * `StateDot`) and a list row's own vertical padding (`List`). `hair` is the
+   * smallest gap the product draws — a caption under its line, the bars of the
+   * input meter.
+   */
+  --space-hair: 4px;
+  --space-snug: 8px;
   --space-tight: 6px;
   --space-inline: 12px;
   --space-row: 16px;

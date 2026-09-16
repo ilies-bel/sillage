@@ -194,7 +194,7 @@ export function RecipeSwitchNotice({ choice }: { choice: RecipeChoice }) {
   return (
     <div
       role="status"
-      className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-2"
+      className="border-subtle bg-card-soft flex shrink-0 items-center gap-inline border-b px-gutter py-snug"
     >
       <p className="text-body min-w-0 measure flex-1 text-ui">
         Réécrire le compte-rendu avec « {titleOf(to)} » ?{' '}

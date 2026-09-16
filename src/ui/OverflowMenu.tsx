@@ -149,7 +149,7 @@ export function OverflowMenu({ what, items, className }: OverflowMenuProps) {
            * one is over a document: a 1px border alone would leave the words
            * underneath reading through the gap between two near-whites.
            */
-          className="border-card bg-card shadow-overlay absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-sm border py-1"
+          className="border-card bg-card shadow-overlay absolute right-0 top-full z-10 mt-hair min-w-[180px] rounded-sm border py-hair"
         >
           {items.map((item) => (
             <button
@@ -162,7 +162,7 @@ export function OverflowMenu({ what, items, className }: OverflowMenuProps) {
                 trigger.current?.focus()
                 item.onSelect()
               }}
-              className="text-body hover:bg-subtle hover:text-strong focus-visible:bg-subtle flex min-h-[24px] w-full items-center px-3 py-1.5 text-left text-ui transition"
+              className="text-body hover:bg-subtle hover:text-strong focus-visible:bg-subtle flex min-h-[24px] w-full items-center px-inline py-tight text-left text-ui transition"
             >
               {item.label}
             </button>

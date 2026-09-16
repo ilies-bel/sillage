@@ -13,7 +13,7 @@ import { extendTailwindMerge } from 'tailwind-merge'
  * `src/ui/ui.test.tsx` reads `tailwind.config.js` and fails if these two lists
  * and that file's `spacing` / `fontSize` keys ever stop agreeing.
  */
-export const SPACING_STEPS = ['tight', 'inline', 'row', 'block', 'gutter'] as const
+export const SPACING_STEPS = ['hair', 'snug', 'tight', 'inline', 'row', 'block', 'gutter'] as const
 /**
  * Both halves of the scale: the interface's five, then the document's four
  * (`--type-prose` in tokens.css says why the second group exists). A rung

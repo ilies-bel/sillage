@@ -51,7 +51,7 @@
  * the reading column gained **65 px at each** — 458 → 523 of a 1 930 px document
  * at 1280×800, and 321 → 386 of 2 203 at 960×600, which is 14% and 20% more of
  * the document on screen. 29 of those pixels are the eyebrow (17 of ink and the
- * `mb-3` under it) and 36 are the manual, which wrapped to two lines in this
+ * `mb-inline` under it) and 36 are the manual, which wrapped to two lines in this
  * column at both sizes.
  */
 import { ReadingColumn } from '../../ui/index.ts'
@@ -150,7 +150,7 @@ export function CompteRenduPane({
         meetingId={meetingId}
         pinned
         action={followUp}
-        className="border-subtle mt-3 max-h-[45%] shrink-0 border-t pt-3"
+        className="border-subtle mt-inline max-h-[45%] shrink-0 border-t pt-inline"
       />
     </div>
   )

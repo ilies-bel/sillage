@@ -64,7 +64,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
   }
 
   return (
-    <section className="border-card bg-card mb-block rounded-sm border px-4 py-3">
+    <section className="border-card bg-card mb-block rounded-sm border px-row py-inline">
       <div className="flex items-baseline gap-inline">
         <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
           {busy ? 'À vous — parlez, ou lancez une vidéo' : 'Vérifier que tout est capté'}
@@ -79,7 +79,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
         </Button>
       </div>
 
-      <p className="text-muted measure mt-1 text-ui leading-relaxed">
+      <p className="text-muted measure mt-hair text-ui leading-relaxed">
         {busy
           ? 'Sillage écoute les deux côtés pendant vingt secondes. Rien n’est enregistré ni conservé.'
           : // No « avant le premier client »: it is true on first run and false
@@ -89,7 +89,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
       </p>
 
       {busy ? (
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-inline flex items-center gap-inline">
           {/*
             The meeting meter, on the trial's reserved id. Both channels,
             mirrored about a baseline — the rep above, the machine below —
@@ -104,13 +104,13 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
       ) : null}
 
       {failure ? (
-        <p role="alert" className="text-danger measure mt-2 text-ui">
+        <p role="alert" className="text-danger measure mt-snug text-ui">
           {failure}
         </p>
       ) : null}
 
       {result ? (
-        <div className="mt-3">
+        <div className="mt-inline">
           <p
             className={`measure text-ui ${
               result.rep.heard && result.far.heard ? 'text-body' : 'text-warn'
@@ -123,7 +123,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
             the right, then the sentence under both. Two screens that report a
             subsystem's state should not report it in two different orders.
           */}
-          <ul className="mt-2 space-y-row">
+          <ul className="mt-snug space-y-row">
             {essaiLines(result).map((line) => (
               <li key={line.channel}>
                 <div className="flex items-baseline gap-inline">
@@ -148,7 +148,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                   asking (`core/domain/capturePermission.ts`).
                 */}
                 {!line.heard ? (
-                  <div className="mt-1.5 flex items-baseline gap-inline">
+                  <div className="mt-tight flex items-baseline gap-inline">
                     <Button
                       onClick={() => void grant()}
                       {...unavailable(granting, 'Vérification…')}

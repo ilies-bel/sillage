@@ -20,7 +20,7 @@ let bridge: FakeBridge
 let uninstall: () => void
 
 const meeting = (): Meeting => ({
-  id: 'm-1',
+  id: 'm-hair',
   state: 'recording',
   title: 'Point Acme',
   eventId: null,
@@ -55,12 +55,12 @@ const open = () => {
     compteRendu: null,
     recipe: 'besoin-commercial' as const,
   }))
-  return render(<Session meetingId="m-1" onBack={() => {}} onReview={() => {}} />)
+  return render(<Session meetingId="m-hair" onBack={() => {}} onReview={() => {}} />)
 }
 
 const append = (over: Partial<TranscriptSegment> = {}) =>
   act(() => {
-    bridge.emit('transcript:appended', { meetingId: 'm-1', segment: segment(over) })
+    bridge.emit('transcript:appended', { meetingId: 'm-hair', segment: segment(over) })
   })
 
 const toTranscription = () =>

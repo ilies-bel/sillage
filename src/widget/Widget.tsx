@@ -1455,7 +1455,7 @@ function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-snug.5 py-tight"
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1533,7 +1533,7 @@ function Mention({
   return (
     <div
       data-card
-      className="bg-card border-card shadow-overlay mt-1.5 flex w-[260px] items-start gap-1.5 self-center rounded-lg border px-2.5 py-1.5"
+      className="bg-card border-card shadow-overlay mt-tight flex w-[260px] items-start gap-tight self-center rounded-lg border px-snug.5 py-tight"
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>
@@ -1543,12 +1543,12 @@ function Mention({
           unless the weight carries it too. Same rule as `⚠ faible` at the gate.
         */}
         <p
-          className={`mt-1 text-meta ${copied ? 'text-muted' : 'text-warn font-semibold'}`}
+          className={`mt-hair text-meta ${copied ? 'text-muted' : 'text-warn font-semibold'}`}
         >
           {MENTION_COPY_STATE(copied)}
         </p>
         {logged === false ? (
-          <p className="text-warn mt-1 text-meta font-semibold">{MENTION_NOT_LOGGED}</p>
+          <p className="text-warn mt-hair text-meta font-semibold">{MENTION_NOT_LOGGED}</p>
         ) : null}
       </div>
       <button
@@ -1649,7 +1649,7 @@ function Pill({
         already right, and restating it would be a declaration that changes
         nothing. The *panel* is the one that has to follow `above`.
       */
-      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-2 self-center rounded-lg border py-1.5 pl-2.5 pr-1.5 ${
+      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-snug self-center rounded-lg border py-tight pl-snug.5 pr-tight ${
         placed ? 'widget-arrived' : 'widget-arriving'
       }`}
     >
@@ -1673,7 +1673,7 @@ function Pill({
         Not a second fill: a grey dot would be a third thing to tell apart at a
         glance, and the whole point is that there are two.
       */}
-      <span className="flex shrink-0 items-center gap-1.5">
+      <span className="flex shrink-0 items-center gap-tight">
         <span
           aria-hidden
           /*
@@ -1734,7 +1734,7 @@ function Pill({
       </span>
 
       {meetingId === null ? (
-        <span className="text-muted px-1 text-ui">Aucun enregistrement</span>
+        <span className="text-muted px-hair text-ui">Aucun enregistrement</span>
       ) : (
         <LevelMeter meetingId={meetingId} variant="pill" />
       )}
@@ -1776,7 +1776,7 @@ function Pill({
           type="button"
           onClick={onMention}
           aria-label={MENTION_LABEL}
-          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm px-1 transition"
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm px-hair transition"
         >
           <Speech />
         </button>
@@ -1804,7 +1804,7 @@ function Pill({
           aria-label={
             marks === 0 ? 'Marquer ce moment' : `Marquer ce moment (${marks} déjà marqués)`
           }
-          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-1 rounded-sm px-1 transition"
+          className="no-drag text-muted hover:bg-subtle hover:text-brand-700 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-hair rounded-sm px-hair transition"
         >
           <Bookmark />
           {marks > 0 ? (
@@ -1972,7 +1972,7 @@ function Panel({
         stylesheet with the reasoning, not spread over two files as a string.
       */
       data-above={above ? 'true' : 'false'}
-      className="bg-card border-card shadow-overlay widget-panel-arrive my-1.5 w-[340px] rounded-lg border"
+      className="bg-card border-card shadow-overlay widget-panel-arrive my-tight w-[340px] rounded-lg border"
     >
       {/*
         Which call this is.
@@ -2004,8 +2004,8 @@ function Panel({
         not a control, and it is the same sentence in all three open states
         because it is the same guarantee.
       */}
-      <div className="border-subtle border-b px-3 py-1.5">
-        <div className="flex items-baseline gap-2">
+      <div className="border-subtle border-b px-inline py-tight">
+        <div className="flex items-baseline gap-snug">
           <h1 className="text-strong min-w-0 flex-1 truncate font-sans text-ui font-semibold">
             {heading.trim() === '' ? 'Réunion en cours' : heading}
           </h1>
@@ -2017,7 +2017,7 @@ function Panel({
       </div>
 
       {trouble === null ? null : (
-        <p className="text-warn border-subtle border-b px-3 py-1.5 text-meta font-semibold">
+        <p className="text-warn border-subtle border-b px-inline py-tight text-meta font-semibold">
           {trouble}
         </p>
       )}
@@ -2044,12 +2044,12 @@ function Panel({
           the « clipped and looks short » failure `--scrollers` is about.
         */
         data-scrolls
-        className="max-h-[220px] overflow-y-auto px-3 py-2"
+        className="max-h-[220px] overflow-y-auto px-inline py-snug"
       >
         {rows.length === 0 ? (
           <p className="text-muted text-ui">{NOTHING_YET}</p>
         ) : (
-          <ul className="space-y-1.5">
+          <ul className="space-y-tight">
             {rows.map((row) =>
               row.kind === 'mark' ? (
                 <MarkRow key={row.key} mark={row.mark} onForget={onForget} />
@@ -2065,7 +2065,7 @@ function Panel({
         )}
       </div>
 
-      <div className="border-subtle flex items-center gap-1.5 border-t px-3 py-2">
+      <div className="border-subtle flex items-center gap-tight border-t px-inline py-snug">
         <input
           value={note}
           onChange={(event) => setNote(event.target.value)}
@@ -2079,11 +2079,11 @@ function Panel({
           maxLength={MARK_NOTE_MAX}
           aria-label="Noter ce moment"
           placeholder="Noter ce moment…"
-          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-2 py-1 text-ui"
+          className="text-strong placeholder:text-muted bg-inner border-subtle no-drag min-h-[24px] min-w-0 flex-1 rounded-sm border px-snug py-hair text-ui"
         />
         <Button
           variant="nav"
-          className="no-drag px-1"
+          className="no-drag px-hair"
           onClick={() => {
             const text = note.trim()
             setNote('')
@@ -2094,7 +2094,7 @@ function Panel({
         </Button>
       </div>
 
-      <div className="border-subtle flex items-center justify-between gap-2 border-t px-3 py-2">
+      <div className="border-subtle flex items-center justify-between gap-snug border-t px-inline py-snug">
         {/*
           **The row asks one question at a time, and it has to fit.**
 
@@ -2112,10 +2112,10 @@ function Panel({
         {confirmEnd ? (
           <span />
         ) : (
-          <span className="flex items-center gap-3">
+          <span className="flex items-center gap-inline">
             <Button
               variant="nav"
-              className="no-drag px-1"
+              className="no-drag px-hair"
               onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
             >
               Ouvrir Sillage
@@ -2130,7 +2130,7 @@ function Panel({
             */}
             <Button
               variant="text"
-              className="no-drag px-1"
+              className="no-drag px-hair"
               onClick={() =>
                 void invoke('session:pause', { meetingId, paused: !paused })
                   .then(({ paused: now }) => {
@@ -2182,7 +2182,7 @@ function Panel({
           `widget-terminer` measures both rectangles.
         */}
         {confirmEnd ? (
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-tight">
             <Button
               variant="danger"
               className="no-drag"
@@ -2200,7 +2200,7 @@ function Panel({
             </Button>
             <Button
               variant="text"
-              className="no-drag min-w-[5rem] px-1"
+              className="no-drag min-w-[5rem] px-hair"
               onClick={() => setConfirmEnd(false)}
             >
               Annuler
@@ -2209,7 +2209,7 @@ function Panel({
         ) : (
           <Button
             variant="text"
-            className="no-drag text-danger hover:text-danger px-1"
+            className="no-drag text-danger hover:text-danger px-hair"
             onClick={() => setConfirmEnd(true)}
           >
             Terminer
@@ -2261,7 +2261,7 @@ function Speech() {
 
 function TurnRow({ segment, onMark }: { segment: TranscriptSegment; onMark: () => void }) {
   return (
-    <li className="group flex gap-2">
+    <li className="group flex gap-snug">
       <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
         {/*
           No interlocutor list here, so this says « Client » — correctly. The
@@ -2354,7 +2354,7 @@ const logMask = (edges: { top: boolean; bottom: boolean }): string | undefined =
 
 function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) => void }) {
   return (
-    <li className="group flex gap-2">
+    <li className="group flex gap-snug">
       {/*
         **A mark is an aside, and it was louder than the call.**
 
@@ -2378,7 +2378,7 @@ function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) 
       >
         <Bookmark />
       </span>
-      <span className="text-strong border-subtle min-w-0 flex-1 border-l pl-2 text-ui leading-relaxed">
+      <span className="text-strong border-subtle min-w-0 flex-1 border-l pl-snug text-ui leading-relaxed">
         {mark.note === '' ? 'Moment marqué.' : mark.note}
       </span>
       {/*

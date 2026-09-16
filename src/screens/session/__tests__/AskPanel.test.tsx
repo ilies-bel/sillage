@@ -66,7 +66,7 @@ const ask = async (question = 'Quel TJM ?') => {
 describe('an answer never arrives alone', () => {
   test('the prose comes with the quote it leans on, and where in the call it is', async () => {
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask()
 
     expect(await screen.findByText(/la grille achats plafonne à 550 €/)).toBeTruthy()
@@ -91,7 +91,7 @@ describe('an answer never arrives alone', () => {
         ],
       }),
     )
-    render(<AskPanel meetingId="m-1" onLocate={() => {}} />)
+    render(<AskPanel meetingId="m-hair" onLocate={() => {}} />)
     await ask()
 
     expect(await screen.findByText(/« on peut monter à 600 sur le lead »/)).toBeTruthy()
@@ -106,7 +106,7 @@ describe('an answer never arrives alone', () => {
   test('a verified quote opens the record on the moment it came from', async () => {
     const opened: string[] = []
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" onLocate={(quote) => opened.push(quote)} />)
+    render(<AskPanel meetingId="m-hair" onLocate={(quote) => opened.push(quote)} />)
     await ask()
 
     const citation = await screen.findByRole('button', { name: /la grille achats plafonne/ })
@@ -122,7 +122,7 @@ describe('an answer never arrives alone', () => {
   test('the time is inside the control, not a label beside it', async () => {
     const opened: string[] = []
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" onLocate={(quote) => opened.push(quote)} />)
+    render(<AskPanel meetingId="m-hair" onLocate={(quote) => opened.push(quote)} />)
     await ask()
 
     const citation = await screen.findByRole('button', { name: /la grille achats plafonne/ })
@@ -142,7 +142,7 @@ describe('the panel keeps what it answered', () => {
     bridge.when('meeting:ask', (payload) =>
       answer({ question: (payload as { question: string }).question }),
     )
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
 
     await ask('Quel TJM ?')
     await screen.findByText('Quel TJM ?')
@@ -154,7 +154,7 @@ describe('the panel keeps what it answered', () => {
 
   test('the box empties, so the question is on screen once', async () => {
     bridge.when('meeting:ask', () => answer({ question: 'Quel TJM ?' }))
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask('Quel TJM ?')
 
     await screen.findByText(/plafonne à 550 €/)
@@ -171,7 +171,7 @@ describe('the panel keeps what it answered', () => {
    */
   test('the suggestions not yet asked stay on offer', async () => {
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Qui décide, et quand ?' }))
@@ -186,7 +186,7 @@ describe('the panel keeps what it answered', () => {
 describe('what it refuses to pretend', () => {
   test('« the record does not say » is an answer, not an error', async () => {
     bridge.when('meeting:ask', () => answer({ answered: false, answer: '', citations: [] }))
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask('Ont-ils parlé de RGPD ?')
 
     expect(await screen.findByText(/ne permet pas de répondre/)).toBeTruthy()
@@ -201,7 +201,7 @@ describe('what it refuses to pretend', () => {
         'Aucun modèle de langage n’est configuré — ajoutez-en un dans Réglages, « Modèle de langage ».',
       )
     })
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask()
 
     const alert = await screen.findByRole('alert')
@@ -213,7 +213,7 @@ describe('what it refuses to pretend', () => {
     // Never the model's restatement of it: a question that came back subtly
     // reworded is a screen quietly changing what was asked.
     bridge.when('meeting:ask', () => answer({ question: 'Une autre question' }))
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask('Quel TJM ?')
 
     // The panel prints what the answer carries, and `verifyAnswer` carries the
@@ -225,7 +225,7 @@ describe('what it refuses to pretend', () => {
 describe('it writes nothing and confirms nothing (DEC-4, DEC-5)', () => {
   test('asking sends exactly one channel, and it is the read', async () => {
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
     await ask()
     await waitFor(() => expect(screen.getByText(/plafonne à 550 €/)).toBeTruthy())
 
@@ -235,7 +235,7 @@ describe('it writes nothing and confirms nothing (DEC-4, DEC-5)', () => {
 
   test('the suggestions are scaffolding and leave once the box has been used', async () => {
     bridge.when('meeting:ask', () => answer())
-    render(<AskPanel meetingId="m-1" />)
+    render(<AskPanel meetingId="m-hair" />)
 
     const suggestion = screen.getByRole('button', { name: 'Qui décide, et quand ?' })
     await act(async () => {

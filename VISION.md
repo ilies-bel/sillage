@@ -666,6 +666,8 @@ same hue (200°), darkened, ratios measured against white.
 
 /* spacing — five steps, each named after what it spaces. Derived from what the
    screens already repeat, not from a generic 4/8/16 ladder. */
+--space-hair:     4px;    /* a caption under its line, the meter's bars */
+--space-snug:     8px;    /* a glyph to its word, a list row's own padding */
 --space-tight:    6px;
 --space-inline:   12px;
 --space-row:      16px;

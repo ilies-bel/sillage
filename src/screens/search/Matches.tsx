@@ -39,7 +39,7 @@ export function Matches({ matches, className }: { matches: readonly HistoryMatch
   return (
     <ul className={className}>
       {matches.map((match) => (
-        <li key={match.where} className="text-muted flex gap-2 text-meta">
+        <li key={match.where} className="text-muted flex gap-snug text-meta">
           {/*
             `w-28` and not `w-24`: « Moments marqués » is the longest of the five
             names and wrapped to two lines in ninety-six pixels, which put the

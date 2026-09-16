@@ -214,7 +214,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         failed to load. `mx-auto` on the header, the body and the footer alike,
         so the three stay on one axis as the step changes height.
       */}
-      <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-4 pt-7">
+      <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-row pt-7">
         {/* See `ui/Logo.tsx` — this drew the previous product's mark, invisibly. */}
         <Logo className="h-8 w-8 self-center" />
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
@@ -307,7 +307,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
             `aria-hidden` and the `<ol>` carries the sentence for anyone who
             cannot see it.
           */}
-          <ol className="flex shrink-0 items-center gap-1.5" aria-label={`Étape ${index + 1} sur 3`}>
+          <ol className="flex shrink-0 items-center gap-tight" aria-label={`Étape ${index + 1} sur 3`}>
             {ORDER.map((id, at) => (
               <li
                 key={id}
@@ -366,7 +366,7 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
 function Quoi() {
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-title leading-tight">
+      <h2 className="text-strong font-display mb-inline text-title leading-tight">
         Sillage écoute l’appel, il n’y participe pas.
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
@@ -508,7 +508,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
 
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-title leading-tight">
+      <h2 className="text-strong font-display mb-inline text-title leading-tight">
         Ce dont Sillage a besoin
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
@@ -572,7 +572,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                   />
                 </span>
               </div>
-              <p className="text-muted measure mt-1 text-ui leading-relaxed">{NEEDS[id].why}</p>
+              <p className="text-muted measure mt-hair text-ui leading-relaxed">{NEEDS[id].why}</p>
 
               {/*
                 Consent, when the channel answered: the sentence names the
@@ -583,7 +583,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                 is false and the sentence is the whole of what can be said.
               */}
               {permissionRow && permissionRow.state !== 'ready' ? (
-                <div className="mt-2 flex items-baseline gap-inline">
+                <div className="mt-snug flex items-baseline gap-inline">
                   <p className="text-warn measure min-w-0 flex-1 text-ui">{permissionRow.reason}</p>
                   {permissionRow.canOpenSettings ? (
                     <Button
@@ -597,14 +597,14 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                 </div>
               ) : null}
               {permissionRow && paneRefused ? (
-                <p className="text-muted measure mt-1 text-ui leading-relaxed">
+                <p className="text-muted measure mt-hair text-ui leading-relaxed">
                   Les réglages de confidentialité ne se sont pas ouverts. Ouvrez-les vous-même :
                   l’autorisation de Sillage s’y trouve avec celles des autres applications.
                 </p>
               ) : null}
 
               {!permissionRow && row && row.state !== 'ok' ? (
-                <div className="mt-2 flex items-baseline gap-inline">
+                <div className="mt-snug flex items-baseline gap-inline">
                   <p className="text-warn min-w-0 flex-1 text-ui">{row.reason}</p>
                   {/*
                     Two remedies and they are not interchangeable. A connector
@@ -722,7 +722,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
 function Essai({ onReglages }: { onReglages: () => void }) {
   return (
     <section>
-      <h2 className="text-strong font-display mb-3 text-title leading-tight">
+      <h2 className="text-strong font-display mb-inline text-title leading-tight">
         Votre premier appel
       </h2>
       <p className="text-body mb-block text-copy leading-relaxed">
@@ -778,9 +778,9 @@ function Essai({ onReglages }: { onReglages: () => void }) {
  */
 function Beat({ n, title, says }: { n: string; title: string; says: readonly string[] }) {
   return (
-    <li className="flex gap-3">
+    <li className="flex gap-inline">
       <span className="text-brand-700 w-4 shrink-0 tabular-nums text-copy font-semibold">{n}</span>
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-hair">
         <h3 className="text-strong text-copy font-semibold">{title}</h3>
         {says.map((line) => (
           <p key={line} className="text-muted measure text-ui leading-relaxed">

@@ -143,7 +143,7 @@ export function SectionNav<Id extends string>({
                     existing `transition`. `Button`'s docblock carries the
                     measurement and the exclusions.
                   */
-                  'flex w-full items-center gap-2 border-l-2 px-row py-2 text-left text-ui transition active:translate-y-px',
+                  'flex w-full items-center gap-snug border-l-2 px-row py-snug text-left text-ui transition active:translate-y-px',
                   /*
                     **`hover:bg-card`, a lift rather than a tint.** This was
                     `hover:bg-subtle`, which works on Réglages' `--bg-card-soft`

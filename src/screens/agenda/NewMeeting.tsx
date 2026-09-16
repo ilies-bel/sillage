@@ -290,7 +290,7 @@ export function NewMeeting({
       onKeyDown={(event) => {
         if (event.key === 'Escape') close()
       }}
-      className="border-card bg-card-soft animate-rise-in flex items-center gap-2 rounded-sm border p-1.5"
+      className="border-card bg-card-soft animate-rise-in flex items-center gap-snug rounded-sm border p-tight"
     >
       {/*
         Both optional, and both say so. A meeting placed on Thursday with no
@@ -305,35 +305,35 @@ export function NewMeeting({
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Objet (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-2.5 py-1.5 text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-snug.5 py-tight text-ui"
       />
       <input
         value={client}
         onChange={(event) => setClient(event.target.value)}
         placeholder="Client (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-2.5 py-1.5 text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-snug.5 py-tight text-ui"
       />
 
-      <label className="text-muted flex items-center gap-2 text-ui">
+      <label className="text-muted flex items-center gap-snug text-ui">
         <span>{upperFirst(formatDayMedium(noonOf(day)))}</span>
         <input
           type="time"
           value={clock}
           aria-label="Heure de la réunion"
           onChange={(event) => setClock(event.target.value)}
-          className="bg-inner border-card text-strong w-24 rounded-sm border px-2.5 py-1.5 text-ui tabular-nums"
+          className="bg-inner border-card text-strong w-24 rounded-sm border px-snug.5 py-tight text-ui tabular-nums"
         />
       </label>
 
       <Button type="submit" variant="primary" {...unavailable(busy, 'Création de la réunion…')}>
         {busy ? '…' : 'Ajouter'}
       </Button>
-      <Button variant="text" className="px-2 py-1.5" onClick={close}>
+      <Button variant="text" className="px-snug py-tight" onClick={close}>
         Annuler
       </Button>
       {failure ? (
-        <span role="alert" className="text-danger px-1 text-ui">
+        <span role="alert" className="text-danger px-hair text-ui">
           {failure}
         </span>
       ) : null}

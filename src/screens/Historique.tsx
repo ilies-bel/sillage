@@ -222,8 +222,8 @@ export function Historique({
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="px-gutter pb-4 pt-7">
-        <div className="flex items-baseline gap-4">
+      <header className="px-gutter pb-row pt-7">
+        <div className="flex items-baseline gap-row">
           <Button variant="nav" onClick={onBack}>
             ‹ Calendrier
           </Button>
@@ -268,12 +268,12 @@ export function Historique({
             data axes are the calendar's: see `SearchBarProps.dataAxes`.
           */
           dataAxes={false}
-          className="mt-4"
+          className="mt-row"
         />
       </header>
 
       {search.failure ? (
-        <p role="alert" className="text-danger border-subtle border-b px-gutter py-1.5 text-ui">
+        <p role="alert" className="text-danger border-subtle border-b px-gutter py-tight text-ui">
           {search.failure}
         </p>
       ) : null}
@@ -409,7 +409,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
    * and left « Mes notes » orphaned below a sliced title. The rep opened a call
    * and the first thing they could no longer read was which call it was.
    *
-   * `scroll-mt-2` on the `li` keeps a hair of space above the title so it lands
+   * `scroll-mt-snug` on the `li` keeps a hair of space above the title so it lands
    * as a whole row rather than flush against the cut, and `block: 'start'`
    * honours it.
    *
@@ -431,11 +431,11 @@ function Row({ row, expanded, onToggle }: RowProps) {
     <li
       ref={self}
       className={cn(
-        'scroll-mt-2 overflow-hidden',
+        'scroll-mt-snug overflow-hidden',
         // The stroke marks the open record, not the list. `-mx-px` so the
         // border sits over the hairlines rather than beside them, and the row
         // does not step sideways as it opens.
-        expanded ? 'bg-card border-card -mx-px my-1 rounded-sm border' : 'bg-transparent',
+        expanded ? 'bg-card border-card -mx-px my-hair rounded-sm border' : 'bg-transparent',
       )}
     >
       <button
@@ -467,7 +467,7 @@ function Row({ row, expanded, onToggle }: RowProps) {
         </UiRow>
       </button>
 
-      <Matches matches={row.matches} className="px-5 pb-2.5" />
+      <Matches matches={row.matches} className="px-block pb-snug.5" />
       <PushFailure intents={row.intents} />
 
       {expanded ? <Record meetingId={meeting.id} intents={row.intents} onReady={settle} /> : null}
@@ -516,7 +516,7 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
   if (failed.length === 0) return null
 
   return (
-    <div className="px-5 pb-2.5">
+    <div className="px-block pb-snug.5">
       {failed.map((intent) => (
         <p key={intent.intentId} className="text-ui">
           <span className="text-warn">{intent.label} — échec.</span>{' '}
@@ -594,15 +594,15 @@ function Record({
 
   if (failure) {
     return (
-      <p role="alert" className="text-danger px-5 pb-4 text-ui">
+      <p role="alert" className="text-danger px-block pb-row text-ui">
         {failure}
       </p>
     )
   }
-  if (!record) return <p className="text-muted px-5 pb-4 text-ui">Chargement…</p>
+  if (!record) return <p className="text-muted px-block pb-row text-ui">Chargement…</p>
 
   return (
-    <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-5 py-4">
+    <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-block py-row">
       {/*
         **No « TRANSCRIPTION » over it.** A transcript names itself: every row is
         an offset, a side and a sentence, and nothing else on this record looks
@@ -662,7 +662,7 @@ function Record({
         meetingId={meetingId}
         onLocate={(quote) => setLocated(quote)}
         interlocuteurs={record.interlocuteurs}
-        className="border-subtle mt-3 border-t pt-3"
+        className="border-subtle mt-inline border-t pt-inline"
       />
       </div>
 
@@ -768,13 +768,13 @@ function Section({
         is nothing: a captionless pane with no *Copier* draws no row at all rather
         than an empty 24-pixel band above its first line.
 
-        A pane that keeps only the control gets no `mb-2` — the 8 px under a 10 px
+        A pane that keeps only the control gets no `mb-snug` — the 8 px under a 10 px
         uppercase eyebrow is what stops it touching the prose, and a button sitting
         at the far right of the row, four hundred pixels from the first word, is not
         near anything to be held off.
       */}
       {title || copy ? (
-        <div className={cn('flex items-center gap-inline', title ? 'mb-2' : null)}>
+        <div className={cn('flex items-center gap-inline', title ? 'mb-snug' : null)}>
           {/*
             `h2`, and through the same component every other screen's section
             header goes through.
@@ -825,7 +825,7 @@ function Section({
         `bridge-stub.mjs` answers `history:record` with six segments, so every
         screenshot ever taken showed a record that fits.
       */}
-      <ReadingColumn subject={subject} className="measure max-h-72 pr-1">
+      <ReadingColumn subject={subject} className="measure max-h-72 pr-hair">
         {children}
       </ReadingColumn>
     </section>
@@ -909,20 +909,20 @@ function Transcript({
   return (
     <>
     {segments.length === 0 ? (
-      <p className="text-muted mb-1.5 text-ui">
+      <p className="text-muted mb-tight text-ui">
         Aucune transcription pour cet appel — seuls vos moments marqués sont ci-dessous.
       </p>
     ) : null}
-    <ul className="space-y-1">
+    <ul className="space-y-hair">
       {interleaveMarks(segments, marks).map((row) => {
         if (row.kind === 'mark') {
           return (
-            <li key={row.key} className="flex gap-2 text-ui">
+            <li key={row.key} className="flex gap-snug text-ui">
               <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold">
                 {formatTime(row.mark.at)}
               </span>
               <span className="text-brand-700 w-12 shrink-0 text-meta font-semibold">marqué</span>
-              <span className="text-strong measure border-brand-500 min-w-0 flex-1 border-l-2 pl-2">
+              <span className="text-strong measure border-brand-500 min-w-0 flex-1 border-l-2 pl-snug">
                 {row.mark.note === '' ? 'Marqué pendant l’appel.' : row.mark.note}
               </span>
             </li>
@@ -937,7 +937,7 @@ function Transcript({
           <li
             key={row.key}
             ref={isHit ? hit : undefined}
-            className={`flex gap-2 rounded-sm text-ui ${isHit ? 'bg-brand-50 -mx-1 px-1 py-0.5' : ''}`}
+            className={`flex gap-snug rounded-sm text-ui ${isHit ? 'bg-brand-50 -mx-hair px-hair py-0.5' : ''}`}
           >
             <span className="text-muted w-10 shrink-0 tabular-nums text-meta">
               {formatOffset(segment.startMs)}
@@ -992,10 +992,10 @@ function Extraction({ fields }: { fields: readonly ReviewField[] }) {
   }
 
   return (
-    <dl className="space-y-1.5">
+    <dl className="space-y-tight">
       {fields.map((field) => (
         <div key={field.key}>
-          <dt className="text-muted flex items-baseline gap-2 text-meta">
+          <dt className="text-muted flex items-baseline gap-snug text-meta">
             {field.label}
             {/* `font-semibold`, the same weight the rail and the document give
                 it: `--warn` and `--text-muted` differ by 0.001 in relative
@@ -1027,9 +1027,9 @@ function PushStatus({ intents }: { intents: readonly HistoryIntent[] }) {
   if (intents.length === 0) return null
 
   return (
-    <div className="mt-4">
-      <h3 className="pane-label mb-2">Envois</h3>
-      <ul className="space-y-1">
+    <div className="mt-row">
+      <h3 className="pane-label mb-snug">Envois</h3>
+      <ul className="space-y-hair">
         {intents.map((intent) => (
           <li key={intent.intentId} className="text-ui">
             <span className="text-body">{intent.label}</span>{' '}

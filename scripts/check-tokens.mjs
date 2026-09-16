@@ -192,10 +192,50 @@ const TAILWIND_SIZES = /^(?:xs|sm|base|lg|xl|[2-9]xl)$/
 const isSize = (suffix) =>
   suffix !== undefined && (TAILWIND_SIZES.test(suffix) || /^\[[\d.]+(?:px|rem|em)\]$/.test(suffix))
 
+/**
+ * **The fifth rule: a spacing step that already has a name.**
+ *
+ * `tailwind.config.js` adds the named scale *alongside* Tailwind's numeric one,
+ * deliberately — « the numeric utilities stay available for the one-off cases
+ * that are not part of the system ». What that permits is a second spelling of
+ * a step the system already names, and measured before this rule existed, the
+ * product was **27.8 %** on the named scale: 551 spacing utilities, 379 of them
+ * numeric, and **154 of those spelling a step the named scale already had**.
+ * `gap-3` appeared 61 times beside `gap-inline`'s 38 — the same 12 px, written
+ * two ways, so no reviewer could read rhythm off the source and the axis scored
+ * 5 for four consecutive rounds.
+ *
+ * The two most-used values were not a spelling problem but a missing rung: 8 px
+ * ×105 and 4 px ×75, more than any named step, on a scale documented as
+ * « derived from what the screens already repeat ». `--space-snug` and
+ * `--space-hair` are those two, and the codemod that followed took the product
+ * to 85 %.
+ *
+ * Only exact equality is judged. A value the scale does not name — 2 px, 10 px,
+ * 40 px — is the one-off case the config makes room for and is not this rule's
+ * business. The px are read out of `tokens.css` rather than copied, so a rung
+ * added there is enforced here on the same commit.
+ */
+const SPACING_STEPS = (() => {
+  const css = readFileSync(join(ROOT, 'src/design/tokens.css'), 'utf8')
+  const byPx = new Map()
+  for (const [, name, px] of css.matchAll(/--space-([\w-]+):\s*(\d+)px/g)) {
+    byPx.set(Number(px), name)
+  }
+  return byPx
+})()
+/** Tailwind's numeric spacing: `n` → `n × 4px`, plus the literal `px` → 1px. */
+const stepPx = (suffix) => (suffix === 'px' ? 1 : Number(suffix) * 4)
+const SPACING = new RegExp(
+  String.raw`(?<![\w-])((?:p|m)(?:[xytblr])?|gap(?:-[xy])?|space-[xy])-(px|\d+(?:\.\d+)?)(?![\w-])`,
+  'g',
+)
+
 const violations = []
 const offScale = []
 const deadAlpha = []
 const cancelled = []
+const renamed = []
 let checked = 0
 let exempted = 0
 
@@ -240,6 +280,14 @@ for (const file of files) {
         offScale.push(`${file}:${i + 1}: ${match[0]} — ${group} declares ${known}\n      ${line.trim()}`)
       }
     }
+    SPACING.lastIndex = 0
+    for (const match of line.matchAll(SPACING)) {
+      const name = SPACING_STEPS.get(stepPx(match[2]))
+      if (name === undefined) continue
+      renamed.push(
+        `${file}:${i + 1}: ${match[0]} — ${stepPx(match[2])}px is \`--space-${name}\`, write \`${match[1]}-${name}\`\n      ${line.trim()}`,
+      )
+    }
     for (const { utility, by, why } of CANCELS) {
       const hit = utility.exec(line)
       if (!hit) continue
@@ -254,6 +302,19 @@ if (cancelled.length > 0) {
   console.error(`\nutilities that cancel each other — the class is right and the rule never applies (${cancelled.length}):\n`)
   for (const v of cancelled) console.error(`  ${v}`)
   console.error('\nDrop the display utility, or drop the clamp — the two cannot both be meant.\n')
+  process.exit(1)
+}
+
+if (renamed.length > 0) {
+  console.error(
+    `\nspacing written off a scale that names it — two spellings of one step (${renamed.length}):\n`,
+  )
+  for (const v of renamed) console.error(`  ${v}`)
+  console.error(
+    '\nThe named step and the numeric utility are the same pixels. Two spellings mean\n' +
+      'nobody can read the rhythm off the source, which is how this stayed at 27.8%\n' +
+      'on the scale for four rounds. Use the name; add a rung if the value deserves one.\n',
+  )
   process.exit(1)
 }
 

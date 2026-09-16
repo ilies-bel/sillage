@@ -2,7 +2,7 @@
  * A chip: a small bordered or tinted tag, sometimes pressable.
  *
  * Two real shapes in the code today — Review's sibling-account suggestions
- * (`border-card bg-inner text-body … px-2 py-0.5 text-[11px]`) and the uppercase
+ * (`border-card bg-inner text-body … px-snug py-0.5 text-[11px]`) and the uppercase
  * letterspaced micro-labels (*Prêt*, *Utilisé*, *Sur cette machine*) that
  * Agenda and Réglages both write out longhand.
  *
@@ -35,9 +35,9 @@ const chip = cva('inline-flex shrink-0 items-center', {
        * excluded from it; a `choice` chip confirms nothing and is safe.
        */
       choice:
-        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-2 py-0.5 text-meta transition',
+        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-snug py-0.5 text-meta transition',
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
-      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-2 py-0.5 text-meta',
+      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-0.5 text-meta',
       /** The uppercase micro-label. Not a control, just a word in a row. */
       label: 'text-muted text-label font-semibold uppercase tracking-wider',
     },

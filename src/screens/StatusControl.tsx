@@ -126,7 +126,7 @@ export function StatusControl({ onReglages }: StatusControlProps) {
    * Nothing, and nothing means nothing: no wrapper, no zero-height box holding a
    * margin, no reserved width. Measured on the shipped header at 1280×800 and
    * 960×600, identically at both — the right-hand group goes from three children
-   * to two and loses exactly the pill's 131.5 px plus one `gap-3` (359.1 →
+   * to two and loses exactly the pill's 131.5 px plus one `gap-inline` (359.1 →
    * 215.6), and the header keeps its shape: 82.3 → **81.6** px tall, the 0.7 px
    * being the chip's own border and padding hanging below the baseline its
    * neighbours sit on. Nothing in the layout was reserving space for this
@@ -164,7 +164,7 @@ export function StatusControl({ onReglages }: StatusControlProps) {
     <Button
       variant="text"
       onClick={onReglages}
-      className="bg-subtle border-subtle animate-rise-in inline-flex items-center gap-tight rounded-sm border px-2 py-1"
+      className="bg-subtle border-subtle animate-rise-in inline-flex items-center gap-tight rounded-sm border px-snug py-hair"
     >
       {/* `text-inherit` so the label follows the button's own hover, rather
           than sitting at `text-muted` while the chevron beside it lifts. */}

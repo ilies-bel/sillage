@@ -208,6 +208,8 @@ module.exports = {
        * part of the system.
        */
       spacing: {
+        hair: 'var(--space-hair)',
+        snug: 'var(--space-snug)',
         tight: 'var(--space-tight)',
         inline: 'var(--space-inline)',
         row: 'var(--space-row)',

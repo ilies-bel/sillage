@@ -63,15 +63,15 @@ export function EmptyState({
       {icon ? (
         <span
           aria-hidden
-          className="bg-brand-100 text-brand-700 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+          className="bg-brand-100 text-brand-700 mx-auto mb-row flex h-12 w-12 items-center justify-center rounded-full"
         >
           {icon}
         </span>
       ) : null}
       <p className="measure text-strong text-copy font-medium">{children}</p>
-      {reason ? <p className="measure text-muted mt-1.5 text-ui">{reason}</p> : null}
-      {hint ? <p className="text-muted mt-4 text-ui">{hint}</p> : null}
-      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+      {reason ? <p className="measure text-muted mt-tight text-ui">{reason}</p> : null}
+      {hint ? <p className="text-muted mt-row text-ui">{hint}</p> : null}
+      {action ? <div className="mt-row flex justify-center">{action}</div> : null}
     </div>
   )
 }

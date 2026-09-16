@@ -163,7 +163,7 @@ export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
        */
       className="flex shrink-0 flex-col items-end gap-0.5"
     >
-      <div className="flex items-stretch gap-1.5">
+      <div className="flex items-stretch gap-tight">
       {/*
         The key. Two words, one per half, on the same baselines the bars grow
         from — so the label is not describing the meter, it is *on* the row it
@@ -227,7 +227,7 @@ export function LevelMeter({ meetingId, variant = 'header' }: LevelMeterProps) {
         it names.
       */}
       {variant === 'pill' ? null : (
-        <span className="meter-key text-muted flex shrink-0 items-center gap-1 whitespace-nowrap text-meta leading-none">
+        <span className="meter-key text-muted flex shrink-0 items-center gap-hair whitespace-nowrap text-meta leading-none">
           <span aria-hidden className="bg-meter-dropped inline-block h-2 w-2 rounded-bar" />
           non transcrit
         </span>

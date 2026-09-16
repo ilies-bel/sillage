@@ -355,7 +355,7 @@ export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = fal
             rail and the content, as everywhere else in the product.
           */}
           <div className="measure">
-          {failure ? <p className="text-danger mb-3 text-ui">{failure}</p> : null}
+          {failure ? <p className="text-danger mb-inline text-ui">{failure}</p> : null}
 
           {section === 'transcription' ? (
             <>
@@ -620,7 +620,7 @@ function Sheet({
             icon-only rectangle with a tooltip: it clears 24×24 and it carries a
             French name.
           */}
-          <div className="mb-block flex items-baseline gap-4">
+          <div className="mb-block flex items-baseline gap-row">
             <h2 className="font-display text-strong min-w-0 flex-1 truncate text-display leading-none">
               {title}
             </h2>
@@ -673,14 +673,14 @@ function Raccourcis() {
                   were silent on the screen a rep was looking at, and a table
                   that promises six global keys is worse than no table. */}
               {shortcut.where ? (
-                <span className="text-muted ml-2 text-meta">{shortcut.where}</span>
+                <span className="text-muted ml-snug text-meta">{shortcut.where}</span>
               ) : null}
             </span>
             {/*
               `kbd`, and not a styled span: this is a key on a keyboard, and the
               element that says so is the one a screen reader announces as one.
             */}
-            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-0.5 font-mono text-meta">
               {shortcut.keys}
             </kbd>
           </Row>
@@ -711,7 +711,7 @@ function Raccourcis() {
         {NOTE_SHORTCUTS.map((shortcut) => (
           <Row as="div" key={shortcut.combo} align="center">
             <span className="text-strong text-copy min-w-0 flex-1">{shortcut.label}</span>
-            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-meta">
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-0.5 font-mono text-meta">
               {shortcut.keys}
             </kbd>
           </Row>
@@ -723,7 +723,7 @@ function Raccourcis() {
 
 /** A literal a rep types, inline in a sentence. `code`, because that is what it is. */
 function Typed({ children }: { children: ReactNode }) {
-  return <code className="text-body bg-subtle rounded-sm px-1 font-mono">{children}</code>
+  return <code className="text-body bg-subtle rounded-sm px-hair font-mono">{children}</code>
 }
 
 /** The paragraph every pane opens with: muted, one column wide, never truncated. */
@@ -882,9 +882,9 @@ function MentionSentence({
           value={draft}
           maxLength={MENTION_MAX_CHARS}
           onChange={(event) => setDraft(event.target.value)}
-          className="measure text-body bg-inner border-subtle mt-1 w-full resize-none rounded-sm border px-2 py-1 text-ui leading-relaxed [field-sizing:content]"
+          className="measure text-body bg-inner border-subtle mt-hair w-full resize-none rounded-sm border px-snug py-hair text-ui leading-relaxed [field-sizing:content]"
         />
-        <div className="mt-1 flex items-center gap-inline">
+        <div className="mt-hair flex items-center gap-inline">
           <Button
             type="submit"
             variant="bordered"
@@ -1012,7 +1012,7 @@ interface ModelsProps {
  */
 function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) {
   return (
-    <section className="mt-8">
+    <section className="mt-gutter">
       <SectionHeader>Modèles sur cette machine</SectionHeader>
       <Lede>
         Le modèle fourni avec le logiciel est déjà présent et connaît le vocabulaire de la
@@ -1038,12 +1038,12 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
                     what it loads.
                   */}
                   {row.selected ? (
-                    <Chip variant="brand" className="ml-2 uppercase tracking-wider">
+                    <Chip variant="brand" className="ml-snug uppercase tracking-wider">
                       Chargé
                     </Chip>
                   ) : null}
                   {row.bundled ? (
-                    <Chip variant="label" className="ml-2">
+                    <Chip variant="label" className="ml-snug">
                       fourni
                     </Chip>
                   ) : null}
@@ -1051,7 +1051,7 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
                 <span className="text-muted block text-meta">{MODEL_STATE[row.status](row)}</span>
               </span>
 
-              <span className="flex shrink-0 items-center gap-3">
+              <span className="flex shrink-0 items-center gap-inline">
                 {/*
                   **Size, accuracy and speed — the three the lede promises.**
 
@@ -1156,7 +1156,7 @@ function Providers({
 
       {/* Why nothing is selected, from the registry's own refusal (DEC-26). */}
       {section.selected === null && section.reason ? (
-        <p className="text-warn mb-2 measure text-ui">{section.reason}</p>
+        <p className="text-warn mb-snug measure text-ui">{section.reason}</p>
       ) : null}
 
       <List as="div">
@@ -1165,7 +1165,7 @@ function Providers({
           if (rows.length === 0) return null
           return (
             <div key={tier}>
-              <Row as="div" className="bg-subtle py-1">
+              <Row as="div" className="bg-subtle py-hair">
                 <Chip variant="label">{TIER_LABEL[tier]}</Chip>
               </Row>
               {rows.map((row) => (
@@ -1228,7 +1228,7 @@ function ProviderLine({
               and `--brand-900` on `--brand-100` is 10.55:1.
             */}
             {row.selected ? (
-              <Chip variant="brand" className="ml-2 uppercase tracking-wider">
+              <Chip variant="brand" className="ml-snug uppercase tracking-wider">
                 Utilisé
               </Chip>
             ) : null}
@@ -1261,8 +1261,8 @@ function ProviderLine({
           ) : null}
         </span>
 
-        <span className="flex shrink-0 items-center gap-4">
-          <span className="text-muted flex items-center gap-1 text-meta">
+        <span className="flex shrink-0 items-center gap-row">
+          <span className="text-muted flex items-center gap-hair text-meta">
             <span>{RESIDENCY_LABEL[row.residency]}</span>
             {row.cost === 'free' ? null : (
               <>
@@ -1387,7 +1387,7 @@ function SettingField({
   return (
     <Row as="div" className="bg-subtle">
       <form
-        className="flex w-full items-center gap-2"
+        className="flex w-full items-center gap-snug"
         onSubmit={(event) => {
           event.preventDefault()
           onSave(row.id, field.key, value.trim())
@@ -1404,7 +1404,7 @@ function SettingField({
           id={`field-${row.id}-${field.key}`}
           type="text"
           spellCheck={false}
-          className="border-subtle bg-canvas min-w-0 flex-1 rounded border px-2 py-1 text-ui"
+          className="border-subtle bg-canvas min-w-0 flex-1 rounded border px-snug py-hair text-ui"
           placeholder={field.placeholder}
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -1450,7 +1450,7 @@ function CredentialField({
   return (
     <Row as="div" className="bg-subtle">
       <form
-        className="flex w-full items-center gap-2"
+        className="flex w-full items-center gap-snug"
         onSubmit={(event) => {
           event.preventDefault()
           if (trimmed.length > 0) onSave(row.id, trimmed)
@@ -1465,7 +1465,7 @@ function CredentialField({
           type="password"
           autoComplete="off"
           spellCheck={false}
-          className="border-subtle bg-canvas min-w-0 flex-1 rounded border px-2 py-1 text-ui"
+          className="border-subtle bg-canvas min-w-0 flex-1 rounded border px-snug py-hair text-ui"
           placeholder="Collez la clé ici"
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -1708,7 +1708,7 @@ function MicrosoftAccount({ auth }: { auth: SettingsSnapshot['auth'] }) {
   }, [])
 
   return (
-    <List as="div" className="mb-2">
+    <List as="div" className="mb-snug">
       <Row as="div" align="center">
         <span className="text-body w-32 shrink-0 text-copy">Microsoft 365</span>
         <span className="min-w-0 flex-1">
@@ -1858,7 +1858,7 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
       <SectionHeader as="h3">VerySwing — capacités du tenant</SectionHeader>
 
       {report === null ? (
-        <p className="text-muted border-card bg-card-soft rounded-lg border px-row py-3 text-ui">
+        <p className="text-muted border-card bg-card-soft rounded-lg border px-row py-inline text-ui">
           {reason ?? 'sonde indisponible'}
         </p>
       ) : (
@@ -1866,7 +1866,7 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
           {/* `.measure` on the sentence itself: it is set at `--type-ui`, one
               step below the body, so a box sized for body copy runs it to
               ninety-seven characters. */}
-          <p className={`mb-2 measure text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
+          <p className={`mb-snug measure text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
             {report.summary} · {formatAgo(report.at, Date.now())}
           </p>
           <List>
@@ -1875,7 +1875,7 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
             ))}
           </List>
           {report.columnGaps.length > 0 ? (
-            <p className="text-warn mt-2 text-meta">
+            <p className="text-warn mt-snug text-meta">
               Colonnes non déclarées par ce tenant :{' '}
               {report.columnGaps.map((gap) => gap.column).join(', ')}
             </p>
@@ -1890,7 +1890,7 @@ function Finding({ finding }: { finding: CapabilityFinding }) {
   const bad = finding.state === 'missing' || finding.state === 'denied'
 
   return (
-    <Row className="py-2">
+    <Row className="py-snug">
       <span className="text-body min-w-0 flex-1 text-ui">
         {finding.label}
         {bad ? <span className="text-muted block text-meta">{finding.matters}</span> : null}
@@ -2090,7 +2090,7 @@ function UpdatePanel() {
       ) : null}
 
       {failure ? (
-        <p role="alert" className="text-danger mt-3 text-ui">
+        <p role="alert" className="text-danger mt-inline text-ui">
           {failure}
         </p>
       ) : null}
@@ -2130,7 +2130,7 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
         réunions n’expire jamais et n’est supprimé que par vous.
       </Lede>
 
-      <div className="mb-3 flex flex-wrap items-start gap-3">
+      <div className="mb-inline flex flex-wrap items-start gap-inline">
         <div>
           <BusyButton
             busy={busy}
@@ -2139,7 +2139,7 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
           >
             Diagnostics
           </BusyButton>
-          <p className="text-muted mt-1 max-w-[15rem] text-meta">
+          <p className="text-muted mt-hair max-w-[15rem] text-meta">
             Sans contenu de conversation. Peut être envoyé au support.
           </p>
         </div>
@@ -2156,20 +2156,20 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
           >
             Diagnostic complet — inclut le contenu des conversations clients
           </BusyButton>
-          <p className="text-muted mt-1 max-w-[24rem] text-meta">
+          <p className="text-muted mt-hair max-w-[24rem] text-meta">
             À ne transmettre qu’avec l’accord explicite du client.
           </p>
         </div>
       </div>
 
-      {exported ? <p className="text-muted mb-3 text-meta">{exported}</p> : null}
+      {exported ? <p className="text-muted mb-inline text-meta">{exported}</p> : null}
       {failure ? (
-        <p role="alert" className="text-danger mb-3 text-ui">
+        <p role="alert" className="text-danger mb-inline text-ui">
           {failure}
         </p>
       ) : null}
 
-      <SectionHeader as="h3" className="mb-2">
+      <SectionHeader as="h3" className="mb-snug">
         Erreurs récentes
       </SectionHeader>
       {recent.state.status !== 'ready' ? (
@@ -2194,7 +2194,7 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
       ) : (
         <List>
           {errors.map((event) => (
-            <Row key={event.id} className="py-2 text-meta">
+            <Row key={event.id} className="py-snug text-meta">
               <span className="text-muted w-24 shrink-0">{formatAgo(event.ts, Date.now())}</span>
               <span className="text-muted w-40 shrink-0 truncate font-mono">{event.code}</span>
               <span className="text-body min-w-0 flex-1">{event.message}</span>

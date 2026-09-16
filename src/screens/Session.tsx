@@ -191,7 +191,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         <p className="text-danger text-copy">
           {loaded.state.status === 'failed' ? loaded.state.reason : 'Réunion introuvable'}
         </p>
-        <button type="button" onClick={onBack} className="text-muted mt-3 text-ui underline">
+        <button type="button" onClick={onBack} className="text-muted mt-inline text-ui underline">
           Retour
         </button>
       </Centered>
@@ -203,7 +203,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
       {/* `.session-header` declares the container the pill measures itself
           against; see `index.css`. Below 1080px the pill drops its wording and
           keeps its instrument. */}
-      <header className="session-header border-subtle bg-card flex shrink-0 items-center gap-inline border-b px-gutter py-3">
+      <header className="session-header border-subtle bg-card flex shrink-0 items-center gap-inline border-b px-gutter py-inline">
         <Button variant="nav" onClick={onBack}>
           ‹ Calendrier
         </Button>
@@ -246,7 +246,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           <div
             role="status"
             aria-label="Enregistrement en cours"
-            className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-2 py-1"
+            className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-snug py-hair"
           >
             <Elapsed since={initial.meeting.startedAt} />
             <LevelMeter meetingId={meetingId} />
@@ -342,7 +342,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
       </header>
 
       {saveFailed ? (
-        <p role="alert" className="text-warn border-subtle border-b px-6 py-1.5 text-ui">
+        <p role="alert" className="text-warn border-subtle border-b px-6 py-tight text-ui">
           Enregistrement des notes en attente — nouvelle tentative à la prochaine frappe.
         </p>
       ) : null}

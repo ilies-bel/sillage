@@ -143,7 +143,7 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * the calendar produces reaches it, and past it the truncation is
          * kinder than a header with no room for a control.
          */
-        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-copy font-medium outline-none [field-sizing:content]"
+        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-0.5 font-sans text-copy font-medium outline-none [field-sizing:content]"
       />
       <input
         value={client}
@@ -167,7 +167,7 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
           client in a 144px box leaves a hole between the two halves of what is
           meant to read as one title.
         */
-        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-[4rem] truncate rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-ui outline-none [field-sizing:content]"
+        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-[4rem] truncate rounded-sm border border-transparent bg-transparent px-tight py-0.5 text-ui outline-none [field-sizing:content]"
       />
     </div>
   )

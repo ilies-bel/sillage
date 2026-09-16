@@ -173,7 +173,7 @@ export function SearchBar({
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           maxLength={200}
-          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-2.5 py-1.5 text-ui"
+          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-snug.5 py-tight text-ui"
         />
 
         {onHistorique ? (
@@ -188,7 +188,7 @@ export function SearchBar({
 
       {/* One line: every axis in one scroller, and the reset outside it. */}
       {chips ? (
-      <div className="mt-2 flex items-center gap-tight">
+      <div className="mt-snug flex items-center gap-tight">
         {/* Joined rather than passed as the array: the caller writes
             `clients={result?.clients ?? []}`, so a fresh `[]` arrives on every
             render with no answer yet and an identity dep would re-measure on
@@ -476,5 +476,5 @@ function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }
  * read as one run of thirteen chips.
  */
 function Rule(): ReactNode {
-  return <span aria-hidden className="border-subtle mx-1 h-4 shrink-0 self-center border-l" />
+  return <span aria-hidden className="border-subtle mx-hair h-4 shrink-0 self-center border-l" />
 }

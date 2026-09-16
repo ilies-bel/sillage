@@ -30,7 +30,7 @@ let uninstall: () => void
 const COMPTE_RENDU = '# Néovia Santé\n\n## Résumé\n\nCadrage du renfort data.\n'
 
 const meeting = (over: Partial<Meeting> = {}): Meeting => ({
-  id: 'm-1',
+  id: 'm-hair',
   state: 'recording',
   title: 'Point Acme',
   eventId: null,
@@ -59,7 +59,7 @@ const open = (
     compteRendu,
     recipe,
   }))
-  return render(<Session meetingId="m-1" onBack={() => {}} onReview={() => {}} />)
+  return render(<Session meetingId="m-hair" onBack={() => {}} onReview={() => {}} />)
 }
 
 beforeEach(() => {
@@ -231,7 +231,7 @@ describe('choosing what the compte-rendu will be', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Libre' }))
 
-    await waitFor(() => expect(asked).toEqual({ meetingId: 'm-1', recipe: 'libre' }))
+    await waitFor(() => expect(asked).toEqual({ meetingId: 'm-hair', recipe: 'libre' }))
     // No confirmation strip: there is no document to replace.
     expect(screen.queryByText(/Réécrire le compte-rendu/)).toBeNull()
   })
@@ -326,7 +326,7 @@ describe('the meeting names itself where the rep is, not before the call', () =>
 
     await waitFor(() =>
       expect(bridge.calls.find((c) => c.channel === 'meeting:rename')?.payload).toMatchObject({
-        meetingId: 'm-1',
+        meetingId: 'm-hair',
         title: 'Cadrage Nordis',
       }),
     )

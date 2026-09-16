@@ -63,7 +63,7 @@ export function CalendarGrid({
    */
   return (
     <section aria-label="Calendrier">
-      <header className="mb-2 flex items-center justify-between gap-2">
+      <header className="mb-snug flex items-center justify-between gap-snug">
         {/*
           `min-w-[24px]`, because a chevron is five pixels wide.
           `Button` gives every control 24px of height; the width comes from its
@@ -98,7 +98,7 @@ export function CalendarGrid({
               <th
                 key={day}
                 scope="col"
-                className="text-muted pb-1 text-label font-medium"
+                className="text-muted pb-hair text-label font-medium"
               >
                 {upperFirst(formatWeekdayShort(noonOf(day)))}
               </th>
@@ -131,7 +131,7 @@ export function CalendarGrid({
         back three months and losing today is the one navigation dead end a
         calendar can have.
       */}
-      <div className="mt-2 flex justify-center">
+      <div className="mt-snug flex justify-center">
         <Button
           variant="text"
           onClick={() => {

@@ -453,7 +453,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
         Full width, with the border that separates it from the two columns
         below. The screen is a surface, not a page of floating cards.
       */}
-      <header className="border-subtle flex items-baseline justify-between gap-4 border-b px-gutter pb-4 pt-7">
+      <header className="border-subtle flex items-baseline justify-between gap-row border-b px-gutter pb-row pt-7">
         {/*
           **The page is named by what changed, and the day is drawn once.**
 
@@ -497,7 +497,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month, inRange.length))}
         </h1>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-inline">
           {/*
             The one general status (DEC-32). VISION.md §6 puts it here and
             nowhere else — this header is the only one in the product that is
@@ -644,7 +644,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
               they stay.
             */
             chipsAlways={false}
-            className="mb-3"
+            className="mb-inline"
             /*
               The view switch belongs to the day list, so over search results it
               is four buttons that change nothing — the dead control DEC-26

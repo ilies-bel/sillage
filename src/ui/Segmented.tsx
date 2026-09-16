@@ -92,7 +92,7 @@ export function Segmented<Id extends string>({
                 `transition` — see `Button`'s docblock for the measurement and
                 for the three variants that are deliberately still.
               */
-              'rounded-sm px-inline py-1 text-ui transition active:translate-y-px',
+              'rounded-sm px-inline py-hair text-ui transition active:translate-y-px',
               selected
                 ? 'bg-inner shadow-card text-brand-700 font-medium'
                 : 'text-muted hover:text-body',

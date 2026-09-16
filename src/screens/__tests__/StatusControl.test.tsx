@@ -91,7 +91,7 @@ describe('the healthy state is silent', () => {
      * Not an empty chip either: no element, so no padding, no border, no
      * zero-height box holding a margin. Measured on the shipped header at
      * 1280×800 and 960×600 — the right-hand group loses the pill's 131.5 px and
-     * one `gap-3`, 359.1 → 215.6, and the header's own height is unchanged.
+     * one `gap-inline`, 359.1 → 215.6, and the header's own height is unchanged.
      */
     expect(container.childElementCount).toBe(0)
     expect(container.textContent).toBe('')

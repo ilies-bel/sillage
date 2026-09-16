@@ -132,7 +132,7 @@ export function PendingGates({
 
   return (
     <section className="mt-block">
-      <div className="mb-3 flex items-baseline gap-inline">
+      <div className="mb-inline flex items-baseline gap-inline">
         <SectionHeader className="mb-0 shrink-0">En attente de validation</SectionHeader>
         {/*
           The size, beside the name. Without it the section is a sample with no
@@ -185,7 +185,7 @@ export function PendingGates({
         is thirty pixels up.
       */}
       {hiddenHere > 0 ? (
-        <p className="text-muted -mt-1 mb-2 text-meta">
+        <p className="text-muted -mt-hair mb-snug text-meta">
           {hiddenHere === 1
             ? 'Une autre est dans la liste du jour, au-dessus.'
             : `${hiddenHere} autres sont dans la liste du jour, au-dessus.`}

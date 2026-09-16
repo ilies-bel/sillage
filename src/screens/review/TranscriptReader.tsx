@@ -325,7 +325,7 @@ export function TranscriptReader({
         the `⚠ faible` on the row is stating and is worth repeating here rather
         than leaving the rep to scroll looking for something that is not there.
       */}
-      <div className="border-subtle mb-3 flex items-baseline gap-inline border-b pb-2">
+      <div className="border-subtle mb-inline flex items-baseline gap-inline border-b pb-snug">
       {/*
         `.measure` on the paragraph, for the reason the one below it carries: `ch` resolves
         against the element's own size, so a `--type-meta` line in a column sized for
@@ -406,19 +406,19 @@ export function TranscriptReader({
         the words; they could not tell it apart from nothing.
       */}
       {interlocuteurs.length > 1 ? (
-        <p className="text-muted measure mb-3 text-meta">
+        <p className="text-muted measure mb-inline text-meta">
           Côté client&nbsp;: {interlocuteurs.map((person) => person.name).join(', ')}. Les tours
           sont attribués au canal, jamais à une personne.
         </p>
       ) : null}
 
-      <div className="mb-3 flex items-baseline gap-inline">
+      <div className="mb-inline flex items-baseline gap-inline">
         <input
           value={needle}
           onChange={(event) => setNeedle(event.target.value)}
           aria-label="Rechercher dans la transcription"
           placeholder="Rechercher dans la transcription…"
-          className="text-strong placeholder:text-muted bg-inner border-subtle min-w-0 flex-1 rounded-sm border px-2 py-1 text-ui"
+          className="text-strong placeholder:text-muted bg-inner border-subtle min-w-0 flex-1 rounded-sm border px-snug py-hair text-ui"
         />
         {trimmed === '' ? null : (
           <span className={`shrink-0 text-meta ${matches.size === 0 ? 'text-warn' : 'text-muted'}`}>
@@ -441,14 +441,14 @@ export function TranscriptReader({
         550 » must not offer « la » as a lead.
       */}
       {trimmed !== '' && matches.size === 0 ? (
-        <div className="border-subtle bg-inner mb-3 rounded-sm border p-2">
+        <div className="border-subtle bg-inner mb-inline rounded-sm border p-snug">
           <p className="text-muted measure text-meta">
             {candidates.length === 0
               ? 'Aucun passage ne contient cette phrase, ni aucun de ses termes.'
               : 'Aucun passage ne contient cette phrase. Les plus proches, à vérifier :'}
           </p>
           {candidates.length > 0 ? (
-            <ul className="mt-1.5 space-y-1">
+            <ul className="mt-tight space-y-hair">
               {candidates.map((segment) => (
                 <li key={segment.id}>
                   {/*
@@ -463,7 +463,7 @@ export function TranscriptReader({
                   <button
                     type="button"
                     onClick={() => setPicked(segment.id)}
-                    className="hover:bg-subtle flex w-full gap-2 rounded-sm px-1 py-0.5 text-left transition"
+                    className="hover:bg-subtle flex w-full gap-snug rounded-sm px-hair py-0.5 text-left transition"
                   >
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {formatOffset(segment.startMs)}
@@ -492,18 +492,18 @@ export function TranscriptReader({
         bookmarks with nothing to point at — the rep would have to find the turn
         again, which is the work the mark was made to save.
       */}
-      <ul className="space-y-2">
+      <ul className="space-y-snug">
         {interleaveMarks(segments, marks).map((row) => {
           if (row.kind === 'mark') {
             return (
-              <li key={row.key} className="flex gap-3 px-2">
+              <li key={row.key} className="flex gap-inline px-snug">
                 <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold leading-relaxed">
                   {formatTime(row.mark.at)}
                 </span>
                 <span className="text-brand-700 w-12 shrink-0 text-meta font-semibold leading-relaxed">
                   marqué
                 </span>
-                <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-2 text-ui leading-relaxed">
+                <span className="text-strong border-brand-500 min-w-0 flex-1 border-l-2 pl-snug text-ui leading-relaxed">
                   {row.mark.note === ''
                     ? /*
                         A mark with no note is not an empty mark — the rep pressed
@@ -531,8 +531,8 @@ export function TranscriptReader({
                 that reused the wash would make a match indistinguishable from a
                 verified span, on the screen whose whole job is that distinction.
               */
-              className={`flex gap-3 rounded-sm px-2 py-1 ${cited ? 'bg-brand-50' : ''} ${
-                found && !cited ? 'border-brand-500 border-l-2 pl-1.5' : ''
+              className={`flex gap-inline rounded-sm px-snug py-hair ${cited ? 'bg-brand-50' : ''} ${
+                found && !cited ? 'border-brand-500 border-l-2 pl-tight' : ''
               }`}
             >
               <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">

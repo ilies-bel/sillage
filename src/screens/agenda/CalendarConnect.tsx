@@ -57,7 +57,7 @@ export function CalendarConnect({
               'Non connecté. Vos réunions, leurs participants et l’objet de l’invitation apparaîtront ici.'}
           </p>
           {failure ? (
-            <p role="alert" className="text-danger mt-1 text-meta">
+            <p role="alert" className="text-danger mt-hair text-meta">
               {failure}
             </p>
           ) : null}
