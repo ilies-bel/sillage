@@ -225,6 +225,22 @@ look better », and relaxing the stage to accept it would be precisely the shape
 this repo keeps cataloguing — a check edited to agree with the code it was
 written to judge.
 
+**Second attempt, and the mechanism is now known.** Re-applied and measured:
+the `review` stage is clean with the change (no hidden scrollers, no prose
+overrun, geometry intact), so the layout is not what breaks. What breaks is
+arithmetic. Docking gives the button its own row in the pane, which permanently
+costs every column the button's height of *reading viewport* — and `clientHeight`
+is exactly what the guard's `seen` ranges are built from
+(`seen.current[column] = { from: scrollTop, to: scrollTop + clientHeight }`). A
+smaller viewport is a smaller band per turn, a column that used to fit now does
+not, and the honest-read loop's forty turns stop being enough.
+
+So occlusion is *inherent* to a sticky control over content — padding only
+clears the last line, and a bottom-anchored element sits at the viewport edge
+whatever is behind it — and every fix that removes it changes the viewport the
+guard measures. That is the whole finding, and it is one sentence long now
+instead of a guess.
+
 **What the real fix has to satisfy**, so the next round starts here rather than
 at the beginning: the turn must leave the scroller's flow *without* changing what
 `covered` measures, which means the coverage math has to key off a viewport the
