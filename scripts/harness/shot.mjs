@@ -3648,7 +3648,24 @@ const SCREENS = {
        */
       await field.fill('revenir sur le plafond achats avant de proposer quoi que ce soit')
 
-      const card = page.locator('[data-card]').first()
+      /*
+       * **`.widget-panel-arrive`, not the first `[data-card]`.**
+       *
+       * Three elements carry `data-card` and the **pill** is first in DOM order
+       * (`Widget.tsx`'s `data-pill data-card`). The pill's height is invariant
+       * across this press — 38 px before, 38 px after — so the assertion below
+       * measured a box that cannot move and reported 0 px while the panel it was
+       * written about grew 42. Driven: the paused tray row taken from `h-[38px]`
+       * to 80 px leaves this stage green at both sizes, with all twelve gates and
+       * 152 stagings green, and a `widget:resize` of 42 px going out under the
+       * rep's finger.
+       *
+       * The guard and the fix it guards shipped in the same commit, which is the
+       * habit round 16 named and this is its fourth instance. `widget-arret`,
+       * whose assertion this one says it copied, reads `.widget-panel-arrive` —
+       * the box that actually resizes — and would have caught it.
+       */
+      const card = page.locator('.widget-panel-arrive').first()
       await settled(page)
       const before = await card.boundingBox()
 
