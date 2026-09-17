@@ -2327,6 +2327,195 @@ test('the rep is in the slot they reached last, not the earliest still claiming'
 })
 
 /*
+ * **And the mirror of it: the rep who joins the *earlier* slot and stays there.**
+ *
+ * The test above builds two claimants and drives one direction — the earlier
+ * meeting no-showed, the rep joins the later one. « Which of several claimants
+ * wins » has two directions and the fixture could only express one, so the rule
+ * shipped reading `now`: the greatest anchor among everything claiming at the
+ * instant of the tick.
+ *
+ * `now` advances under a call that does not. Driven on the shipped class
+ * (`scratch/r18-own-offer-replacement.mjs`), the rep joining their 14:00 on a
+ * browser link at 13:56 and still on it at 14:25:
+ *
+ *     14:24  1400=armed 1430=idle
+ *     14:25  1400=armed 1430=armed    ← DEC-46 notifies « Néovia Santé »
+ *     19:00  1400=armed 1430=idle     updateReadiness { safe: false }
+ *
+ * Two harms, both priced by the round before this one and both by the same line.
+ * The day's one filled *Enregistrer* moves to a client the rep is not talking to,
+ * and a press there sends the Aurexia conversation to Néovia's account through a
+ * POST with no idempotency key and no delete verb. And the offer it replaced has
+ * no withdrawal, which the test below this one holds.
+ *
+ * Thirty, forty-five and sixty minutes, mirroring the gaps above. The probe is one
+ * tick either side of the later slot's `ARM_LEAD_MS`, because that is the instant
+ * the two readings diverge — reading `now` fails the second, reading the hold's
+ * origin passes both.
+ */
+test('the offer names the slot the hold began in, not the one now has reached', async () => {
+  const run = async (gapMin: number) => {
+    const h = harness([], null, null)
+    const earlier = h.orchestrator.create({
+      id: 'm-earlier',
+      title: 'Aurexia',
+      clientName: 'Aurexia',
+      scheduledStart: T0,
+    })
+    const later = h.orchestrator.create({
+      id: 'm-later',
+      title: 'Néovia Santé',
+      clientName: 'Néovia Santé',
+      scheduledStart: T0 + gapMin * 60_000,
+    })
+    let held: string | null = null
+    const armed: { subject: string }[] = []
+    const agenda = new Agenda({
+      calendar: h.calendar,
+      orchestrator: h.orchestrator,
+      ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+      meetingSignal: () => ({ running: null, inCall: held }),
+      clock: () => T0,
+      onArmed: (a) => void armed.push(a),
+    })
+
+    // The rep joins their own first call four minutes early and stays on it.
+    const join = T0 - 4 * 60_000
+    await agenda.tick({ now: join - 60_000 })
+    held = 'Navigateur'
+    await agenda.tick({ now: join })
+    await agenda.tick({ now: join + AD_HOC_DWELL_MS })
+
+    // One tick a minute across the later slot's own lead, the call still running.
+    const opens = T0 + gapMin * 60_000 - ARM_LEAD_MS
+    for (let at = join + 60_000; at <= opens + 60_000; at += 60_000) {
+      await agenda.tick({ now: at })
+    }
+
+    const states = {
+      earlier: h.orchestrator.stateOf(earlier.id),
+      later: h.orchestrator.stateOf(later.id),
+    }
+    h.store.close()
+    return { states, subjects: armed.map((a) => a.subject) }
+  }
+
+  for (const gapMin of [30, 45, 60]) {
+    const got = await run(gapMin)
+    assert.equal(
+      got.states.earlier,
+      'armed',
+      `à ${gapMin} min d’écart, la conversation en cours a perdu son offre au profit du créneau suivant : ${JSON.stringify(got)}`,
+    )
+    assert.notEqual(
+      got.states.later,
+      'armed',
+      `à ${gapMin} min d’écart, le créneau suivant a été armé pendant l’appel précédent — le compte-rendu partirait chez le mauvais client`,
+    )
+    assert.deepEqual(
+      got.subjects,
+      ['Aurexia'],
+      `la notification DEC-46 nomme un client que le commercial n’a pas au téléphone à ${gapMin} min d’écart : ${JSON.stringify(got.subjects)}`,
+    )
+  }
+})
+
+/*
+ * **And when the offer *does* move, the one it replaces is taken back.**
+ *
+ * `#arm` withdraws the ad-hoc offer it overwrites (`#withdrawAdHoc`) and the
+ * calendar one (`#withdrawStanding`, which was `#withdrawCalendar` and returned
+ * on `eventId === null`). A meeting the rep placed here also carries
+ * `eventId: null` and is never in `#adHocArmed`, so it fell through both — the
+ * third time this file has recorded a standing offer with no exit, on the fourth
+ * path, and the second time on a path that replaced the third.
+ *
+ * Driven, no Entra: the rep takes their 14:00 on a browser link, hangs up at
+ * 14:10, joins their 14:30 at 14:35. The 14:30 arms and the 14:00 stays `armed`
+ * for the life of the process and past a relaunch, because the row is in the
+ * store. `armed` is in `UPDATE_BLOCKING_STATES`, so every installer is refused
+ * with « une réunion est sur le point de démarrer » about a call that ended; and
+ * `live` is then true on every tick, so `#adHocSpent` latches and the detector is
+ * off for the working day — a genuine unscheduled client call at 19:00 got
+ * **zero** offers. Neither is escapable by the rep: `disarm` is dispatched only by
+ * this class and is not in `UserCommandSchema`.
+ *
+ * The unscheduled call at the end is the assertion that matters most, because it
+ * is the one the strand costs a recording rather than a dialog.
+ */
+test('arming the next placed meeting takes back the offer it replaces', async () => {
+  const h = harness([], null, null)
+  const earlier = h.orchestrator.create({
+    id: 'm-earlier',
+    title: 'Aurexia',
+    clientName: 'Aurexia',
+    scheduledStart: T0,
+  })
+  const later = h.orchestrator.create({
+    id: 'm-later',
+    title: 'Néovia Santé',
+    clientName: 'Néovia Santé',
+    scheduledStart: T0 + 30 * 60_000,
+  })
+  let held: string | null = null
+  const armed: { subject: string }[] = []
+  const agenda = new Agenda({
+    calendar: h.calendar,
+    orchestrator: h.orchestrator,
+    ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+    meetingSignal: () => ({ running: null, inCall: held }),
+    clock: () => T0,
+    onArmed: (a) => void armed.push(a),
+  })
+
+  // The 14:00 call: joined four minutes early, hung up at 14:10.
+  await agenda.tick({ now: T0 - 5 * 60_000 })
+  held = 'Navigateur'
+  for (let at = T0 - 4 * 60_000; at <= T0 + 10 * 60_000; at += 60_000) {
+    await agenda.tick({ now: at })
+  }
+  assert.equal(h.orchestrator.stateOf(earlier.id), 'armed', 'le premier créneau n’a jamais été proposé')
+  held = null
+  for (let at = T0 + 11 * 60_000; at <= T0 + 34 * 60_000; at += 60_000) {
+    await agenda.tick({ now: at })
+  }
+
+  // And the 14:30 call, five minutes late, which is a new hold and a new slot.
+  held = 'Navigateur'
+  for (let at = T0 + 35 * 60_000; at <= T0 + 45 * 60_000; at += 60_000) {
+    await agenda.tick({ now: at })
+  }
+
+  assert.equal(
+    h.orchestrator.stateOf(later.id),
+    'armed',
+    `le créneau que le commercial rejoint n’est pas proposé : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
+  assert.notEqual(
+    h.orchestrator.stateOf(earlier.id),
+    'armed',
+    'l’offre remplacée est restée armée : deux réunions armées à la fois, ' +
+      'tout installateur refusé et le détecteur éteint pour la journée',
+  )
+
+  // The call ends; nothing is placed for the rest of the day; a real client rings.
+  held = null
+  for (let at = T0 + 46 * 60_000; at <= T0 + 300 * 60_000; at += 5 * 60_000) {
+    await agenda.tick({ now: at })
+  }
+  held = 'Navigateur'
+  for (let at = T0 + 300 * 60_000; at <= T0 + 302 * 60_000; at += 30_000) {
+    await agenda.tick({ now: at })
+  }
+  assert.ok(
+    armed.some((a) => a.subject.startsWith('Appel non planifié')),
+    `l’appel imprévu de 19 h n’a reçu aucune offre — le détecteur est éteint pour la journée : ${JSON.stringify(armed.map((a) => a.subject))}`,
+  )
+  h.store.close()
+})
+
+/*
  * **Twenty-five seconds, not « more than one tick ».**
  *
  * `AD_HOC_DWELL_MS` is the whole of the safety argument at the named-arm site:

@@ -694,9 +694,11 @@ export class Agenda {
    * **`#withdrawAdHoc` deliberately does not call this.** That offer was made
    * for *this* hold, and a rep dismissing it is making a decision — « suppression
    * is a decision, not a delay », which is the whole of `#adHocSpent`'s first
-   * paragraph. `#withdrawCalendar` does not either: its only caller is `armNow`,
-   * where the rep has just armed something and `live` re-latches on the next
-   * tick anyway.
+   * paragraph. `#withdrawStanding` does not either: it runs inside `#arm`, one
+   * line before the offer that replaces the one it took back, so something is
+   * armed when it returns and `live` re-latches on the next tick anyway. (This
+   * said « its only caller is `armNow` », which was never true — `#tick` reaches
+   * `#arm` on every poll.)
    */
   #handBack(): void {
     this.#adHocSpent = false
@@ -1059,7 +1061,7 @@ export class Agenda {
      * is in the store.
      *
      * That is the harm this file documents three times over — `#trackHold`,
-     * `#adHocArmed`, `#withdrawCalendar` — reintroduced on the fourth path, the
+     * `#adHocArmed`, `#withdrawStanding` — reintroduced on the fourth path, the
      * one that replaced the third. The bound is `ownClaims`' own, from the same
      * function, so « does anything account for the call happening now » keeps the
      * single shape its docblock claims.
@@ -1227,13 +1229,55 @@ export class Agenda {
        * rather than the first, were both invisible to 2092 tests and twelve
        * gates while this was a `for`/`break`.
        */
-      const current = this.#accountingOwnClaims(now)
-        .filter((meeting) => now >= meetingAnchor(meeting) - ARM_LEAD_MS)
-        .reduce<Meeting | null>(
-          (best, meeting) =>
-            best === null || meetingAnchor(meeting) > meetingAnchor(best) ? meeting : best,
-          null,
-        )
+      const claiming = this.#accountingOwnClaims(now).filter(
+        (meeting) => now >= meetingAnchor(meeting) - ARM_LEAD_MS,
+      )
+      /*
+       * **« The slot they reached last » is read at the instant the hold began,
+       * never at the instant of the tick — and reading it at the tick is how the
+       * previous fix produced this one.**
+       *
+       * `803e792` replaced « the earliest claimant » with « the greatest anchor »,
+       * measured against `now`. `now` advances under a call that does not: a rep
+       * on one continuous hold crosses the *next* slot's `ARM_LEAD_MS` while still
+       * talking to the client of the slot they are in, and the offer moves.
+       * Driven on the shipped class (`scratch/r18-own-offer-replacement.mjs`),
+       * two placed meetings thirty minutes apart, the rep joining the 14:00 on a
+       * browser link at 13:56 and staying on it:
+       *
+       *     14:24  offer « Aurexia »
+       *     14:25  offer « Néovia Santé », DEC-46 notification, and it is the
+       *            day's one filled *Enregistrer*
+       *
+       * The rep is mid-sentence with Aurexia. A press there records the Aurexia
+       * conversation into Néovia's meeting — its `clientName`, its account
+       * resolution, its compte-rendu, and therefore its VerySwing task, through a
+       * POST with no idempotency key and no delete verb. Round 17 priced the
+       * mirror of this at exactly that; it is the same cost by the same line.
+       *
+       * The hold is the unit — `adHoc.ts` says so in as many words (« The unit is
+       * the **hold**, not the instant and not the meeting ») — so a slot whose
+       * window had not opened when this hold began cannot take the conversation
+       * from one whose had. `#trackHold` resets `#heldSince` on a lost hold and on
+       * a change of application, so « hang up, join the next call » arrives here
+       * as a new origin and the later slot wins, which is round 17's case and is
+       * pinned beside this one.
+       *
+       * The fallback is deliberate and is what keeps the `running` disjunct and a
+       * long-running hold working: when the hold began before *every* claimant's
+       * window — Teams left in a call since nine, or no microphone reading at all
+       * (`#heldSince === null`) — there is no slot it belongs to and the answer
+       * stays what `now` says.
+       */
+      const origin = this.#heldSince ?? now
+      const reached = claiming.filter(
+        (meeting) => origin >= meetingAnchor(meeting) - ARM_LEAD_MS,
+      )
+      const current = (reached.length > 0 ? reached : claiming).reduce<Meeting | null>(
+        (best, meeting) =>
+          best === null || meetingAnchor(meeting) > meetingAnchor(best) ? meeting : best,
+        null,
+      )
       if (current !== null) {
         this.#arm({
           meetingId: current.id as MeetingId,
@@ -1350,17 +1394,45 @@ export class Agenda {
    * branch in `tick` that owns the calendar decision.
    */
   /**
-   * Take back the calendar offer `#armed` currently names, before it is overwritten.
+   * Take back whatever offer `#armed` currently names, before it is overwritten.
    *
    * The mirror of `#withdrawAdHoc` and it is read the same way: the target comes from
    * the field that is *about* to be replaced, so it is read **here**, one line before,
    * and never from somewhere that will have moved on. Only a meeting still in `armed` is
    * disarmed — `recording` is a call under way and is not this function's business, and
    * anything past those has already moved on by itself.
+   *
+   * **`eventId === null` used to return here, and that hole was the whole of the
+   * own-meeting path.** The guard was written when `null` meant « ad-hoc » and
+   * `#withdrawAdHoc` owned that case; `null` now also means « the rep placed this
+   * meeting in the app », which `#adHocArmed` never names, so a placed offer fell
+   * through both withdrawals and nothing else in the class can reach it —
+   * `#tick`'s own-expiry branch reads `#armed`, and `#armed` has already moved on.
+   *
+   * Driven on the shipped class (`scratch/r18-own-offer-replacement.mjs`), no Entra,
+   * two meetings the rep placed thirty minutes apart, the rep joining the **first**
+   * on a browser link and staying on it:
+   *
+   *     14:24  1400=armed  1430=idle
+   *     14:25  1400=armed  1430=armed   ← the arm site moved, nothing took the first back
+   *     19:00  1400=armed  1430=idle    updateReadiness { safe: false }
+   *
+   * That is `["armed","armed"]` — verbatim the string this file names twice as the
+   * defect it exists to stop — reached on the one path that arms anything on the
+   * DEC-28 build. Aurexia is stranded `armed` for the life of the process and past a
+   * relaunch, because the row is in the store: every installer refused with « une
+   * réunion est sur le point de démarrer » about a call that ended at 15:00, and the
+   * detector off for the rest of the day, because `live` is true every tick so
+   * `#adHocSpent` latches — a genuine unscheduled client call at 19:00 got **zero**
+   * offers against a control that was offered at minute one. Neither is escapable:
+   * `disarm` is dispatched only by this class and is not in `UserCommandSchema`.
+   *
+   * `#withdrawAdHoc` runs one line before this and clears `#armed` when it is the
+   * ad-hoc meeting, so the ad-hoc case never reaches here twice.
    */
-  #withdrawCalendar(except: string): void {
+  #withdrawStanding(except: string): void {
     const standing = this.#armed
-    if (standing === null || standing.eventId === null) return
+    if (standing === null) return
     if (standing.meetingId === except) return
     if (this.#options.orchestrator.stateOf(standing.meetingId) !== 'armed') return
     this.#options.orchestrator.dispatch(
@@ -1667,7 +1739,7 @@ export class Agenda {
      * strand the offer » (calendar → ad-hoc). The calendar → calendar direction — the
      * ordinary one — had no test, and a hundred and one tests passed with this live.
      */
-    this.#withdrawCalendar(meetingId)
+    this.#withdrawStanding(meetingId)
     this.#refused.delete(meetingId)
     this.#armed = { meetingId, eventId: target.eventId, subject }
     // After the state is set and before the diagnostic, so a listener that
