@@ -443,7 +443,35 @@
    * **open**, not declined. Naming it as open is the minimum; the fix is one
    * `useDismiss` per panel and it is not in this commit.
    */
-  .leaving {
+  /*
+   * **Doubled, because a `transition` utility of equal specificity was quietly
+   * winning and putting this exit on the *arriving* curve.**
+   *
+   * Tailwind's bare `transition` compiles to `transition-duration:
+   * var(--motion-fast)` and `transition-timing-function: var(--ease-out)`
+   * (`tailwind.config.js` sets both DEFAULTs), it is `.transition` — one class,
+   * exactly as specific as this one — and utilities are emitted after
+   * components, so on any element wearing both, the utility's 90 ms and
+   * `--ease-out` replaced this rule's 150 ms and `--ease-in`. Measured on the
+   * agenda's withdrawn offer, which is the row this whole hook was written for:
+   * « li.bg-card … transition hover:bg-subtle leaving — 90ms /
+   * cubic-bezier(0.22,1,0.36,1) : part moyenne du changement déjà faite 83 % ».
+   * An expo-out spends 83 % of its change in the first third, so the row blinked
+   * out in about 30 ms and then held an empty line for the rest.
+   *
+   * **Nothing could see it, for a reason worth writing down.** `--motion`
+   * measures what is animating when it runs, and the row used to be unmounted by
+   * then: the hold was armed in an effect, so it expired *before* the exit had
+   * finished painting. Correcting that (`holdOneMotion`) is what put the row on
+   * screen long enough for the check to read it. A timing bug was hiding a
+   * cascade bug.
+   *
+   * `.leaving.leaving` and not `!important`: the same rule, twice, is the
+   * narrowest thing that outranks one utility class, and it leaves every other
+   * utility on the element — the hover tint, the pointer-events — exactly as it
+   * was.
+   */
+  .leaving.leaving {
     opacity: 0;
     transform: translateY(3px);
     transition:
