@@ -157,6 +157,124 @@ test('stop is idempotent', async () => {
   assert.deepEqual([...trace], ['capture.stop', 'transcribe.stop'])
 })
 
+/**
+ * **The one state this app may never be in, reached three ways through the
+ * shipped call path.**
+ *
+ * The test this replaces called `orchestrator.startRecording()` directly and
+ * asserted the *method* rejects. No production code calls it that way: the only
+ * caller is `#openDevices`, fired as `void` by `dispatch('start')`, and its catch
+ * was empty under a comment saying `startRecording` had already set health and
+ * aborted the meeting. It had — for everything thrown from inside its own try,
+ * and for nothing thrown above it. So the fixture could not express the property
+ * it was named after, and the product answer was the opposite of the asserted
+ * one: the meeting stayed `recording` with no devices, for ever.
+ *
+ * Three claimants rather than one, because the rule's subject is « no route out
+ * of `#openDevices` strands a start », not « the dry run is refused »:
+ *
+ *  · the twenty-second dry run (DEC-45), which the rep reaches by pressing
+ *    *Essai* in Réglages, closing the pane — the trial runs on a wall clock in
+ *    the main process and nothing cancels it — and pressing *Démarrer une
+ *    réunion*;
+ *  · `createSignals` throwing, which `main.ts` builds out of the language model;
+ *  · `recordingOptionsFor` throwing, which reads Réglages and the OS credential
+ *    store, and which was outside the try as well — so that one was an
+ *    *unhandled rejection* on top of the stranded meeting.
+ *
+ * Everything is asserted through `dispatch`, which is what `register.ts` calls.
+ */
+const strandedStartCases = [
+  {
+    name: 'l’essai audio de vingt secondes (DEC-45)',
+    options: { essaiRunning: () => true },
+    // Refused before the transition, so the rep presses *Enregistrer* again
+    // when the trial ends rather than being left with an aborted meeting.
+    refusedAtDispatch: /essai audio est en cours/,
+    state: 'idle',
+  },
+  {
+    name: 'createSignals qui lève',
+    options: {
+      createSignals: (): never => {
+        throw new Error('modèle indisponible')
+      },
+    },
+    refusedAtDispatch: null,
+    state: 'aborted',
+  },
+  {
+    name: 'recordingOptionsFor qui lève',
+    options: {
+      recordingOptionsFor: (): never => {
+        throw new Error('coffre-fort verrouillé')
+      },
+    },
+    refusedAtDispatch: null,
+    state: 'aborted',
+  },
+] as const
+
+for (const scenario of strandedStartCases) {
+  test(`un démarrage qui échoue ne laisse pas la réunion « recording » à vide — ${scenario.name}`, async () => {
+    const store = openMemoryStore()
+    const rejections: unknown[] = []
+    const onRejection = (error: unknown): void => {
+      rejections.push(error)
+    }
+    process.on('unhandledRejection', onRejection)
+    const orchestrator = new Orchestrator(store, {
+      recording: {
+        createCapture: () => new FakeCapture() as never,
+        createTranscribe: () => new FakeTranscribe() as never,
+      },
+      recordingOptionsFor: () => ({
+        transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
+      }),
+      ...scenario.options,
+    } as never)
+    orchestrator.create({ id: 'm-essai', title: 'Point ACME' })
+
+    const outcome = orchestrator.dispatch('m-essai', 'start', 'démarrage immédiat')
+    if (scenario.refusedAtDispatch) {
+      assert.equal(outcome.ok, false)
+      assert.match(outcome.ok ? '' : outcome.reason, scenario.refusedAtDispatch)
+    }
+
+    // `#openDevices` is fired and not awaited, so this waits the way the rep's
+    // next second does.
+    for (let tick = 0; tick < 200; tick += 1) {
+      if (orchestrator.stateOf('m-essai') !== 'recording') break
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    process.off('unhandledRejection', onRejection)
+
+    // The property, stated as the pair rather than as a state name: `recording`
+    // is only honest while a `Recording` is held.
+    assert.equal(
+      orchestrator.stateOf('m-essai') === 'recording' && !orchestrator.recording(),
+      false,
+      'la réunion dit « recording » sans capture derrière',
+    )
+    assert.equal(orchestrator.stateOf('m-essai'), scenario.state)
+    assert.deepEqual(rejections, [])
+
+    // And a failure the rep did not ask for says so. A refusal at `dispatch` is
+    // already a sentence on the reply; an abort has to leave one behind.
+    if (!scenario.refusedAtDispatch) {
+      const health = orchestrator.health().capture
+      assert.ok(health && health.state === 'down', 'capture n’est pas signalée en panne')
+      assert.ok(health.reason.length > 0)
+    }
+
+    store.close()
+  })
+}
+
+/**
+ * The belt, kept: `startRecording` still refuses the trial when something calls
+ * it directly, which `devRecord.ts` does.
+ */
 test('a meeting will not start on top of the dry run (DEC-45)', async () => {
   /*
    * **The guard was one-directional.** `capture:essai` refuses while a meeting
@@ -183,7 +301,8 @@ test('a meeting will not start on top of the dry run (DEC-45)', async () => {
     },
   })
   orchestrator.create({ id: 'm-essai', title: 'Point ACME' })
-  orchestrator.dispatch('m-essai', 'start')
+  // Refused at the transition now, which is the half the rep sees.
+  assert.equal(orchestrator.dispatch('m-essai', 'start').ok, false)
 
   await assert.rejects(
     orchestrator.startRecording('m-essai', {
@@ -194,6 +313,7 @@ test('a meeting will not start on top of the dry run (DEC-45)', async () => {
 
   // Twenty seconds, and it always stops: waiting is the whole remedy.
   trial = false
+  assert.equal(orchestrator.dispatch('m-essai', 'start').ok, true)
   await orchestrator.startRecording('m-essai', {
     transcribe: { providerId: 'azure-fr', apiKey: 'k', language: 'fr-FR' },
   })

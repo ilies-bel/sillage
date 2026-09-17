@@ -372,6 +372,37 @@ export class Orchestrator {
           reason: 'une autre réunion est déjà en cours d’enregistrement',
         }
       }
+
+      /*
+       * **And not on top of the audio dry run** (DEC-45), refused *here* rather
+       * than inside `startRecording`.
+       *
+       * That guard threw from above `startRecording`'s own try/catch, so it set
+       * no health and aborted nothing — and the only production caller,
+       * `#openDevices`, swallowed the rejection under a comment saying it had.
+       * Driven on this class: the meeting stayed `recording` with
+       * `recording() === false`, zero frames, zero segments, zero diagnostics and
+       * `capture: ok`, for the life of the process. Nothing retried when the
+       * trial ended twenty seconds later, the rep's next call was then refused
+       * with « une autre réunion est déjà en cours d’enregistrement », and the
+       * pill floated over the whole meeting saying « Enregistrement en cours ».
+       *
+       * Reachable with two presses: the dry run runs in the main process on a
+       * wall clock and nothing cancels it, so closing Réglages leaves it running
+       * while *Démarrer une réunion* is live behind it.
+       *
+       * A refusal before the transition is what the sibling above does and it is
+       * what the rep wants: the meeting stays `idle`, the session screen draws
+       * *Enregistrer*, and pressing it again once the trial is over works. The
+       * sentence names the trial and the wait, because the remedy is to wait.
+       */
+      if (this.#essaiRunning?.()) {
+        return {
+          ok: false,
+          state: session.state,
+          reason: 'un essai audio est en cours — il se termine dans quelques secondes',
+        }
+      }
     }
 
     const outcome = session.dispatch(command, reason)
@@ -417,26 +448,69 @@ export class Orchestrator {
     // runtime degradation, so it is silent.
     if (!this.#recordingOptionsFor) return
 
-    const options = this.#recordingOptionsFor(meetingId)
-    if (!options) {
-      // No usable provider. The meeting is aborted rather than left claiming to
-      // record: a session that says `recording` with no transcriber is the one
-      // state this app may never be in.
-      this.setHealth('transcribe', {
-        state: 'down',
-        reason: 'aucun fournisseur de transcription disponible',
-        since: this.#clock(),
-        retryable: true,
-      })
-      this.dispatch(meetingId, 'abort', 'aucun fournisseur de transcription')
-      return
-    }
-
+    /*
+     * **The resolver is inside the try now, and it was the loudest of the three
+     * routes out of here.**
+     *
+     * `#openDevices` is fired as `void`, so a throw from `recordingOptionsFor`
+     * — it reads Réglages and the OS credential store — was an *unhandled
+     * rejection* and the meeting stayed `recording` with nothing behind it.
+     * Measured on this class, one per start.
+     */
     try {
+      const options = this.#recordingOptionsFor(meetingId)
+      if (!options) {
+        // No usable provider. The meeting is aborted rather than left claiming to
+        // record: a session that says `recording` with no transcriber is the one
+        // state this app may never be in.
+        this.setHealth('transcribe', {
+          state: 'down',
+          reason: 'aucun fournisseur de transcription disponible',
+          since: this.#clock(),
+          retryable: true,
+        })
+        this.dispatch(meetingId, 'abort', 'aucun fournisseur de transcription')
+        return
+      }
       await this.startRecording(meetingId, options)
-    } catch {
-      // `startRecording` has already set health and aborted the meeting.
+    } catch (err) {
+      this.#strandedStart(meetingId, err)
     }
+  }
+
+  /**
+   * **A start that threw and left the machine claiming to record.**
+   *
+   * This catch used to be empty, under « `startRecording` has already set health
+   * and aborted the meeting ». It has, for everything thrown from inside its own
+   * try — and for nothing thrown above it. Three routes were driven past it on
+   * this class, each ending in `recording` with `recording() === false`,
+   * `capture: ok` and no diagnostic at all: the dry-run guard (now refused a
+   * layer up, where the rep can act on it), `createSignals` throwing, and
+   * `recordingOptionsFor` throwing.
+   *
+   * What that costs is the product's one unacceptable failure and it is silent:
+   * no frames, no segments, an `Enregistrement en cours` pill over the whole
+   * call, `session:pause` refused for the length of it, and every later
+   * *Enregistrer* refused with « une autre réunion est déjà en cours
+   * d’enregistrement » until the process restarts.
+   *
+   * Idempotent by construction rather than by flag: it does nothing if the
+   * devices did open, and nothing if the meeting has already left `recording`,
+   * which is the ordinary case because `startRecording`'s own catch got there
+   * first.
+   */
+  #strandedStart(meetingId: MeetingId, err: unknown): void {
+    if (this.#recordings.has(meetingId)) return
+    if (this.stateOf(meetingId) !== 'recording') return
+    const reason = err instanceof Error ? err.message : 'capture indisponible'
+    this.setHealth('capture', {
+      state: 'down',
+      reason,
+      since: this.#clock(),
+      retryable: true,
+    })
+    this.dispatch(meetingId, 'abort', reason)
   }
 
   /** Stops the devices, then runs the recipe. Never throws into `dispatch`. */
