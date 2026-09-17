@@ -311,8 +311,23 @@ export function installAppBridge(config) {
    * what the gate's reader, `review-garde-transcription`, `ReadingColumn`, the `--fade`
    * ramp and the citation scroll have never once been photographed against. CLAUDE.md's
    * own « fifty page turns on a fifty-minute call » was unreachable from any stage.
+   *
+   * And unarmed, it is **15:30** — after the pinned instant, so the slot the rep placed is
+   * outside `ownClaims`' window `[anchor − 30 min, anchor + 80 min)` and stops being a
+   * claimant. At 14:30 it was one, so `#calendarOffersAt` answered 14:25, `decideAdHoc`
+   * replied « cet appel est au calendrier », and the anonymous row this scenario exists to
+   * photograph was never minted: the shipped `Agenda` armed Néovia and left the ad-hoc row
+   * idle, inverting all four of the stage's facts. `stagedDay.test.ts` is the check.
+   *
+   * 15:30 and not a past slot, and not a later one. A past slot (11:00, 12:30 both driven)
+   * moves Néovia out of the upcoming list, makes the ad-hoc row last, and its in-flight
+   * `riseIn` overhangs — `ul.divide-y — 3px cachés en y`, at both sizes. That is the very
+   * artefact the row ordering above was arranged to solve. A slot beyond 15:30 pushes
+   * `NEOVIA_CREATED` past the pinned instant, which `harnessFixture.test.ts` refuses. 15:30
+   * is the one value that threads both: outside the claim window, `createdAt` still before
+   * `now`, and Néovia still ahead of the ad-hoc row on the day.
    */
-  const NEOVIA_SLOT = NEOVIA_LIVE ? at(0, 14, 30) : at(0, 13, 45)
+  const NEOVIA_SLOT = NEOVIA_UNARMED ? at(0, 13, 0) : NEOVIA_LIVE ? at(0, 14, 30) : at(0, 13, 45)
   const NEOVIA_CREATED = NEOVIA_SLOT - 2 * MIN
   const NEOVIA_STARTED = NEOVIA_SLOT
   /**

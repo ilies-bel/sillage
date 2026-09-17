@@ -60,13 +60,35 @@ export interface ListProps {
   className?: string
 }
 
+/*
+ * **`bare` carried a clip with nothing to clip, and it cut an arrival in half.**
+ *
+ * `overflow-hidden` belongs to the bordered variant: it is what stops the first
+ * and last rows' square corners painting outside `rounded-lg`. `bare` has
+ * neither the border nor the radius, so it inherited a clip whose only remaining
+ * subject was whatever crossed the list's own edge — and the one thing that does
+ * is `riseIn`, the 3px translate an arriving row enters on.
+ *
+ * Measured on `agenda-appel-imprevu`, whose upcoming list is one row the instant
+ * a call is detected: « ascenseurs: ul.divide-y — 3px cachés en y (boîte 61px) »
+ * at 1280×800 and 71px at 960×600. Not a fixture shape — a list holding one
+ * arriving row is the first arming of any day with a single meeting ahead of it,
+ * and the rep sees the bottom 3px of that row cut for the length of the
+ * animation.
+ *
+ * It took a restaging to surface because the previous fixture always put a row
+ * after the arriving one, so the translate landed in a neighbour's space instead
+ * of over the edge. Arranging a fixture around an artefact is not the same as
+ * not having one.
+ */
+
 export function List({ children, as: Tag = 'ul', label, bare = false, className }: ListProps) {
   return (
     <Tag
       aria-label={label}
       className={cn(
         'divide-y divide-[var(--border-subtle)]',
-        bare ? 'overflow-hidden' : 'border-card overflow-hidden rounded-lg border',
+        bare ? '' : 'border-card overflow-hidden rounded-lg border',
         className,
       )}
     >
