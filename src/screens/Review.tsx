@@ -1883,7 +1883,45 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           load-bearing, and a title that hides the objet to be large is the
           echo it replaced with a different word missing.
         */}
-        <h1 className="text-strong min-w-0 flex-1 truncate text-copy font-semibold">
+        {/*
+          **And it is a rung, which it was not.**
+
+          `text-copy` made this the only `h1` in the product *smaller* than the
+          prose under it. Measured on the shipped renderer, every stage, the top
+          heading against the dominant body size:
+
+              agenda / historique / réglages   28px over 12–14      2.0–2.55x
+              session                          24px over 15         1.60x
+              the gate                         14px over 15         **0.93x**
+
+          Twenty review stages at 0.93 and three at 1.17, and on the
+          transcription tab — where the document is not on screen — 14px was the
+          largest text in the window, which is the whole of what the layout
+          detector reports there as « Sizes: 11px, 12px, 14px (ratio 1.3:1) ».
+
+          **The reason recorded for `text-copy` does not reproduce.** It says a
+          28px setting « truncates to « Néovia Santé — cadrage… » » at 960, beside
+          a `⚠ faible` banner « that is itself load-bearing ». That banner was
+          taken out of this bar by the note directly below this one, so the width
+          it was competing for came back; and driven at 960x600 on this fixture,
+          `scrollWidth === clientWidth === 666` at 14, 16, 19, 24 **and** 28 —
+          nothing truncates at any rung. The objet measures 331px of 666 at 19px,
+          and a worst case with the account appended (« … · Néovia Santé Groupe
+          Hospitalier », the suffix this line adds when the title does not
+          already carry the account) measures 643px, still inside 666. At 24px
+          that worst case is 809px and at 28px it is 939, so the recorded
+          sentence is right about the two rungs above this one and wrong about
+          this one. `--type-heading` is the largest rung that cannot truncate.
+
+          It stays *under* the compte-rendu's own opening line, which is 24px and
+          is the string VerySwing receives (DEC-44). That order is the right one:
+          the document is the content and its title is the biggest thing on the
+          screen; this bar says which call the rep is in. The pair is the echo
+          already declared in `shot.mjs`.
+
+          +5px of header at the 960x600 minimum, 49 to 54.
+        */}
+        <h1 className="text-strong min-w-0 flex-1 truncate text-heading font-semibold">
           {panel.meeting.title}
           {edits.accountName && !panel.meeting.title.includes(edits.accountName)
             ? ` · ${edits.accountName}`

@@ -5395,9 +5395,12 @@ async function main() {
   }
 
   let unnamed = []
+  let ladder = { body: null, top: null, step: null }
   if (flags.a11y) {
     await page.evaluate(() => document.fonts.ready)
-    unnamed = await a11y(page)
+    const tree = await a11y(page)
+    unnamed = tree.problems
+    ladder = tree.ladder
   }
 
   /*
@@ -5920,7 +5923,13 @@ async function main() {
     }
   }
   if (flags.a11y) {
-    if (unnamed.length === 0) console.log('  arbre: chaque contrôle a un nom')
+    const rung =
+      ladder.top === null
+        ? ladder.body === null
+          ? 'aucune prose à mesurer'
+          : `pas de h1, prose à ${ladder.body}px`
+        : `titre ${ladder.top}px sur prose ${ladder.body}px (${ladder.step}×)`
+    if (unnamed.length === 0) console.log(`  arbre: chaque contrôle a un nom, ${rung}`)
     else {
       console.log(`  ✗ arbre: ${unnamed.length} problème(s)`)
       for (const item of unnamed.slice(0, 8)) console.log(`   ✗ ${item.why} — ${item.what}`)
@@ -6509,7 +6518,67 @@ async function a11y(page) {
       previous = level
     }
 
-    return out
+
+    /*
+     * **The top of the ladder has to be a rung.**
+     *
+     * The heading-level check above reads the *semantics* — h2 followed by h4.
+     * Nothing read the size, and the gap that leaves is the one the product
+     * actually had: measured on the shipped renderer, every screen carried a top
+     * heading between 1.6x and 2.55x the prose under it, and the review gate
+     * carried one at **0.93x** — an `h1` smaller than the body text it heads, on
+     * twenty stages at both sizes, and on the transcription tab the largest text
+     * in the whole window.
+     *
+     * The dominant prose size is weighted by characters of own text, not by
+     * element count: a screen has hundreds of 11px captions and one column of
+     * prose, and counting elements would elect the captions. Text inside a
+     * heading is excluded, or a big enough heading would elect itself.
+     *
+     * Strictly greater, not 1.25. The published guideline the layout detector
+     * quotes is « aim for at least a 1.25 ratio between steps » and the ratio is
+     * printed on every run so the ladder can be read off the output — but a gate
+     * set where the product sits (1.267 on the gate after this round) is a gate
+     * one type change away from failing for a reason nobody chose, and a check
+     * people work around is worse than none. What is refused is the case with no
+     * step at all.
+     *
+     * A screen with no `h1` is reported as such rather than skipped: the widget
+     * has none by design and says so on every run, which is a statement and not
+     * a silence.
+     */
+    const ownChars = (el) =>
+      [...el.childNodes]
+        .filter((node) => node.nodeType === 3)
+        .reduce((total, node) => total + (node.textContent ?? '').trim().length, 0)
+
+    const shown = (el) => {
+      const box = el.getBoundingClientRect()
+      return box.width > 0 && box.height > 0 && getComputedStyle(el).visibility !== 'hidden'
+    }
+
+    const byChars = new Map()
+    for (const el of document.querySelectorAll('body *')) {
+      const own = ownChars(el)
+      if (own < 20 || !shown(el) || el.closest('h1, h2, h3, h4, h5, h6')) continue
+      const px = Math.round(parseFloat(getComputedStyle(el).fontSize) * 10) / 10
+      byChars.set(px, (byChars.get(px) ?? 0) + own)
+    }
+    const body = [...byChars].sort((a, b) => b[1] - a[1])[0] ?? null
+    const top = [...document.querySelectorAll('h1')].filter(shown)[0] ?? null
+    let ladder = { body: body?.[0] ?? null, top: null, step: null }
+    if (top !== null && body !== null) {
+      const px = Math.round(parseFloat(getComputedStyle(top).fontSize) * 10) / 10
+      ladder = { body: body[0], top: px, step: Math.round((px / body[0]) * 100) / 100 }
+      if (px <= body[0]) {
+        out.push({
+          why: `titre de page à ${px}px sous une prose à ${body[0]}px (${ladder.step}x)`,
+          what: text(top).slice(0, 44),
+        })
+      }
+    }
+
+    return { problems: out, ladder }
   })
 }
 
