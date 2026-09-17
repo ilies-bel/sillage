@@ -157,6 +157,8 @@ round 5 did not.
 | 18 | widget | `38d85be` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 4.5 | 5 | 4.5 | **48.5** |
 | 18 | main | `bccdca5` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | 5 | 6 | **51.5** |
 | 18 | detection | `497240f` | 7 | 7.5 | 6.5 | 5 | 5.5 | 5 | 5 | 5.5 | 5 | **52** |
+| 19 | widget | `f6ffdc7` | 7 | 7 | 5.5 | 5.5 | 6.5 | 6.5 | 5.5 | 5 | 5.5 | **54** |
+| 19 | detection | `9f597b7` | 7 | 7 | 6 | 5 | 5.5 | 5 | 6 | 5.5 | 5.5 | **52.5** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs

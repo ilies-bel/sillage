@@ -166,7 +166,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code twenty-one times — four of them numbers that were computed and written down as numbers that were observed, one of those four repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, and five of them docblocks that argued correctly for one of the several cases their subject covers; measure before trusting a sentence.
+- A comment is not a check. Prose in this repo has been wrong about the code twenty-five times — four of them numbers that were computed and written down as numbers that were observed, one of those four repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence.
 - A test is not a caller. A fixture that calls a private method no production path reaches asserts that the method behaves, never that the product is protected — that shape hid a `recording` state with no capture, no health and no diagnostic, for the life of the process.
 
 ## Commands
