@@ -570,6 +570,67 @@ test('DEC-4: one Valider ships everything checked, together', async () => {
   cleanup()
 })
 
+/*
+ * **A press that would create nothing must not spend DEC-4's only gate.**
+ *
+ * `review:confirm` drafts the intents, then dispatches `confirm` unconditionally.
+ * When the draft is empty — the rep unticked all three, or every row is
+ * `available: false`, which is the ordinary shape of an untitled manual call on
+ * the no-Entra build DEC-28 ships first — the meeting moved to `pushing` with
+ * `intentIds: []` and could never leave: `pushing` accepts only `pushSettled`,
+ * which routes to `done` only when `allIntentsSettled`, which is
+ * `intents.length > 0 && …` and so is false for ever. `confirm`, `extract` and
+ * `abort` are all refused from there. The calendar row read « Envoi en cours… »
+ * for the life of the database, about a POST that was never made, and the
+ * compte-rendu became unreachable from the gate.
+ *
+ * The refusal goes before the dispatch and not in the guard, because
+ * `intents.length > 0` is also what stops a `pushSettled` arriving before the
+ * intents are written from settling the meeting vacuously. One clause, two jobs;
+ * this is the job it was not doing.
+ *
+ * The second half of the test is the one that matters: the gate is still there
+ * afterwards, so the press cost the rep nothing but the press.
+ */
+test('a confirmation that would create nothing is refused, not consumed', async () => {
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+  const panel = await editsFor(ipc, 'm1')
+
+  const pressed = await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: panel.edits,
+    intentIds: [],
+  })
+
+  assert.equal(pressed.ok, false, 'la presse a été acceptée alors qu’elle ne crée rien')
+  assert.equal(createdIntents(deps, 'm1').length, 0)
+  assert.ok(
+    pressed.ok === false && (pressed.reason ?? '').length > 0,
+    'un refus sans phrase : le rep ne sait pas quoi faire',
+  )
+
+  // And the gate is intact — this is the whole of the fix.
+  assert.equal(
+    deps.orchestrator.stateOf('m1'),
+    'awaiting_confirmation',
+    'la réunion a quitté la porte pour un état dont elle ne peut pas revenir',
+  )
+
+  const again = await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: panel.edits,
+    intentIds: panel.intents.map((i) => i.id),
+  })
+  assert.equal(again.ok, true, 'la porte ne se rouvre pas : la réunion est perdue')
+  assert.deepEqual(
+    createdIntents(deps, 'm1').map((i) => i.kind),
+    ['crm.task', 'crm.opportunity', 'mail.draft'],
+  )
+
+  cleanup()
+})
+
 test('DEC-20: an unchecked intent is absent from intentIds and never created', async () => {
   const { ipc, deps, cleanup } = open()
   atGate(deps, 'm1')

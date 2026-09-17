@@ -1039,6 +1039,42 @@ export const handlers: Handlers = {
       .map((d) => d.intent)
       .filter((intent): intent is PushIntent => intent !== null)
 
+    /*
+     * **A press that would create nothing does not spend the gate.**
+     *
+     * DEC-4 gives this product one confirmation, and it used to be spendable on
+     * the empty set. The draft is empty when the rep unticks all three, and it is
+     * empty by default on an untitled manual call with no Microsoft account —
+     * `crm.task` and `crm.opportunity` refuse « Donnez un objet à la réunion »,
+     * `mail.draft` refuses « Aucun compte Microsoft connecté », and
+     * `meeting:create`'s own comment says an untitled meeting is the normal case
+     * now, not a fallback. That is the configuration DEC-28 ships the first demo
+     * on.
+     *
+     * What the press did: `confirm` dispatched, the meeting reached `pushing`
+     * with `intentIds: []`, and it could never leave. `pushing` accepts only
+     * `pushSettled`, which routes to `done` only when `allIntentsSettled`, which
+     * reads `intents.length > 0 && …` — false for ever on an empty outbox. A
+     * second `confirm`, an `extract` and an `abort` are all refused from there.
+     * The calendar row read « Envoi en cours… » for the life of the database
+     * about a POST that was never made, and the compte-rendu — still in the log —
+     * was unreachable from the gate. There is no undo: `CrmPort` has no delete
+     * verb, and here there was nothing to undo either.
+     *
+     * The refusal belongs here rather than in `allIntentsSettled`, because that
+     * clause has a second job: it stops a `pushSettled` that arrives before the
+     * intents are written from settling the meeting vacuously. Removing it to fix
+     * this would trade an unrecoverable state for a premature `done`.
+     */
+    if (intents.length === 0) {
+      return {
+        ok: false as const,
+        state: orchestrator.stateOf(meetingId),
+        reason:
+          'Rien ne serait créé — aucune action n’est cochée, ou aucune n’est disponible. La raison est indiquée sur chaque ligne.',
+      }
+    }
+
     const outcome = orchestrator.dispatch(meetingId, 'confirm', null)
     if (!outcome.ok) return { ok: false as const, state: outcome.state, reason: outcome.reason }
 
