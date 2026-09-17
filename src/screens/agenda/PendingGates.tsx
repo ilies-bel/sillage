@@ -193,15 +193,17 @@ export function PendingGates({
       ) : null}
 
       <List bare label="Réunions en attente de validation">
-        {shown.map((row) => (
+        {shown.map((row) => {
+          /* Read once: the branch and the number are the same answer. */
+          const stale = staleFor(row, now)
+          return (
           <Row key={row.meeting.id} density="roomy" align="center">
             {/* The same leading column the day pane uses — `ui/List.tsx` says
                 why all three sections of this scroller share one. */}
             <RowLead>{formatDayShort(meetingAnchor(row.meeting))}</RowLead>
             <RowTitle {...meetingHeading(row.meeting)} />
             {/*
-              What is still sitting there, in the words the gate uses — and, past
-              a week, how long it has been sitting.
+              **How long it has been sitting — past a week, and only then.**
 
               The age used to be left to the date on the left, on the grounds
               that « il y a 3 jours » is a reproach. That holds for three days
@@ -209,12 +211,35 @@ export function PendingGates({
               pixel weight, and one of them is a fortnight of a client's CRM
               being wrong. It appears only past a week, so it is information on
               the rows where it is information and silent everywhere else.
+
+              **And for four rounds it was not silent.** The `null` branch —
+              *not* stale — printed a bare « Rien n'a été envoyé » in `--warn`,
+              so the sentence four separate docblocks describe as appearing past
+              a week appeared on every row of the section from the minute a call
+              ended. Measured on `agenda` at 1280×800 and 960×600: the one
+              pending row, four days old, drew rgb(125, 95, 24) — the fault
+              colour, which the comment on the count twenty lines above reserves
+              for this line precisely *because* « that one **is** a fault and is
+              the only thing on this screen making that claim ». A backlog of
+              mixed ages was therefore one flat orange column, and the row that
+              was genuinely a fortnight old was painted like this morning's.
+
+              It also restated its own heading. Every row in this section is,
+              by construction, one from which nothing has been sent; « En attente
+              de validation » sits eight pixels above the first of them.
+              `--echo` cannot see that — a repetition *along a list* is exempt by
+              rule, so that the same word on five rows reads as one control
+              offered five times — which is how a sentence drawn once per row
+              stayed invisible to the one check built for a string drawn twice.
+
+              `staleFor` is read once rather than twice, so the branch and the
+              number can no longer disagree.
             */}
-            <span className="text-warn shrink-0 text-ui">
-              {staleFor(row, now) === null
-                ? 'Rien n’a été envoyé'
-                : `Rien n’a été envoyé depuis ${staleFor(row, now)} jours`}
-            </span>
+            {stale === null ? null : (
+              <span className="text-warn shrink-0 text-ui">
+                {`Rien n’a été envoyé depuis ${stale} jours`}
+              </span>
+            )}
             {/*
               Filled only on the row `Agenda` named — the oldest thing the rep
               owes, and only when nothing is being recorded and nothing is armed.
@@ -229,7 +254,8 @@ export function PendingGates({
               Ouvrir
             </Button>
           </Row>
-        ))}
+          )
+        })}
       </List>
     </section>
   )

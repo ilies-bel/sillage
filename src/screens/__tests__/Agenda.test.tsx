@@ -827,8 +827,18 @@ describe('the search is the only entry into the past', () => {
 
     expect(await screen.findByText('En attente de validation')).toBeTruthy()
     expect(screen.getByText('Nordis — cadrage support')).toBeTruthy()
-    // Yesterday: the date on the left says it better than a number would.
-    expect(screen.getByText('Rien n’a été envoyé')).toBeTruthy()
+    /*
+      Yesterday: the date on the left says it better than a number would — and
+      this line asserted the opposite of its own comment for four rounds. The
+      row printed a bare « Rien n'a été envoyé » in the product's fault colour on
+      every call that was *not* stale, under a comment saying the date says it,
+      beside a test whose own docblock says « below it, it stays quiet ». The
+      ages either side of `STALE_DAYS` are exercised in
+      `agenda/__tests__/PendingGates.test.tsx`, which is where a question about
+      several rows of several ages belongs; here it is enough that a call from
+      yesterday makes no claim of fault.
+    */
+    expect(screen.queryByText(/Rien n’a été envoyé/)).toBeNull()
   })
 
   /*
