@@ -1916,10 +1916,30 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
         )}
       </header>
 
+      {/*
+        **The one refusal this gate has, and it was a hundred and ninety-seven
+        characters a line.**
+
+        Every way `review:confirm` can say no lands here — the state machine's
+        `STATE_REASON`, a thrown bridge error, and `register.ts`' « Rien ne serait
+        créé », which is the refusal that keeps DEC-4's single confirmation from
+        being spent on the empty set. Measured on the shipped renderer through
+        `review-refus`: **197 char./line at 1280×800** and 145 at 960×600, outside
+        `.measure`, against a ceiling of 75 — the widest prose in the product, on
+        the sentence a rep reads immediately after pressing the one irreversible
+        control. Nothing had seen it because no stage drew a refusal.
+
+        The rule is that `.measure` goes on the element holding the prose, never on
+        a wrapper: `ch` resolves against the element's own font size. The band keeps
+        the border and the gutter so the bar still spans the screen; the sentence
+        inside it is the reading measure.
+      */}
       {failure ? (
-        <p role="alert" className="text-danger border-subtle border-b px-gutter py-tight text-ui">
-          {failure}
-        </p>
+        <div className="border-subtle border-b px-gutter py-tight">
+          <p role="alert" className="text-danger measure text-ui">
+            {failure}
+          </p>
+        </div>
       ) : null}
 
       {/*

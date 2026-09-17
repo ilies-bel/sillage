@@ -2940,6 +2940,28 @@ let RECORDING_STOPPED = false
       path look broken, and a broken one look fine.
     */
     'review:confirm': (payload) => {
+      /*
+        **A press that would create nothing does not spend the gate** — the rule
+        `app/ipc/register.ts` applies before it dispatches, applied here for the
+        same reason every other answer in this file is the handler's answer: a
+        stub that always says yes stages a screen the product cannot produce.
+
+        It is the *rule* and not a toggle. `refusePause` arrived as a flag nothing
+        called and was wrong on arrival (round 17); this one is reached by the rep's
+        own gesture — untick the three rows — so the stage cannot stage a refusal
+        the main process would not have made.
+      */
+      const creating = REVIEW_PANEL.intents.filter(
+        (intent) => intent.available && (payload.intentIds || []).includes(intent.id),
+      )
+      if (creating.length === 0) {
+        return {
+          ok: false,
+          state: 'awaiting_confirmation',
+          reason:
+            'Rien ne serait créé — aucune action n’est cochée, ou aucune n’est disponible. La raison est indiquée sur chaque ligne.',
+        }
+      }
       const meeting = meetingById(payload.meetingId)
       if (meeting) {
         meeting.state = 'pushing'

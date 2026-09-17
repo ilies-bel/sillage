@@ -25,7 +25,7 @@
  *
  * Screens: splash · agenda · agenda-empty · agenda-semaine · agenda-liste ·
  * agenda-client · agenda-search · session · review · review-rail ·
- * review-rail-inerte · review-valider · review-sans-opportunite-valider ·
+ * review-rail-inerte · review-valider · review-sans-opportunite-valider · review-refus ·
  * widget-survol ·
  * review-transcription ·
  * review-transcription-introuvable · historique · reglages ·
@@ -2530,6 +2530,76 @@ const SCREENS = {
       if ((await notice.count()) === 0) {
         throw new Error('la phrase qui dit où va la correction n’a pas d’ancre')
       }
+    },
+  },
+
+  /**
+   * **DEC-4's only refusal, photographed.**
+   *
+   * `f630dcd` — round 17's headline fix — made `review:confirm` refuse a press
+   * that would create nothing, so the one gate is not spent on the empty set.
+   * The refusal is rendered by one `role="alert"` paragraph in `Review.tsx`, and
+   * **no stage has ever drawn it**: the stub answered `ok: true` to every press,
+   * so across 154 stagings none of the ten measured checks had seen the sentence.
+   *
+   * What that hid, measured on the shipped renderer through a Playwright driver
+   * before this stage existed: the alert runs **197 characters a line at 1280×800
+   * and 145 at 960×600**, outside `.measure`, against `--prose`'s ceiling of 75.
+   * It is the widest line of prose in the product — round 17's record was 185 in
+   * *Historique* — and it is the sentence a rep reads at the one human gate after
+   * pressing the one irreversible control.
+   *
+   * Reached by the rep's own gesture rather than by a harness flag: unticking the
+   * three rows is what makes `draftIntents` return nothing, and the stub applies
+   * the handler's own rule. The three unticks come **first**, because the rail's
+   * view key carries the payload — changing it after arming is what
+   * `review-garde`'s eighth attack is about — so the reading is done against the
+   * payload actually pressed.
+   *
+   * Left on screen at the end, which is the point: this is the only way
+   * `--prose`, `--a11y`, `--contrast`, `--echo`, `--geometry`, `--targets`,
+   * `--scrollers`, `--motion`, `--fade` and `--scan` ever look at it.
+   */
+  'review-refus': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      await page.waitForTimeout(900)
+
+      for (const name of [/Tâche compte-rendu/, /Opportunité/, /Brouillon de relance/]) {
+        await page.getByRole('checkbox', { name }).first().uncheck()
+        await page.waitForTimeout(250)
+      }
+
+      for (let i = 0; i < 40; i += 1) {
+        const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+        if ((await turn.count()) === 0) break
+        await turn.click()
+        await page.waitForTimeout(STAGING_TURN_MS)
+      }
+      const primary = page.getByRole('button', { name: /^Valider/ })
+      if ((await primary.count()) === 0) {
+        throw new Error(
+          'aucune intention cochée et « Valider » est injoignable : la refus de DEC-4 ne peut pas être atteint',
+        )
+      }
+      await primary.first().click()
+      const alert = page.locator('[role="alert"]')
+      await alert.first().waitFor()
+
+      /*
+       * The gate is refused and **not spent**: the button is still there, the rep
+       * can tick a row and press again. A refusal that also removed the control
+       * would be the unrecoverable `pushing` state by another route.
+       */
+      if ((await primary.count()) === 0) {
+        throw new Error('le refus a emporté le bouton — la porte de DEC-4 est fermée derrière lui')
+      }
+      const said = (await alert.first().innerText()).replace(/\s+/g, ' ').trim()
+      if (!said.startsWith('Rien ne serait créé')) {
+        throw new Error(`le refus dit « ${said} », pas la phrase que register.ts renvoie`)
+      }
+      console.log(`     refus: « ${said} », bouton toujours présent`)
     },
   },
 
@@ -6373,6 +6443,7 @@ const ECHO_DECLARED = [
       'review-sans-entra',
       'review-sans-opportunite',
       'review-sans-opportunite-valider',
+      'review-refus',
       'review-modele',
       'review-modele-differe',
     ],
@@ -6414,6 +6485,7 @@ const ECHO_DECLARED = [
       'review-sans-entra',
       'review-sans-opportunite',
       'review-sans-opportunite-valider',
+      'review-refus',
       'review-modele',
       'review-modele-differe',
     ],
