@@ -3235,7 +3235,22 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
         checked={checked && intent.available}
         disabled={!intent.available}
         onChange={onToggle}
-        className="mt-0.5 shrink-0"
+        /*
+          **The tick is a colour role, and it was the host's.**
+
+          `accent-color` defaults to `auto`, so these three boxes drew macOS's
+          system accent — a colour the rep sets in Réglages système — beside the
+          only saturated fill on this screen, the caution *Valider*. Measured at
+          960×600: `accentColor: auto` on all three, `rgb(125, 95, 24)` on the
+          button. Two colour roles at DEC-4's one gate and one of them was not
+          this product's.
+
+          `--brand-700` because VISION.md §6 gives brand blue selection and
+          navigation, and a tick is a selection. It is the step Réglages'
+          « Cette machine uniquement » already uses, which is the other and only
+          other checkbox in the product. `check:tokens` now refuses the pair.
+        */
+        className="accent-brand-700 mt-0.5 shrink-0"
       />
       <span className="min-w-0 flex-1">
         {/*

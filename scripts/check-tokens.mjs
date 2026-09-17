@@ -236,6 +236,143 @@ const SPACING = new RegExp(
   'g',
 )
 
+/**
+ * **A control the browser paints in the operating system's colour.**
+ *
+ * `accent-color` defaults to `auto`, and `auto` is not a value this palette
+ * knows: a checkbox with no `accent-*` utility renders in whatever blue the host
+ * decided — macOS's system accent, which a rep can change in Réglages système,
+ * and Chromium's own on Windows (HR-2). Measured at the review gate, 960×600:
+ * the three intents that decide what is written into a client's CRM drew
+ * `accentColor: auto` beside the only saturated fill on the screen,
+ * `rgb(125, 95, 24)`. Two colour roles side by side at DEC-4's one gate and only
+ * one of them came from this product.
+ *
+ * It is the same failure as a hex literal — a colour nobody here can change —
+ * and it was invisible to every other rule in this file, because there is no hex
+ * and no class to read. The one checkbox that got it right (`Reglages.tsx`'s
+ * « Cette machine uniquement », `accent-brand-700`) is why this is a rule and
+ * not a preference: the house style existed and was applied to one control of
+ * two.
+ *
+ * Two ways to fail, not one. A missing `accent-*` is the OS's colour; an
+ * `accent-blue-500` is Tailwind's default palette, which `extend` does not name
+ * either and which no other rule here would catch — the `/NN` rule only reads
+ * declared tokens and the off-scale rule does not police colour prefixes. A
+ * check that only asked « is there an accent utility » would be worked around by
+ * the first person who wrote one.
+ *
+ * Scoped to the controls a user agent actually paints an accent on, not to
+ * `input` generally — a text field has no accent to name.
+ */
+const SELF_PAINTING = /\b(?:checkbox|radio|range)\b/
+const ACCENT_UTILITY = /\baccent-([a-z0-9-]+|\[[^\]]*\])/
+
+/**
+ * A JSX element cannot be matched with `[^>]*`: `onChange={(e) => …}` carries a
+ * `>` inside a brace, and a rule that stopped there would read the attributes of
+ * half an element — `Review.tsx`'s checkbox is exactly that shape. Walk the
+ * attribute list instead, tracking brace depth and quotes, and stop at the first
+ * `>` outside both.
+ */
+const jsxElements = (source, tag) => {
+  const out = []
+  const open = new RegExp('<' + tag + '\\b', 'g')
+  for (const start of source.matchAll(open)) {
+    let i = start.index + start[0].length
+    let depth = 0
+    let quote = null
+    while (i < source.length) {
+      const c = source[i]
+      if (quote !== null) {
+        if (c === quote) quote = null
+      } else if (c === '"' || c === "'" || c === '`') quote = c
+      else if (c === '{') depth += 1
+      else if (c === '}') depth -= 1
+      else if (c === '>' && depth === 0) break
+      i += 1
+    }
+    out.push({ index: start.index, text: source.slice(start.index, i + 1) })
+  }
+  return out
+}
+
+const hostPainted = (source, file) => {
+  const found = []
+  for (const element of jsxElements(source, 'input')) {
+    const type = /type=(?:"([^"]*)"|\{[^}]*?['"`]([a-z]+)['"`])/.exec(element.text)
+    const named = type?.[1] ?? type?.[2] ?? ''
+    if (!SELF_PAINTING.test(named)) continue
+    const at = source.slice(0, element.index).split('\n').length
+    const accent = ACCENT_UTILITY.exec(element.text)
+    const shown = element.text.replace(/\s+/g, ' ').slice(0, 104)
+    if (accent === null) {
+      found.push(`${file}:${at}: <input type="${named}"> has no \`accent-*\` — the host paints it\n      ${shown}`)
+    } else if (!tokenNames.has(accent[1])) {
+      found.push(`${file}:${at}: ${accent[0]} names no token this palette declares\n      ${shown}`)
+    }
+  }
+  return found
+}
+
+/**
+ * **The rule's own self-test, because a rule about an invisible property is a
+ * rule nobody would notice going quiet.**
+ *
+ *     SILLAGE_TOKENS_ATTACK=1 node scripts/check-tokens.mjs
+ *
+ * Five shapes that must fire and four that must stay silent, each asserted by
+ * the sentence it draws rather than by a count — the shape `--echo`'s attack
+ * uses, and the reason is the same: a self-test that counts passes when two
+ * probes swap results.
+ *
+ * It runs on **every** invocation, not behind the flag. Nine regexes cost
+ * nothing, and `SILLAGE_ECHO_ATTACK` is the precedent for the other half of
+ * this: an attack mode nobody runs is a control that is present and does
+ * nothing. The flag only makes it say so out loud. Exits 9 before the real scan,
+ * because a rule whose self-test is failing has no verdict worth reading.
+ *
+ * Driven: narrowing `SELF_PAINTING` to `checkbox` alone takes it to 7/9, and
+ * turning the token lookup into `if (false)` takes it to 6/9.
+ */
+const ATTACK = [
+  ['<input type="checkbox" className="mt-0.5" />', 'no `accent-*`'],
+  ['<input type="radio" name="x" className="shrink-0" />', 'no `accent-*`'],
+  ['<input type="range" min={0} />', 'no `accent-*`'],
+  ['<input type="checkbox" className="accent-blue-500" />', 'names no token'],
+  [
+    '<input type="checkbox" onChange={(e) => go(e.target.checked > 0)} className="x" />',
+    'no `accent-*`',
+  ],
+  ['<input type="checkbox" className="accent-brand-700" />', null],
+  ['<input type="text" className="w-full" />', null],
+  ['<input type="checkbox" className="accent-warn" onChange={(e) => go(e > 0)} />', null],
+  ['<input type={kind === "one" ? "checkbox" : "radio"} className="accent-accent" />', null],
+]
+
+const attackFailures = ATTACK.flatMap(([snippet, expected]) => {
+  const got = hostPainted(snippet, 'attaque.tsx')[0] ?? null
+  if (expected === null)
+    return got === null ? [] : [`doit rester muet: ${snippet}\n      ${got}`]
+  return got !== null && got.includes(expected)
+    ? []
+    : [`doit signaler « ${expected} »: ${snippet}\n      ${got ?? '(rien)'}`]
+})
+
+if (attackFailures.length > 0) {
+  console.error('\nl’auto-test de la règle accent-color ne passe plus :\n')
+  for (const w of attackFailures) console.error(`  ✗ ${w}`)
+  console.error('\nLa règle ci-dessous ne mesure plus ce qu’elle prétend. Corrigez-la avant')
+  console.error('de lire son verdict.\n')
+  process.exit(9)
+}
+
+if (process.env.SILLAGE_TOKENS_ATTACK) {
+  console.log(`attaque accent-color : ${ATTACK.length}/${ATTACK.length} sondes correctes`)
+  process.exit(0)
+}
+
+const unnamedAccent = []
 const violations = []
 const offScale = []
 const deadAlpha = []
@@ -336,6 +473,22 @@ for (const file of files) {
       cancelled.push(`${file}:${i + 1}: ${hit[0]} + ${other[0]} — ${why}\n      ${line.trim()}`)
     }
   })
+  const whole = withoutComments(readFileSync(join(ROOT, file), 'utf8'))
+  unnamedAccent.push(...hostPainted(whole, file))
+}
+
+
+if (unnamedAccent.length > 0) {
+  console.error(
+    `\ncontrols the host paints, not this palette — no \`accent-*\` utility (${unnamedAccent.length}):\n`,
+  )
+  for (const v of unnamedAccent) console.error(`  ${v}`)
+  console.error(
+    '\n`accent-color: auto` is the operating system’s colour: a rep can change it and\n' +
+      'nobody here can. Name the role — `accent-brand-700` is what the one checkbox\n' +
+      'that got this right already uses.\n',
+  )
+  process.exit(1)
 }
 
 if (cancelled.length > 0) {
@@ -402,6 +555,7 @@ if (violations.length > 0) {
 // its skipped count: an exemption you cannot see is an exemption that grows.
 console.log(
   `tokens ok — ${checked} files scanned for hex literals, dead /NN modifiers ` +
-    `on ${tokenNames.size} tokens and ${CANCELS.length} cancelling utility pair(s), ` +
+    `on ${tokenNames.size} tokens, ${CANCELS.length} cancelling utility pair(s) and ` +
+    `${ATTACK.length} probes over every self-painting control, ` +
     `${exempted} exempt (${EXEMPT.map((e) => e.prefix).join(', ')})`,
 )
