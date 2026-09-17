@@ -1091,6 +1091,44 @@ describe('a correction that would reach nothing is not offered', () => {
     expect(document.activeElement?.id).not.toBe('field-account')
   })
 
+  /*
+   * **`edits.compteRendu` has one consumer, and the screen promised it
+   * unconditionally.**
+   *
+   * The document's only destination is `crm.task`'s `payload.body`. Untick the
+   * task and it reaches no external system — and the sentence over the document
+   * went on reading « Ce texte-ci part dans la tâche VerySwing tel qu'il est
+   * affiché ». The rep corrects the thing the entire left half of the screen is
+   * for, under a promise that is false.
+   *
+   * This is `Client`'s defect at the scale of a column, and it wants a different
+   * remedy: the document stays editable, because it is the rep's own record and
+   * `confirmation.recorded` writes it verbatim into the log whatever ships, so
+   * *Historique* and its search read the corrected text. What was owed was a true
+   * sentence, not an inert column.
+   */
+  test('with the task unticked, the document stops claiming it goes to VerySwing', async () => {
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'objections' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.getByText(/Ce texte-ci part dans la tâche VerySwing/)).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /Tâche/ }))
+    })
+
+    expect(screen.queryByText(/Ce texte-ci part dans la tâche VerySwing/)).toBeNull()
+    expect(screen.getByText(/il reste sur la réunion dans « Historique »/)).toBeTruthy()
+  })
+
   test('with nothing correctable in the rail, the count reaches the sentence', async () => {
     // The one unverified row is a typed one, so with the opportunity gone there
     // is nothing in the rail a rep can act on.

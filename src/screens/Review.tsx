@@ -1745,6 +1745,27 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const inertFor = (key: ReviewField['key']): string | null =>
     key === 'account' ? ACCOUNT_INERT : INTERPRETIVE.has(key) ? typedInert : null
 
+  /**
+   * **Is the compte-rendu actually going anywhere?**
+   *
+   * `edits.compteRendu` has exactly one consumer — `crm.task`'s `payload.body`.
+   * With the task unticked or unavailable it reaches no external system at all,
+   * and the sentence over the document went on saying « Ce texte-ci part dans la
+   * tâche VerySwing tel qu'il est affiché ». That is `Client`'s defect at the
+   * scale of a column: one input was a dead control, this is 2 400 px of document
+   * the rep corrects under a false promise.
+   *
+   * The document stays editable, which is the difference. `Client` is read-only
+   * because its value is resolved and typing it changes nothing anywhere; the
+   * compte-rendu is the rep's own record and `confirmation.recorded` writes it
+   * verbatim into the log whatever ships, so *Historique* and its search read the
+   * corrected text. What was owed was not an inert column, it was a true
+   * sentence.
+   */
+  const taskIntent = panel.intents.find((intent) => intent.kind === 'crm.task') ?? null
+  const taskShips =
+    taskIntent !== null && taskIntent.available && (checked ?? []).includes(taskIntent.id)
+
   /** Of what ships unverified, the part the rep can actually act on here. */
   const correctableFaible = shippingFaible.filter((field) => inertFor(field.key) === null)
 
@@ -2142,9 +2163,18 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                     {typedInert === null
                       ? 'Les corrections faites à droite vont dans l’opportunité. '
                       : 'L’opportunité ne part pas, donc les valeurs de droite non plus. '}
-                    Ce texte-ci part dans la tâche VerySwing tel qu’il est affiché — s’il porte
-                    un <span className="text-warn">{FAIBLE}</span> que vous avez levé,
-                    corrigez-le dans « Modifier ».
+                    {taskShips ? (
+                      <>
+                        Ce texte-ci part dans la tâche VerySwing tel qu’il est affiché — s’il porte
+                        un <span className="text-warn">{FAIBLE}</span> que vous avez levé,
+                        corrigez-le dans « Modifier ».
+                      </>
+                    ) : (
+                      <>
+                        La tâche VerySwing ne part pas : ce texte-ci ne quitte pas l’application,
+                        il reste sur la réunion dans « Historique ».
+                      </>
+                    )}
                   </p>
                 ) : null}
                 {/*
