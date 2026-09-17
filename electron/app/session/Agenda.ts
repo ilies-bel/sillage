@@ -1066,6 +1066,62 @@ export class Agenda {
      * function, so « does anything account for the call happening now » keeps the
      * single shape its docblock claims.
      */
+    /*
+     * **A call under way takes the conversation — including from an offer that was
+     * already standing when it started.**
+     *
+     * `#arm` refuses to *make* an offer beside a live recording and says why at
+     * length (« A call under way takes the conversation, and the calendar waits »).
+     * It cannot refuse one that predates the recording, and nothing else took that
+     * one back: `#withdrawAdHoc` fires on a change or loss of the microphone hold,
+     * and the hold is precisely what does not change when the rep records the call
+     * they are already on by another route.
+     *
+     * Driven on the shipped class (`scratch/r18-demarrer-une-reunion.mjs`), no
+     * Entra, Teams holding the microphone since 14:33 — the offer is already
+     * standing at 14:35 when the rep presses « Démarrer une réunion », which
+     * `AdHocInput.spent` calls the existing route for an unscheduled call and the
+     * *fast* one, since the detector waits twenty-five seconds:
+     *
+     *     40 min in   liveStates ["armed","recording"]
+     *                 Réunion=recording | Appel non planifié — Teams=armed
+     *     press the filled *Enregistrer* on the anonymous row
+     *                 { ok: false, « une autre réunion est déjà en cours
+     *                   d’enregistrement » }
+     *
+     * `["armed","recording"]` is verbatim the string CLAUDE.md names as the defect
+     * round 24 closed, and this is the one direction that was left: two rows for
+     * one conversation for the whole call, the day's single filled primary on the
+     * row that cannot be started, and the rep's own live recording wearing an
+     * outline control below it. It clears when the microphone is released — so it
+     * is a wrong screen for the length of a call, not a strand — and the same shape
+     * reaches a *calendar* offer, which `#arm` cannot guard either: an invite armed
+     * at 13:55 and a « Démarrer une réunion » at 13:58.
+     *
+     * `#withdrawAdHoc` for an unscheduled offer, because it owns `#adHocArmed` and
+     * « suppression is a decision, not a delay » — the hold is spent either way,
+     * since `live` latches it two statements below. Anything else goes through the
+     * same withdrawal `#arm` uses, and `#armed` is cleared here because no arming
+     * follows to overwrite it.
+     */
+    const standingBeside = this.#armed
+    if (standingBeside !== null) {
+      const elsewhere = this.#options.orchestrator
+        .liveIds()
+        .find(
+          (id) =>
+            id !== standingBeside.meetingId &&
+            this.#options.orchestrator.stateOf(id) === 'recording',
+        )
+      if (elsewhere !== undefined) {
+        if (this.#adHocArmed === standingBeside.meetingId) this.#withdrawAdHoc()
+        else {
+          this.#withdrawStanding(elsewhere)
+          this.#armed = null
+        }
+      }
+    }
+
     const standingOwn = this.#armed?.eventId === null ? this.#armed : null
     if (standingOwn !== null && this.#adHocArmed !== standingOwn.meetingId) {
       const placed = this.#ownMeetings(now).find((meeting) => meeting.id === standingOwn.meetingId)

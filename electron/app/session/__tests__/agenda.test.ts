@@ -2531,6 +2531,86 @@ test('arming the next placed meeting takes back the offer it replaces', async ()
  * because a test that reads the constant it is pinning cannot see the constant
  * move.
  */
+/*
+ * **An offer that was already standing when the recording began — the one
+ * direction `#arm`'s guard cannot reach.**
+ *
+ * `#arm` refuses to make an offer beside a live recording and spends a docblock
+ * on why (« A call under way takes the conversation, and the calendar waits »).
+ * It is asked only when an offer is about to be *made*. An offer standing before
+ * the rep starts recording something else is nobody's: `#withdrawAdHoc` fires on
+ * a change or loss of the microphone hold, and the hold is exactly what does not
+ * change when the rep records the call they are already on by another route.
+ *
+ * Driven on the shipped class, Teams holding the microphone two minutes before
+ * the rep presses « Démarrer une réunion » — which `AdHocInput.spent` calls the
+ * existing route for an unscheduled call, and the fast one:
+ *
+ *     liveStates ["armed","recording"]
+ *     Réunion=recording | Appel non planifié — Teams=armed
+ *     pressing the anonymous row: « une autre réunion est déjà en cours
+ *     d’enregistrement »
+ *
+ * Two rows for one conversation for the length of the call, the day's single
+ * filled *Enregistrer* on the one that cannot be started, and the rep's own live
+ * recording wearing an outline control below it.
+ *
+ * Both kinds of offer, because the subject of the rule is « a standing offer »
+ * and not « an unscheduled one »: the calendar half reaches it through an invite
+ * armed at T−5 and a manual start at T−2, and the two withdrawals are different
+ * code paths (`#withdrawAdHoc` owns `#adHocArmed`; `#withdrawStanding` does not).
+ */
+test('a recording started elsewhere takes back the offer already standing', async () => {
+  // ── the unscheduled offer
+  {
+    const h = harness([], null, 'Teams')
+    await h.agenda.tick({ now: T0 })
+    await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS })
+    assert.ok(h.agenda.snapshot().armed, 'le détecteur n’a rien proposé : ce fixture ne teste rien')
+
+    // « Démarrer une réunion », which is create + start in `main.ts`.
+    h.orchestrator.create({ id: 'm-manuel', title: 'Réunion', context: null })
+    assert.equal(h.orchestrator.dispatch('m-manuel', 'start', 'le commercial a démarré').ok, true)
+    await h.agenda.tick({ now: T0 + AD_HOC_DWELL_MS + 60_000 })
+
+    assert.equal(
+      h.agenda.snapshot().armed,
+      null,
+      'l’offre non planifiée reste proposée à côté de l’enregistrement en cours',
+    )
+    assert.deepEqual(
+      h.orchestrator.liveStates().filter((state) => state === 'armed'),
+      [],
+      'deux lignes pour une conversation : liveStates vaut ["armed","recording"], ' +
+        'et le seul Enregistrer plein du jour est sur celle qui refuse de démarrer',
+    )
+    h.store.close()
+  }
+
+  // ── and the calendar offer, which reaches it by a different withdrawal
+  {
+    const h = harness([event('AAA')])
+    await h.agenda.tick({ now: T0 - 5 * 60_000 })
+    assert.equal(h.orchestrator.stateOf(meetingIdFor('AAA')), 'armed')
+
+    h.orchestrator.create({ id: 'm-manuel', title: 'Réunion', context: null })
+    assert.equal(h.orchestrator.dispatch('m-manuel', 'start', 'le commercial a démarré').ok, true)
+    await h.agenda.tick({ now: T0 - 2 * 60_000 })
+
+    assert.equal(
+      h.agenda.snapshot().armed,
+      null,
+      'l’invitation reste proposée à côté de l’enregistrement en cours',
+    )
+    assert.notEqual(
+      h.orchestrator.stateOf(meetingIdFor('AAA')),
+      'armed',
+      'l’invitation est restée armée pendant que le commercial enregistre autre chose',
+    )
+    h.store.close()
+  }
+})
+
 test('the dwell is twenty-five seconds, not one tick', async () => {
   assert.equal(AD_HOC_DWELL_MS, 25_000, 'le palier a bougé : ce test le tient en clair')
 
