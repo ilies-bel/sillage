@@ -1018,6 +1018,61 @@ describe('a correction that would reach nothing is not offered', () => {
    * dead control DEC-26 refuses — while the sentence saying where the correction
    * goes sat 555 px above the top of its own scroller.
    */
+  /*
+   * **The one gate that writes into a client's CRM was offering a remedy that
+   * does nothing, and pointing the rep at it.**
+   *
+   * An account is resolved, never typed (DEC-7): `crm.task` carries `accountId`
+   * and `accountName` appears in no payload. Driven on the shipped `draftIntents`
+   * by round 16: two payload sets across a changed `accountName`, byte-identical.
+   * So the rep read « Valider malgré 1 champ non vérifié », pressed the count,
+   * was *focused into* `#field-account` by the product itself, typed the client's
+   * real name, and nothing moved — in front of a POST with no idempotency key and
+   * no delete verb.
+   *
+   * And the sentence beside the button said « Client — introuvable dans la
+   * transcription » about a row whose `span` is `null` **by contract**, two lines
+   * under a `source ▸` panel reading « jamais lu sur la transcription ». It sent
+   * them to search a place the screen had already said was never consulted.
+   *
+   * `accountCandidates: []` is the default here on purpose: it is what
+   * `register.ts` returns whenever there are no attendee e-mails, which is the
+   * no-Entra build DEC-28 ships the first demo on. On that build there is no
+   * remedy on the screen at all, and the sentence has to say so rather than
+   * invent one.
+   */
+  test('the client row states where the act lives, and never claims the transcription', async () => {
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'account' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    // Not a control: the value is resolved, and the box pretended otherwise.
+    expect((document.getElementById('field-account') as HTMLInputElement).readOnly).toBe(true)
+
+    // It still ships — `accountId` goes in the task — so the count still names it.
+    expect(screen.getByRole('button', { name: 'Valider malgré 1 champ non vérifié' })).toBeTruthy()
+
+    // But not with the false clause, and with the true one instead.
+    expect(screen.queryByText(/Client — introuvable dans la transcription/)).toBeNull()
+    expect(screen.getByText(/Client — non résolu, et rien ici ne peut le rattacher/)).toBeTruthy()
+
+    // And the row carries the reason, where the rep is looking.
+    expect(screen.getByText(/Aucun rattachement n’a été proposé/)).toBeTruthy()
+
+    // Pressing the count must not focus a box the rep cannot type in.
+    await act(async () => {
+      fireEvent.click(screen.getByText(/champs · /))
+    })
+    expect(document.activeElement?.id).not.toBe('field-account')
+  })
+
   test('with nothing correctable in the rail, the count reaches the sentence', async () => {
     // The one unverified row is a typed one, so with the opportunity gone there
     // is nothing in the rail a rep can act on.
@@ -1271,24 +1326,32 @@ describe('DEC-4 — the rows describe the form as it stands, not as it arrived',
     }
   }
 
-  test('correcting the client renames what will be created', async () => {
+  /*
+   * **This test used to prove the opposite, and it would still pass either way.**
+   *
+   * It was « correcting the client renames what will be created »: it typed into
+   * `Client` and watched the summary follow. Two things were wrong with it. The
+   * summary is not what will be created — `accountName` reaches no payload, only
+   * this line — and `fireEvent.change` sets a value and dispatches an event
+   * whatever `readOnly` says, because jsdom enforces `readOnly` against a *user*
+   * and there is no user here. So the assertion held whether or not a rep could
+   * type in the box at all, which is the one thing it looked like it was proving.
+   *
+   * What is left is the attribute, which is what the browser actually enforces,
+   * and the sole legitimate writer: the candidate chip, `set('accountName', …)`,
+   * covered by « resolving the account enables the opportunity, and it ships ».
+   */
+  test('the client row cannot be typed into, because typing it ships nothing', async () => {
     bridge.when('review:get', () => openPanel()).when('review:preview', preview)
 
     render(<Review meetingId="m1" onBack={() => {}} />)
 
-    const client = await screen.findByLabelText('Client')
-    // The pre-fill's summary, before anything is touched.
+    const client = (await screen.findByLabelText('Client')) as HTMLInputElement
     await waitFor(() =>
       expect(screen.getByText('Acme Industries — besoin Dev Java — Acme Industries')).toBeTruthy(),
     )
 
-    fireEvent.change(client, { target: { value: 'Acme France' } })
-
-    // The row follows the field. Before this fix it kept naming « Acme
-    // Industries » while `review:confirm` shipped « Acme France ».
-    await waitFor(() =>
-      expect(screen.getByText('Acme Industries — besoin Dev Java — Acme France')).toBeTruthy(),
-    )
+    expect(client.readOnly).toBe(true)
   })
 
   test('resolving the account enables the opportunity, and it ships', async () => {

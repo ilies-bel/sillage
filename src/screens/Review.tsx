@@ -216,6 +216,13 @@ const EDIT_KEY: Record<ReviewField['key'], keyof ReviewEdits> = {
  * — see `focusFirstFaible`.
  */
 const INERT_NOTICE_ID = 'rail-inert-notice'
+/**
+ * Why `Client` is never a control: the value is resolved, not typed (DEC-7).
+ * Carried as the row's inert *state*; the sentence a rep reads is `accountReason`,
+ * which is only owed when the resolution is in doubt — otherwise `source ▸`
+ * already answers « where did this come from ».
+ */
+const ACCOUNT_INERT = 'Le compte est résolu par Outlook et VerySwing, jamais saisi ici.'
 
 const MULTILINE = new Set<ReviewField['key']>([
   'besoin',
@@ -1700,6 +1707,47 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const shippingFaible = faible.filter(
     (field) => typedInert === null || !INTERPRETIVE.has(field.key),
   )
+
+  /**
+   * **`Client` was a live textarea over a value no payload carries.**
+   *
+   * An account is *resolved* — Graph or VerySwing, never the model and never the
+   * keyboard (DEC-7). `crm.task` carries `accountId`; `accountName` appears in no
+   * payload anywhere, which `ReviewEdits`' own docblock denied while calling
+   * itself « exactly the set of values that reach an external system ». Driven on
+   * the shipped `draftIntents`: two payload sets across a changed `accountName`,
+   * byte-identical.
+   *
+   * So the rep stood at the one human gate in the product, read « Valider malgré
+   * 1 champ non vérifié », were *focused into* `#field-account` by the count they
+   * pressed, typed the client's real name, and nothing moved — not the mark, not
+   * the button, not one byte of the POST that has no idempotency key and no
+   * delete verb. The row is read-only now, which is what CLAUDE.md already
+   * required of a field the gate cannot ship.
+   *
+   * The count still names it, and that is not the same defect: `accountId` does
+   * ship, so an unresolved account really is an unverified thing leaving. What
+   * was false was the remedy — the sentence sent the rep to search a
+   * transcription that this row, by contract, was never read from.
+   */
+  const accountFaible = faible.some((field) => field.key === 'account')
+  const accountReason = !accountFaible
+    ? null
+    : panel.accountCandidates.length > 0
+      ? 'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription : rattachez-le ci-dessous.'
+      : 'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription. Aucun rattachement n’a été proposé : la tâche partira sans compte.'
+
+  /**
+   * One predicate, two readers — the row and the count — because two copies of
+   * « what can the rep change here » are two answers. `#accountingOwnClaims` in
+   * `Agenda.ts` says the same thing about its own pair.
+   */
+  const inertFor = (key: ReviewField['key']): string | null =>
+    key === 'account' ? ACCOUNT_INERT : INTERPRETIVE.has(key) ? typedInert : null
+
+  /** Of what ships unverified, the part the rep can actually act on here. */
+  const correctableFaible = shippingFaible.filter((field) => inertFor(field.key) === null)
+
   const focusFirstFaible = () => {
     /*
      * The first doubt the rep can actually *act on*. Sending them to a
@@ -1707,9 +1755,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
      * row is inert, the thing to reach is the sentence that says where the
      * correction goes.
      */
-    const first = shippingFaible[0] ?? null
+    const first = correctableFaible[0] ?? null
     if (first === null) {
-      const notice = document.getElementById(INERT_NOTICE_ID)
+      // Nothing correctable. If something unverified is still *shipping*, its own
+      // row carries the sentence that says where the act lives; otherwise the
+      // group notice does.
+      const stranded = shippingFaible[0] ?? null
+      const notice =
+        stranded === null
+          ? document.getElementById(INERT_NOTICE_ID)
+          : document.getElementById(`row-${stranded.key}`)
       if (notice !== null) scrollToTop(notice)
       return
     }
@@ -2398,7 +2453,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 value={String(edits[EDIT_KEY[field.key]] ?? '')}
                 onChange={(value) => set(EDIT_KEY[field.key], value)}
                 onLocate={locate}
-                inert={INTERPRETIVE.has(field.key) ? typedInert : null}
+                inert={inertFor(field.key)}
+                reason={field.key === 'account' ? accountReason : null}
               />
             ))}
           </div>
@@ -2614,7 +2670,28 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 : stalled && !busy
                   ? `La réécriture n’a pas démarré : ce que « Valider » envoie est le compte-rendu affiché à gauche, avec vos corrections.`
                   : shippingFaible.length > 0 && !busy
-                    ? `${shippingFaible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
+                    ? /*
+                       * Two clauses, because the rows have two different causes and
+                       * one of the two sentences was false. « introuvable dans la
+                       * transcription » is right for an interpreted row whose
+                       * citation the app could not verify. It is not right for
+                       * `account`, whose `span` is `null` **by contract** (DEC-7) —
+                       * that row was never read from the transcription at all, and
+                       * telling a rep to go and look there is sending them to search
+                       * a place the row two lines up says was never consulted.
+                       */
+                      [
+                        correctableFaible.length > 0
+                          ? `${correctableFaible.map((field) => field.label).join(', ')} — introuvable dans la transcription.`
+                          : null,
+                        correctableFaible.length < shippingFaible.length
+                          ? panel.accountCandidates.length > 0
+                            ? 'Client — à rattacher dans la liste ci-dessus.'
+                            : 'Client — non résolu, et rien ici ne peut le rattacher.'
+                          : null,
+                      ]
+                        .filter((part) => part !== null)
+                        .join(' ')
                     : reassurance}
             </p>
           </div>
@@ -2650,6 +2727,16 @@ interface FieldRowProps {
    * compte-rendu in the other column.
    */
   inert: string | null
+  /**
+   * Stated **on this row**, when the row is the only one wearing its reason.
+   *
+   * The nine `INTERPRETIVE` rows share one sentence above the group, because
+   * nine copies of it would be a wall. `account` is one row with its own cause,
+   * so its sentence belongs beside it — and a rep who cannot act on a field has
+   * to be told where the act does live, at the gate that writes into a client's
+   * CRM.
+   */
+  reason: string | null
 }
 
 /**
@@ -2677,7 +2764,7 @@ const INTERPRETIVE: ReadonlySet<ReviewField['key']> = new Set([
  * « du calendrier, jamais de la transcription » is exactly the answer for those
  * two (DEC-7). A row that simply had no button would read as an oversight.
  */
-function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
+function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowProps) {
   const [open, setOpen] = useState(false)
   const multiline = MULTILINE.has(field.key)
 
@@ -2749,6 +2836,10 @@ function FieldRow({ field, value, onChange, onLocate, inert }: FieldRowProps) {
           {`source ${open ? '▾' : '▸'}`}
         </button>
       </div>
+
+      {reason === null ? null : (
+        <p className="measure text-muted mt-hair text-meta">{reason}</p>
+      )}
 
       {/*
         `readOnly`, not `disabled`: the text stays selectable and readable at

@@ -4135,6 +4135,34 @@ async function sweepHovers(page, where) {
 
 const RAIL_FLOOR = 2.5
 const RAIL_ROWS = 11
+/**
+ * **Which rows are read-only, and in which state — named, not counted.**
+ *
+ * `account` is inert on every screen: an account is resolved by Outlook and
+ * VerySwing and never typed (DEC-7), so a box a rep can type in over a value no
+ * payload carries is the dead control DEC-26 refuses. The other nine are the
+ * `INTERPRETIVE` rows, inert only while the opportunity is not shipping.
+ *
+ * This was `readOnly === 0` on the nominal screen and `readOnly > 0` on the inert
+ * one — a floor of **one**, on a check whose own docblock says « a floor declared
+ * for a grammar and applied to two rows of it is a floor nobody is holding ».
+ * Eight flush rows and three boxed ones was a pass. Round 16 proved it: excluding
+ * one row from `INTERPRETIVE` left `review-rail`, `review-rail-inerte`, all twelve
+ * gates and 152 stagings green while `besoin` — the row the opportunity's whole
+ * description opens on — was a live textarea over a payload that will never exist.
+ */
+const RAIL_ALWAYS_INERT = ['row-account']
+const RAIL_TYPED_INERT = [
+  'row-besoin',
+  'row-profils',
+  'row-modeCollaboration',
+  'row-tjm',
+  'row-dateDemarrage',
+  'row-dureeMission',
+  'row-contexteTechnique',
+  'row-objections',
+  'row-prochainesEtapes',
+]
 
 async function measureRail(page, { inert }) {
   const sharp = require('sharp')
@@ -4162,7 +4190,7 @@ async function measureRail(page, { inert }) {
 
   const flat = []
   const boxed = []
-  let readOnly = 0
+  const readOnlyKeys = []
   let band = null
 
   for (const key of keys) {
@@ -4188,7 +4216,7 @@ async function measureRail(page, { inert }) {
       return { field: r(field), container: r(container), readOnly: field.readOnly }
     }, key)
     if (geometry === null) throw new Error(`${key} : aucune boîte à mesurer sur la ligne`)
-    if (geometry.readOnly) readOnly += 1
+    if (geometry.readOnly) readOnlyKeys.push(key)
 
     /*
      * One clip per row, spanning the container's own left edge through the
@@ -4266,11 +4294,21 @@ async function measureRail(page, { inert }) {
     }
   }
 
-  if (inert && readOnly === 0) {
-    throw new Error('aucun champ inerte : la mise en scène n’a pas retiré l’opportunité')
-  }
-  if (!inert && readOnly > 0) {
-    throw new Error(`${readOnly} champ(s) inerte(s) sur l’écran nominal`)
+  /*
+   * The exact set, both ways. A missing row means a control the rep can type into
+   * over a payload that will not carry it; an extra one means a correction the
+   * gate silently refuses. Neither is a count.
+   */
+  const owed = [...RAIL_ALWAYS_INERT, ...(inert ? RAIL_TYPED_INERT : [])].sort()
+  const got = [...readOnlyKeys].sort()
+  if (owed.join(',') !== got.join(',')) {
+    const missing = owed.filter((k) => !got.includes(k))
+    const extra = got.filter((k) => !owed.includes(k))
+    throw new Error(
+      `champs inertes inattendus sur l’écran ${inert ? 'sans opportunité' : 'nominal'} : ` +
+        `${missing.length} manquant(s)${missing.length > 0 ? ` (${missing.join(' · ')})` : ''}, ` +
+        `${extra.length} en trop${extra.length > 0 ? ` (${extra.join(' · ')})` : ''}`,
+    )
   }
   if (band === null || band < RAIL_FLOOR) {
     throw new Error(
