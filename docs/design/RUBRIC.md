@@ -148,6 +148,9 @@ round 5 did not.
 | 15 | widget | `9e73fba` | 7 | 6 | 5.5 | 5.5 | 5.5 | 4.5 | 5.5 | 5 | 5 | **49.5** |
 | 15 | main | `9e73fba` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | 5.5 | 6.5 | **52.5** |
 | 15 | detection | `9e73fba` | 7 | 7.5 | 6 | 5 | 6 | 6 | 5 | 5.5 | 5 | **53** |
+| 16 | widget | `f6ae677` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 5 | 5 | 5 | **49.5** |
+| 16 | main | `f6ae677` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | **51.5** |
+| 16 | detection | `f6ae677` | 7 | 7.5 | 6 | 5 | 5.5 | 5 | 5 | 5.5 | 5 | **51.5** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -161,6 +164,81 @@ timestamped every measurement it kept to 17:44–18:05, and verified that
 So the numbers stand; what does not is the method, and the cost of the collision
 was borne by the reviewer rather than by me.
 
+
+## Round 16: three reviewers, three surfaces, one verdict about the author
+
+Widget flat, main −1, detection −1.5, and every reviewer said the same thing
+unprompted: the surfaces did not decline, the instrument widened. Each also
+found, independently, that **the guard shipped with the previous round's fix
+passes the regression it was built to stop.**
+
+| surface | the guard | what got past it |
+|---|---|---|
+| widget | `sweepHovers` | 7 of 14 controls — `group-hover:opacity-100` on the *parent* answers for the control |
+| main | `review-sans-opportunite-valider` | the regex `/Valider malgré (\d+) champ/` never fires on the stage named after that string; it asserts `0 === 0`, twice |
+| main | `measureRail` | censuses rows, then holds the read-only grammar to a floor of **one** |
+| detection | the dwell | weakening `>= AD_HOC_DWELL_MS` to `> 0` leaves 1282/1282 green |
+| detection | the origin bound | widening 20 → 60 min leaves 1282/1282 green |
+
+The cause is one habit: **a check written at the moment of the fix, by the
+person holding the numbers, encodes the fix rather than the property.** The
+countermeasure that works, used for all three round-16 repairs, is to write the
+check so it **fails on HEAD before the fix exists**. The origin-bound test did,
+reproducing the finding verbatim. Every hollow check listed above passed on the
+tree it was born on.
+
+Second habit, same root: a number computed while choosing a value and written
+down as a number observed. `ownClaims`' window was stated as eighty-five minutes
+at four sites and is a hundred and ten — thirty before the anchor, eighty after.
+The round-16 reviewer read the prose and quoted the wrong figure back as the
+basis for its recommendation, which is how one wrong sentence becomes two.
+Counted invariant thirteen → sixteen.
+
+### Fixed in round 16
+
+- **`9f83457`** — a client joining more than twenty minutes late lost their own
+  named meeting to an anonymous row, and pressing the named row then produced
+  `recording` + `armed`, which blocks every installer and is escapable only by
+  stopping the recording. The bound was an analogy to `#over`, which reads
+  `event.context.scheduledEnd` — a field `Meeting` does not have.
+- **`dae6563`** — a failed *Pause*, the only privacy control on the widget, left
+  the rep believing they were off the record: the whole receipt was one sentence
+  in a 1×1 clipped `aria-live` paragraph. The fixture had `refuseMarks()` and no
+  `refusePause()`, so no stage could reach it.
+- **`f825eda`** — `Client` was a live textarea over a value no payload carries,
+  at the gate that writes into a client's CRM, and the sentence beside *Valider*
+  sent the rep to search a transcription the row says was never read.
+
+### Open, priced, not fixed
+
+- **`--contrast` demands 4.5:1 of text inside `.sr-only`** — found by adding an
+  announcement and watching `widget-pause` fail at 1.08:1 on a sentence
+  deliberately painted for nobody. Any stage that announces anything fails.
+- **`ReviewEdits`' docblock** calls itself « exactly the set of values that reach
+  an external system » while `accountName` reaches none. The field now has one
+  legitimate writer (the chip); the contract sentence is still wrong.
+- **The panel and the mention card have no motion at all** — four state changes,
+  `useDeparture` has no caller under `src/widget/`. Re-priced worse than round 15
+  stated: it is not a missing exit, it is a missing arrival *and* exit.
+- **`round.mjs` renders 1 of 11 widget stages**, and `smoke.mjs` still does not
+  pass `--scan`. Every widget round since round 4 was scored on a directory
+  holding one widget picture.
+- **The flagship stage `agenda-appel-imprevu` photographs a day the shipped
+  `Agenda` refuses to produce** — four facts, all four inverted.
+- **The calendar key pairs both filled marks with the wrong label**, at 1280×800
+  as well as 960×600: Δ 8.00 px from its own line, 0.53 px from the neighbour's.
+- **The mark `<input>` hides 1327 px of a 280-character note** (84 %), no mask,
+  no counter. `--scrollers` cannot see it and `shot.mjs:3644` says why.
+
+### Round 15's fade finding does not reproduce, and the fix would have been wrong
+
+Round 15 said the log's fade spends 8 of its 12 px on padding. Painted pixels say
+`padding-top` is part of a scroller's scrollable overflow, so past `scrollTop = 8`
+it has scrolled away and the ramp is over ink from y=0. The premise holds across a
+7 px sliver of a 188 px range. The symptom is real and is the *scroll clip* cutting
+mid-line-box — and the remedy implied (lengthen the ramp past `FADE_PX = 12`) is
+exactly what the `--fade` ceiling exists to refuse. Holding the tree still while
+the reviewers ran is what stopped this being built.
 
 ## Retired: the palette campaign, and the measurement that was right about the wrong thing
 
