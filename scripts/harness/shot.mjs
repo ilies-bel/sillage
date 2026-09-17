@@ -3704,6 +3704,84 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The privacy control, refused.**
+   *
+   * `Orchestrator.setPaused` answers `false` when it holds no recording for the
+   * meeting — the `EndOfMeetingWatch` gap, the same one `meeting:mark` refuses
+   * in — and `register.ts` answers with the state *unchanged*, so the widget sees
+   * back the opposite of what it asked for.
+   *
+   * Before it was drawn, the whole receipt for that was one sentence inside a 1×1
+   * `clip: rect(0,0,0,0)` `aria-live` paragraph, while the label still read
+   * « Pause », the clock still counted and the pill still drew the `--accent`
+   * dot. On the one surface whose job is to say across a desk whether a client is
+   * being written down, the rep believed they were off the record and the machine
+   * was still recording.
+   *
+   * `refusePause()` existed for a round with nothing calling it, which is how its
+   * own half-staged world went unnoticed. This is the caller.
+   */
+  'widget-pause-refus': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByRole('button', { name: 'Pause' }).waitFor()
+
+      // The call ends under the pill, which is why the press will be refused.
+      await page.evaluate(() => window.__harness.refusePause())
+      await page.getByRole('button', { name: 'Pause' }).click()
+
+      const notice = page.getByRole('alert')
+      await notice.waitFor()
+      const rect = await notice.boundingBox()
+      if (!rect || rect.width <= 1 || rect.height <= 1) {
+        throw new Error(
+          `le refus de pause est dessiné dans une boîte de ${JSON.stringify(rect)} — ` +
+            `invisible, exactement comme le paragraphe sr-only qu’il remplace`,
+        )
+      }
+      const carded = await notice.evaluate((el) => el.closest('[data-card]') !== null)
+      if (!carded) throw new Error('le refus est hors carte : le halo ne prend pas la souris')
+
+      /*
+       * The label must not have flipped. A receipt for a pause that did not
+       * happen is the failure one layer on — and « Reprendre » over a running
+       * recording is the sentence this whole stage exists to stop.
+       */
+      if ((await page.getByRole('button', { name: 'Reprendre' }).count()) !== 0) {
+        throw new Error('le bouton dit « Reprendre » alors que la pause a été refusée')
+      }
+
+      /*
+       * **And the pill stops claiming the recording.** Polled rather than
+       * sampled, for `widget-refus`' reason: the repair is a `widget:state`
+       * re-read carrying the shipped channel's own latency, so a single reading
+       * taken when the alert appears measures the round trip instead of the rule.
+       */
+      await page
+        .waitForFunction(
+          () => {
+            const graphic =
+              document.querySelector('[data-graphic]')?.getAttribute('data-graphic') ?? ''
+            const spoken = [...document.querySelectorAll('.sr-only')].map((el) => el.textContent ?? '')
+            return ![graphic, ...spoken].some((text) => /enregistrement en cours/i.test(text))
+          },
+          undefined,
+          { timeout: 2_000 },
+        )
+        .catch(() => {
+          throw new Error(
+            'la pastille revendique encore « enregistrement en cours » à côté du refus de pause : ' +
+              'les deux moitiés de la fenêtre ne disent pas la même chose',
+          )
+        })
+    },
+  },
+
   'widget-refus': {
     scenario: 'session',
     query: 'window=widget',

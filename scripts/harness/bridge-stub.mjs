@@ -3290,6 +3290,24 @@ let RECORDING_STOPPED = false
      */
     refusePause(on) {
       REFUSE_PAUSE = on === undefined ? true : on === true
+      /*
+        **And `widget:state` moves with it**, for the reason `refuseMarks` sets
+        `RECORDING_STOPPED` below: `Orchestrator.setPaused` answers `false` only
+        when it holds no recording for the meeting, and `widget:state` answers
+        `{ meeting: null }` in exactly that case. One condition, two channels.
+
+        Without this the verb staged a world the process cannot be in — a refusal
+        beside a filled `--accent` dot, a running clock and an `sr-only`
+        « Enregistrement en cours ». That is not a stale copy in the renderer, it
+        is two channels of one process disagreeing about the same fact, and it is
+        the round-4 defect this surface got a reviewer of its own for. Driven
+        through `widget-refus`' own predicate, `refuseMarks()` reported ACCORD and
+        this verb reported CONTRADICTION.
+
+        Added in the same commit as the renderer fix it was meant to support, and
+        wrong on arrival — the habit round 16 named, in the fixture this time.
+      */
+      RECORDING_STOPPED = REFUSE_PAUSE
     },
     refuseMarks(reason) {
       REFUSE_MARKS =
