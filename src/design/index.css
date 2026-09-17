@@ -598,6 +598,95 @@
   }
 
   /*
+   * **The one card, which is the loudest state change on this surface and had
+   * neither half of a motion.**
+   *
+   * Measured with `shot.mjs --motion` on the two stages that stage it,
+   * `widget-refus` and `widget-pause-refus`, at both smoke sizes: « 3 élément(s)
+   * animé(s) dont **0 qui s'en vont** ». A refused mark and a refused *Pause*
+   * are the two sentences on this window a rep most needs to notice, and both
+   * appeared between two frames and vanished between two frames, on a window
+   * composited over another application's screen share. The pill and the panel
+   * had `widget-arrive` from DEC-50; the card that answers a press had nothing,
+   * because it is the one surface here the *world* can also remove — a stale
+   * refusal yields to the next press that succeeds — and `useDeparture` is the
+   * hook for that case and had no caller under `src/widget/`.
+   *
+   * **The same keyframes as the pill and the panel, run backwards for the
+   * exit.** DEC-50 carves `scale` out of VISION.md §6's « 2–4px translate only »
+   * for this window specifically, on the argument that a card anchored to the
+   * pill grows out of the control that was pressed. A card 8px below that
+   * control that *slides* 3px on its way out reads as a slip rather than a
+   * departure, and would put two exit vocabularies on one 340px window. So one
+   * amplitude — 0.92, the number `widget-arrive` already argues — in both
+   * directions, and the origins are the pill's edge, exactly as the panel's are.
+   *
+   * `--ease-in` on the way out, `--ease-overshoot` on the way in, which is
+   * VISION.md §6's rule and is what `--motion`'s direction half measures: the
+   * exit is a `@keyframes` whose progression ends more transparent than it
+   * starts, so the check reads it off the cascade rather than off this class's
+   * name.
+   *
+   * **The exit is a `@keyframes` and not a transition, and that is a measurement
+   * rather than a preference.** It was written as
+   * `opacity: 0; scale: 0.92; transition: … var(--ease-in)` — the shape
+   * `.widget-leaving` and `.leaving` both have — and it did not paint. Sampled
+   * frame by frame on the shipped card (`scratch/r19-clock.mjs`): the element
+   * stayed mounted for the full 163 ms and every one of the ten frames read
+   * `opacity 0.000, scale 0.92`, with `transition-property: opacity, scale`,
+   * `0.15s` and `cubic-bezier(0.64, 0, 0.78, 0)` all resolved on it. The
+   * arrival above is an `animation … both`, so the class that leaves takes the
+   * class that arrived away in the same style change, and Chromium starts no
+   * transition across that edge. A card held on screen for 150 ms that spends
+   * all of it at zero is the blink with extra steps — the fix producing the next
+   * round's finding, which is why this is written down with the numbers instead
+   * of « use a keyframes ». `widget-carte-sortie` is what holds it: it samples
+   * every painted frame and refuses a departure with none between the two ends.
+   *
+   * **Not `.widget-leaving`, and not `.leaving`.** The first is the *window's*
+   * exit: the renderer reads its duration back off computed style and the main
+   * process waits exactly that long before destroying the window, so a card's
+   * flourish must never be able to strand an always-on-top window over a
+   * client's call. The second is the app's generic exit and carries the 3px
+   * translate this paragraph just declined. Two rules, one vocabulary, no
+   * coupling — the same reasoning `.leaving` states about `.widget-leaving`.
+   *
+   * Held mounted by `app/useDismiss.ts`'s `useDeparture`, which reads `--motion`
+   * rather than restating it, so under `prefers-reduced-motion` — where that
+   * token is `0ms` — the card unmounts with no intermediate frame and this rule
+   * never paints.
+   */
+  .widget-card-arrive {
+    animation: widget-arrive var(--motion) var(--ease-overshoot) both;
+    transform-origin: 50% 0;
+  }
+
+  .widget-card-arrive[data-above='true'] {
+    transform-origin: 50% 100%;
+  }
+
+  /* `widget-arrive` run backwards: one amplitude, both directions. */
+  @keyframes widget-card-leave {
+    from {
+      opacity: 1;
+      scale: 1;
+    }
+    to {
+      opacity: 0;
+      scale: 0.92;
+    }
+  }
+
+  .widget-card-leaving {
+    animation: widget-card-leave var(--motion) var(--ease-in) both;
+    transform-origin: 50% 0;
+  }
+
+  .widget-card-leaving[data-above='true'] {
+    transform-origin: 50% 100%;
+  }
+
+  /*
    * Section headers, VISION.md §6: short accent rule + uppercase, letterspaced,
    * muted label. Used by every pane header, which is why it is a component
    * rather than eight copies of the same six utilities.

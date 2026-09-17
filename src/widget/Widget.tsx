@@ -85,6 +85,7 @@ import {
   type MomentMark,
 } from '../../electron/core/contracts/marks.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
+import { useDeparture } from '../app/useDismiss.ts'
 import { formatElapsed } from '../app/format.ts'
 import { LevelMeter } from '../screens/session/LevelMeter.tsx'
 import { Button, unavailable } from '../ui/index.ts'
@@ -183,6 +184,26 @@ type WidgetCard =
    * urgent half and must not wait on SQLite behind a preload hop.
    */
   | { kind: 'mention'; sentence: string; copied: boolean; logged: boolean | null }
+
+/**
+ * **The class list the one card wears while it is arriving or leaving**, so the
+ * two cards cannot drift apart on the half of the motion neither of them had.
+ *
+ * `index.css` carries the argument for the rules themselves. What is here is the
+ * mutual exclusion, and it is load-bearing rather than tidy: `widget-arrive` is
+ * an `animation … both`, and a filled animation beats a transition on the same
+ * property in the cascade — so a card still wearing the arrival while `.leaving`
+ * asks for `opacity: 0` would hold at `opacity: 1` for the whole of its exit and
+ * then vanish between two frames, which is the defect this is here to remove,
+ * reintroduced by the fix for it. Measured before it was written: with both
+ * classes on the element the departure never paints.
+ *
+ * `data-above` rather than a second class, because that is the attribute
+ * `.widget-panel-arrive` already reads for the same question — which edge of the
+ * pill this box grows out of.
+ */
+const CARD_MOTION = (leaving: boolean): string =>
+  leaving ? 'widget-card-leaving' : 'widget-card-arrive'
 
 export function Widget() {
   const state = useInvoke('widget:state', {})
@@ -321,6 +342,32 @@ export function Widget() {
    * through reading aloud.
    */
   const [card, setCard] = useState<WidgetCard | null>(null)
+
+  /**
+   * **The card is held on screen long enough to leave, and it is the world that
+   * takes it away as often as the rep.**
+   *
+   * Three of the four ways this slot empties are not a press on the card: a
+   * successful *Pause* clears a stale refusal, so does a successful
+   * *Retirer*, and `announce()` yields to one. `useDismiss` cannot serve those —
+   * there is no gesture on this element to intercept — and `useLeaving` cannot,
+   * because a slot of one keyed on a constant reports its departure out of a ref
+   * its effect only refreshes when the *keys* change, so a slot going
+   * `refus → mention → null` would fade out wearing the sentence from two states
+   * ago. `useDeparture` is the hook written for exactly this and, until this
+   * commit, had no caller under `src/widget/` at all.
+   *
+   * `drawnCard` is the last non-null card, held in a ref, because the state is
+   * already `null` for the whole of the fade: rendering `card` would render
+   * nothing and the hold would buy an empty box. It is written during render and
+   * read in the same render, which is safe for the reason `useDeparture`'s own
+   * docblock gives about its `was` ref — the write is idempotent and guarded by
+   * the value it feeds.
+   */
+  const { shown: cardShown, leaving: cardLeaving } = useDeparture(card !== null)
+  const lastCard = useRef<WidgetCard | null>(null)
+  if (card !== null) lastCard.current = card
+  const drawnCard = card ?? lastCard.current
 
   /**
    * What worked, for a screen reader and for nobody else.
@@ -807,13 +854,20 @@ export function Widget() {
             they are *written*, because a render can only ever read what the writer
             left it. See `card`, which carries the measurement.
           */}
-          {card === null ? null : card.kind === 'refus' ? (
-            <Refus text={card.text} onDismiss={() => setCard(null)} />
+          {!cardShown || drawnCard === null ? null : drawnCard.kind === 'refus' ? (
+            <Refus
+              text={drawnCard.text}
+              leaving={cardLeaving}
+              above={above && open}
+              onDismiss={() => setCard(null)}
+            />
           ) : (
             <Mention
-              sentence={card.sentence}
-              copied={card.copied}
-              logged={card.logged}
+              sentence={drawnCard.sentence}
+              copied={drawnCard.copied}
+              logged={drawnCard.logged}
+              leaving={cardLeaving}
+              above={above && open}
               /*
                 Dismissing ends the act as well as the card: the next press on the
                 control is a new telling and writes its own row. See `handed`.
@@ -1589,13 +1643,33 @@ function Frame({ open, leaving, gone, settled, children }: FrameProps) {
  * That sentence used to be the whole rule, and the mention control read it
  * literally and deleted a refusal that had nothing to do with it.
  */
-function Refus({ text, onDismiss }: { text: string; onDismiss: () => void }) {
+function Refus({
+  text,
+  leaving,
+  above,
+  onDismiss,
+}: {
+  text: string
+  /** On its way out — see `CARD_MOTION`. */
+  leaving: boolean
+  /**
+   * Painted *above* the pill, which is `above && open` and not `above` — the
+   * column only reverses when the panel is out, and this card is most often
+   * drawn with no panel at all. Measured on the shipped stub, which answers
+   * `above: true`: taking `above` alone gave the refusal a
+   * `transform-origin` of `50% 100%` while it was hanging *below* the pill, so
+   * it grew out of its own far edge.
+   */
+  above: boolean
+  onDismiss: () => void
+}) {
   return (
     <div
       data-card
+      data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className="bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
+      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight ${CARD_MOTION(leaving)}`}
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1661,6 +1735,8 @@ function Mention({
   sentence,
   copied,
   logged,
+  leaving,
+  above,
   onDismiss,
 }: {
   /** What was copied, carried from the press rather than re-read (US-19). */
@@ -1668,14 +1744,19 @@ function Mention({
   copied: boolean
   /** `null` while the log write is on the wire — see `mention` in `Widget`. */
   logged: boolean | null
+  /** On its way out — see `CARD_MOTION`. */
+  leaving: boolean
+  /** Painted above the pill — `above && open`, see `Refus`. */
+  above: boolean
   onDismiss: () => void
 }) {
   return (
     <div
       data-card
+      data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className="bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight"
+      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight ${CARD_MOTION(leaving)}`}
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>

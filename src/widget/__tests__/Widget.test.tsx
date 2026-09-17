@@ -541,7 +541,95 @@ test('a refused mark is drawn, not only announced', async () => {
   expect(screen.getByRole('button', { name: 'Marquer ce moment' })).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
-  expect(screen.queryByRole('alert')).toBeNull()
+  // Held for one `--motion` on its way out — see `CARD_MOTION` — so the
+  // assertion is « it goes », never « it is gone in the same tick ».
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+})
+
+/**
+ * **The one card arrives and it leaves, and both cards do both.**
+ *
+ * The state change this window makes loudest — a refusal, over another
+ * application's screen share — appeared between two frames and vanished between
+ * two frames. Measured with `shot.mjs --motion` on `widget-refus` and
+ * `widget-pause-refus`, at 1280×800 and at 960×600: « 3 élément(s) animé(s) dont
+ * **0 qui s'en vont** ». `useDeparture` is the hook for a surface the world
+ * removes and it had no caller under `src/widget/` at all.
+ *
+ * **Both cards and both directions**, because the two ways this slot empties are
+ * different mechanisms and a fixture that ran one of them would be the round-17
+ * shape again: the rep presses `×`, or a *later press that succeeds* yields the
+ * stale card out from under them (`pause`, `forget`, `announce`). The second one
+ * has no gesture on the card to intercept, which is the whole reason this is
+ * `useDeparture` and not `useDismiss`.
+ *
+ * What jsdom can see is the class and the mount — the two rules are in
+ * `index.css` and the curves are `--motion`'s to judge, on the stage. What it can
+ * see is also exactly what was wrong: the element was gone.
+ *
+ * The mutual exclusion is asserted rather than assumed. `widget-arrive` is an
+ * `animation … both` and a filled animation beats a transition on the same
+ * property, so a card wearing both classes holds at `opacity: 1` for the whole of
+ * its exit and then blinks out — the defect, reintroduced by its own fix.
+ */
+const cardBox = (): HTMLElement => {
+  const card = document.querySelector('[data-card].widget-card-arrive, [data-card].widget-card-leaving')
+  if (!card) throw new Error('aucune carte à l’écran')
+  return card as HTMLElement
+}
+
+test('the refusal card arrives, and leaves whether it is pressed or yielded', async () => {
+  let refuse = true
+  bridge.when('meeting:mark', () => {
+    if (refuse) throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+    return { id: 'mk1', at: STARTED, note: '', segmentId: null, by: 'rep' as const }
+  })
+  render(<Widget />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Marquer ce moment' }))
+  await screen.findByRole('alert')
+
+  // Arriving: the entrance, and not the exit.
+  expect(cardBox().classList.contains('widget-card-arrive')).toBe(true)
+  expect(cardBox().classList.contains('widget-card-leaving')).toBe(false)
+
+  // One: the rep presses the dismiss. Still mounted, now wearing the exit.
+  fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
+  expect(screen.queryByRole('alert')).not.toBeNull()
+  expect(cardBox().classList.contains('widget-card-leaving')).toBe(true)
+  expect(cardBox().classList.contains('widget-card-arrive')).toBe(false)
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+
+  // Two: the world takes it. A *Retirer* that succeeds yields a stale refusal,
+  // and there is no gesture on the card for `useDismiss` to intercept.
+  refuse = true
+  fireEvent.click(screen.getByRole('button', { name: 'Marquer ce moment' }))
+  await screen.findByRole('alert')
+  refuse = false
+  fireEvent.click(screen.getByRole('button', { name: 'Marquer ce moment' }))
+  await waitFor(() => expect(cardBox().classList.contains('widget-card-leaving')).toBe(true))
+  expect(screen.queryByRole('alert')).not.toBeNull()
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+})
+
+test('the mention card arrives and leaves too', async () => {
+  const clipboard = withClipboard()
+  try {
+    render(<Widget />)
+    await screen.findByLabelText('Durée d’enregistrement')
+    fireEvent.click(mentionControl())
+    await screen.findByRole('status')
+
+    expect(cardBox().classList.contains('widget-card-arrive')).toBe(true)
+    expect(cardBox().classList.contains('widget-card-leaving')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
+    expect(screen.queryByRole('status')).not.toBeNull()
+    expect(cardBox().classList.contains('widget-card-leaving')).toBe(true)
+    expect(cardBox().classList.contains('widget-card-arrive')).toBe(false)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  } finally {
+    clipboard.restore()
+  }
 })
 
 /**
@@ -1210,7 +1298,7 @@ test('la phrase est à l’écran, dans une carte, pour être lue à voix haute'
     // And it goes away when asked, rather than on a timer — a sentence a rep is
     // about to read aloud is the last thing to remove after four seconds.
     fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
-    expect(screen.queryByRole('status')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
   } finally {
     clipboard.restore()
   }
@@ -1345,7 +1433,7 @@ test('une carte écartée ne revient pas quand le journal répond', async () => 
     await screen.findByRole('status')
 
     fireEvent.click(screen.getByRole('button', { name: 'Masquer cette phrase' }))
-    expect(screen.queryByRole('status')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
 
     await act(async () => {
       answer?.()
@@ -1564,7 +1652,7 @@ test('la phrase revient dès que le refus est écarté, sans réécrire au journ
     expect(screen.queryByRole('status')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }))
-    expect(screen.queryByRole('alert')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
 
     fireEvent.click(mentionControl())
     const notice = await screen.findByRole('status')

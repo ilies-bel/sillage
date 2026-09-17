@@ -3984,6 +3984,201 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **The one card arriving and leaving — the loudest state change on this
+   * surface, and it had neither half of a motion.**
+   *
+   * Measured with `--motion` on `widget-refus` and `widget-pause-refus`, at both
+   * smoke sizes, before this stage existed: « 3 élément(s) animé(s) dont **0 qui
+   * s'en vont**, 0 @keyframes de sortie ». A refused mark and a refused *Pause*
+   * are the two sentences on this window a rep most needs to notice, and both
+   * appeared between two frames and vanished between two frames over another
+   * application's screen share. `useDeparture` — the hook written for a surface
+   * the *world* removes — had no caller under `src/widget/` at all.
+   *
+   * **Three things are measured here and none of them is a photograph.**
+   *
+   *  · the **arrival** is a live `widget-arrive` on the card, on an arrival curve;
+   *  · the **departure** is sampled frame by frame at the shipped duration, and
+   *    what is asserted is the thing a census cannot see — that the last value
+   *    painted before the element detaches is *zero* and not a quarter opaque.
+   *    Round 18 found `useDismiss` snapping out from 0.44 and fixed it; running
+   *    the same measurement on `useDeparture` gave 0.237 / 0.241 / 0.238, so the
+   *    hook this card needed had the defect its sibling had just lost. A stage
+   *    that only asked « is there an exit class » would have passed over it.
+   *  · and it is done **for both cards**, because the slot holds two and they
+   *    empty by different mechanisms — the rep presses `×` on one, and the world
+   *    yields the other out from under them. A fixture that ran one direction of
+   *    a two-direction rule is this file's own recurring defect.
+   *
+   * **Why the stage ends with a card still going.** `--motion`'s census counts
+   * what is animating *now*, and a departure that has finished is not. So the
+   * last card is dismissed under a `--motion` stretched to thirty seconds,
+   * injected as a stylesheet carrying the token's own `prefers-reduced-motion`
+   * rule so the check's second pass still measures a page that obeys the OS. The
+   * stretch is itself an assertion: one custom property moves both the CSS
+   * animation and the JavaScript hold, which is the « the duration is read, never
+   * written » rule of `useDismiss.ts` made visible. At thirty seconds the card is
+   * three hundredths of the way through a back-loaded curve when the checks run,
+   * so every other check still measures a resting card.
+   */
+  'widget-carte-sortie': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+
+      /** What the card is doing, read off the element the alert or status is in. */
+      const reading = () =>
+        page.evaluate(() => {
+          const card = [...document.querySelectorAll('[data-card]')].find(
+            (el) => el.querySelector('[role="alert"], [role="status"]'),
+          )
+          if (!card) return null
+          const style = getComputedStyle(card)
+          return {
+            animation: style.animationName,
+            ms: style.animationDuration,
+            ease: style.animationTimingFunction,
+            origin: style.transformOrigin,
+            classes: card.className,
+          }
+        })
+
+      /**
+       * The departure, frame by frame, from the press until the element detaches.
+       *
+       * `MutationObserver` for the detach because it is the one event that is
+       * exact; the opacity is read on every animation frame, so « the last value
+       * painted » is the last one a rep could have seen.
+       */
+      const departure = (label) =>
+        page.evaluate(async (name) => {
+          const card = [...document.querySelectorAll('[data-card]')].find(
+            (el) => el.querySelector('[role="alert"], [role="status"]'),
+          )
+          if (!card) return { error: 'aucune carte à écarter' }
+          const parent = card.parentElement
+          const samples = []
+          let detachedAt = null
+          const started = performance.now()
+          const observer = new MutationObserver(() => {
+            if (!card.isConnected && detachedAt === null) detachedAt = performance.now() - started
+          })
+          observer.observe(parent, { childList: true, subtree: true })
+          const tick = () => {
+            if (!card.isConnected) return
+            samples.push(Number(getComputedStyle(card).opacity))
+            requestAnimationFrame(tick)
+          }
+          card.querySelector(`button[aria-label="${name}"]`).click()
+          requestAnimationFrame(tick)
+          await new Promise((resolve) => setTimeout(resolve, 900))
+          observer.disconnect()
+          return { samples, detachedAt, stillHere: card.isConnected }
+        }, label)
+
+      const judge = (what, exit) => {
+        if (exit.error) throw new Error(`${what} : ${exit.error}`)
+        if (exit.detachedAt === null) throw new Error(`${what} : la carte ne part jamais`)
+        const between = exit.samples.filter((value) => value > 0.02 && value < 0.98).length
+        const last = exit.samples[exit.samples.length - 1] ?? 1
+        if (exit.samples.length < 4 || between < 2) {
+          throw new Error(
+            `${what} : ${exit.samples.length} image(s) peintes dont ${between} entre les deux — ` +
+              `la carte disparaît entre deux images (${exit.samples.map((v) => v.toFixed(2)).join(' ')})`,
+          )
+        }
+        if (last > 0.05) {
+          throw new Error(
+            `${what} : dernière opacité peinte ${last.toFixed(3)} à ${Math.round(exit.detachedAt)} ms — ` +
+              'la carte est arrachée avant la fin de son propre fondu',
+          )
+        }
+        console.log(
+          `   ${what} : ${exit.samples.length} images, dernière opacité ${last.toFixed(3)}, ` +
+            `détachée à ${Math.round(exit.detachedAt)} ms`,
+        )
+      }
+
+      /*
+       * **The mention card first, and it is un-refused**, so the two halves of
+       * the slot are exercised as the rep meets them: a sentence they are about
+       * to read aloud, and a write that did not happen.
+       */
+      await page.getByRole('button', { name: /Prévenir le client/ }).click()
+      await page.getByRole('status').waitFor()
+      const mention = await reading()
+      if (!mention) throw new Error('la carte de mention n’est pas à l’écran')
+      if (mention.animation !== 'widget-arrive' || Number.parseFloat(mention.ms) <= 0) {
+        throw new Error(
+          `la carte de mention arrive sans mouvement : animation ${mention.animation}, ${mention.ms}`,
+        )
+      }
+      await settled(page)
+      judge('mention, écartée par le commercial', await departure('Masquer cette phrase'))
+
+      /*
+       * Then the refusal, which is the same slot reached by a different press and
+       * drawn by a different component.
+       *
+       * A **store failure during a live recording** and not the call ending:
+       * `refuseMarks` with its own reason leaves `widget:state` answering a live
+       * meeting, which is the other half of what `meeting:mark` rejects on and is
+       * the half that leaves the controls on screen. `widget-refus` beside this
+       * stage covers the other one, where the pill has to stop claiming the
+       * recording.
+       */
+      await page.evaluate(() =>
+        window.__harness.refuseMarks('Ce moment n’a pas pu être enregistré.'),
+      )
+      await page.getByRole('button', { name: /^Marquer ce moment/ }).click()
+      await page.getByRole('alert').waitFor()
+      const refus = await reading()
+      if (!refus || refus.animation !== 'widget-arrive' || Number.parseFloat(refus.ms) <= 0) {
+        throw new Error(
+          `le refus arrive sans mouvement : ${refus ? `${refus.animation}, ${refus.ms}` : 'carte absente'}`,
+        )
+      }
+      /*
+       * The origin is the pill's edge and not the card's centre — DEC-50's
+       * « origin-aware from the pill » — so the card grows out of the control
+       * that was pressed. `50% 0` reads as « Npx 0px » once resolved.
+       */
+      if (!/ 0px$/.test(refus.origin) && !/ 0px 0px$/.test(refus.origin)) {
+        throw new Error(
+          `le refus ne grandit pas depuis le bord de la pastille : transform-origin ${refus.origin}`,
+        )
+      }
+      await settled(page)
+      judge('refus, écarté par le commercial', await departure('Masquer ce message'))
+
+      /*
+       * **And once more, held.** The census `--motion` takes counts what is
+       * animating when it runs, so the stage ends with a departure still in
+       * flight. The token is stretched rather than replaced, through a sheet that
+       * carries its own `prefers-reduced-motion` rule, so the check's second pass
+       * still measures a page that collapses to `0ms` when the OS asks.
+       */
+      await page.getByRole('button', { name: /^Marquer ce moment/ }).click()
+      await page.getByRole('alert').waitFor()
+      await settled(page)
+      await page.evaluate(() => {
+        const sheet = document.createElement('style')
+        sheet.textContent =
+          ':root{--motion:30s}@media (prefers-reduced-motion: reduce){:root{--motion:0ms}}'
+        document.head.append(sheet)
+      })
+      await page.evaluate(() => {
+        document
+          .querySelector('[data-card] button[aria-label="Masquer ce message"]')
+          .click()
+      })
+      await page.waitForSelector('[data-card].widget-card-leaving', { timeout: 5_000 })
+      await page.evaluate(() => window.__harness.refuseMarks(null))
+    },
+  },
+
   /*
    * The second press. Ending a recording cannot be undone, so the widget asks
    * again — and the confirmation is a different rectangle from the label that
