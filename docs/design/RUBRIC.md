@@ -151,6 +151,9 @@ round 5 did not.
 | 16 | widget | `f6ae677` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 5 | 5 | 5 | **49.5** |
 | 16 | main | `f6ae677` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | **51.5** |
 | 16 | detection | `f6ae677` | 7 | 7.5 | 6 | 5 | 5.5 | 5 | 5 | 5.5 | 5 | **51.5** |
+| 17 | widget | `662ad78` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 5.5 | 5 | 5 | **50** |
+| 17 | main | `662ad78` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 4.5 | 5 | 5.5 | **49.5** |
+| 17 | detection | `662ad78` | 7 | 7.5 | 6.5 | 5 | 5.5 | 5 | 4 | 5.5 | 4.5 | **50.5** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -239,6 +242,96 @@ it has scrolled away and the ramp is over ink from y=0. The premise holds across
 mid-line-box — and the remedy implied (lengthen the ramp past `FADE_PX = 12`) is
 exactly what the `--fade` ceiling exists to refuse. Holding the tree still while
 the reviewers ran is what stopped this being built.
+
+## Round 17: the fix that produced the next finding, twice in one night
+
+Widget +0.5, main −2, detection −1. Two of the three regressions were mine,
+introduced hours earlier by round-16 repairs.
+
+### What round 16's fixes cost
+
+- **`9f83457`** widened the arm-site origin bound 20 → 60 min and fixed the late
+  client. By the same line it made the **earlier** of two rep-placed meetings
+  swallow the later one: a rep whose 14:00 no-showed joins their 14:30 call and
+  the product arms 14:00, at 45 and 60 minutes too. `ownClaims` sorts
+  earliest-first and the arm loop took the head. DEC-46 then navigates to the
+  wrong client's screen carrying the day's one filled *Enregistrer*. The old
+  bound broke gaps under 20 minutes; the fix tripled that window and put the
+  canonical half-hour ESN slot inside it. Fixed in **`803e792`**.
+- **`dae6563`** added `refusePause()` to the fixture and it was wrong on arrival:
+  it refused the pause while `widget:state` went on answering « recording », so
+  it staged a refusal beside a filled accent dot and a running clock — the
+  pairing `refuseMarks()` was fixed for thirty lines above it. Nothing called the
+  verb, which is why nobody noticed. Fixed in **`c899b45`**, with the stage.
+- **`f825eda`** rewrote one hollow renderer test and missed its sibling. « an
+  edited field is what gets sent » still typed into `Client` — a `readOnly`
+  control — and asserted `review:confirm`'s payload. It held because
+  `fireEvent.change` ignores `readOnly` in jsdom. Fixed in **`0d20b67`**.
+
+### The worst defect any round has found, and it was not a regression
+
+**One press of a live *Valider* consumed DEC-4's only gate and created nothing.**
+On an untitled manual call with no Microsoft account — the DEC-28 demo
+configuration — all three intents are `available: false`, the screen still drew a
+live primary, and pressing it moved the meeting to `pushing` with `intentIds: []`.
+`pushing` accepts only `pushSettled`, which routes to `done` only when
+`allIntentsSettled`, which reads `intents.length > 0 && …` — false for ever on an
+empty outbox. `confirm`, `extract` and `abort` all refused. The row read « Envoi
+en cours… » for the life of the database about a POST that was never made, and
+the compte-rendu became unreachable from the gate.
+
+Deleting the `intents.length > 0` clause left 1285 node tests, 808 renderer
+tests, twelve gates and 152 stagings green. The refusal went **before** the
+dispatch instead, because that clause has a second job — stopping a `pushSettled`
+that arrives before the intents are written from settling the meeting vacuously.
+Fixed in **`f630dcd`**.
+
+### The instrument lesson, sharpened
+
+Round 16's rule was « write the check so it fails on HEAD ». Round 17 shows that
+is necessary and not sufficient. Both boundary tests `9f83457` shipped *do* fail
+on the defect they guard — re-verified by the reviewer — and both are
+**one-meeting fixtures**. A rule whose whole subject is *which of several
+claimants wins* cannot be exercised by a fixture with one claimant. So:
+
+> **A check must be as wide as the rule's subject, not just sharp on the case
+> that prompted it.**
+
+Two mutations were invisible for that reason — reversing `ownClaims`' sort, and
+reading `now` instead of `#heldSince`. The sort one is now a true no-op rather
+than an untested one: both call sites choose explicitly (`max` by anchor at the
+arm site, `Math.min` over all claimants in `#calendarOffersAt`) instead of taking
+the head of a sorted list.
+
+`widget-pause` was the fourth instance of the round-16 habit: it read
+`[data-card]`.first(), which is the **pill**, whose height is invariant across
+the press, and reported 0 px while the panel grew 42. Shown side by side on the
+same regression — repointed says « la carte passe de 351 à 393 px », the old one
+says green. Fixed in **`19eab13`**.
+
+### Open, priced, not fixed
+
+- **A refused *resume* cannot be shown.** `setPaused` answers what is true
+  afterwards, so `false` means both « resumed » and « there is nothing to
+  resume »; for `next === false` the two collapse and the renderer reports
+  success. The sentence written for it is dead code.
+- **A paused recording never ends by itself** — `EndOfMeetingWatch` is held with
+  no ceiling, the installer stays refused, and the next call does not arm. The
+  pill replaces its clock with a word in exactly that state.
+- **The `libre` gate**: a 2-row rail that `RAIL_ROWS = 11` makes `measureRail`
+  structurally unable to visit, carrying two sentences that are both false.
+- **The sub-line reaches 178 characters over three lines** at both sizes; the
+  comment above it says « It is one line now ».
+- **`--contrast` demands 4.5:1 of `.sr-only` text** and invents a white ground
+  under the widget's transparent halo. `--echo` and `--scrollers` both have the
+  exemption it lacks.
+- **The flagship detection stage photographs a day the shipped `Agenda` refuses**
+  — and the fixture's own docblock states the correct driven result three lines
+  above the branch that stages the opposite.
+- **Two icon stroke weights ship** (1.75 in the shared chrome, 2 in the panes),
+  and nothing checks stroke width or radius.
+- **`smoke.mjs` still does not pass `--scan`**: 134 detector findings across the
+  widget family alone are invisible to the only thing that runs every stage.
 
 ## Retired: the palette campaign, and the measurement that was right about the wrong thing
 
