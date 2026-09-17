@@ -2620,7 +2620,24 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             />
           ) : null}
 
-          <div className="border-subtle bg-card shrink-0 border-t px-row py-row">
+          {/*
+            **The decision band is the end of this column, not a surface on top
+            of it.**
+
+            It wore `--bg-card` on an `<aside>` painted `--bg-card-soft`: 1.027:1,
+            ΔL* **1.06** — the just-noticeable difference, measured and tabulated
+            forty lines above this one in the note that took the strokes off the
+            field rail. So the ground step was doing nothing a rep can see, the
+            `border-t` was doing all of the separating, and the pair read to the
+            layout detector as a card inside a card on **40 of 134** main-screen
+            scans, every `review*` stage at both sizes.
+
+            It does not need a ground. This is a flex sibling of the scroller,
+            not a bar over it — nothing ever passes behind it, which is the only
+            reason a band like this has to be opaque. The hairline stays: it is
+            the one that says the decision does not scroll.
+          */}
+          <div className="border-subtle shrink-0 border-t px-row py-row">
             <fieldset>
               <SectionHeader as="legend" className="mb-snug">
                 Ce qui sera créé
