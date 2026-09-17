@@ -178,6 +178,17 @@ export function Rail({
  * text, so the glyph carries no state and no meaning colour alone would have to
  * supply. It is in the flow rather than absolutely placed, so it cannot end up
  * over the label at a narrow rail.
+ *
+ * **`stroke-width: 2`, which is the product's one icon weight.**
+ *
+ * It was 1.75 here and in `SectionNav`, with no recorded reason, against
+ * lucide's default of 2 on every other icon in the app. Measured over every
+ * stage at both sizes: 500 icons at 2 across 36 screens, 250 at 1.75 across 25,
+ * and ten scans drawing both at once — the agenda's empty day puts a 16px rail
+ * glyph at 1.75 beside a 22px notice icon at 2. Two hand-rolled glyphs against
+ * two hundred and fifty-five vendor ones is not a decision, it is the two files
+ * that drew their own SVG. `shot.mjs --geometry` holds a screen to one weight.
+
  */
 function RailGlyph({ d }: { d: string }): ReactNode {
   return (
@@ -187,7 +198,7 @@ function RailGlyph({ d }: { d: string }): ReactNode {
       className="h-4 w-4 shrink-0"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.75"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

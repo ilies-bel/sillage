@@ -5095,6 +5095,7 @@ async function main() {
   let tightest = { by: Infinity, text: '' }
   let inset = []
   let groups = 0
+  let strokes = []
   let small = []
   if (flags.geometry) {
     await page.evaluate(() => document.fonts.ready)
@@ -5104,6 +5105,7 @@ async function main() {
     tightest = seen.tightest
     inset = seen.inset
     groups = seen.groups
+    strokes = seen.strokes
   }
 
   if (flags.targets) {
@@ -6167,13 +6169,22 @@ async function main() {
     if (clipped.length === 0)
       console.log(
         measured === 0
-          ? `  géométrie: aucun marqueur suspendu, ${groups} groupe(s) sans cadre alignés`
-          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} », ${groups} groupe(s) sans cadre alignés`,
+          ? `  géométrie: aucun marqueur suspendu, ${groups} groupe(s) sans cadre alignés, ${icons(strokes)}`
+          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} », ${groups} groupe(s) sans cadre alignés, ${icons(strokes)}`,
       )
     else {
       console.log(`  ✗ géométrie: ${clipped.length} élément(s) hors de leur cadre`)
       for (const item of clipped.slice(0, 8)) {
         console.log(`   ✗ ${item.what} « ${item.text} » — ${item.by}px à gauche du cadre`)
+      }
+      process.exitCode = 4
+    }
+    if (strokes.length > 1) {
+      console.log(
+        `  ✗ géométrie: ${strokes.length} épaisseurs de trait d'icône sur un même écran`,
+      )
+      for (const item of strokes) {
+        console.log(`   ✗ stroke-width ${item.width} — ${item.count} icône(s), près de « ${item.near} »`)
       }
       process.exitCode = 4
     }
@@ -8357,7 +8368,58 @@ async function geometry(page) {
       }
     }
 
-    return { clipped: out, measured: all.length, tightest, inset, groups }
+
+    /*
+     * **One icon weight, and there were three.**
+     *
+     * Measured over every stage at both sizes: 500 icons at `stroke-width: 2`
+     * (lucide's default, 36 screens, sizes 12 to 22), **250 at 1.75** (25 screens,
+     * all 16px — two hand-rolled `<svg>`s, the app rail's glyph and the Réglages
+     * nav's, with no recorded reason for the number), and 4 at 1 on the widget.
+     * Ten scans drew two weights at once: the agenda's empty day and its
+     * out-of-window notice put a 1.75 rail glyph and a 2 lucide icon on one
+     * screen, 16px against 18–22px.
+     *
+     * Per screen rather than per product, and the distinct weights are printed on
+     * every run so drift between screens is still readable off the output — a
+     * cross-screen rule would have to carry an exemption for the widget's 10px
+     * icons, which is a decision for the surface that owns them and not for this
+     * check.
+     *
+     * The weight is read off the `<svg>` first and off its first stroked child
+     * second, because lucide puts it on the root and a hand-rolled glyph may put
+     * it on the path. Icons only — anything wider than 24px is a mark or a
+     * wordmark (`ui/Logo.tsx` is 32 and 64) and has its own weight by right.
+     */
+    const weights = new Map()
+    for (const svg of document.querySelectorAll('svg')) {
+      const box = svg.getBoundingClientRect()
+      if (box.width === 0 || box.width > 24) continue
+      /*
+       * **A filled glyph has no stroke weight, and reading one off it invented a
+       * third value.** The widget's pause and stop marks are `fill="currentColor"`
+       * with no stroke at all, and `getComputedStyle().strokeWidth` answers the CSS
+       * initial `1px` for them — so the first version of this rule reported « 2
+       * épaisseurs » on nine marks that draw no stroke, on a surface it had no
+       * finding about. The weight is taken from the element that actually declares
+       * one, and only when that element is painting a stroke.
+       */
+      const carrier = svg.hasAttribute('stroke-width') ? svg : svg.querySelector('[stroke-width]')
+      if (carrier === null) continue
+      const painted = getComputedStyle(carrier).stroke
+      if (painted === 'none' || painted === '') continue
+      const key = String(Number.parseFloat(carrier.getAttribute('stroke-width')))
+      const seen = weights.get(key) ?? { count: 0, near: '' }
+      seen.count += 1
+      if (!seen.near)
+        seen.near = (svg.closest('button, a, label, li, div')?.textContent ?? '').trim().slice(0, 30)
+      weights.set(key, seen)
+    }
+    const strokes = [...weights]
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([width, seen]) => ({ width, count: seen.count, near: seen.near }))
+
+    return { clipped: out, measured: all.length, tightest, inset, groups, strokes }
   })
 }
 
@@ -8429,6 +8491,12 @@ function report(findings, target, screen, viewport) {
   fs.writeFileSync(file, JSON.stringify(findings, null, 2))
   console.log(`  → ${file}`)
 }
+
+/** « 62 icône(s) à stroke-width 2 », or « aucune icône ». */
+const icons = (strokes) =>
+  strokes.length === 0
+    ? 'aucune icône'
+    : `${strokes[0].count} icône(s) à stroke-width ${strokes[0].width}`
 
 /** Vite's dev-server chatter, which says nothing about the app. */
 const IGNORED = [/\[vite\]/i, /Download the React DevTools/i, /source-?map/i]

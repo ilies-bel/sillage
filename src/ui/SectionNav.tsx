@@ -182,7 +182,7 @@ export function SectionNav<Id extends string>({
                     className="h-4 w-4 shrink-0"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.75"
+                    strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
