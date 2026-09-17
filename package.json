@@ -45,6 +45,7 @@
     "seed:vsa": "node --experimental-strip-types scripts/seed-vsa.mjs",
     "check:platform": "node scripts/check-platform.mjs",
     "check:french": "node scripts/check-french.mjs",
+    "make-brand": "node scripts/make-brand.mjs",
     "check:motion": "node scripts/check-motion.mjs"
   },
   "build": {
