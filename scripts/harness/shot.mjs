@@ -3963,7 +3963,17 @@ const SCREENS = {
        * A consumer that pins the thing being measured is a measurement that
        * stops arriving, and neither a screenshot nor any other check could see
        * it — both rectangles are drawn correctly, and only the pair is wrong.
+       *
+       * **At rest, and that stopped being free when the card got an arrival.**
+       * `getBoundingClientRect` includes transforms and `widget-arrive` carries
+       * `--ease-overshoot`, so a notice read while it is still settling is read
+       * at up to 1.0064 of its own width. Driven six at a time on one machine,
+       * the sizes the smoke run actually competes for: five reads of 200.18 to
+       * 200.47 against a 199.56 pill, and one of **200.86** — a failure of a
+       * working product, produced entirely by reading a box mid-animation. Same
+       * correction, same reason, as the `before`/`after` pair in `widget-ouvert`.
        */
+      await settled(page)
       const stack = await page.evaluate(() => {
         const pill = document.querySelector('[data-pill]')?.getBoundingClientRect()
         const notice = document.querySelector('[role="alert"]')?.closest('[data-card]')?.getBoundingClientRect()
