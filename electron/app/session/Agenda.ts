@@ -551,9 +551,16 @@ export class Agenda {
      * conversation » — keyed on the meeting itself, since these have no event —
      * and « does the microphone being held belong to it ».
      */
+    /*
+     * Every claimant, and `Math.min` below picks the earliest — rather than the
+     * head of a list and a `break`, which made this read depend on how
+     * `ownClaims` happens to sort. That dependency was invisible: reversing the
+     * sort changed which offer this returned and left 1284 node tests, 808
+     * renderer tests and twelve gates green. The arm site had the same shape and
+     * the same blindness; both choose explicitly now.
+     */
     for (const meeting of this.#accountingOwnClaims(now)) {
       offers.push(meetingAnchor(meeting) - ARM_LEAD_MS)
-      break
     }
     return offers.length === 0 ? null : Math.min(...offers)
   }
@@ -1167,11 +1174,19 @@ export class Agenda {
      * `decideAdHoc` refuses to offer anything until `AD_HOC_DWELL_MS` of
      * continuous hold, because a microphone held for an instant is not a call;
      * `#heldSince` is the start of the current hold, reset by `#trackHold` on a
-     * lost hold and on a change of application. And a hold that *begins* after
-     * `OVERRUN_GRACE_MS` past the anchor is a different conversation, which is
-     * the same boundary `#over` already uses to decide a slot is behind the rep
-     * — `decideAdHoc` offers that one anonymously, which is the right answer for
-     * it.
+     * lost hold and on a change of application. And a hold that *begins* past
+     * `AD_HOC_NOMINAL_MS` after the anchor is a different conversation —
+     * `decideAdHoc` offers that one anonymously, which is the right answer for
+     * it. `#accountingOwnClaims` carries the derivation and the two boundary
+     * tests that hold it.
+     *
+     * This paragraph said `OVERRUN_GRACE_MS` and « the same boundary `#over`
+     * already uses » for a round after the line stopped being either. The audit
+     * that corrected the other four sites searched for the phrase « eighty-five
+     * minutes »; this one states the bound by constant name, so the search could
+     * not see it — and it is the docblock *attached to the call site*, the one a
+     * reader lands on when they change this loop. Audit the claim, not the
+     * phrase.
      *
      * The `running` half keeps neither test on purpose: « a meeting application
      * is open near the slot » is the anticipation `ARM_LEAD_MS` exists for and
@@ -1183,15 +1198,49 @@ export class Agenda {
     const dwelt =
       this.#heldSince !== null && now - this.#heldSince >= AD_HOC_DWELL_MS
     if (signal.running !== null || (signal.inCall !== null && dwelt)) {
-      for (const meeting of this.#accountingOwnClaims(now)) {
-        if (now < meetingAnchor(meeting) - ARM_LEAD_MS) continue
+      /*
+       * **The latest slot the rep has reached, not the earliest still claiming.**
+       *
+       * This took the first of `#accountingOwnClaims`, which `ownClaims` sorts
+       * earliest-first — right for « does anything account for this call »,
+       * wrong for « which conversation is the rep in ». Widening the origin
+       * bound to `AD_HOC_NOMINAL_MS` made that difference reach the ordinary
+       * day: driven on the shipped class, two rep-placed meetings thirty minutes
+       * apart with the earlier one never recorded — a no-show, an internal call,
+       * anything the rep did not press *Enregistrer* on — armed the **earlier**
+       * meeting when the rep joined the later one on time. At forty-five and
+       * sixty minutes too. On the DEC-28 build every row is one the rep placed,
+       * so this is the only path that arms anything.
+       *
+       * What that cost: DEC-46 navigates to the wrong client's screen carrying
+       * the day's one filled *Enregistrer*, and a press there sends the
+       * conversation to that client's account through a POST with no
+       * idempotency key and no delete verb. Pressing the *right* row instead
+       * leaves `["armed","recording"]`, which blocks every installer for the
+       * rest of the claim window, and the offer cannot be declined — `disarm` is
+       * dispatched only by this class and is not in `UserCommandSchema`.
+       *
+       * The rep is in the slot they reached most recently, so the claimant with
+       * the greatest anchor wins. Choosing explicitly rather than taking the
+       * head of a sorted list also makes this site independent of how
+       * `ownClaims` sorts: reversing that sort, and taking the last of the loop
+       * rather than the first, were both invisible to 2092 tests and twelve
+       * gates while this was a `for`/`break`.
+       */
+      const current = this.#accountingOwnClaims(now)
+        .filter((meeting) => now >= meetingAnchor(meeting) - ARM_LEAD_MS)
+        .reduce<Meeting | null>(
+          (best, meeting) =>
+            best === null || meetingAnchor(meeting) > meetingAnchor(best) ? meeting : best,
+          null,
+        )
+      if (current !== null) {
         this.#arm({
-          meetingId: meeting.id as MeetingId,
+          meetingId: current.id as MeetingId,
           eventId: null,
-          subject: meeting.title,
+          subject: current.title,
           context: null,
         })
-        break
       }
     }
 

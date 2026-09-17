@@ -2206,6 +2206,23 @@ test('a client who joins late is still the meeting the rep placed', async () => 
     `la notification DEC-46 ne nomme pas le client : ${JSON.stringify(inside.subjects)}`,
   )
 
+  /*
+   * And the subject of the bound is when the hold **began**, not when the tick
+   * that arms it runs. A hold starting at 59:40 arms, though `#arm` itself
+   * lands one `AD_HOC_DWELL_MS` later at 60:05 — past the line. Reading `now`
+   * there instead of `#heldSince` is a mutation the 59/61 probes above cannot
+   * see, because they straddle a sensitivity only twenty-five seconds wide, and
+   * it stayed green on 1284 node tests and twelve gates. The docblock names
+   * `#heldSince` as load-bearing three times; this is the assertion that makes
+   * that true.
+   */
+  const straddling = await run(59 + 40 / 60)
+  assert.equal(
+    straddling.state,
+    'armed',
+    `la prise du micro est datée du tick, pas du début de la tenue : ${JSON.stringify(straddling.subjects)}`,
+  )
+
   const outside = await run(61)
   assert.notEqual(
     outside.state,
@@ -2218,6 +2235,95 @@ test('a client who joins late is still the meeting the rep placed', async () => 
     outside.subjects.some((s) => s.startsWith('Appel non planifié')),
     `le détecteur ne propose plus rien non plus : ${JSON.stringify(outside.subjects)}`,
   )
+})
+
+/*
+ * **Which of two meetings the rep is in — and every fixture here had one.**
+ *
+ * `#accountingOwnClaims` decides which conversation a held microphone belongs
+ * to, and until this test every fixture at this site created exactly one
+ * rep-placed meeting. A rule whose whole subject is *which* of several
+ * claimants wins cannot be exercised by a fixture with one claimant, so three
+ * decisions that route a conversation to a client had no instrument at all:
+ * the origin bound, the direction `ownClaims` sorts, and which claimant the arm
+ * loop takes. Two mutations of those stayed green on 1284 node tests, 808
+ * renderer tests and twelve gates.
+ *
+ * The defect it was hiding, driven on the shipped class: a rep with a 14:00
+ * that no-showed joins their 14:30 call on a browser link, and the product arms
+ * **14:00** — because `ownClaims` sorts earliest-first and the loop took the
+ * head. Widening the origin bound to `AD_HOC_NOMINAL_MS` tripled the window
+ * that mis-attribution lives in and put the canonical half-hour ESN slot inside
+ * it.
+ *
+ * Thirty, forty-five and sixty minutes, because thirty is the slot this product
+ * is built for and sixty is the bound's own edge. The earlier meeting is never
+ * recorded on purpose — `AFTER_THE_CALL` already removes a recorded one, so the
+ * biting case is the ordinary one: a no-show, an internal call, anything the rep
+ * did not press *Enregistrer* on.
+ */
+test('the rep is in the slot they reached last, not the earliest still claiming', async () => {
+  const run = async (gapMin: number) => {
+    const h = harness([], null, null)
+    const earlier = h.orchestrator.create({
+      id: 'm-earlier',
+      title: 'Aurexia',
+      clientName: 'Aurexia',
+      scheduledStart: T0,
+    })
+    const later = h.orchestrator.create({
+      id: 'm-later',
+      title: 'Néovia Santé',
+      clientName: 'Néovia Santé',
+      scheduledStart: T0 + gapMin * 60_000,
+    })
+    let held: string | null = null
+    const armed: { subject: string }[] = []
+    const agenda = new Agenda({
+      calendar: h.calendar,
+      orchestrator: h.orchestrator,
+      ownMeetings: (from, to) => h.store.projections.listMeetings(200, { from, to }),
+      meetingSignal: () => ({ running: null, inCall: held }),
+      clock: () => T0,
+      onArmed: (a) => void armed.push(a),
+    })
+
+    // The first slot passes with nobody on a call: the rep's 14:00 no-showed.
+    const join = T0 + gapMin * 60_000
+    for (let at = T0 - 10 * 60_000; at < join; at += 5 * 60_000) {
+      await agenda.tick({ now: at })
+    }
+    // And they join the second one on time.
+    held = 'Navigateur'
+    await agenda.tick({ now: join })
+    await agenda.tick({ now: join + AD_HOC_DWELL_MS })
+
+    const states = {
+      earlier: h.orchestrator.stateOf(earlier.id),
+      later: h.orchestrator.stateOf(later.id),
+    }
+    h.store.close()
+    return { states, subjects: armed.map((a) => a.subject) }
+  }
+
+  for (const gapMin of [30, 45, 60]) {
+    const got = await run(gapMin)
+    assert.equal(
+      got.states.later,
+      'armed',
+      `à ${gapMin} min d’écart, la réunion que la rep rejoint n’est pas celle qui est proposée : ${JSON.stringify(got)}`,
+    )
+    assert.notEqual(
+      got.states.earlier,
+      'armed',
+      `à ${gapMin} min d’écart, c’est la réunion précédente qui est proposée — le compte-rendu partirait chez le mauvais client`,
+    )
+    assert.deepEqual(
+      got.subjects,
+      ['Néovia Santé'],
+      `la notification DEC-46 nomme le mauvais client à ${gapMin} min d’écart : ${JSON.stringify(got.subjects)}`,
+    )
+  }
 })
 
 /*
