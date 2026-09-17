@@ -1968,3 +1968,144 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
     expect(calls[1]?.payload).toEqual({ meetingId: 'm1', recipe: 'libre' })
   })
 })
+
+/**
+ * **Every sentence the gate makes about what leaves, against what `draftIntents`
+ * would actually create.**
+ *
+ * The subject of the rule is *which of three intents is going*, so the fixture
+ * walks all eight tick sets rather than the one that prompted it. A one-subset
+ * fixture is what let three of these sentences ship: `e6c52aa` made the document's
+ * VerySwing claim conditional on `crm.task` and left the rail notice, the markers
+ * note, the account row, the mail heading and the button's count reading the
+ * *opportunity* — or nothing at all.
+ *
+ * Driven on the shipped renderer at 1280×800 before the fix, task and opportunity
+ * unticked, on one painted frame:
+ *
+ *     rail   « … corrigez le compte-rendu à gauche, c'est lui qui part dans la
+ *              tâche VerySwing. »
+ *     doc    « La tâche VerySwing ne part pas : ce texte-ci ne quitte pas
+ *              l'application … »
+ *
+ * Two claims about one string four hundred pixels apart, and the false one is the
+ * *remedy* — it spends the rep's correction on a document that will not leave the
+ * machine, at the one human gate in the product (DEC-4), in front of a
+ * `POST /v1/crm/tasks` with no idempotency key and a `CrmPort` with no delete
+ * verb.
+ *
+ * Ground truth is `draftIntents` itself, run on the same tick set: a sentence is
+ * allowed to name a destination exactly when a payload for it exists.
+ */
+describe('DEC-4 — every sentence about what leaves agrees with what is created', () => {
+  const INTENT_IDS = ['m1:crm.task', 'm1:crm.opportunity', 'm1:mail.draft'] as const
+
+  /**
+   * **What is actually created, from the panel the main process sent.**
+   *
+   * `draftIntents` cannot be imported here — the renderer may read
+   * `core/contracts/` only (ARCHITECTURE §4) — and it does not need to be: the
+   * contract the gate is handed is `ReviewIntent.available`, and the rep's tick
+   * is the other half. `register.ts` drafts on exactly that pair and the press
+   * below is asserted against it, so the loop is closed at the channel rather
+   * than at a second copy of the domain.
+   */
+  const created = (checked: readonly string[]): Set<string> =>
+    new Set(
+      panel()
+        .intents.filter((intent) => intent.available && checked.includes(intent.id))
+        .map((intent) => intent.kind),
+    )
+
+  /** Both deterministic rows unverified, so the count has something to name. */
+  const withFaibleAccount = () =>
+    openGate({
+      fields: panel().fields.map((field) =>
+        field.key === 'account' ? { ...field, confidence: 'faible' as const } : field,
+      ),
+    })
+
+  const screenText = () => (document.body.textContent ?? '').replace(/\s+/g, ' ')
+
+  const untick = async (id: string) => {
+    const box = document.querySelector<HTMLInputElement>(`input[type="checkbox"][value="${id}"]`)
+    const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    const target = box ?? boxes[INTENT_IDS.indexOf(id as (typeof INTENT_IDS)[number])]
+    if (!target) throw new Error(`no checkbox for ${id}`)
+    await act(async () => {
+      target.click()
+    })
+  }
+
+  for (let mask = 0; mask < 8; mask += 1) {
+    const checked = INTENT_IDS.filter((_, i) => (mask & (1 << i)) !== 0)
+    const dropped = INTENT_IDS.filter((id) => !checked.includes(id))
+
+    test(`cochées : ${checked.length === 0 ? 'aucune' : checked.join(' + ')}`, async () => {
+      bridge.when('review:get', () => withFaibleAccount())
+      render(<Review meetingId="m1" onBack={() => {}} />)
+      await screen.findByText('Prêt à envoyer')
+      for (const id of dropped) await untick(id)
+
+      const kinds = created(checked)
+      const text = screenText()
+
+      // The task's document. Three sentences used to claim it independently.
+      const claimsTask = [
+        'part dans la tâche VerySwing tel qu’il est affiché',
+        'VerySwing reçoit exactement ce qui est affiché',
+        'c’est lui qui part dans la tâche VerySwing',
+        'la tâche partira sans compte',
+      ].filter((claim) => text.includes(claim))
+      if (!kinds.has('crm.task')) {
+        expect({ claimsTask, checked }).toEqual({ claimsTask: [], checked })
+      }
+
+      // The opportunity's nine rows.
+      if (!kinds.has('crm.opportunity')) {
+        expect(text).not.toContain('Les corrections faites à droite vont dans l’opportunité')
+      }
+
+      // The follow-up. « (brouillon) » is a promise about what will be created.
+      if (!kinds.has('mail.draft')) {
+        expect(text).not.toContain('Email de relance (brouillon)')
+        expect(text).not.toContain('la relance est créée en brouillon')
+      }
+
+      /*
+       * And the count on the one irreversible control. `taskName` and `account`
+       * ride `payload.title` and `payload.accountId` of *both* CRM intents, so
+       * they leave if either leaves; the nine interpretive rows are the
+       * opportunity's alone.
+       */
+      const owed = panel()
+        .fields.map((field) => field.key)
+        .filter((key) => (key === 'account' ? true : false))
+        .filter(() => kinds.has('crm.task') || kinds.has('crm.opportunity')).length
+      const label =
+        [...document.querySelectorAll('button')]
+          .map((b) => b.textContent ?? '')
+          .find((t) => t.startsWith('Valider')) ?? ''
+      const counted = /Valider malgré (\d+) champ/.exec(label)
+      expect({ set: checked.join(','), counted: counted === null ? 0 : Number(counted[1]) }).toEqual({
+        set: checked.join(','),
+        counted: owed,
+      })
+
+      /*
+       * And the sentences are about the press that actually happens. Without
+       * this the block would be eight assertions about a screen with nothing
+       * tying it to the channel that writes into a client's CRM.
+       */
+      if (label !== '') {
+        const button = [...document.querySelectorAll('button')].find((b) =>
+          (b.textContent ?? '').startsWith('Valider'),
+        )
+        await act(async () => {
+          button?.click()
+        })
+        expect(confirmCall()?.intentIds?.slice().sort()).toEqual([...checked].sort())
+      }
+    })
+  }
+})

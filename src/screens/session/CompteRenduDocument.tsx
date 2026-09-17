@@ -419,7 +419,27 @@ function Marker({ children }: { children: string }) {
  * `#` on the title and `**` on the four deterministic header lines. A legend
  * that omits the marks the eye actually lands on explains the wrong half.
  */
-export function CompteRenduMarkersNote({ className }: { className?: string }) {
+/**
+ * **`ships` is « does this document reach VerySwing », and it is not a constant.**
+ *
+ * The sentence ended « VerySwing reçoit exactement ce qui est affiché », which is
+ * a claim about a `POST /v1/crm/tasks` and was printed whether or not one was
+ * going to be made. Driven on the shipped gate at 1280×800 with `crm.task`
+ * unticked: this line and, twenty pixels under it, « La tâche VerySwing ne part
+ * pas : ce texte-ci ne quitte pas l'application ». Same column, same frame,
+ * opposite facts.
+ *
+ * What stays true either way is the half the note exists for — the markers are
+ * text, not typesetting — so that half is unconditional and only the destination
+ * moves.
+ */
+export function CompteRenduMarkersNote({
+  className,
+  ships,
+}: {
+  className?: string
+  ships: boolean
+}) {
   return (
     // `.measure` on the note itself, not inherited from the wrapper: `ch`
     // resolves against the *element's* font size, and this line is set at
@@ -429,7 +449,10 @@ export function CompteRenduMarkersNote({ className }: { className?: string }) {
     <p className={`measure ${className ?? ''}`}>
       Les marques <span className="font-mono">#</span> <span className="font-mono">##</span>{' '}
       <span className="font-mono">-</span> <span className="font-mono">**</span> font partie du
-      texte : VerySwing reçoit exactement ce qui est affiché.
+      texte
+      {ships
+        ? ' : VerySwing reçoit exactement ce qui est affiché.'
+        : ', et ils partent avec lui si la tâche VerySwing est cochée.'}
     </p>
   )
 }

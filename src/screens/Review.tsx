@@ -1678,6 +1678,36 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     ? 'Rien n’est envoyé au client : la relance est créée en brouillon.'
     : 'Rien n’est envoyé au client : aucun brouillon ne sera créé.'
 
+  /**
+   * **Is the compte-rendu actually going anywhere?**
+   *
+   * `edits.compteRendu` has exactly one consumer — `crm.task`'s `payload.body`.
+   * With the task unticked or unavailable it reaches no external system at all,
+   * and the sentence over the document went on saying « Ce texte-ci part dans la
+   * tâche VerySwing tel qu'il est affiché ». That is `Client`'s defect at the
+   * scale of a column: one input was a dead control, this is 2 400 px of document
+   * the rep corrects under a false promise.
+   *
+   * The document stays editable, which is the difference. `Client` is read-only
+   * because its value is resolved and typing it changes nothing anywhere; the
+   * compte-rendu is the rep's own record and `confirmation.recorded` writes it
+   * verbatim into the log whatever ships, so *Historique* and its search read the
+   * corrected text. What was owed was not an inert column, it was a true
+   * sentence.
+   *
+   * **Read here rather than beside the document, because three other sentences
+   * needed it and were still wrong.** Driven on the shipped gate at 1280×800,
+   * task and opportunity both unticked: the rail printed « corrigez le
+   * compte-rendu à gauche, c'est lui qui part dans la tâche VerySwing » four
+   * hundred pixels from a document column printing « La tâche VerySwing ne part
+   * pas ». Three claims about one string, two of them false, and the false one
+   * was the *remedy* — it spends the rep's correction on a document that will
+   * not leave the machine. See `shipsFor`.
+   */
+  const taskIntent = panel.intents.find((intent) => intent.kind === 'crm.task') ?? null
+  const taskShips =
+    taskIntent !== null && taskIntent.available && (checked ?? []).includes(taskIntent.id)
+
   const faible = panel.fields.filter((field) => field.confidence === 'faible')
   /*
    * **What is unverified *and* leaving, which is not the same list — and the
@@ -1704,9 +1734,25 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * makes about itself (DEC-21) and it does not change because a payload shrank.
    * The button is about the act.
    */
-  const shippingFaible = faible.filter(
-    (field) => typedInert === null || !INTERPRETIVE.has(field.key),
-  )
+  /**
+   * **Where a row's value goes, and whether that thing is going.**
+   *
+   * The nine `INTERPRETIVE` rows are the opportunity's columns. The other two are
+   * carried by `crm.task` *and* `crm.opportunity` both — `payload.title` is
+   * `edits.taskName` and `payload.accountId` is `edits.accountId` in each — so
+   * they leave if either one leaves.
+   *
+   * This read the opportunity and nothing else, which made it right for nine rows
+   * out of eleven. Driven on the shipped gate, task and opportunity unticked and
+   * only the Outlook draft left: `draftIntents` returned one payload, keys
+   * `subject`/`body`/`to`, and the button still read « Valider malgré 1 champ
+   * non vérifié » about `Client` — the count naming a field that leaves nothing,
+   * at the one gate in front of a `POST /v1/crm/tasks` with no idempotency key.
+   */
+  const shipsFor = (key: ReviewField['key']): boolean =>
+    INTERPRETIVE.has(key) ? typedInert === null : typedInert === null || taskShips
+
+  const shippingFaible = faible.filter((field) => shipsFor(field.key))
 
   /**
    * **`Client` was a live textarea over a value no payload carries.**
@@ -1735,7 +1781,12 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     ? null
     : panel.accountCandidates.length > 0
       ? 'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription : rattachez-le ci-dessous.'
-      : 'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription. Aucun rattachement n’a été proposé : la tâche partira sans compte.'
+      : taskShips
+        ? 'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription. Aucun rattachement n’a été proposé : la tâche partira sans compte.'
+        : // « la tâche partira sans compte » is a promise about a task, and it was
+          // printed with the task unticked. What is still true is where the value
+          // comes from, which is the half this row exists to say.
+          'Ce compte vient d’Outlook et de VerySwing, jamais de la transcription. Aucun rattachement n’a été proposé.'
 
   /**
    * One predicate, two readers — the row and the count — because two copies of
@@ -1744,27 +1795,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    */
   const inertFor = (key: ReviewField['key']): string | null =>
     key === 'account' ? ACCOUNT_INERT : INTERPRETIVE.has(key) ? typedInert : null
-
-  /**
-   * **Is the compte-rendu actually going anywhere?**
-   *
-   * `edits.compteRendu` has exactly one consumer — `crm.task`'s `payload.body`.
-   * With the task unticked or unavailable it reaches no external system at all,
-   * and the sentence over the document went on saying « Ce texte-ci part dans la
-   * tâche VerySwing tel qu'il est affiché ». That is `Client`'s defect at the
-   * scale of a column: one input was a dead control, this is 2 400 px of document
-   * the rep corrects under a false promise.
-   *
-   * The document stays editable, which is the difference. `Client` is read-only
-   * because its value is resolved and typing it changes nothing anywhere; the
-   * compte-rendu is the rep's own record and `confirmation.recorded` writes it
-   * verbatim into the log whatever ships, so *Historique* and its search read the
-   * corrected text. What was owed was not an inert column, it was a true
-   * sentence.
-   */
-  const taskIntent = panel.intents.find((intent) => intent.kind === 'crm.task') ?? null
-  const taskShips =
-    taskIntent !== null && taskIntent.available && (checked ?? []).includes(taskIntent.id)
 
   /** Of what ships unverified, the part the rep can actually act on here. */
   const correctableFaible = shippingFaible.filter((field) => inertFor(field.key) === null)
@@ -2133,7 +2163,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                   so the sentence that accounts for it goes where the eye already
                   is: one muted line between the toolbar and the first heading.
                 */}
-                <CompteRenduMarkersNote className="text-muted border-subtle mb-inline border-b pb-snug text-meta" />
+                <CompteRenduMarkersNote
+                  ships={taskShips}
+                  className="text-muted border-subtle mb-inline border-b pb-snug text-meta"
+                />
                 {/*
                   **The two halves of this screen are two documents, and only
                   one of them is edited here.**
@@ -2231,6 +2264,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               subject={edits.mailSubject}
               body={edits.mailBody}
               to={panel.mailTo}
+              drafting={draftingMail}
               onSubject={(value) => set('mailSubject', value)}
               onBody={(value) => set('mailBody', value)}
             />
@@ -2412,8 +2446,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           */}
           {typedInert ? (
             <p id={INERT_NOTICE_ID} className="measure text-warn mb-snug scroll-mt-10 text-ui">
-              {typedInert} Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à
-              gauche, c’est lui qui part dans la tâche VerySwing.
+              {typedInert}{' '}
+              {taskShips
+                ? 'Les valeurs ci-dessous ne partiront pas : corrigez le compte-rendu à gauche, c’est lui qui part dans la tâche VerySwing.'
+                : 'Les valeurs ci-dessous ne partiront pas, et la tâche VerySwing non plus : rien de cet écran ne quitte l’application.'}
             </p>
           ) : null}
 
@@ -2999,6 +3035,19 @@ interface MailDraftProps {
   subject: string
   body: string
   to: readonly string[]
+  /**
+   * **Whether a brouillon will actually be created** — `draftingMail`, the same
+   * predicate the line under *Valider* reads.
+   *
+   * The heading said « (brouillon) » whenever there was a recipient, and a
+   * recipient is not the question: `mail.draft` also needs a Microsoft account
+   * and the rep's tick. Driven on the shipped gate at 1280×800 with the draft
+   * unticked — heading « EMAIL DE RELANCE (BROUILLON) », and in the pinned footer
+   * of the other column « Rien n'est envoyé au client : aucun brouillon ne sera
+   * créé. » Two sentences about one act, on one painted frame, at the gate whose
+   * whole job is being believed.
+   */
+  drafting: boolean
   onSubject: (value: string) => void
   onBody: (value: string) => void
 }
@@ -3017,7 +3066,7 @@ interface MailDraftProps {
  * Outlook this text is the one thing a rep can select and paste into their own
  * mail client, and a read-only textarea would take that away to make a point.
  */
-function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
+function MailDraft({ subject, body, to, drafting, onSubject, onBody }: MailDraftProps) {
   return (
     <section className="mt-block">
       <div className="mb-snug flex items-center gap-inline">
@@ -3037,7 +3086,7 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
           it, which is what it always was: a second document on the screen.
         */}
         <SectionHeader className="mb-0 min-w-0 flex-1">
-          {to.length === 0 ? 'Email de relance — à copier' : 'Email de relance (brouillon)'}
+          {drafting ? 'Email de relance (brouillon)' : 'Email de relance — à copier'}
         </SectionHeader>
         {/*
           Subject and body together, in the shape a mail client expects — the
@@ -3058,7 +3107,9 @@ function MailDraft({ subject, body, to, onSubject, onBody }: MailDraftProps) {
         À :{' '}
         {to.length === 0
           ? 'aucun destinataire — aucun brouillon ne sera créé, le texte reste copiable'
-          : to.join(', ')}
+          : drafting
+            ? to.join(', ')
+            : `${to.join(', ')} — aucun brouillon ne sera créé, le texte reste copiable`}
       </p>
       <input
         aria-label="Objet du brouillon"
