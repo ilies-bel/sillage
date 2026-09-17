@@ -154,6 +154,9 @@ round 5 did not.
 | 17 | widget | `662ad78` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 5.5 | 5 | 5 | **50** |
 | 17 | main | `662ad78` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 4.5 | 5 | 5.5 | **49.5** |
 | 17 | detection | `662ad78` | 7 | 7.5 | 6.5 | 5 | 5.5 | 5 | 4 | 5.5 | 4.5 | **50.5** |
+| 18 | widget | `38d85be` | 7 | 6 | 5.5 | 5.5 | 6 | 4.5 | 4.5 | 5 | 4.5 | **48.5** |
+| 18 | main | `bccdca5` | 6.5 | 6 | 5.5 | 5.5 | 5.5 | 5.5 | 6 | 5 | 6 | **51.5** |
+| 18 | detection | `497240f` | 7 | 7.5 | 6.5 | 5 | 5.5 | 5 | 5 | 5.5 | 5 | **52** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -508,3 +511,150 @@ it is the only part of this worth spending on.
 
 Recorded rather than silently ignored, per `CLAUDE.md`: « If you think one is
 wrong, say so — don't silently build the other thing. »
+
+### Round 18 — the round that scored the previous round's fixes, and found two of them wrong
+
+Widget 50 → **48.5**, main 49.5 → **51.5**, detection 50.5 → **52**. The widget
+regression is not a decline: `a133f78` is `662ad78` plus a rubric commit, so the
+surface did not change. Round 17 scored `dae6563`'s refusal card as shipped;
+round 18 drove **both** its directions and found one of them draws nothing at
+all. The instrument widened, and the score followed it down. That is the third
+time a surface has lost points for being measured better, and it is the only
+kind of regression worth having.
+
+**Two of round 17's own fixes were defects, and both were found the same way:
+by running the new fixture in the direction it could not express.**
+
+`803e792` replaced a `for`/`break` over a sorted list with « the greatest anchor
+claiming now ». Its two-claimant test has the earlier meeting no-show and the rep
+join the later one. Run it the other way — the rep joins the **earlier** slot and
+stays on the call — and `now` advances under a call that does not, so at 14:25 the
+offer walks to a client the rep is not talking to. A press there sends one
+client's conversation into another's account through a `POST` with no idempotency
+key and no delete verb. The row it abandoned is never withdrawn: `armed` survives
+a relaunch, every installer is refused about a call that ended at 15:00, and
+`#adHocSpent` latches, so a genuine unscheduled call five hours later got **zero**
+offers. Causation was pinned, not asserted — reverting only the arm-site shape
+makes both symptoms vanish. Fixed in `4d378ef`, with a second standing-offer
+withdrawal in `497240f` after `["armed","recording"]` — verbatim the string this
+file records round 24 as having closed — turned out to be reachable through
+« Démarrer une réunion » while Teams held the microphone.
+
+`c899b45` taught `refusePause()` to set `RECORDING_STOPPED`, and its fixture
+answers `{ paused: !payload.paused }`. For a *Pause* that equals what `setPaused`
+returns. For a *Reprendre* it is the **opposite** of it. So the one direction the
+product could not draw a refusal in was the direction the harness staged a
+refusal in perfectly. The commit's claim « the staged world is now reachable »
+held for `paused: true` only. Fixed in `38d85be`, which also honours a pause
+asked for during the device-open window — refused 8 samples out of 12 while
+`widget:state` still answered a live meeting, drawing « La pause n'a pas pu être
+prise. » beside « Enregistrement en cours » at 00:00:00. That is the round-4
+defect verbatim, and the refusal's own remedy (`state.reload()`) re-read the
+channel and got the recording back.
+
+### The worst defect of round 18, and it was never a design one
+
+`dispatch('start')` fires `#openDevices` as `void`. Three routes out of it
+returned with the meeting in `recording` and no `Recording` behind it:
+`capture.start()` called **0** times, segments 0, diagnostics 0, and
+`health.capture` **ok** — so DEC-32's one general status stays green and the
+bundle a support call reads shows a healthy app. The pill floats over the whole
+call saying « Enregistrement en cours » with a running clock, capturing nothing,
+for the life of the process. Then `recording` + `armed` refuses every later call
+until a restart.
+
+Route 1 is two presses away: the twenty-second dry run (DEC-45) is a wall clock
+in the main process that nothing cancels, so `Escape` out of Réglages leaves it
+running behind a live « Démarrer une réunion ». Fixed in `ad8dc24`.
+
+Why it was invisible: `recording.test.ts`'s « a meeting will not start on top of
+the dry run » calls `orchestrator.startRecording()` **directly**, and no
+production code does — `#openDevices` is its only caller. The fixture asserted
+the *method* rejects, which it does, and could not express the property it is
+named after. **A test is not a caller** was already in `CLAUDE.md`; this is the
+first time it cost the product its one unacceptable failure.
+
+### The third instrument lesson: a check can be sharp, wide, and still aimed at one of three subjects
+
+`e6c52aa` made the document's VerySwing claim conditional on the task intent.
+Round 18 walked **all eight** tick sets and found **six go red on HEAD**: two more
+sentences — the rail notice the product *sends the rep to* when nothing is
+correctable, and the mail heading — were still constants. The subject was never
+« does the document mention the task »; it was « which of three intents is
+going », and every existing fixture ticked all three or unticked the opportunity
+alone. Fixed in `ac29f75`.
+
+DEC-4's only refusal had also never been drawn: `bridge-stub.mjs` answered
+`ok: true` to every press, so 154 stagings never rendered the element, and
+`--prose` measured it at **197 characters a line** the first time it saw it — the
+widest prose in the product, on the sentence a rep reads immediately after
+pressing the one irreversible control. Fixed in `7bd3a94`; the stub now applies
+`register.ts`' own rule rather than a flag.
+
+### What round 18 checked and found sound — do not re-measure
+
+- **The `fireEvent.change`-into-`readOnly` sweep is clean.** Every `change`/`input`
+  event in all 31 renderer suites was instrumented with a capture listener
+  recording a `readOnly`/`disabled` target: **zero hits across 809 tests**. The
+  instrument was falsified by making `taskName` inert, which produced a hit and a
+  failure. `f825eda`/`0d20b67` hold; there is no third sibling.
+- **Reversing `ownClaims`' sort moves nothing**, in either direction, including on
+  tied anchors (`Array.sort` is stable and `listMeetings` fixes the order). The
+  property holds — but the comment above it still claims the arm site takes the
+  one whose slot the rep reached **first**, which is false of both consumers.
+- **`calendarClaims`' sort is load-bearing and guarded** — reversing it turns two
+  node tests red. The `break` that depends on it is instrumented.
+- **`measureRail`'s census is exact in both directions** — a missing row reports
+  « 1 manquant(s) », an extra one « 1 en trop », on both rail stages.
+- **`f630dcd` cannot be spent by a second path**: `session:command`'s schema is
+  `z.enum(['start','end','abort'])`, and exactly one `dispatch(…, 'confirm', …)`
+  exists in the repo.
+- **No dead control on the widget** — all 14 pressed, every press produced IPC and
+  a screen change.
+
+### Open, priced, not fixed
+
+- **A paused recording never ends by itself**, re-priced **downward** with a
+  control: 75 s of silence ends an unpaused meeting, a paused one is still
+  `recording` at **+24 h**. But `armNow`'s refusal names the live call and
+  « elle reste proposée » was verified to hold, so it is « blocked until the rep
+  notices », not bricked. Not fixed deliberately: the only remedy is a ceiling,
+  and this repo has never stated how long a legitimate pause may last. Choosing
+  one while writing the fix is the round-16 habit; ending a paused call is
+  irreversible, so a wrong ceiling loses the rest of a real call.
+- **Unticking the Outlook draft costs up to 8 page turns** at 960×600 under
+  « Il reste des champs à lire, plus haut. » — while the rail does not move a
+  pixel (`scrollHeight` 1021 → 1021, one read-only row before and after).
+  `viewOf`'s key is the whole checked set; its docblock argues the case for the
+  **opportunity**, which is one tick of three. The honest fix makes the key
+  payload-derived, which makes it move while the rep types — and
+  `review-garde-frappe` exists because a keystroke taking *Valider* away is a
+  failure this guard has already produced once.
+- **The flagship detection stage still photographs a day the shipped `Agenda`
+  refuses**, all four facts inverted, unchanged since round 16. The check that
+  should hold it counts armed rows and never asks *which* meeting a real `Agenda`
+  would arm — narrower than its subject, in this file's own sense.
+- **No fixture anywhere puts `⚠ faible` on a deterministic row.** Consequence:
+  mutating the count to `correctableFaible.length` — the regression the stage's
+  own docblock argues against — leaves `review-sans-opportunite-valider` green,
+  and `accountReason`'s sub-line branch is drawn by no stage at any size.
+- **The widget has no departures at all** — « 0 qui s'en vont, 0 @keyframes de
+  sortie » on 11 stages × 2 sizes. `useDeparture` exists and has no caller under
+  `src/widget/`. The refusal card, the loudest state change on a surface drawn
+  over another application, has neither arrival nor exit.
+- **`--scan` is not in `smoke.mjs`**, re-priced with a reason: turning it on today
+  floods every row-list stage with a known-benign occlusion class (12 of the 15
+  findings on the agenda stage are the `after:absolute after:inset-0` row overlay,
+  reported as « 100% covered » on text that is perfectly legible in the PNG).
+  122 detector findings across the widget family alone are invisible to smoke.
+- **Four radius families on one 340 px widget card** (1 / 10 / 14 / 9999 px), not
+  three. The two icon stroke weights are a main-surface finding; the widget ships
+  one.
+- **`src/screens/Review.tsx` contains a literal U+0000**, which makes it **binary
+  to `grep`** — so `grep -rn 'tiersCode\|oppyId\|salesStage' electron/ src/`, the
+  containment check this repo states as a command, silently skips it. The `.mjs`
+  gates read with `fs`, so `npm run check` is unaffected.
+- **`--contrast` demands 4.5:1 of `.sr-only` text** and invents a white ground
+  under a transparent halo. Unchanged. A second detector artefact of the same
+  family was confirmed on `onboarding-essai-fait`, where the named element is
+  entirely below the fold.
