@@ -96,6 +96,83 @@ const settled = (page) =>
     .catch(() => undefined)
 
 /**
+ * **Every painted frame of a departure, and the moment the element detaches.**
+ *
+ * A census of what is animating — which is what `--motion` takes — cannot answer
+ * the question a departure actually poses: *was the last thing a rep saw a fade
+ * or a snap*. Round 18 found `useDismiss` tearing its surface off the screen at
+ * 0.44 opacity while every check stayed green, and the same measurement run on
+ * `useDeparture` in round 19 gave 0.237 / 0.241 / 0.238. Nothing in this file
+ * could see either.
+ *
+ * `MutationObserver` for the detach, because it is the one event that is exact,
+ * and `requestAnimationFrame` for the opacity, so « the last value painted » is
+ * the last one a rep could have seen.
+ *
+ * `target` picks the element that leaves; `press` is the control that sends it.
+ */
+const departureOf = (page, target, press) =>
+  page.evaluate(
+    async ({ target, press }) => {
+      const going = document.querySelector(target)
+      if (!going) return { error: `rien à écarter pour ${target}` }
+      const control = document.querySelector(press)
+      if (!control) return { error: `le contrôle ${press} est introuvable` }
+      const parent = going.parentElement
+      const samples = []
+      let detachedAt = null
+      const started = performance.now()
+      const observer = new MutationObserver(() => {
+        if (!going.isConnected && detachedAt === null) detachedAt = performance.now() - started
+      })
+      observer.observe(parent, { childList: true, subtree: true })
+      const tick = () => {
+        if (!going.isConnected) return
+        samples.push(Number(getComputedStyle(going).opacity))
+        requestAnimationFrame(tick)
+      }
+      control.click()
+      requestAnimationFrame(tick)
+      await new Promise((resolve) => setTimeout(resolve, 900))
+      observer.disconnect()
+      return { samples, detachedAt }
+    },
+    { target, press },
+  )
+
+/**
+ * A departure is a fade or it is a failure.
+ *
+ * Two claims, and the second is the one a class name cannot make: frames were
+ * painted *between* the two ends, and the last of them was at zero. An element
+ * held on screen for a whole `--motion` and spending all of it transparent
+ * passes the first and fails the second, which is exactly what the widget card's
+ * exit did when it was written as a transition under a filled arrival.
+ */
+const judgeDeparture = (what, exit) => {
+  if (exit.error) throw new Error(`${what} : ${exit.error}`)
+  if (exit.detachedAt === null) throw new Error(`${what} : l’élément ne part jamais`)
+  const between = exit.samples.filter((value) => value > 0.02 && value < 0.98).length
+  const last = exit.samples[exit.samples.length - 1] ?? 1
+  if (exit.samples.length < 4 || between < 2) {
+    throw new Error(
+      `${what} : ${exit.samples.length} image(s) peintes dont ${between} entre les deux — ` +
+        `l’élément disparaît entre deux images (${exit.samples.map((v) => v.toFixed(2)).join(' ')})`,
+    )
+  }
+  if (last > 0.05) {
+    throw new Error(
+      `${what} : dernière opacité peinte ${last.toFixed(3)} à ${Math.round(exit.detachedAt)} ms — ` +
+        'l’élément est arraché avant la fin de son propre fondu',
+    )
+  }
+  console.log(
+    `   ${what} : ${exit.samples.length} images, dernière opacité ${last.toFixed(3)}, ` +
+      `détachée à ${Math.round(exit.detachedAt)} ms`,
+  )
+}
+
+/**
  * **VISION §6's own ceiling, in milliseconds** — « Motion: ≤150ms ». The one carve-out
  * (DEC-50) is the widget's *arrival*, a card drawn over another application; a page turn
  * inside a document on the app's own paper is not that surface.
@@ -4055,62 +4132,6 @@ const SCREENS = {
           }
         })
 
-      /**
-       * The departure, frame by frame, from the press until the element detaches.
-       *
-       * `MutationObserver` for the detach because it is the one event that is
-       * exact; the opacity is read on every animation frame, so « the last value
-       * painted » is the last one a rep could have seen.
-       */
-      const departure = (label) =>
-        page.evaluate(async (name) => {
-          const card = [...document.querySelectorAll('[data-card]')].find(
-            (el) => el.querySelector('[role="alert"], [role="status"]'),
-          )
-          if (!card) return { error: 'aucune carte à écarter' }
-          const parent = card.parentElement
-          const samples = []
-          let detachedAt = null
-          const started = performance.now()
-          const observer = new MutationObserver(() => {
-            if (!card.isConnected && detachedAt === null) detachedAt = performance.now() - started
-          })
-          observer.observe(parent, { childList: true, subtree: true })
-          const tick = () => {
-            if (!card.isConnected) return
-            samples.push(Number(getComputedStyle(card).opacity))
-            requestAnimationFrame(tick)
-          }
-          card.querySelector(`button[aria-label="${name}"]`).click()
-          requestAnimationFrame(tick)
-          await new Promise((resolve) => setTimeout(resolve, 900))
-          observer.disconnect()
-          return { samples, detachedAt, stillHere: card.isConnected }
-        }, label)
-
-      const judge = (what, exit) => {
-        if (exit.error) throw new Error(`${what} : ${exit.error}`)
-        if (exit.detachedAt === null) throw new Error(`${what} : la carte ne part jamais`)
-        const between = exit.samples.filter((value) => value > 0.02 && value < 0.98).length
-        const last = exit.samples[exit.samples.length - 1] ?? 1
-        if (exit.samples.length < 4 || between < 2) {
-          throw new Error(
-            `${what} : ${exit.samples.length} image(s) peintes dont ${between} entre les deux — ` +
-              `la carte disparaît entre deux images (${exit.samples.map((v) => v.toFixed(2)).join(' ')})`,
-          )
-        }
-        if (last > 0.05) {
-          throw new Error(
-            `${what} : dernière opacité peinte ${last.toFixed(3)} à ${Math.round(exit.detachedAt)} ms — ` +
-              'la carte est arrachée avant la fin de son propre fondu',
-          )
-        }
-        console.log(
-          `   ${what} : ${exit.samples.length} images, dernière opacité ${last.toFixed(3)}, ` +
-            `détachée à ${Math.round(exit.detachedAt)} ms`,
-        )
-      }
-
       /*
        * **The mention card first, and it is un-refused**, so the two halves of
        * the slot are exercised as the rep meets them: a sentence they are about
@@ -4126,7 +4147,10 @@ const SCREENS = {
         )
       }
       await settled(page)
-      judge('mention, écartée par le commercial', await departure('Masquer cette phrase'))
+      judgeDeparture(
+        'mention, écartée par le commercial',
+        await departureOf(page, '[data-card].widget-card-arrive', 'button[aria-label="Masquer cette phrase"]'),
+      )
 
       /*
        * Then the refusal, which is the same slot reached by a different press and
@@ -4161,7 +4185,10 @@ const SCREENS = {
         )
       }
       await settled(page)
-      judge('refus, écarté par le commercial', await departure('Masquer ce message'))
+      judgeDeparture(
+        'refus, écarté par le commercial',
+        await departureOf(page, '[data-card].widget-card-arrive', 'button[aria-label="Masquer ce message"]'),
+      )
 
       /*
        * **And once more, held.** The census `--motion` takes counts what is
@@ -4186,6 +4213,65 @@ const SCREENS = {
       })
       await page.waitForSelector('[data-card].widget-card-leaving', { timeout: 5_000 })
       await page.evaluate(() => window.__harness.refuseMarks(null))
+    },
+  },
+
+  /**
+   * **The panel closing — 340×205 over another application's video, removed
+   * between two frames for as long as the surface has existed.**
+   *
+   * DEC-50 decided the *opening* and argued it at length; the exit was not in
+   * scope and nothing since put one there. Measured with `--motion` on
+   * `widget-ouvert`, at both smoke sizes: « 16 élément(s) animé(s) dont **0 qui
+   * s'en vont** ». It is the largest object on this window and it is the one a
+   * rep dismisses most often, by any of four routes — the chevron, the footer's
+   * *Replier*, the meeting ending, the window going — which is why it is held by
+   * `useDeparture` and not by `useDismiss`: three of the four are not a gesture
+   * on the panel.
+   *
+   * Measured rather than photographed, for the same reason `widget-carte-sortie`
+   * is: a class name says an exit was declared and a painted frame says one ran.
+   * The stage ends with the panel *back open*, so `--geometry`, `--targets`,
+   * `--prose`, `--a11y`, `--contrast` and `--scrollers` still have the surface
+   * `widget-ouvert` shows them, and re-opening is itself the assertion that a
+   * departure interrupted leaves nothing behind.
+   */
+  'widget-panneau-sortie': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      const chevron = page.getByRole('button', { name: /le panneau/ })
+      await chevron.click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await settled(page)
+
+      const arrival = await page.evaluate(() => {
+        const panel = document.querySelector('.widget-panel-arrive')
+        if (!panel) return null
+        const style = getComputedStyle(panel)
+        return { animation: style.animationName, ms: style.animationDuration, origin: style.transformOrigin }
+      })
+      if (!arrival) throw new Error('le panneau n’est pas à l’écran')
+      if (arrival.animation !== 'widget-arrive' || Number.parseFloat(arrival.ms) <= 0) {
+        throw new Error(`le panneau arrive sans mouvement : ${arrival.animation}, ${arrival.ms}`)
+      }
+
+      judgeDeparture(
+        'panneau, replié par le commercial',
+        await departureOf(page, '.widget-panel-arrive', 'button[aria-label="Replier le panneau"]'),
+      )
+
+      // Reopened, and it has to come back clean: a held exit that left a ghost
+      // would give two panels here, and the frame is measured off this box.
+      await chevron.click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await settled(page)
+      const count = await page.evaluate(
+        () => document.querySelectorAll('.widget-panel-arrive, .widget-panel-leaving').length,
+      )
+      if (count !== 1) throw new Error(`${count} panneau(x) après la réouverture, un seul est attendu`)
     },
   },
 

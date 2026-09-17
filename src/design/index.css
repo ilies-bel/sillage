@@ -605,6 +605,25 @@
   }
 
   /*
+   * **And the panel goes the way it came.** It is the largest object on this
+   * window — 340×205 over another application's video — and closing it
+   * unmounted it between two frames for as long as it has existed: `--motion`
+   * read « 16 élément(s) animé(s) dont 0 qui s'en vont » on `widget-ouvert` at
+   * both smoke sizes, and DEC-50's argument for an origin-aware arrival is the
+   * same argument for the exit. Same keyframes as the card's, same amplitude,
+   * same origins, `--ease-in`; the class is separate only because the arrival's
+   * `both` fill would otherwise hold the end frame over it.
+   */
+  .widget-panel-leaving {
+    animation: widget-card-leave var(--motion) var(--ease-in) both;
+    transform-origin: 50% 0;
+  }
+
+  .widget-panel-leaving[data-above='true'] {
+    transform-origin: 50% 100%;
+  }
+
+  /*
    * **The one card, which is the loudest state change on this surface and had
    * neither half of a motion.**
    *

@@ -365,6 +365,13 @@ export function Widget() {
    * the value it feeds.
    */
   const { shown: cardShown, leaving: cardLeaving } = useDeparture(card !== null)
+  /**
+   * The panel, held the same way — it is the largest thing on this window and it
+   * left between two frames. The condition is the press, so `useDismiss` would
+   * serve the chevron and not the three other ways it closes (the footer's
+   * *Replier*, the meeting ending, the window going); one hook covers all four.
+   */
+  const { shown: panelShown, leaving: panelLeaving } = useDeparture(open)
   const lastCard = useRef<WidgetCard | null>(null)
   if (card !== null) lastCard.current = card
   const drawnCard = card ?? lastCard.current
@@ -878,10 +885,11 @@ export function Widget() {
               }}
             />
           )}
-          {open && meetingId !== null ? (
+          {panelShown && meetingId !== null ? (
             <Panel
               meetingId={meetingId}
               above={above}
+              leaving={panelLeaving}
               heading={meeting?.clientName ?? meeting?.title ?? ''}
               turns={turns}
               marks={marks}
@@ -2121,6 +2129,8 @@ interface PanelProps {
    * 170px 102.594px` — dead centre, the CSS initial, whichever way it stacked.
    */
   above: boolean
+  /** On its way out — held one `--motion` by `useDeparture` in `Widget`. */
+  leaving: boolean
   /** The client, else the objet, else nothing — never an invented name. */
   heading: string
   turns: readonly TranscriptSegment[]
@@ -2142,6 +2152,7 @@ interface PanelProps {
 function Panel({
   meetingId,
   above,
+  leaving,
   heading,
   turns,
   marks,
@@ -2227,7 +2238,9 @@ function Panel({
         stylesheet with the reasoning, not spread over two files as a string.
       */
       data-above={above ? 'true' : 'false'}
-      className="bg-card border-card shadow-overlay widget-panel-arrive my-tight w-[340px] rounded-lg border"
+      className={`bg-card border-card shadow-overlay my-tight w-[340px] rounded-lg border ${
+        leaving ? 'widget-panel-leaving' : 'widget-panel-arrive'
+      }`}
     >
       {/*
         Which call this is.

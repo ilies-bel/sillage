@@ -611,6 +611,34 @@ test('the refusal card arrives, and leaves whether it is pressed or yielded', as
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
 })
 
+/**
+ * The panel is the largest object on this window and it left between two frames
+ * too. Held by the same hook, because three of the four ways it closes are not a
+ * gesture on it — the footer's *Replier*, the meeting ending, the window going.
+ */
+test('the panel is held long enough to leave, and comes back clean', async () => {
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+  const chevron = screen.getByRole('button', { name: /le panneau/ })
+  fireEvent.click(chevron)
+  await screen.findByPlaceholderText('Noter ce moment…')
+
+  const panel = () => document.querySelector('.widget-panel-arrive, .widget-panel-leaving')
+  expect(panel()?.classList.contains('widget-panel-arrive')).toBe(true)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Replier le panneau' }))
+  expect(panel()).not.toBeNull()
+  expect(panel()?.classList.contains('widget-panel-leaving')).toBe(true)
+  expect(panel()?.classList.contains('widget-panel-arrive')).toBe(false)
+  await waitFor(() => expect(panel()).toBeNull())
+
+  // Reopened: a held exit that left a ghost would give two panels here, and the
+  // frame the main process sizes the window to is measured off this box.
+  fireEvent.click(chevron)
+  await screen.findByPlaceholderText('Noter ce moment…')
+  expect(document.querySelectorAll('.widget-panel-arrive, .widget-panel-leaving')).toHaveLength(1)
+})
+
 test('the mention card arrives and leaves too', async () => {
   const clipboard = withClipboard()
   try {
