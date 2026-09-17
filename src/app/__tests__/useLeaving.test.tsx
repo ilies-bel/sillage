@@ -31,6 +31,14 @@ function List({ items }: { items: readonly Row[] }) {
   )
 }
 
+/**
+ * Two frames, which is what `holdOneMotion` waits for before it starts counting:
+ * an effect runs a frame before the style that begins the exit resolves, so a
+ * hold armed there expires with a quarter of the fade still to run.
+ * `useDismiss.ts` carries the measurement.
+ */
+const FRAMES = 32
+
 const keys = () => screen.getAllByRole('listitem').map((el) => el.textContent)
 const leaving = () =>
   screen.queryAllByRole('listitem').filter((el) => el.dataset.leaving === 'true').map((el) => el.textContent)
@@ -57,7 +65,12 @@ describe('a removed row leaves instead of vanishing', () => {
     expect(keys()).toEqual(['a', 'b'])
     expect(leaving()).toEqual(['b'])
 
-    act(() => void vi.advanceTimersByTime(149))
+    // One bare `--motion` from the removal is not the contract — the row has not
+    // finished painting its exit. This is the line the old shape passed.
+    act(() => void vi.advanceTimersByTime(150))
+    expect(keys()).toEqual(['a', 'b'])
+
+    act(() => void vi.advanceTimersByTime(FRAMES - 1))
     expect(keys()).toEqual(['a', 'b'])
 
     act(() => void vi.advanceTimersByTime(1))
@@ -78,7 +91,7 @@ describe('a removed row leaves instead of vanishing', () => {
     expect(keys()).toEqual(['a', 'b', 'c'])
     expect(leaving()).toEqual(['b'])
 
-    act(() => void vi.advanceTimersByTime(150))
+    act(() => void vi.advanceTimersByTime(FRAMES + 150))
     expect(keys()).toEqual(['a', 'c'])
   })
 
@@ -123,7 +136,7 @@ describe('prefers-reduced-motion needs no branch', () => {
     } as unknown as CSSStyleDeclaration)
     const view = render(<List items={[{ key: 'a' }]} />)
     view.rerender(<List items={[]} />)
-    act(() => void vi.advanceTimersByTime(0))
+    act(() => void vi.advanceTimersByTime(FRAMES + 1))
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
   })
 })

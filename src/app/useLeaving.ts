@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { durationMs } from './useDismiss.ts'
+import { holdOneMotion } from './useDismiss.ts'
 
 /**
  * **A list whose removals are watched, so they can leave instead of vanishing.**
@@ -33,7 +33,8 @@ export function useLeaving<T extends object>(
 ): readonly (T & { leaving?: boolean })[] {
   const [leaving, setLeaving] = useState<readonly T[]>([])
   const previous = useRef<readonly T[]>(items)
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  /** Key → the canceller `holdOneMotion` handed back for that row's exit. */
+  const timers = useRef(new Map<string, () => void>())
   /** Where a row sat in the list it was removed from, so it can leave from there. */
   const departedAt = useRef(new Map<string, number>())
 
@@ -61,9 +62,9 @@ export function useLeaving<T extends object>(
 
     // Back before it finished leaving: stop the timer and let the live one render.
     for (const key of live) {
-      const timer = timers.current.get(key)
-      if (timer === undefined) continue
-      clearTimeout(timer)
+      const cancel = timers.current.get(key)
+      if (cancel === undefined) continue
+      cancel()
       timers.current.delete(key)
     }
 
@@ -76,21 +77,26 @@ export function useLeaving<T extends object>(
     })
 
     if (gone.length === 0) return
-    const hold = durationMs(getComputedStyle(document.documentElement).getPropertyValue('--motion'))
+    /*
+     * `holdOneMotion` and not a `setTimeout` armed here: a hold armed in an
+     * effect starts a frame *before* the style that begins the exit resolves, so
+     * it expires with that frame of the fade still to run — and `--ease-in` puts
+     * almost all of its change at the end. The numbers are in `useDismiss.ts`.
+     * The duration is still read off `--motion` and never written, one level in.
+     */
     for (const item of gone) {
       const key = keyOf(item)
-      const running = timers.current.get(key)
-      if (running !== undefined) clearTimeout(running)
+      timers.current.get(key)?.()
       timers.current.set(
         key,
-        setTimeout(() => {
+        holdOneMotion(() => {
           timers.current.delete(key)
           departedAt.current.delete(key)
           setLeaving((was) => {
             const next = was.filter((other) => keyOf(other) !== key)
             return next.length === was.length ? was : next
           })
-        }, hold),
+        }),
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see `signature`
@@ -100,7 +106,7 @@ export function useLeaving<T extends object>(
   useEffect(() => {
     const map = timers.current
     return () => {
-      for (const timer of map.values()) clearTimeout(timer)
+      for (const cancel of map.values()) cancel()
       map.clear()
     }
   }, [])

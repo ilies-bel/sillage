@@ -48,6 +48,54 @@ const motionMs = (): number => {
   return durationMs(getComputedStyle(document.documentElement).getPropertyValue('--motion'))
 }
 
+/**
+ * **Run something one `--motion` after the exit has started painting — which is
+ * not one `--motion` after the effect, and for three rungs of this ladder it
+ * was.**
+ *
+ * An effect runs after the commit and *before* the browser has resolved the
+ * style that begins the exit. A timer armed in the effect therefore expires
+ * while the motion still has that latency left to run, and `--ease-in` is
+ * back-loaded by design (mean progress 0.173), so a cut of one frame off a
+ * hundred and fifty milliseconds takes the last quarter of the fade with it.
+ *
+ * Measured on the widget's card, three runs, with the timer armed in the effect
+ * (`scratch/r19-depart.mjs`): last painted opacity **0.237 / 0.241 / 0.238**,
+ * detached at 157 / 154 / 152 ms. The surface was held for the whole duration
+ * and then snapped out from a quarter opaque. That is round 18's finding about
+ * `useDismiss`, one frame smaller, in the file whose own docblock concluded
+ * « `useLeaving` and `useDeparture` were always right because both arm in an
+ * effect ». Arming in an effect is necessary and it is not sufficient.
+ *
+ * **Two frames, not one, and the second is the measurement.** A single
+ * `requestAnimationFrame` puts the arming in the *same* frame the style change
+ * resolves in, so the hold and the motion end in the same frame and whether the
+ * last paint lands before or after the animation's end is a coin toss: three
+ * runs gave 0.000 / 0.000 / **0.438**. The second frame is the slack that makes
+ * the animation finish first, every time — and it costs one frame of a surface
+ * already at `opacity: 0`, which paints nothing.
+ *
+ * Under `prefers-reduced-motion` `--motion` is `0ms` (`tokens.css`), so the
+ * surface leaves two frames later with no intermediate value painted — the same
+ * collapse, from the same token, and not a second code path.
+ *
+ * One helper and not three copies, because the three rungs — `useDismiss`,
+ * `useLeaving`, `useDeparture` — are one rule about when a hold starts, and this
+ * repo has watched a two-copy invariant drift twice.
+ */
+export function holdOneMotion(run: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(() => {
+      timer = setTimeout(run, motionMs())
+    })
+  })
+  return () => {
+    cancelAnimationFrame(frame)
+    if (timer !== null) clearTimeout(timer)
+  }
+}
+
 export interface Dismiss {
   /** Wear `.leaving`. True only while the surface is on its way out. */
   leaving: boolean
@@ -70,11 +118,11 @@ export interface Dismiss {
  */
 export function useDismiss(onClose: () => void): Dismiss {
   const [leaving, setLeaving] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelHold = useRef<(() => void) | null>(null)
 
   useEffect(
     () => () => {
-      if (timer.current !== null) clearTimeout(timer.current)
+      cancelHold.current?.()
     },
     [],
   )
@@ -95,9 +143,13 @@ export function useDismiss(onClose: () => void): Dismiss {
    * blink this whole family exists to remove — on the first rung of the ladder,
    * for as long as the ladder has existed.
    *
-   * `useLeaving` and `useDeparture` were always right because both arm in an
-   * effect. This is now the same shape, and the measurement agrees: the notice
-   * runs 0.998 → **0.000 at 210 ms** and detaches at 225 ms. A full fade.
+   * `useLeaving` and `useDeparture` arm in an effect, and this is now the same
+   * shape; the measurement agreed: the notice ran 0.998 → **0.000 at 210 ms** and
+   * detached at 225 ms. What that sentence then concluded — « both were always
+   * right » — was wrong about both of them, and round 19 measured it: an effect
+   * still runs a frame before the style that starts the motion resolves, which
+   * cost the widget's card the last quarter of its fade. All three rungs hold
+   * through `holdOneMotion` now, which carries the numbers.
    *
    * `onClose` is read through a ref so a caller passing a fresh lambda each
    * render cannot restart the timer half way through the exit — the effect
@@ -108,9 +160,11 @@ export function useDismiss(onClose: () => void): Dismiss {
 
   useEffect(() => {
     if (!leaving) return
-    const id = setTimeout(() => latest.current(), motionMs())
-    timer.current = id
-    return () => clearTimeout(id)
+    // `holdOneMotion`, not a bare `setTimeout`: the hold has to start when the
+    // motion does and not one frame before it. The measurement is up there.
+    const cancel = holdOneMotion(() => latest.current())
+    cancelHold.current = cancel
+    return cancel
   }, [leaving])
 
   const dismiss = useCallback(() => {
@@ -181,10 +235,9 @@ export function useDeparture(present: boolean): Departure {
 
   useEffect(() => {
     if (state !== 'leaving') return
-    const timer = setTimeout(() => setState((s) => (s === 'leaving' ? 'out' : s)), motionMs())
     // Cleared when the condition comes back *and* on unmount, so a screen torn
     // down mid-exit leaves no timer writing into a tree that is gone.
-    return () => clearTimeout(timer)
+    return holdOneMotion(() => setState((s) => (s === 'leaving' ? 'out' : s)))
   }, [state])
 
   return { shown: state !== 'out', leaving: state === 'leaving' }

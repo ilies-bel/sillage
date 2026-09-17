@@ -21,6 +21,22 @@ import { durationMs, useDeparture, useDismiss } from '../useDismiss.ts'
 // No global auto-cleanup in this project (`src/ui/ui.test.tsx` does the same).
 afterEach(cleanup)
 
+/**
+ * **The two frames `holdOneMotion` waits for before it starts counting.**
+ *
+ * An effect runs a frame *before* the browser resolves the style that begins the
+ * exit, so a hold armed there expires with part of the fade still to run —
+ * measured at « last painted opacity 0.237 / 0.241 / 0.238 » on the widget's card
+ * (`useDismiss.ts` carries the numbers and why it is two frames and not one).
+ *
+ * It is a named constant here and asserted rather than absorbed: every timing
+ * test below advances this **first** and then the duration, and each one also
+ * asserts that one bare `--motion` from the press is *not* enough. That second
+ * assertion is the whole discriminator — it is what the old shape passed and
+ * this one must not.
+ */
+const FRAMES = 32
+
 describe('durationMs reads a CSS duration', () => {
   test.each([
     ['150ms', 150],
@@ -67,7 +83,12 @@ describe('useDismiss holds the surface for one --motion', () => {
     expect(button.className).toContain('leaving')
     expect(onClose).not.toHaveBeenCalled()
 
-    act(() => void vi.advanceTimersByTime(149))
+    // One bare `--motion` from the press is **not** the contract, and this is the
+    // line that tells the two shapes apart: the exit has not finished painting.
+    act(() => void vi.advanceTimersByTime(150))
+    expect(onClose).not.toHaveBeenCalled()
+
+    act(() => void vi.advanceTimersByTime(FRAMES - 1))
     expect(onClose).not.toHaveBeenCalled()
 
     act(() => void vi.advanceTimersByTime(1))
@@ -84,7 +105,7 @@ describe('useDismiss holds the surface for one --motion', () => {
 
     act(() => button.click())
     act(() => button.click())
-    act(() => void vi.advanceTimersByTime(150))
+    act(() => void vi.advanceTimersByTime(FRAMES + 150))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -121,7 +142,9 @@ describe('prefers-reduced-motion needs no branch', () => {
     render(<Sheet onClose={onClose} />)
     act(() => screen.getByRole('button').click())
     expect(onClose).not.toHaveBeenCalled()
-    act(() => void vi.advanceTimersByTime(0))
+    // Two frames and a zero-length hold: no intermediate value is ever painted,
+    // which is the property — `--motion` is `0ms`, so there is nothing to wait for.
+    act(() => void vi.advanceTimersByTime(FRAMES + 1))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
@@ -179,7 +202,11 @@ describe('a surface the world removes leaves instead of vanishing', () => {
     expect(strip()).not.toBeNull()
     expect(strip()?.className).toBe('leaving')
 
-    act(() => void vi.advanceTimersByTime(149))
+    // One bare `--motion` from the flip is not the contract — the exit has not
+    // finished painting yet. This is the line the old shape passed.
+    act(() => void vi.advanceTimersByTime(150))
+    expect(strip()).not.toBeNull()
+    act(() => void vi.advanceTimersByTime(FRAMES - 1))
     expect(strip()).not.toBeNull()
     act(() => void vi.advanceTimersByTime(1))
     expect(strip()).toBeNull()
@@ -231,7 +258,7 @@ describe('useDeparture under prefers-reduced-motion', () => {
     } as unknown as CSSStyleDeclaration)
     const view = render(<Strip label="a" />)
     view.rerender(<Strip label={null} />)
-    act(() => void vi.advanceTimersByTime(0))
+    act(() => void vi.advanceTimersByTime(FRAMES + 1))
     expect(strip()).toBeNull()
   })
 })
@@ -269,9 +296,9 @@ describe('useDeparture under StrictMode', () => {
     view.rerender(<Wrapped label={null} />)
     expect(strip()?.className).toBe('leaving')
     expect(strip()?.textContent).toBe('attente')
-    act(() => void vi.advanceTimersByTime(149))
+    act(() => void vi.advanceTimersByTime(150))
     expect(strip()).not.toBeNull()
-    act(() => void vi.advanceTimersByTime(1))
+    act(() => void vi.advanceTimersByTime(FRAMES + 1))
     expect(strip()).toBeNull()
   })
 
