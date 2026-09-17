@@ -280,7 +280,49 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * the possible intents, and disarming the guard because a `useMemo` missed
    * would be a page turn a rep is asked for and cannot explain.
    */
-  const payload = useMemo(() => [...(checked ?? [])].sort().join(','), [checked])
+  /**
+   * **What the rail's scroller draws, as a key — which is not the whole tick set.**
+   *
+   * The coverage key for the rail was `[...checked].sort()`, and one of the three
+   * ticks changes nothing in that column. Driven on the shipped gate at 960×600,
+   * all eight tick sets, comparing the four pairs that differ only in the Outlook
+   * draft: the rail's `innerText` is identical in every pair and its
+   * `scrollHeight` is identical in every pair — 1159/1159 with the opportunity
+   * ticked, 1096/1096 without. The two CRM ticks really do change it (1159 → 1096,
+   * ten read-only controls → one); the mail tick does not appear in that column at
+   * all.
+   *
+   * What it cost: arm the gate, untick « Brouillon de relance », and *Valider*
+   * goes, replaced by « Il reste des champs à lire, plus haut. » over a page turn
+   * reading « Remonter dans ce qui part ». Driven, 960×600: **eight presses** to
+   * get the button back, over a column that did not move a pixel.
+   *
+   * And the same measurement puts the key on the wrong column in the other
+   * direction too: unticking the draft *does* change the document column — the
+   * heading goes « EMAIL DE RELANCE (BROUILLON) » to « — À COPIER » and the column
+   * goes 2749 → 2766 px — and the document's key is `compte-rendu:${sent}`, which
+   * carries no tick at all. That half needs no fix: 17px is growth, and growth
+   * never invalidates.
+   *
+   * Derived from the ticks and from nothing the rep types, so it cannot move under
+   * a keystroke — which is the failure `review-garde-frappe` exists for. `checked`
+   * is a set of intent ids; no edit reaches it.
+   *
+   * `RAIL_INTENTS` is the one place that says which intents this column reads, and
+   * it is held to it: `Review.test.tsx`'s « la colonne de droite ne dépend que des
+   * deux intentions CRM » walks all eight subsets and fails the moment the rail
+   * starts drawing something a fourth intent decides.
+   */
+  const railPayload = useMemo(() => {
+    if (!panel) return ''
+    const ticked = new Set(checked ?? [])
+    return panel.intents
+      .filter((intent) => RAIL_INTENTS.has(intent.kind))
+      .map((intent) => `${intent.kind}:${ticked.has(intent.id) ? 1 : 0}`)
+      .sort()
+      .join(',')
+  }, [panel, checked])
+
 
   /*
    * **What the main process last sent, as one string.**
@@ -666,12 +708,14 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * key: that is the seam a rep walked through to arm the button on seventeen
    * hundred pixels they had never seen.
    *
-   * The rail's view is **the payload**. Unchecking « Opportunité » turns nine
-   * rows read-only and inserts a warn paragraph at the top saying their
-   * corrections will not travel; a rep sitting at the bottom sees neither. The
-   * guard is about what is about to be sent and the rep has just changed that, so
-   * that payload is unread until it has been shown — and putting the tick back
-   * returns to a payload already read, which is free.
+   * The rail's view is **the part of the payload it draws** (`railPayload`).
+   * Unchecking « Opportunité » turns nine rows read-only and inserts a warn
+   * paragraph at the top saying their corrections will not travel; a rep sitting
+   * at the bottom sees neither. The guard is about what is about to be sent and
+   * the rep has just changed that, so that payload is unread until it has been
+   * shown — and putting the tick back returns to a payload already read, which is
+   * free. Unchecking the Outlook draft changes nothing in this column, measured,
+   * and used to cost eight page turns; see `railPayload`.
    */
   /**
    * Whether the transcript reader has its record yet.
@@ -701,8 +745,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * « Chargement… », which is the defect this exists to prevent, one visit later.
    */
   const viewOf = useCallback(
-    (column: Column) => (column === 'rail' ? `rail:${payload}:${sent}` : `compte-rendu:${sent}`),
-    [payload, sent],
+    (column: Column) =>
+      column === 'rail' ? `rail:${railPayload}:${sent}` : `compte-rendu:${sent}`,
+    [railPayload, sent],
   )
 
   /**
@@ -2901,6 +2946,26 @@ interface FieldRowProps {
  * carries. The other two — the objet and the account — are the CRM task's, and
  * ship whatever the opportunity does.
  */
+/**
+ * **Which intents the right-hand rail is a function of.**
+ *
+ * Not « which intents exist » — which of them this column *draws*. The nine
+ * interpretive rows compose the opportunity's `description` and the two
+ * deterministic ones ride the CRM task, so ticking either changes what the
+ * column shows: rows go read-only, a warn paragraph appears at the top, and the
+ * account's sentence changes. The Outlook draft appears nowhere in it — driven
+ * across all eight tick sets on the shipped gate, the rail's text and its
+ * `scrollHeight` are identical in every pair that differs only in that tick.
+ *
+ * Read by `railPayload`, which is the rail's coverage key, and held to the
+ * product by `Review.test.tsx`'s eight-subset fixture: a fourth intent the rail
+ * starts drawing and that is not named here fails it.
+ */
+const RAIL_INTENTS: ReadonlySet<ReviewIntent['kind']> = new Set([
+  'crm.task',
+  'crm.opportunity',
+])
+
 const INTERPRETIVE: ReadonlySet<ReviewField['key']> = new Set([
   'besoin',
   'profils',

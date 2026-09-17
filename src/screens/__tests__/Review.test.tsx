@@ -2169,3 +2169,86 @@ describe('DEC-4 — a press that creates nothing is refused, and not spent', () 
     expect(confirmed).toBe(1)
   })
 })
+
+/**
+ * **The rail's coverage key names the ticks that change the rail, and no others.**
+ *
+ * `viewOf('rail')` was keyed on the whole checked set, and one of the three ticks
+ * draws nothing in that column. Driven on the shipped renderer at 960×600 before
+ * the fix: arm the gate, untick « Brouillon de relance », and *Valider* is
+ * replaced by « Il reste des champs à lire, plus haut. » over a page turn reading
+ * « Remonter dans ce qui part » — **eight presses** to get the button back, over
+ * a column whose `innerText` and `scrollHeight` did not change (1159/1159 with
+ * the opportunity ticked, 1096/1096 without). After: zero.
+ *
+ * `RAIL_INTENTS` is the one place that says which intents the column reads, and a
+ * declaration like that rots. So this walks all eight subsets rather than the one
+ * pair that prompted it, and asserts the property the declaration stands for
+ * rather than the declaration: **two tick sets that agree on the CRM intents draw
+ * the same rail.** A fourth intent the rail starts drawing, or a change that makes
+ * the mail tick reach into this column, fails it here.
+ *
+ * And the other direction, which is the one DEC-4 cares about: the two CRM ticks
+ * still change it. A key that made everything equal would pass the first half.
+ */
+describe('la colonne de droite ne dépend que des deux intentions CRM', () => {
+  const IDS = ['m1:crm.task', 'm1:crm.opportunity', 'm1:mail.draft'] as const
+
+  /** The measured column: the rail's scroller, not the footer under it. */
+  const railText = () =>
+    (document.querySelector('aside .fade-below')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+  /**
+   * The account unverified, which is what `review-valider` stages and what makes
+   * the *task* tick visible in this column at all: `accountReason` is null unless
+   * the account is `faible`, so on a clean panel two of the three ticks draw
+   * nothing here and the second test below could not tell a narrowed key from a
+   * broken one.
+   */
+  const gateWithFaibleAccount = () =>
+    openGate({
+      fields: panel().fields.map((field) =>
+        field.key === 'account' ? { ...field, confidence: 'faible' as const } : field,
+      ),
+    })
+
+  const setTicks = async (want: readonly boolean[]) => {
+    const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    for (const [i, box] of boxes.entries()) {
+      if (box.checked === want[i] || box.disabled) continue
+      await act(async () => {
+        box.click()
+      })
+    }
+  }
+
+  const drawnFor = async (mask: number): Promise<string> => {
+    await setTicks(IDS.map((_, i) => (mask & (1 << i)) !== 0))
+    const drawn = railText()
+    expect(drawn.length, 'the rail has to be drawing something to compare').toBeGreaterThan(200)
+    return drawn
+  }
+
+  test('le brouillon Outlook ne change rien dans cette colonne, sur les huit sous-ensembles', async () => {
+    bridge.when('review:get', gateWithFaibleAccount)
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    for (let mask = 0; mask < 8; mask += 1) {
+      if ((mask & 4) !== 0) continue
+      const without = await drawnFor(mask)
+      const with_ = await drawnFor(mask | 4)
+      expect(with_, `masque ${mask} vs ${mask | 4}`).toBe(without)
+    }
+  })
+
+  test('les deux intentions CRM, elles, la changent', async () => {
+    bridge.when('review:get', gateWithFaibleAccount)
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const all = await drawnFor(0b111)
+    expect(await drawnFor(0b110), 'sans la tâche').not.toBe(all)
+    expect(await drawnFor(0b101), 'sans l’opportunité').not.toBe(all)
+  })
+})

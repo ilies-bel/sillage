@@ -1848,6 +1848,57 @@ const SCREENS = {
   },
 
   /*
+   * **A tick that draws nothing in a column must not un-read that column.**
+   *
+   * `viewOf('rail')` was keyed on the whole checked set. Driven here at both
+   * sizes before the fix: arm the gate, untick « Brouillon de relance », and
+   * *Valider* is gone — replaced by « Il reste des champs à lire, plus haut. »
+   * over a page turn reading « Remonter dans ce qui part ». Eight presses at
+   * 960×600 to get it back, over a rail whose text and `scrollHeight` are
+   * identical before and after (1159/1159, measured across all eight tick sets).
+   *
+   * The stage asserts the whole of the rule and not only the half that moved,
+   * because a key that invalidated *nothing* would pass the first assertion: the
+   * Outlook draft leaves the button standing, and the opportunity — which does
+   * turn nine rows read-only and insert a paragraph at the top of this column —
+   * still takes it away. That second one is DEC-4 and is the reason the guard
+   * exists.
+   */
+  'review-decocher': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS['review-valider'].drive(page)
+      const valider = () => page.getByRole('button', { name: /^Valider/ })
+      await valider().waitFor()
+
+      const tick = (name) => page.getByRole('checkbox', { name })
+      await tick(/Brouillon de relance/).click()
+      await page.waitForTimeout(400)
+
+      if ((await valider().count()) === 0) {
+        const asked = await page.getByRole('button', { name: /(la suite|Remonter)/ }).allInnerTexts()
+        throw new Error(
+          'décocher le brouillon Outlook a désarmé « Valider » — le rail ne dessine pas ' +
+            `cette intention et le gate demande ${JSON.stringify(asked)} (DEC-4)`,
+        )
+      }
+
+      // The other direction: an intent this column *does* draw still withholds it.
+      await tick(/Opportunité/).click()
+      await page.waitForTimeout(400)
+      if ((await valider().count()) !== 0) {
+        throw new Error(
+          'décocher l’opportunité n’a pas désarmé « Valider » — neuf lignes de cette ' +
+            'colonne viennent de passer en lecture seule sans que le commercial les ait vues (DEC-4)',
+        )
+      }
+      await tick(/Opportunité/).click()
+      await page.waitForTimeout(400)
+      await valider().waitFor()
+    },
+  },
+
+  /*
    * The gate with a citation followed into the record (DEC-21).
    *
    * Staged through the gesture rather than by a URL, because there is no URL:
@@ -5017,6 +5068,12 @@ async function main() {
   // Nothing below measures a page that is still moving — see `settled`.
   await settled(page)
 
+  if (process.env.SILLAGE_PROBE) {
+    await page.evaluate(() => document.fonts.ready)
+    const src = (await import('node:fs')).readFileSync(process.env.SILLAGE_PROBE, 'utf8')
+    console.log('PROBE ' + JSON.stringify(await page.evaluate(src), null, 1))
+  }
+
   /*
    * The scan runs *before* `--expand`, on the layout the window really draws.
    * Unclipping the scrollers is a lie told to the camera; told to the detector
@@ -6874,6 +6931,7 @@ const ECHO_DECLARED = [
       'review-refus',
       'review-modele',
       'review-modele-differe',
+      'review-decocher',
     ],
     text: 'néovia santé — cadrage renfort data',
     pair: 'p.text-muted (l’en-tête de Review.tsx) · span (session/CompteRenduDocument.tsx, la ligne « # <objet> »)',
@@ -6916,6 +6974,7 @@ const ECHO_DECLARED = [
       'review-refus',
       'review-modele',
       'review-modele-differe',
+      'review-decocher',
     ],
     text: 'prochaines étapes',
     pair: 'chapitre « ## » · sous-section « ### » du récapitulatif (CompteRenduDocument) · label.text-muted (le champ)',
