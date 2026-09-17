@@ -406,7 +406,7 @@ test('Pause asks the main process and draws its answer, never its own press', as
   const sent: unknown[] = []
   bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => {
     sent.push(payload)
-    return { paused: payload.paused }
+    return { ok: true, paused: payload.paused }
   })
   render(<Widget />)
   await openPanel()
@@ -445,6 +445,7 @@ test('Pause asks the main process and draws its answer, never its own press', as
  */
 test('a note typed before Pause is kept, and the row says it is', async () => {
   bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    ok: true,
     paused: payload.paused,
   }))
   render(<Widget />)
@@ -479,6 +480,7 @@ test('a note typed before Pause is kept, and the row says it is', async () => {
 /** With nothing typed there is nothing to promise, so the row does not promise it. */
 test('paused with an empty field, the row states the reason and nothing more', async () => {
   bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    ok: true,
     paused: payload.paused,
   }))
   render(<Widget />)
@@ -588,10 +590,14 @@ test('a mark that worked raises no notice', async () => {
  * half explains that they are not.
  */
 test('a pause that does not take is drawn, not only announced', async () => {
-  // The state comes back unchanged: the press did not land.
-  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
-    paused: !payload.paused,
-  }))
+  /*
+   * The refusal the main process really sends, which is **not** the state
+   * inverted. `setPaused` answers `ok: false` with `paused: false` — it holds no
+   * recording, so nothing is paused. Inverting the request was this fixture's
+   * own invention and it staged a world the product cannot be in; it also hid
+   * the other direction, below.
+   */
+  bridge.when('session:pause', () => ({ ok: false, paused: false }))
   render(<Widget />)
   await openPanel()
 
@@ -609,6 +615,52 @@ test('a pause that does not take is drawn, not only announced', async () => {
   // And the surface stops claiming a recording it has just been told is not
   // happening.
   await waitFor(() => expect(screen.getByText('Aucun enregistrement')).toBeTruthy())
+})
+
+/**
+ * **The other direction, which had a sentence written for it and no way to
+ * reach it.**
+ *
+ * The subject of the rule is « a press on this control that did not land is
+ * drawn », and the fixture above has one claimant: *Pause*. *Reprendre* is the
+ * other, and it was the one that could not work. `setPaused` answered the state
+ * afterwards and nothing else, so `false` was both « resumed » and « there is no
+ * recording here »; the renderer compared the answer to its request, found them
+ * equal for `next === false`, and drew a success.
+ *
+ * Driven on the shipped renderer against the answer the main process really
+ * gives, before `ok` existed: zero refusal cards, the label still « Reprendre »,
+ * the pill still « enregistrement en pause ». A press that does nothing at all,
+ * for as long as the rep keeps making it.
+ */
+test('a Reprendre that does not take is drawn too, and that could not be said before', async () => {
+  bridge.when('session:pause', (payload: { meetingId: string; paused: boolean }) => ({
+    ok: true,
+    paused: payload.paused,
+  }))
+  render(<Widget />)
+  await openPanel()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+  await act(async () => {
+    bridge.emit('recording:paused', { meetingId: 'm1', paused: true })
+  })
+  expect(screen.getByRole('button', { name: 'Reprendre' })).toBeTruthy()
+
+  /*
+   * The call ends under the pill while it is paused — `EndOfMeetingWatch`'s gap,
+   * the one `meeting:mark` refuses in. `setPaused` holds no recording, so it
+   * answers `ok: false` with `paused: false`: the *same* `paused` the press asked
+   * for, which is exactly why the comparison alone could not see it.
+   */
+  bridge.when('session:pause', () => ({ ok: false, paused: false }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reprendre' }))
+
+  const notice = await screen.findByRole('alert')
+  expect(notice.textContent).toBe('L’enregistrement n’a pas pu reprendre.')
+  expect(notice.closest('.sr-only')).toBeNull()
+  expect(notice.closest('[data-card]')).not.toBeNull()
 })
 
 /**

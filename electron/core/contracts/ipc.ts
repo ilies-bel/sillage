@@ -444,12 +444,26 @@ export const invokeChannels = {
    * meter that fell silent would look exactly like a dead device.
    *
    * Idempotent — `paused: true` on a paused call answers `true` and changes
-   * nothing — and answered with the truth: a meeting that is not recording
-   * answers `false`, which is what the widget then draws.
+   * nothing.
+   *
+   * **`ok` and `paused` are two different facts, and `paused` alone could not
+   * carry both.** The answer used to be the state afterwards and nothing else,
+   * so `false` meant « resumed » and « there is nothing here to resume » at the
+   * same time. For `paused: false` the two collapse: the widget compared the
+   * answer to what it asked for, found them equal, and drew a success — the
+   * sentence written for a refused *Reprendre* was unreachable code, and the
+   * control did nothing at all, twice, for as long as the rep kept pressing it.
+   * Driven on the shipped renderer against the answer the main process really
+   * gives: zero refusal cards, the label still « Reprendre », the pill still
+   * « enregistrement en pause ».
+   *
+   * `ok: false` is « this window's copy of the world is stale », which is the
+   * one thing the renderer has to know: it draws the refusal and re-reads
+   * `widget:state`.
    */
   'session:pause': {
     request: z.object({ meetingId: MeetingIdSchema, paused: z.boolean() }),
-    response: z.object({ paused: z.boolean() }),
+    response: z.object({ ok: z.boolean(), paused: z.boolean() }),
   },
 
   'enhancement:status': {

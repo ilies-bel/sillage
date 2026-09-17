@@ -728,8 +728,20 @@ export function Widget() {
         state.reload()
       }
       void invoke('session:pause', { meetingId, paused: next })
-        .then(({ paused: now }) => {
-          if (now !== next) {
+        .then(({ ok, paused: now }) => {
+          /*
+            **`ok`, and not only the comparison.** `setPaused` used to answer the
+            state afterwards and nothing else, so `false` meant « resumed » and
+            « there is no recording here » at once — and for `next === false` the
+            two collapsed: the comparison below found what it asked for and drew
+            a success. Driven against the answer the main process really gives, a
+            refused *Reprendre* produced zero refusal cards, the label still
+            « Reprendre » and the pill still « enregistrement en pause », for as
+            long as the rep kept pressing. The sentence fourteen lines up was
+            unreachable code. The comparison stays as the belt: the two facts can
+            disagree in the other direction too.
+          */
+          if (!ok || now !== next) {
             refuse()
             return
           }

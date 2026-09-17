@@ -179,6 +179,66 @@ test('a fault the app did not compose stays an error', async () => {
   cleanup()
 })
 
+/**
+ * **`session:pause` and `widget:state` are one fact and were two conditions.**
+ *
+ * `setPaused` keyed on the **capture handle** (`#recordings.get(id)`),
+ * `widget:state` keys on the **state machine** (`stateOf(id) === 'recording'`),
+ * and `dispatch('start')` sets the second synchronously — that broadcast is what
+ * puts the widget on screen — then fires `#openDevices` without awaiting it. So
+ * for the length of a device open there was a live pill, a running clock, and a
+ * *Pause* that answered « refused »: measured on the shipped `Orchestrator`
+ * across a 418 ms open, 8 refusals in 12 samples. Driven through the shipped
+ * renderer, the result is the round-4 defect verbatim — « La pause n’a pas pu
+ * être prise. » beside `data-graphic="enregistrement en cours"`, an `sr-only`
+ * « Enregistrement en cours » and a running clock — and the refusal's own remedy,
+ * re-reading `widget:state`, answers the recording again.
+ *
+ * The fixture is that window and not a mock of it: this rig builds an
+ * `Orchestrator` with no `recordingOptionsFor`, so `#openDevices` returns on its
+ * second line and the meeting sits in exactly the state a slow machine sits in
+ * for half a second.
+ *
+ * Both channels, both directions, and the correspondence rather than either
+ * answer on its own — the subject of the rule is that the two halves of the
+ * window say the same thing.
+ */
+test('session:pause and widget:state answer the same meeting while the devices open', async () => {
+  const { ipc, deps, broadcasts, cleanup } = open()
+  deps.orchestrator.create({ id: 'm1', title: 'Acme', context: sampleContext })
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'start' })
+
+  const live = async (): Promise<boolean> => (await ipc.invoke('widget:state', {})).meeting !== null
+  assert.equal(await live(), true, 'la pastille ne montre pas de réunion du tout')
+  assert.equal(deps.orchestrator.recording(), false, 'les périphériques sont déjà ouverts')
+
+  // What the rep presses when something that must not be recorded starts, in
+  // the first half-second of the call.
+  const paused = await ipc.invoke('session:pause', { meetingId: 'm1', paused: true })
+  assert.deepEqual(paused, { ok: true, paused: true })
+  assert.equal(paused.ok, await live(), 'les deux moitiés de la fenêtre se contredisent')
+  assert.deepEqual(broadcasts.at(-1), {
+    channel: 'recording:paused',
+    payload: { meetingId: 'm1', paused: true },
+  })
+  assert.equal((await ipc.invoke('widget:state', {})).meeting?.paused, true)
+
+  // And back, so the hold is not a one-way door.
+  const resumed = await ipc.invoke('session:pause', { meetingId: 'm1', paused: false })
+  assert.deepEqual(resumed, { ok: true, paused: false })
+  assert.equal(resumed.ok, await live())
+  assert.equal((await ipc.invoke('widget:state', {})).meeting?.paused, false)
+
+  // The other side of the correspondence: once the meeting is not recording,
+  // both channels say so — a refusal, and no meeting to draw it beside.
+  await ipc.invoke('session:command', { meetingId: 'm1', command: 'end' })
+  const refused = await ipc.invoke('session:pause', { meetingId: 'm1', paused: false })
+  assert.deepEqual(refused, { ok: false, paused: false })
+  assert.equal(refused.ok, await live())
+
+  cleanup()
+})
+
 test('session:command drives the machine and broadcasts the new state', async () => {
   const { ipc, deps, broadcasts, cleanup } = open()
   deps.orchestrator.create({ id: 'm1', title: 'Acme', context: sampleContext })

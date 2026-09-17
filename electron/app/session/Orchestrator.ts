@@ -213,6 +213,16 @@ export class Orchestrator {
   #claimed: Partial<HealthSnapshot> = {}
   #retries = new Map<ConnectorId, () => Promise<ConnectorHealth>>()
   #recordings = new Map<MeetingId, Recording>()
+
+  /**
+   * Meetings the rep paused before their devices finished opening.
+   *
+   * `dispatch('start')` fires `#openDevices` without awaiting it, so the pill is
+   * on screen and taking presses while `#recordings` is still empty. A request
+   * held here is applied by `startRecording` the instant the `Recording` exists,
+   * before a frame can reach the transcriber — see `setPaused`.
+   */
+  #pausePending = new Set<MeetingId>()
   /**
    * The flush each meeting is still in the middle of — see `stopRecording`, which
    * is where R32-1 lived, and `flushing()`, which is what `before-quit` asks.
@@ -406,6 +416,10 @@ export class Orchestrator {
     }
 
     const outcome = session.dispatch(command, reason)
+    // A pause held for devices that will never open now goes with the meeting:
+    // `#pausePending` is only meaningful while the machine says `recording`, and
+    // `stopRecording` cannot clear it on an abort because it is never called.
+    if (outcome.ok && outcome.to !== 'recording') this.#pausePending.delete(meetingId)
     if (outcome.ok) this.#broadcast('session:changed', { meetingId, state: outcome.to })
 
     // The **edge** `recording → ended` triggers enhancement, not the state
@@ -696,6 +710,17 @@ export class Orchestrator {
       })
       this.#recordings.set(meetingId, recording)
       this.#startEndWatch(meetingId)
+      /*
+       * **The pause the rep asked for while this was opening.** Applied before
+       * anything else can run, so the first frame the devices produce is already
+       * dropped — the request was made about a call that had not started yet, and
+       * honouring it late by one frame would be honouring it wrong. No broadcast
+       * and no diagnostic: both went out when the request was taken.
+       */
+      if (this.#pausePending.delete(meetingId)) {
+        recording.pause(true)
+        this.#endWatch.get(meetingId)?.hold()
+      }
     } catch (err) {
       this.#stopSignals(meetingId)
       this.setHealth('capture', {
@@ -759,20 +784,64 @@ export class Orchestrator {
    */
   /**
    * `session:pause`. A verb on the recording, not on the machine — see the
-   * channel's docblock. Answers what is true afterwards, which for a meeting
-   * that is not recording is `false`.
+   * channel's docblock.
+   *
+   * **Two facts, because one could not carry both.** This answered the state
+   * afterwards and nothing else, so `false` meant « resumed » and « there is no
+   * recording here » at once — and the widget, which can only compare the answer
+   * to what it asked for, read the second as the first. A refused *Reprendre*
+   * drew nothing: no card, no label change, no re-read. `ok` is the fact the
+   * renderer actually needs, which is whether its copy of the world is stale.
    */
-  setPaused(meetingId: MeetingId, paused: boolean): boolean {
+  setPaused(meetingId: MeetingId, paused: boolean): { ok: boolean; paused: boolean } {
     const recording = this.#recordings.get(meetingId)
-    if (!recording) return false
+    if (!recording) {
+      /*
+       * **A pause asked for before the devices are open is honoured, not
+       * refused**, and that window is the first half-second of every call.
+       *
+       * `dispatch('start')` sets the state and *broadcasts* it synchronously —
+       * which is what puts the pill on screen — then fires `#openDevices`
+       * without awaiting it. Until `Recording.start` resolves there is a live
+       * pill, a running clock and no `Recording`, so this method answered
+       * `false`: measured on the shipped class, 8 samples of 12 across a 418 ms
+       * device open, every one of them a refusal beside `widget:state` answering
+       * a live meeting. The rep pressed the product's only privacy control, read
+       * « La pause n’a pas pu être prise. » next to « Enregistrement en cours »,
+       * and the machine then opened the devices **unpaused**. A false refusal on
+       * that control is worse than any true one.
+       *
+       * Nothing is being captured yet, so honouring it is exact rather than
+       * optimistic: the request is held and `startRecording` applies it to the
+       * `Recording` it has just built, before a frame can reach the transcriber.
+       *
+       * Outside that window — no recording and not `recording` either, which is
+       * the `EndOfMeetingWatch` gap — the answer is still no, and now it says so.
+       */
+      if (this.stateOf(meetingId) !== 'recording') return { ok: false, paused: false }
+      const before = this.#pausePending.has(meetingId)
+      if (paused) this.#pausePending.add(meetingId)
+      else this.#pausePending.delete(meetingId)
+      if (before !== paused) {
+        this.#recordPauseEdge(meetingId, paused)
+        this.#broadcast('recording:paused', { meetingId, paused })
+      }
+      return { ok: true, paused }
+    }
     const before = recording.paused
     const now = recording.pause(paused)
-    if (now === before) return now
+    if (now === before) return { ok: true, paused: now }
     const watch = this.#endWatch.get(meetingId)
     if (now) watch?.hold()
     else watch?.release()
-    // Two literals, not one ternary: `check:diag` reads what this product wrote.
-    if (now) {
+    this.#recordPauseEdge(meetingId, now)
+    this.#broadcast('recording:paused', { meetingId, paused: now })
+    return { ok: true, paused: now }
+  }
+
+  /** One edge of the pause, recorded. Two literals, not one ternary: `check:diag` reads what this product wrote. */
+  #recordPauseEdge(meetingId: MeetingId, paused: boolean): void {
+    if (paused) {
       this.#diagnostics.record({
         severity: 'info',
         code: 'recording.paused',
@@ -791,12 +860,10 @@ export class Orchestrator {
         meetingId,
       })
     }
-    this.#broadcast('recording:paused', { meetingId, paused: now })
-    return now
   }
 
   isPaused(meetingId: MeetingId): boolean {
-    return this.#recordings.get(meetingId)?.paused ?? false
+    return this.#recordings.get(meetingId)?.paused ?? this.#pausePending.has(meetingId)
   }
 
   async stopRecording(meetingId: MeetingId): Promise<void> {
@@ -808,6 +875,7 @@ export class Orchestrator {
     this.#stopSignals(meetingId)
     this.#endWatch.get(meetingId)?.stop()
     this.#endWatch.delete(meetingId)
+    this.#pausePending.delete(meetingId)
     const recording = this.#recordings.get(meetingId)
     if (!recording) return
     this.#recordings.delete(meetingId)

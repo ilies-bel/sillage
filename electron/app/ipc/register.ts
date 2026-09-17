@@ -750,9 +750,11 @@ export const handlers: Handlers = {
       : { ok: false as const, state: outcome.state, reason: outcome.reason }
   },
 
-  'session:pause': ({ meetingId, paused }, { orchestrator }) => ({
-    paused: orchestrator.setPaused(meetingId, paused),
-  }),
+  // Both facts, straight through: `ok` is whether the request landed, `paused`
+  // is what is true afterwards. They were one boolean and the widget could not
+  // tell a refused *Reprendre* from a successful one — see the channel.
+  'session:pause': ({ meetingId, paused }, { orchestrator }) =>
+    orchestrator.setPaused(meetingId, paused),
 
   'enhancement:status': ({ meetingId }, { enhancementStatus }) =>
     enhancementStatus?.(meetingId) ?? { status: 'idle' as const },

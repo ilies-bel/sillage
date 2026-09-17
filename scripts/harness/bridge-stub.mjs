@@ -3130,11 +3130,25 @@ let RECORDING_STOPPED = false
         and no check had ever drawn the refusal. There was a `refuseMarks()` and no
         `refusePause()`, and the sentence lived only at its own definition site.
       */
-      if (REFUSE_PAUSE) return { paused: !payload.paused }
+      /*
+        **The refusal the main process really sends, which is not the request
+        inverted.**
+
+        This answered `{ paused: !payload.paused }`. For a *Pause* that is the
+        same number `setPaused` gives — it holds no recording, so nothing is
+        paused — and for a *Reprendre* it is the opposite of it. So the one
+        direction the product cannot show a refusal in was the one direction this
+        fixture staged a refusal in perfectly, which is how the sentence
+        « L’enregistrement n’a pas pu reprendre. » stayed unreachable for a round
+        with a verb pointed straight at it. Seventh time this file has been caught
+        unable to produce the input a defect lives on, and the second time it
+        produced an impossible one.
+      */
+      if (REFUSE_PAUSE) return { ok: false, paused: false }
       // Like the main process: the answer is one window's, the broadcast is every
       // window's, and the widget draws the broadcast.
       harness.emit('recording:paused', { meetingId: payload.meetingId, paused: payload.paused })
-      return { paused: payload.paused }
+      return { ok: true, paused: payload.paused }
     },
     'meeting:mark': (payload) => {
       /*
@@ -3291,21 +3305,30 @@ let RECORDING_STOPPED = false
     refusePause(on) {
       REFUSE_PAUSE = on === undefined ? true : on === true
       /*
-        **And `widget:state` moves with it**, for the reason `refuseMarks` sets
-        `RECORDING_STOPPED` below: `Orchestrator.setPaused` answers `false` only
-        when it holds no recording for the meeting, and `widget:state` answers
-        `{ meeting: null }` in exactly that case. One condition, two channels.
+        **And `widget:state` moves with it, which is true of the product only
+        since `#pausePending` — it was written as though it always had been.**
 
-        Without this the verb staged a world the process cannot be in — a refusal
-        beside a filled `--accent` dot, a running clock and an `sr-only`
-        « Enregistrement en cours ». That is not a stale copy in the renderer, it
-        is two channels of one process disagreeing about the same fact, and it is
-        the round-4 defect this surface got a reviewer of its own for. Driven
-        through `widget-refus`' own predicate, `refuseMarks()` reported ACCORD and
-        this verb reported CONTRADICTION.
+        The sentence here read « `Orchestrator.setPaused` answers `false` only when
+        it holds no recording for the meeting, and `widget:state` answers
+        `{ meeting: null }` in exactly that case. One condition, two channels. »
+        They were two conditions. `setPaused` keyed on the **capture handle**
+        (`#recordings.get(id)`); `widget:state` keys on the **state machine**
+        (`stateOf(id) === 'recording'`). `dispatch('start')` sets the second
+        synchronously — that broadcast is what puts this window on screen — then
+        fires `#openDevices` without awaiting it, so for the length of a device
+        open a pause was refused while this channel went on answering a live
+        meeting: 8 refusals in 12 samples across 418 ms, driven on the shipped
+        class. Through the shipped renderer that is the round-4 defect verbatim,
+        « La pause n’a pas pu être prise. » beside `data-graphic="enregistrement en
+        cours"` and a running clock — and the refusal's own remedy, re-reading
+        this channel, answered the recording again.
 
-        Added in the same commit as the renderer fix it was meant to support, and
-        wrong on arrival — the habit round 16 named, in the fixture this time.
+        A pause asked for in that window is honoured now, so `setPaused` refuses
+        exactly when `stateOf(id) !== 'recording'`, which is exactly when this
+        channel answers `{ meeting: null }`. The coupling below is therefore
+        correct — and it is held by a test over the two shipped handlers rather
+        than by this comment: `app/ipc/__tests__/register.test.ts`, « session:pause
+        and widget:state answer the same meeting while the devices open ».
       */
       RECORDING_STOPPED = REFUSE_PAUSE
     },
