@@ -194,9 +194,28 @@ const drive = (screen, viewport) =>
 const screenList = await screens()
 const all = SIZES.flatMap((viewport) => screenList.map((screen) => ({ screen, viewport })))
 const failures = []
+/*
+ * **A wrong dev server is not 156 findings, it is one.**
+ *
+ * `shot.mjs` refuses a server that is not serving this checkout, and the refusal
+ * is per stage — so pointing this at the live checkout's :5180 from a worktree
+ * used to print a hundred and fifty-six of the same sentence and bury it. It is
+ * never stage-specific, so the first one ends the run.
+ */
+const WRONG_TREE = 'ne sert pas ce dépôt'
 for (let at = 0; at < all.length; at += LANES) {
   const lane = await Promise.all(all.slice(at, at + LANES).map((j) => drive(j.screen, j.viewport)))
   failures.push(...lane.filter((entry) => entry !== null))
+  const misaimed = failures.find((entry) => entry.reason.includes(WRONG_TREE))
+  if (misaimed) {
+    process.stdout.write('\n')
+    console.error(misaimed.reason)
+    console.error(
+      '\nAucune mise en scène n’a été mesurée. Le serveur visé sert un autre arbre que' +
+        '\ncelui d’où part cette commande.',
+    )
+    process.exit(2)
+  }
 }
 process.stdout.write('\n')
 

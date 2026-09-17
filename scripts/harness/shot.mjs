@@ -57,6 +57,52 @@ const { chromium } = require('playwright')
 const URL_BASE = process.env.SILLAGE_URL ?? 'http://localhost:5180'
 
 /**
+ * **The dev server on the other end has to be serving *this* checkout.**
+ *
+ * `URL_BASE` is a hardcoded port, and every round of this repo is measured from
+ * a worktree while the live checkout keeps a `npm run dev -- --port 5180` of its
+ * own. So the default aims the whole instrument — `smoke.mjs`'s 156 stagings and
+ * all ten checks — at whichever tree happens to own 5180, and nothing anywhere
+ * said which tree that was.
+ *
+ * Driven, in the round that added this: `.measure` was deleted from the review
+ * gate's refusal in a worktree and `--prose` reported « aucune ligne au-delà de
+ * 75 caractères », twice, at both sizes. The same run against the worktree's own
+ * port reports « 197 car./ligne — p.text-danger [hors .measure] ». A check that
+ * stays green over a defect that is in the tree is worse than no check: the
+ * falsification step this repo requires of every new instrument — revert the fix
+ * and watch it go red — silently becomes a no-op for anyone in a worktree.
+ *
+ * Vite answers that question itself. `/@fs/<abs>` is served only for paths inside
+ * the server's own `server.fs.allow` root, so the checkout this file lives in is
+ * **200** from its own dev server and **403** from any other — measured both ways
+ * between two servers on one machine. No version string to keep in step, nothing
+ * to stamp, and it stays right when the two trees hold identical source, which is
+ * exactly when the confusion is invisible.
+ *
+ * The path is normalised rather than branched on: Vite takes a POSIX-shaped
+ * `/@fs/C:/…` on Windows too (HR-2), so there is no platform signal here.
+ */
+const FS_PROBE = '/@fs/' + REPO.replace(/\\/g, '/').replace(/^\/+/, '')
+
+async function servingThisRepo(base) {
+  let response
+  try {
+    response = await fetch(`${base}${FS_PROBE}/package.json`)
+  } catch (error) {
+    return { ok: false, why: `injoignable — ${error.message}` }
+  }
+  if (response.status === 200) return { ok: true }
+  return {
+    ok: false,
+    why:
+      response.status === 403
+        ? 'un autre dépôt — Vite y refuse le chemin de ce checkout'
+        : `réponse inattendue ${response.status} sur ${FS_PROBE}/package.json`,
+  }
+}
+
+/**
  * **Wait until nothing on the page is moving, then measure.**
  *
  * `--contrast` already carries half of this rule and states why:
@@ -4890,6 +4936,15 @@ async function main() {
   if (!plan) {
     console.error(`écran inconnu: ${screen}. Connus: ${Object.keys(SCREENS).join(', ')}`)
     process.exit(2)
+  }
+
+  const serving = await servingThisRepo(URL_BASE)
+  if (!serving.ok) {
+    console.error(`✗ ${URL_BASE} ne sert pas ce dépôt : ${serving.why}`)
+    console.error(`  dépôt mesuré : ${REPO}`)
+    console.error('  lancez « npm run dev -- --port <p> --strictPort » dans ce dépôt,')
+    console.error('  puis SILLAGE_URL=http://localhost:<p> — sinon la mesure porte sur un autre arbre.')
+    process.exit(3)
   }
 
   const now = pinnedNow()

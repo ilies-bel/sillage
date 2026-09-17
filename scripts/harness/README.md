@@ -18,6 +18,26 @@ node scripts/harness/smoke.mjs                 # every stage × two sizes, with 
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 
+**The port is a default, and it was aimed at whatever owned it.** `shot.mjs`
+reads `SILLAGE_URL`, falling back to `http://localhost:5180` — which is the port
+the live checkout keeps a dev server on, while every round of this repo is
+measured from a worktree. Measured both ways in the round that added the guard:
+deleting `.measure` from the review gate's refusal in a worktree and running
+`--prose` reported « aucune ligne au-delà de 75 caractères » at both sizes, and
+the same command with `SILLAGE_URL` pointed at the worktree's own port reported
+« 197 car./ligne — p.text-danger [hors .measure] ». The falsification step this
+repo demands of every new instrument had quietly become a no-op.
+
+Both scripts now refuse a server that is not serving the checkout they were
+launched from — Vite answers `/@fs/<this repo>/package.json` with 200 from its own
+root and 403 from any other, so it needs no version stamp and stays right when
+the two trees hold identical source, which is when the confusion is invisible.
+`smoke.mjs` stops at the first one rather than printing it a hundred and
+fifty-six times.
+
+    npm run dev -- --port 5182 --strictPort        # in *this* checkout
+    SILLAGE_URL=http://localhost:5182 node scripts/harness/smoke.mjs
+
 **Run `smoke.mjs` before and after a copy change.** A stage is a scripted path
 through the real renderer and it is held together by the product's own French
 strings, so renaming a button breaks stages silently — nothing runs them but a
