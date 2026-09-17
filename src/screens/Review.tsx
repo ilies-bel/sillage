@@ -320,7 +320,23 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * itself, beside the rest of the panel. Same length *and* same words means the
    * corrections still land where they were typed.
    */
-  const against = useMemo(() => (panel ? `${panel.edits.compteRendu} ${sent}` : ''), [panel, sent])
+  /*
+    **A literal U+0000 made this file binary to every tool that reads it as text.**
+
+    The separator is right — it is the one byte a compte-rendu cannot contain —
+    but writing it as the byte rather than as the escape made `grep` answer
+    « Binary file src/screens/Review.tsx matches » and print nothing. So the
+    containment grep `CLAUDE.md` states as the rule for DEC-29 — the one that
+    must hit only under `electron/modules/crm/vsa/` — silently stopped naming a
+    line on the 3 300-line file that holds the CRM gate. (The three words it
+    looks for are not repeated here, for the same reason.)
+    `check:crm` reads the file in Node and was never fooled, but the documented
+    command is what a person runs. Same byte, same identity, readable file.
+  */
+  const against = useMemo(
+    () => (panel ? `${panel.edits.compteRendu}\u0000${sent}` : ''),
+    [panel, sent],
+  )
 
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)

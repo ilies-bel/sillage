@@ -36,14 +36,56 @@ const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclud
 
 const leaks = []
 
+/**
+ * **A file `grep` calls binary is a file this rule's own command cannot report.**
+ *
+ * `CLAUDE.md` states the CRM boundary as a command a person runs: the
+ * containment grep over `electron/` and `src/`, which must hit only under
+ * `electron/modules/crm/vsa/`.
+ *
+ * `src/screens/Review.tsx` carried a literal U+0000 inside a template string — a
+ * deliberate separator, written as the byte instead of as the escape. POSIX
+ * `grep` treats any file holding a NUL as binary and answers « Binary file …
+ * matches » without printing a line, so the documented command silently stopped
+ * naming lines in the 3 300-line file that holds the CRM gate. This script reads
+ * with Node and was never fooled, which is precisely why nothing noticed: the
+ * check and the command it documents had quietly become two different tests.
+ *
+ * Any C0 control other than tab, newline and carriage return, over the same file
+ * list this check already walks — so it is exactly as wide as the rule whose
+ * instrument it protects, and it covers the next tool that reads source as text
+ * rather than only `grep`.
+ */
+const BINARY = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/
+const opaque = []
+
+
 for (const file of files) {
+  const source = readFileSync(join(ROOT, file), 'utf8')
+  const control = BINARY.exec(source)
+  if (control !== null) {
+    const at = source.slice(0, control.index).split('\n').length
+    const code = control[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+    opaque.push(`${file}:${at}: U+${code}`)
+  }
   if (file.startsWith(ALLOWED_PREFIX)) continue
-  const lines = readFileSync(join(ROOT, file), 'utf8').split('\n')
+  const lines = source.split('\n')
   lines.forEach((line, i) => {
     for (const marker of MARKERS) {
       if (marker.test(line)) leaks.push(`${file}:${i + 1}: ${line.trim()}`)
     }
   })
+}
+
+if (opaque.length > 0) {
+  console.error(`\nsource files a text tool reads as binary (${opaque.length}):\n`)
+  for (const one of opaque) console.error(`  ${one}`)
+  console.error(
+    '\nPOSIX grep prints « Binary file … matches » and no line, so the containment\n' +
+      'command this check documents stops reporting anything in that file. Write the\n' +
+      'control as an escape — same value, readable file.\n',
+  )
+  process.exit(1)
 }
 
 if (leaks.length > 0) {
@@ -53,4 +95,6 @@ if (leaks.length > 0) {
   process.exit(1)
 }
 
-console.log(`crm containment ok — ${files.length} files scanned`)
+console.log(
+  `crm containment ok — ${files.length} files scanned, none opaque to a text tool`,
+)
