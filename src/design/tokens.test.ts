@@ -830,3 +830,86 @@ describe("the motion scales are tokens, and the ladder reaches the product", () 
     expect(unspent, "rungs declared and drawn by nothing").toEqual([]);
   });
 });
+
+/**
+ * **The ink ramp is three steps, on every ground the product paints on.**
+ *
+ * `--text-strong` / `--text-body` / `--text-muted` are three levels and the
+ * screens spend them as three: a title, prose, a meta line. The overlay
+ * (`.widget-surface`, DEC-49) re-points all three for a dark ground, and for six
+ * rounds it pointed the first two at the **same** value — so on the one window
+ * drawn over a client's video call, the card's title, the sentence the client
+ * had just spoken, the rep's own note and the elapsed clock were all
+ * `rgb(243,247,250)`. Measured on the shipped panel with every text run counted
+ * (`scratch/r19-type.mjs`): 23 runs, two inks.
+ *
+ * Nothing could see it. `--contrast` asks whether ink clears its ground and two
+ * identical inks both do; `check:tokens` greps for hex literals and dead `/NN`
+ * modifiers; the palette block below holds each token against a *surface* and
+ * never against its own neighbour. A collapse inside a ramp is invisible to
+ * every check that reads one token at a time.
+ *
+ * Three claims here, and the second is what the first cannot say on its own:
+ *
+ *  · the three are **distinct** in every scope that declares them;
+ *  · they are **ordered** — each further from the ground than the last, so the
+ *    ramp is a ramp and not three arbitrary greys;
+ *  · and each still clears **4.5:1** on both of that scope's grounds, because a
+ *    step bought by weakening the middle rung below AA is not a step.
+ *
+ * Driven on both scopes rather than on the widget alone: the rule's subject is
+ * « the ink ramp », and a fixture that only knew about the surface that happened
+ * to be broken is this file's own recurring defect.
+ */
+describe("the ink ramp is three steps everywhere it is declared", () => {
+  const tokens = declarations(read("./tokens.css"));
+  const index = read("./index.css");
+
+  const WIDGET_BLOCK = /\.widget-surface\s*\{([\s\S]*?)\n\}/;
+  const widget = block(index, WIDGET_BLOCK, ".widget-surface");
+
+  /** `var(--x)` → the hex `tokens.css` declares for `--x`. */
+  const resolve = (value: string): string => {
+    const named = /^var\((--[\w-]+)\)$/.exec(value.trim());
+    const hex = named ? tokens.get(named[1]) : value.trim();
+    expect(hex, `${value} must resolve to a hex in tokens.css`).toMatch(/^#[0-9a-f]{6}$/i);
+    return hex!;
+  };
+
+  const RAMP = ["--text-strong", "--text-body", "--text-muted"] as const;
+
+  const scopes = {
+    ":root": {
+      ink: RAMP.map((name) => resolve(tokens.get(name) ?? "")),
+      grounds: ["--bg-card", "--bg-subtle"].map((name) => resolve(tokens.get(name) ?? "")),
+    },
+    ".widget-surface": {
+      ink: RAMP.map((name) => resolve(widget.get(name) ?? "")),
+      grounds: ["--widget-bg", "--widget-soft"].map((name) => resolve(tokens.get(name) ?? "")),
+    },
+  };
+
+  for (const [where, { ink, grounds }] of Object.entries(scopes)) {
+    test(`${where} declares three different inks`, () => {
+      expect(new Set(ink).size, `${where}: ${RAMP.join(" / ")} = ${ink.join(" / ")}`).toBe(3);
+    });
+
+    test(`${where} orders them, strong furthest from the ground`, () => {
+      // Measured against the scope's own card, because « furthest » has no
+      // meaning without a ground — on paper strong is the darkest and on the
+      // overlay it is the lightest, and the ramp has to read the same way on both.
+      const [card] = grounds;
+      const steps = ink.map((value) => contrast(value, card));
+      expect(steps[0], `strong ${steps[0].toFixed(2)} vs body ${steps[1].toFixed(2)}`).toBeGreaterThan(steps[1]);
+      expect(steps[1], `body ${steps[1].toFixed(2)} vs muted ${steps[2].toFixed(2)}`).toBeGreaterThan(steps[2]);
+    });
+
+    for (const ground of grounds) {
+      test(`${where} keeps all three past AA on ${ground}`, () => {
+        for (const [at, value] of ink.entries()) {
+          expect(contrast(value, ground), `${RAMP[at]} ${value} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
+  }
+});

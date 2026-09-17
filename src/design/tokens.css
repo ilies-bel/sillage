@@ -315,6 +315,27 @@
   --widget-soft: #2a3d4a; /*  1.54:1 on #101c25 — inner surfaces, the meter's track */
   --widget-border: #33485a; /*  1.82:1 on #101c25 — LIGHTER than the fill, which is the point */
   --widget-ink: #f3f7fa; /* 16.05:1 on #101c25 · 10.45:1 on #2a3d4a */
+  /*
+   * **The rung the overlay did not have, and the reason its type ladder has
+   * scored 6 for four rounds.**
+   *
+   * `.widget-surface` pointed *both* `--text-strong` and `--text-body` at
+   * `--widget-ink`, so the app's three-step ink ramp arrived on this window as
+   * two steps. Measured on the shipped panel with every text run counted
+   * (`scratch/r19-type.mjs`): 23 runs, three sizes, **two** inks doing level
+   * work — the card's title, the client's transcribed sentence, the rep's own
+   * note and the elapsed clock all `rgb(243,247,250)`. `Widget.tsx`'s own
+   * heading docblock names the collapse and works around it with a size rung;
+   * `MarkRow`'s says « the note stays `text-strong`, because the rep wrote it on
+   * purpose », which was not true of a single painted pixel.
+   *
+   * L\* 84.6 is the midpoint of the two it sits between — `--widget-ink` 97.0,
+   * `--widget-ink-dim` 72.4 — so the three steps are 12.4 and 12.2 apart rather
+   * than one gap and a cliff. It is a *body* colour and is held to body's floor,
+   * not to a graphic's: 11.55:1 and 7.52:1, both well past AA, on a surface
+   * whose whole risk is being read across a desk over someone else's video.
+   */
+  --widget-ink-body: #c8d5de; /* 11.55:1 on #101c25 ·  7.52:1 on #2a3d4a */
   --widget-ink-dim: #a3b4c1; /*  8.11:1 on #101c25 ·  5.29:1 on #2a3d4a */
 
   /*

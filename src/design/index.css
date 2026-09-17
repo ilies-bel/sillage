@@ -249,7 +249,14 @@
   --border-card: var(--widget-border);
   --border-subtle: var(--widget-border);
   --text-strong: var(--widget-ink);
-  --text-body: var(--widget-ink);
+  /*
+   * **Three steps, and for six rounds it was two.** This pointed at
+   * `--widget-ink` — the same value as `--text-strong` one line up — so every
+   * `text-body` on this window painted the title's colour. `tokens.css` carries
+   * the measurement and the L* arithmetic behind `--widget-ink-body`;
+   * `tokens.test.ts` holds the three apart, on this scope and on `:root`.
+   */
+  --text-body: var(--widget-ink-body);
   --text-muted: var(--widget-ink-dim);
   /*
     The semantics, re-cut. `--brand-700` is 2.75:1 here and `--brand-300` — the

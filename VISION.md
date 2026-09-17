@@ -769,8 +769,9 @@ same hue (200°), darkened, ratios measured against white.
    composition on every smoke, because eight stages photographing this card over
    #f7f9fb is how the sentence above survived three rounds. */
 --widget-rim: rgb(255 255 255 / 70%);
---widget-ink:     #f3f7fa;   /* 16.05:1 on #101c25 · 10.45:1 on #2a3d4a */
---widget-ink-dim: #a3b4c1;   /*  8.11:1 on #101c25 ·  5.29:1 on #2a3d4a */
+--widget-ink:      #f3f7fa;  /* 16.05:1 on #101c25 · 10.45:1 on #2a3d4a */
+--widget-ink-body: #c8d5de;  /* 11.55:1 on #101c25 ·  7.52:1 on #2a3d4a */
+--widget-ink-dim:  #a3b4c1;  /*  8.11:1 on #101c25 ·  5.29:1 on #2a3d4a */
 
 /* Two semantics re-cut for that ground: --danger and --warn are measured
    against white and land at 3.16:1 and 3.44:1 on it, under AA as text, on a

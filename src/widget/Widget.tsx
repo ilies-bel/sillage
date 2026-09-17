@@ -2288,22 +2288,30 @@ function Panel({
         <div className="flex items-baseline gap-snug">
           <h1
             /*
-              **A rung, because the surface had none.**
+              **The top of the ladder, and it is three steps away from the body
+              now rather than one.**
 
-              This was `text-ui font-semibold` — 12px — and the client's
-              transcribed words are `text-ui` at 12px too. `.widget-surface` maps
-              `--text-strong` and `--text-body` to the same `--widget-ink`, so
-              the card's title and the sentence the client just spoke were
-              identical in size *and* colour, separated by weight alone. Two
-              sizes on the whole window, 12 and 11, is a ratio of 1.09:1 — four
-              consecutive reviews scored this the weakest axis on the surface.
+              It was `text-ui font-semibold` — 12px — and the client's
+              transcribed words are `text-ui` at 12px too, on a surface that
+              pointed `--text-strong` and `--text-body` at the same value. So the
+              card's title and the sentence the client had just spoken were
+              identical in size *and* colour, separated by weight alone, and the
+              whole window held two sizes: 1.09:1.
 
-              `--type-prose` is 15px and already on the scale, so this is a rung
-              the product has rather than a number chosen here: 1.25:1 against
-              the body, on the one line that says whose call this is, on a window
-              meant to be read from a metre away.
+              A size rung was the first repair and it left the colour collapse in
+              place — the paragraph above this one said so and worked around it.
+              `--widget-ink-body` is the missing step, so this line is now a size,
+              a weight **and** a colour away from the prose under it, which is
+              what the axis asks of a rung.
+
+              `--type-subhead` and not `--type-prose`: 15px is the elapsed clock
+              on the pill, and a title that is the same size as a running number
+              two centimetres above it is not a level. 16 is the next rung the
+              document ladder already declares, it puts the top of this window at
+              1.45:1 over the floor, and it is the one line that says whose call
+              this is on a surface meant to be read from a metre away.
             */
-            className="text-strong min-w-0 flex-1 truncate font-sans text-prose font-semibold">
+            className="text-strong min-w-0 flex-1 truncate font-sans text-subhead font-semibold">
             {heading.trim() === '' ? 'Réunion en cours' : heading}
           </h1>
         </div>
@@ -2485,7 +2493,7 @@ function Panel({
         />
         <Button
           variant="nav"
-          className="no-drag px-hair"
+          className="no-drag font-medium px-hair"
           onClick={() => {
             const text = note.trim()
             onMark(null, text)
@@ -2575,7 +2583,7 @@ function Panel({
           <span className="flex items-center gap-inline">
             <Button
               variant="nav"
-              className="no-drag px-hair"
+              className="no-drag font-medium px-hair"
               onClick={() => void invoke('window:focus', { meetingId }).catch(() => undefined)}
             >
               Ouvrir Sillage
@@ -2590,7 +2598,7 @@ function Panel({
             */}
             <Button
               variant="text"
-              className="no-drag px-hair"
+              className="no-drag font-medium px-hair"
               onClick={() => onPause(!paused)}
             >
               {paused ? 'Reprendre' : 'Pause'}
@@ -2641,7 +2649,7 @@ function Panel({
                 undone is the only one with a different shape, which is the
                 distinction ten identical rectangles could not make.
               */
-              className="no-drag min-h-[28px] py-0"
+              className="no-drag font-medium min-h-[28px] py-0"
               onClick={() => {
                 setConfirmEnd(false)
                 onClose()
@@ -2656,7 +2664,7 @@ function Panel({
             </Button>
             <Button
               variant="text"
-              className="no-drag min-w-[5rem] px-hair"
+              className="no-drag font-medium min-w-[5rem] px-hair"
               onClick={() => setConfirmEnd(false)}
             >
               Annuler
@@ -2676,7 +2684,7 @@ function Panel({
               `--widget-danger-strong` #f9b0b0 — 6.36:1 on the tray against 4.67
               at rest, a step of 1.363.
             */
-            className="no-drag text-danger hover:text-danger-strong px-hair"
+            className="no-drag text-danger hover:text-danger-strong font-medium px-hair"
             onClick={() => setConfirmEnd(true)}
           >
             Terminer
