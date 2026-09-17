@@ -10,6 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SILENCE_GRACE_MS, SILENCE_GRACE_PAST_END_MS } from '../../../core/domain/endOfMeeting.ts'
+import { MAX_ARMABLE_DURATION_MS } from '../../../core/domain/arming.ts'
 import { EndOfMeetingWatch } from '../EndOfMeetingWatch.ts'
 
 /**
@@ -201,7 +202,20 @@ test.describe('hold and release (session:pause)', () => {
 
     watch.hold()
     assert.equal(watch.held, true)
-    assert.equal(timers.length, 0)
+    // The subject is « the countdown is suspended », and `timers.length === 0`
+    // was a proxy for it that stopped being one when the hold gained its own
+    // ceiling. What matters is that nothing is due at the countdown's deadline
+    // any more, and that what remains is the ceiling rather than the count.
+    assert.deepEqual(
+      timers.filter((t) => t.at <= deadline),
+      [],
+      'le compte à rebours est encore armé sous la tenue',
+    )
+    assert.deepEqual(
+      timers.map((t) => t.at - now),
+      [MAX_ARMABLE_DURATION_MS],
+      'la tenue n’a pas armé son plafond, ou en a armé un autre',
+    )
     fire(deadline + 60 * 60_000)
     assert.deepEqual(ended, [])
 
@@ -221,4 +235,65 @@ test.describe('hold and release (session:pause)', () => {
     assert.equal(watch.silentSince, null)
     watch.stop()
   })
+})
+
+/**
+ * **A forgotten pause is not a pause, and it blocked the rest of the day.**
+ *
+ * `hold()` disarmed the countdown with no ceiling, so a rep who paused and
+ * walked away left the meeting `recording` for ever: driven against a control,
+ * an unpaused call ends after 75 s of silence and a paused one is still
+ * `recording` at **+24 h**. Every installer stays refused (« une réunion est en
+ * cours d'enregistrement ») and the next call cannot start (« une autre réunion
+ * est déjà en cours d'enregistrement »).
+ *
+ * The ceiling releases; it does not end. That is what makes the number safe to
+ * pick: `release()` returns with `silentSince = null` the moment any channel is
+ * speaking, so a ceiling firing on a call that is actually in progress is a
+ * no-op, and only a hold that is *also* silent hands over to the ordinary
+ * `SILENCE_GRACE_MS`. A wrong ceiling cannot cut a rep off mid-sentence.
+ *
+ * The number is derived, not chosen. `MAX_ARMABLE_DURATION_MS` is this repo's
+ * statement of the longest span it will call a call — « Longer than this and it
+ * is a working block, not a call. » A hold that has outlived the whole of that
+ * span is not a pause inside a call, because no call is that long.
+ */
+test('a hold has a ceiling, and the ceiling releases rather than ends', () => {
+  const h = harness()
+  h.watch.speechEnded('far')
+  h.watch.hold()
+
+  // Just under: still held, still nothing ended, however long the silence.
+  h.advance(MAX_ARMABLE_DURATION_MS - 1_000)
+  assert.equal(h.watch.held, true, 'la tenue a lâché avant son plafond')
+  assert.deepEqual(h.ends, [], 'la réunion s’est terminée pendant la tenue')
+
+  // Past it: released, and the ordinary grace — not the ceiling — ends it.
+  h.advance(2_000)
+  assert.equal(h.watch.held, false, 'la tenue a survécu à son plafond')
+  assert.deepEqual(h.ends, [], 'le plafond a terminé la réunion lui-même, au lieu de rendre la main')
+
+  h.advance(SILENCE_GRACE_MS + 1)
+  assert.equal(h.ends.length, 1, 'après le plafond, le silence ordinaire ne termine plus rien')
+  assert.match(h.ends[0] ?? '', /silence/)
+})
+
+/**
+ * The control that makes the ceiling safe. Same ceiling, same silence, one
+ * difference: somebody is talking when it fires.
+ */
+test('the ceiling cannot end a call somebody is speaking in', () => {
+  const h = harness()
+  h.watch.speechEnded('far')
+  h.watch.hold()
+  // The far side comes back while the rep is still nominally paused.
+  h.watch.speechStarted('far')
+
+  h.advance(MAX_ARMABLE_DURATION_MS + 2_000)
+  assert.equal(h.watch.held, false, 'le plafond n’a pas rendu la main')
+  assert.deepEqual(h.ends, [], 'le plafond a terminé une conversation en cours')
+
+  // And it stays alive for as long as anyone is talking.
+  h.advance(6 * 60 * 60_000)
+  assert.deepEqual(h.ends, [], 'une conversation où quelqu’un parle s’est terminée toute seule')
 })

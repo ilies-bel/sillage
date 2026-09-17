@@ -13,6 +13,7 @@
  */
 import type { Channel } from '../../core/contracts/transcript.ts'
 import { decideEndOfMeeting } from '../../core/domain/endOfMeeting.ts'
+import { MAX_ARMABLE_DURATION_MS } from '../../core/domain/arming.ts'
 
 export interface EndOfMeetingWatchDeps {
   /** From the calendar. Null for a session the rep started by hand. */
@@ -41,6 +42,12 @@ export class EndOfMeetingWatch {
   #speaking = new Set<Channel>()
   #silentSince: number | null = null
   #timer: unknown = null
+  /**
+   * The hold's own ceiling. Separate from `#timer` because the two are
+   * opposites: `#timer` is the countdown a hold suspends, and this is what
+   * suspends the suspension.
+   */
+  #holdTimer: unknown = null
   #stopped = false
   #held = false
 
@@ -103,11 +110,13 @@ export class EndOfMeetingWatch {
     if (this.#stopped || this.#held) return
     this.#held = true
     this.#disarm()
+    this.#holdTimer = this.#setTimer(() => this.release(), MAX_ARMABLE_DURATION_MS)
   }
 
   release(): void {
     if (this.#stopped || !this.#held) return
     this.#held = false
+    this.#clearHold()
     if (this.#speaking.size > 0) {
       this.#silentSince = null
       return
@@ -123,6 +132,13 @@ export class EndOfMeetingWatch {
   stop(): void {
     this.#stopped = true
     this.#disarm()
+    this.#clearHold()
+  }
+
+  #clearHold(): void {
+    if (this.#holdTimer === null) return
+    this.#clearTimer(this.#holdTimer)
+    this.#holdTimer = null
   }
 
   #evaluate(): void {
