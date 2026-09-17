@@ -738,8 +738,23 @@ describe('the rep’s correction is what ships', () => {
     })
 
     await act(async () => {
-      fireEvent.change(screen.getByLabelText('Client'), {
-        target: { value: 'Acme Industries SAS' },
+      /*
+       * `Objet` and not `Client`. This drove `Client` and asserted
+       * `edits.accountName` — a field that is `readOnly` because an account is
+       * resolved and never typed (DEC-7), so no rep can make that edit. It held
+       * anyway: `fireEvent.change` sets a value and dispatches an event whatever
+       * `readOnly` says, because jsdom enforces `readOnly` against a *user* and
+       * there is none here. The file's headline « an edited field is what gets
+       * sent » test was therefore asserting a payload produced by a gesture the
+       * product refuses, and it would have gone green on a regression that made
+       * `Client` typeable again *and* on one that did not.
+       *
+       * The sibling test one describe-block away was rewritten for exactly this
+       * and this one was missed, because the grep stopped at the test named after
+       * the symptom.
+       */
+      fireEvent.change(screen.getByLabelText('Objet'), {
+        target: { value: 'Point Acme — renfort data' },
       })
       fireEvent.change(screen.getByLabelText('Besoin'), {
         target: { value: 'Trois développeurs, pas deux' },
@@ -755,12 +770,15 @@ describe('the rep’s correction is what ships', () => {
     await valider()
 
     const sent = confirmCall()
-    expect(sent?.edits.accountName).toBe('Acme Industries SAS')
+    expect(sent?.edits.taskName).toBe('Point Acme — renfort data')
     expect(sent?.edits.besoin).toBe('Trois développeurs, pas deux')
     expect(sent?.edits.compteRendu).toBe('# Corrigé par le commercial')
     expect(sent?.edits.mailSubject).toBe('Suite à notre point')
     // Untouched rows travel as they were pre-filled.
     expect(sent?.edits.tjm).toBe('520 €')
+    // And the account travels resolved, because the rail cannot write it: the
+    // candidate chip is its only writer.
+    expect(sent?.edits.accountName).toBe('Acme Industries')
   })
 
   test('the mail is previewed inline, editable, and framed as a draft (HR-8)', async () => {
