@@ -64,7 +64,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
   }
 
   return (
-    <section className="border-card bg-card mb-block rounded-sm border px-row py-inline">
+    <section className="mb-gutter mt-gutter">
       <div className="flex items-baseline gap-inline">
         <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
           {busy ? 'À vous — parlez, ou lancez une vidéo' : 'Vérifier que tout est capté'}

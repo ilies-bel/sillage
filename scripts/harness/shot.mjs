@@ -5036,6 +5036,8 @@ async function main() {
   let clipped = []
   let measured = 0
   let tightest = { by: Infinity, text: '' }
+  let inset = []
+  let groups = 0
   let small = []
   if (flags.geometry) {
     await page.evaluate(() => document.fonts.ready)
@@ -5043,6 +5045,8 @@ async function main() {
     clipped = seen.clipped
     measured = seen.measured
     tightest = seen.tightest
+    inset = seen.inset
+    groups = seen.groups
   }
 
   if (flags.targets) {
@@ -6097,13 +6101,22 @@ async function main() {
     if (clipped.length === 0)
       console.log(
         measured === 0
-          ? '  géométrie: rien à mesurer sur cet écran'
-          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} »`,
+          ? `  géométrie: aucun marqueur suspendu, ${groups} groupe(s) sans cadre alignés`
+          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} », ${groups} groupe(s) sans cadre alignés`,
       )
     else {
       console.log(`  ✗ géométrie: ${clipped.length} élément(s) hors de leur cadre`)
       for (const item of clipped.slice(0, 8)) {
         console.log(`   ✗ ${item.what} « ${item.text} » — ${item.by}px à gauche du cadre`)
+      }
+      process.exitCode = 4
+    }
+    if (inset.length > 0) {
+      console.log(
+        `  ✗ géométrie: ${inset.length} groupe(s) sans cadre dont le filet dépasse le contenu`,
+      )
+      for (const item of inset.slice(0, 8)) {
+        console.log(`   ✗ ${item.tag} « ${item.text} » — contenu rentré de ${item.by}px sous un filet pleine largeur`)
       }
       process.exitCode = 4
     }
@@ -8154,7 +8167,69 @@ async function geometry(page) {
       // marker rather than against the one that happened to break first.
       if (-by < tightest.by) tightest = { by: -by, text: (el.textContent ?? '').trim() }
     }
-    return { clipped: out, measured: all.length, tightest }
+
+    /*
+     * **A rule drawn edge to edge under text that is indented from it is a box
+     * with the box rubbed out.**
+     *
+     * `List bare` takes the stroke and the radius off a list and keeps the
+     * hairlines between its rows. What it could not take off was `Row`'s
+     * horizontal padding, which exists to hold the text away from an edge
+     * stroke — so every boxless list in the product drew a full-bleed hairline
+     * with its rows inset 16 to 20 px inside it, and the section caption above
+     * sat on the outer edge while the first row sat on the inner one. Six lists
+     * in Réglages, two on the agenda, and on the agenda they had shipped that
+     * way since the round that removed the boxes. It is the « 132 px spread of
+     * title left edges » `src/ui/List.tsx` already records, one indent smaller
+     * and on every screen at once.
+     *
+     * Stated as geometry rather than as a class, so it holds for any grouping
+     * built this way and not only for `List`: a container that paints no left
+     * edge of its own, whose children are separated by a horizontal rule that
+     * spans the container, must start those children's content on the
+     * container's own content edge.
+     *
+     * « Paints no left edge » is measured, not read: a container with a left
+     * border, or with a background of its own that differs from what is behind
+     * it, is a box, and a box is allowed to inset its contents — that is what
+     * padding is for.
+     */
+    const painted = (el) => {
+      const style = getComputedStyle(el)
+      if (parseFloat(style.borderLeftWidth) > 0 || parseFloat(style.borderRightWidth) > 0) return true
+      if (style.backgroundColor !== 'rgba(0, 0, 0, 0)') return true
+      return style.backgroundImage !== 'none' || style.boxShadow !== 'none'
+    }
+    const inset = []
+    let groups = 0
+    for (const group of document.querySelectorAll('ul, ol, div, section')) {
+      const rows = [...group.children].filter((row) => row.getBoundingClientRect().height > 0)
+      if (rows.length < 2) continue
+      // A rule between the rows, spanning the group: that is the divider that
+      // makes this a group at all.
+      const ruled = rows
+        .slice(1)
+        .every((row) => parseFloat(getComputedStyle(row).borderTopWidth) > 0)
+      if (!ruled) continue
+      const box = group.getBoundingClientRect()
+      const style = getComputedStyle(group)
+      const edge = box.left + (parseFloat(style.paddingLeft) || 0)
+      if (painted(group)) continue
+      const spans = rows.every((row) => Math.abs(row.getBoundingClientRect().width - box.width) <= 1)
+      if (!spans) continue
+      groups += 1
+      for (const row of rows) {
+        const rowStyle = getComputedStyle(row)
+        const start = row.getBoundingClientRect().left + (parseFloat(rowStyle.paddingLeft) || 0)
+        const by = Math.round(start - edge)
+        if (by > 1) {
+          inset.push({ by, text: (row.textContent ?? '').trim().slice(0, 44), tag: row.tagName.toLowerCase() })
+          break
+        }
+      }
+    }
+
+    return { clipped: out, measured: all.length, tightest, inset, groups }
   })
 }
 

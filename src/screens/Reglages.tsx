@@ -669,7 +669,7 @@ function Raccourcis() {
         que vous écrivez, sauf Échap et Ctrl&nbsp;Entrée.
       </Lede>
 
-      <List as="div">
+      <List as="div" bare>
         {SHORTCUTS.map((shortcut) => (
           <Row as="div" key={shortcut.id} align="center">
             <span className="min-w-0 flex-1">
@@ -712,7 +712,7 @@ function Raccourcis() {
         rend les caractères.
       </Lede>
 
-      <List as="div">
+      <List as="div" bare>
         {NOTE_SHORTCUTS.map((shortcut) => (
           <Row as="div" key={shortcut.combo} align="center">
             <span className="text-strong text-copy min-w-0 flex-1">{shortcut.label}</span>
@@ -795,7 +795,7 @@ function OfflineOnly({
   onChange: (value: boolean) => void
 }) {
   return (
-    <label className="border-card bg-card mb-block flex items-start gap-inline rounded-sm border p-row">
+    <label className="mb-gutter flex items-start gap-inline">
       <input
         type="checkbox"
         checked={value}
@@ -865,7 +865,7 @@ function MentionSentence({
   const customised = value.trim() !== MENTION_SENTENCE_DEFAULT
 
   return (
-    <section className="border-card bg-card mb-block rounded-sm border p-row">
+    <section className="mb-gutter">
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -1025,7 +1025,7 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
         précis et plus ils sollicitent la machine pendant la réunion.
       </Lede>
 
-      <List as="div">
+      <List as="div" bare>
         {section.rows.map((row) => {
           const inFlight = row.status === 'downloading' || row.status === 'verifying'
           return (
@@ -1164,7 +1164,7 @@ function Providers({
         <p className="text-warn mb-snug measure text-ui">{section.reason}</p>
       ) : null}
 
-      <List as="div">
+      <List as="div" bare>
         {TIERS.map((tier) => {
           const rows = section.rows.filter((row) => row.tier === tier)
           if (rows.length === 0) return null
@@ -1592,7 +1592,7 @@ function Connectors({ rows, auth, probe, probeReason, onOnboarding, onHealth }: 
         Audio, transcription, analyse : sans eux une réunion ne peut pas être enregistrée,
         et ce sont les seuls à faire changer l’indicateur d’état en haut de l’écran.
       </Lede>
-      <List>
+      <List bare>
         {required.map((row) => (
           <ConnectorLine
             key={row.id}
@@ -1651,7 +1651,7 @@ function Connectors({ rows, auth, probe, probeReason, onOnboarding, onHealth }: 
       */}
       <MicrosoftAccount auth={auth} />
 
-      <List>
+      <List bare>
         {optional.map((row) => (
           <ConnectorLine
             key={row.id}
@@ -1714,7 +1714,7 @@ function MicrosoftAccount({ auth }: { auth: SettingsSnapshot['auth'] }) {
   }, [])
 
   return (
-    <List as="div" className="mb-snug">
+    <List as="div" bare className="mb-snug">
       <Row as="div" align="center">
         <span className="text-body w-32 shrink-0 text-copy">Microsoft 365</span>
         <span className="min-w-0 flex-1">
@@ -1864,7 +1864,7 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
       <SectionHeader as="h3">VerySwing — capacités du tenant</SectionHeader>
 
       {report === null ? (
-        <p className="text-muted border-card bg-card-soft rounded-lg border px-row py-inline text-ui">
+        <p className="text-muted measure text-ui">
           {reason ?? 'sonde indisponible'}
         </p>
       ) : (
@@ -1875,7 +1875,7 @@ function Probe({ report, reason }: { report: CapabilityReport | null; reason: st
           <p className={`mb-snug measure text-ui ${report.ok ? 'text-muted' : 'text-warn'}`}>
             {report.summary} · {formatAgo(report.at, Date.now())}
           </p>
-          <List>
+          <List bare>
             {report.findings.map((finding) => (
               <Finding key={finding.id} finding={finding} />
             ))}
@@ -1899,7 +1899,15 @@ function Finding({ finding }: { finding: CapabilityFinding }) {
     <Row className="py-snug">
       <span className="text-body min-w-0 flex-1 text-ui">
         {finding.label}
-        {bad ? <span className="text-muted block text-meta">{finding.matters}</span> : null}
+        {/*
+          `.measure` on the element holding the prose, never on a wrapper. This line
+          sat at 72 characters inside a padded row and went to 78 the moment the
+          row went flush — one reading measure, and a sentence that only fitted
+          because of a container's padding was never held by it.
+        */}
+        {bad ? (
+          <span className="text-muted measure block text-meta">{finding.matters}</span>
+        ) : null}
       </span>
       <span className={`shrink-0 text-meta ${bad ? 'text-warn' : 'text-muted'}`}>
         {CAPABILITY_LABEL[finding.state]}
@@ -2198,7 +2206,7 @@ function DiagnosticsPanel({ retentionDays }: { retentionDays: number }) {
       ) : errors.length === 0 ? (
         <p className="text-muted text-ui">Aucune erreur récente.</p>
       ) : (
-        <List>
+        <List bare>
           {errors.map((event) => (
             <Row key={event.id} className="py-snug text-meta">
               <span className="text-muted w-24 shrink-0">{formatAgo(event.ts, Date.now())}</span>

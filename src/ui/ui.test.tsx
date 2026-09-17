@@ -621,4 +621,35 @@ describe('every list row starts on one leading edge', () => {
     expect(list?.className).not.toContain('border-card')
     expect(list?.className).not.toContain('rounded-lg')
   })
+  test('a bare list starts its rows on the list’s own edge', () => {
+    /*
+     * The padding a `Row` carries is the distance from an edge stroke to the
+     * text. `bare` takes the stroke away, so the padding became a distance from
+     * nothing: measured on the shipped renderer at 1280×800, every boxless list
+     * in the product drew a full-bleed hairline with its rows inset 16 to 20 px
+     * inside it, and the caption naming the list sat on the outer edge while the
+     * first row sat on the inner one. `shot.mjs --geometry` holds the rendered
+     * geometry to it on all 156 stagings; this holds the composition, which is
+     * the half a headless DOM can see.
+     */
+    const { container } = render(
+      <List bare>
+        <Row>
+          <RowTitle title="Une réunion" />
+        </Row>
+      </List>,
+    )
+    expect(container.querySelector('ul')?.className).toContain('[&>*]:px-0')
+    // And the boxed list keeps its inset, because there it is a real distance.
+    const boxed = render(
+      <List>
+        <Row>
+          <RowTitle title="Une réunion" />
+        </Row>
+      </List>,
+    )
+    expect(boxed.container.querySelector('ul')?.className).not.toContain('[&>*]:px-0')
+    expect(boxed.container.querySelector('li')?.className).toContain('px-row')
+  })
+
 })

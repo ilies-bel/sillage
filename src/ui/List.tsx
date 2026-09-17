@@ -55,6 +55,25 @@ export interface ListProps {
    * trailing controls; ours carries a button on the right of every row, and
    * with nothing between them two adjacent rows read as one row with two
    * buttons.
+   *
+   * **And the rows go flush, because the padding was insetting them from a box
+   * that is no longer there.**
+   *
+   * `Row`'s horizontal padding is the distance from the edge stroke to the text.
+   * Take the stroke away and it is a distance from nothing — measured on the
+   * shipped renderer at 1280×800, every bare list in the product started its
+   * rows **16 to 20 px to the right of the heading that names them**: six lists
+   * in Réglages at +16, two on the agenda at +20, and the agenda's have shipped
+   * that way since the round that took the boxes off. A section caption and the
+   * first row under it on two different left edges is the « 132px spread of
+   * title left edges » this file already records one function down, one indent
+   * smaller and on every screen at once.
+   *
+   * `[&>*]:px-0` rather than a fourth `density`, because the caller does not
+   * choose this: it follows from `bare`, and there is no boxless list that wants
+   * its rows inset. The vertical padding is untouched — that is rhythm, not
+   * alignment — and the hairline still spans the full column, which is what
+   * makes a flush edge read as an edge rather than as a rag.
    */
   bare?: boolean
   className?: string
@@ -88,7 +107,7 @@ export function List({ children, as: Tag = 'ul', label, bare = false, className 
       aria-label={label}
       className={cn(
         'divide-y divide-[var(--border-subtle)]',
-        bare ? '' : 'border-card overflow-hidden rounded-lg border',
+        bare ? '[&>*]:px-0' : 'border-card overflow-hidden rounded-lg border',
         className,
       )}
     >
