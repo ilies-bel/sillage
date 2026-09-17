@@ -2109,3 +2109,63 @@ describe('DEC-4 — every sentence about what leaves agrees with what is created
     })
   }
 })
+
+/**
+ * **A refusal that leaves the gate usable** (DEC-4, `f630dcd`).
+ *
+ * `register.ts` refuses a press that would create nothing *before* dispatching,
+ * so the one confirmation is not spent on the empty set — the defect it repaired
+ * left the meeting in `pushing` with an empty outbox, from which `confirm`,
+ * `extract` and `abort` are all illegal for the life of the database, and the
+ * gate read « Envoi en cours… » for ever about a POST that was never made.
+ *
+ * « refused » and « refused and still usable » are two different facts and only
+ * the second is the fix, so both halves are here: the sentence reaches the rep,
+ * and the next press carries the row they ticked. `review-refus` photographs the
+ * first half — it cannot drive the second, because a successful press navigates
+ * off the screen it exists to keep on camera.
+ */
+describe('DEC-4 — a press that creates nothing is refused, and not spent', () => {
+  const EMPTY =
+    'Rien ne serait créé — aucune action n’est cochée, ou aucune n’est disponible. La raison est indiquée sur chaque ligne.'
+
+  test('the sentence reaches the rep and the button is still there for the next press', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      // The handler's own rule, not a canned refusal: an empty draft is refused
+      // and anything else goes through.
+      .when('review:confirm', (payload: { intentIds: string[] }) =>
+        payload.intentIds.length === 0
+          ? { ok: false as const, state: 'awaiting_confirmation' as const, reason: EMPTY }
+          : { ok: true as const, state: 'pushing' as const, intentIds: payload.intentIds },
+      )
+
+    let confirmed = 0
+    render(<Review meetingId="m1" onBack={() => {}} onConfirmed={() => (confirmed += 1)} />)
+    await screen.findByText('Prêt à envoyer')
+
+    for (const box of screen.getAllByRole('checkbox')) {
+      await act(async () => {
+        box.click()
+      })
+    }
+    await valider()
+
+    // The refusal is announced, the gate did not move, and nothing was confirmed.
+    expect((await screen.findByRole('alert')).textContent).toBe(EMPTY)
+    expect(confirmed).toBe(0)
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
+
+    // And the next press is a real one.
+    await act(async () => {
+      screen.getAllByRole('checkbox')[0]?.click()
+    })
+    await valider()
+
+    const presses = bridge.calls.filter((c) => c.channel === 'review:confirm')
+    expect(presses).toHaveLength(2)
+    expect((presses[0]?.payload as { intentIds: string[] }).intentIds).toEqual([])
+    expect((presses[1]?.payload as { intentIds: string[] }).intentIds).toEqual(['m1:crm.task'])
+    expect(confirmed).toBe(1)
+  })
+})
