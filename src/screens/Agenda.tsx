@@ -763,7 +763,15 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
                 role="alert"
                 className="border-warn bg-card text-body mb-row flex items-start gap-inline rounded-sm border px-inline py-snug text-ui"
               >
-                <span className="min-w-0 flex-1">{refusal}</span>
+                {/*
+                  `measure` on the span, not on the row: the row also holds
+                  *Fermer*, and a reading measure belongs to the element holding
+                  the prose. Without it this sentence ran 96 characters a line at
+                  1280×800 — the `--prose` ceiling is 75 — and it passed unseen
+                  because nothing had ever pressed the control that raises it.
+                  `agenda-preparer-refus` presses it now.
+                */}
+                <span className="measure min-w-0 flex-1">{refusal}</span>
                 <Button variant="text" className="shrink-0" onClick={() => setRefusal(null)}>
                   Fermer
                 </Button>
