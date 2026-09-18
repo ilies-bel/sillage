@@ -273,7 +273,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           <div
             role="status"
             aria-label="Enregistrement en cours"
-            className="border-accent bg-card flex shrink-0 items-center gap-inline rounded-sm border px-snug py-hair"
+            className="border-accent bg-card flex shrink-0 items-center gap-snug rounded-sm border px-snug py-hair"
           >
             <Elapsed since={initial.meeting.startedAt} />
             <LevelMeter meetingId={meetingId} paused={paused} />

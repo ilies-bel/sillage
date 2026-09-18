@@ -164,7 +164,7 @@ export function StatusControl({ onReglages }: StatusControlProps) {
     <Button
       variant="text"
       onClick={onReglages}
-      className="bg-subtle border-subtle animate-rise-in inline-flex items-center gap-tight rounded-sm border px-snug py-hair"
+      className="bg-subtle border-subtle animate-rise-in inline-flex items-center gap-inline rounded-sm border px-snug py-hair"
     >
       {/* `text-inherit` so the label follows the button's own hover, rather
           than sitting at `text-muted` while the chevron beside it lifts. */}

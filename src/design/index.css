@@ -1013,7 +1013,14 @@
     .slate .slate-label {
       width: auto;
       display: block;
-      margin-bottom: 0.125rem;
+      /*
+       * `--space-hair`, not `0.125rem`. Two pixels is not a step of this
+       * product's scale — the tree had already written that down at
+       * `src/widget/Widget.tsx`, on the one surface `--rhythm` finds green —
+       * and this rule painted it 154 times across 22 stagings, the single
+       * largest off-ladder site left in `src/` after the round-22 wave.
+       */
+      margin-bottom: var(--space-hair);
     }
   }
 
@@ -1103,7 +1110,12 @@
      * editor, at the top and bottom edges a rep clicks toward when they come
      * back from the call — the same defect one box out.
      */
-    padding-block: 1.5rem;
+    /*
+     * `--space-block`, not `1.5rem`. 24px is off the seven declared steps, and
+     * the docblock above argues for *less* pane that is not the editor, so the
+     * nearer rung is also the one this comment already wanted: 20px.
+     */
+    padding-block: var(--space-block);
     padding-inline: max(2rem, (100% - 58ch) / 2);
     color: var(--ink-rep);
   }

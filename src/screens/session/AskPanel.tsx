@@ -159,7 +159,13 @@ export function AskPanel({
       }
     >
       <form
-        className="flex shrink-0 items-center gap-inline"
+        /*
+          `gap-tight`, not `gap-inline`: the row around this form parts its own
+          children by 8px, and a group spaced 12px inside something spaced 8px
+          around it is not a group. Measured by `--rhythm` on
+          `session-compte-rendu`: « 12px dedans contre 8px autour ».
+        */
+        className="flex shrink-0 items-center gap-tight"
         onSubmit={(event) => {
           event.preventDefault()
           void ask(question)
