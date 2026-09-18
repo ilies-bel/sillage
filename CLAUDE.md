@@ -230,6 +230,16 @@ native addons are **one** (`keytar`); adding a second is a decision, not a depen
 - SQLite is `node:sqlite`, never `better-sqlite3`.
 - A module never imports another module — declare a port and let `app/` inject it.
 - French for user-facing strings. English for code, comments and commits.
+- **Commit with `git commit -F <file>`.** The `-m "$(cat <<'EOF' … EOF)"` form is
+  stripped to its first line in this environment, silently. Six commits across three
+  lanes landed as subject-only before anyone noticed, and the measurement that
+  justified each of them existed nowhere else. A body is the evidence; losing it
+  turns a measured fix into an assertion.
+- **`git stash` is shared by every worktree of a repo.** Two lanes stashing at once
+  is one lane's tree landing in the other's, and the first `pop` drops the entry.
+  It happened this round and cost most of a day's work until the dangling commit
+  was recovered with `git fsck --unreachable` and re-attached with `git stash store`.
+  Copy the file to `/tmp` instead; a round runs four worktrees at a time.
 - `core/domain/` is unit-tested with no Electron, no audio device, no network.
 - Never edit `vendor/` — port out of it into `src/editor/`, then adapt.
 - Reference: `docs/reference/vsa-api.md`, `docs/reference/vsa-sandbox-openapi.json`.
