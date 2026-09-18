@@ -395,9 +395,34 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         that only carries `eventId` starts a capture (`onArm`), and « the rep
         clicked somewhere in a 1050px rectangle » is not how a recording of a
         client call should begin. Navigation is reversible; arming is not.
+
+        **And the hover ground follows the target, which for one round it did
+        not.** `hover:bg-subtle` sat here unconditionally while the stretch was
+        given to one branch, so the `onArm` rows lit the full row under the
+        cursor exactly like the rows above and below them and answered nothing
+        when pressed. Measured at 1280×800 and at 960×600, on the day list, the
+        week and *Liste*:
+
+            vue      lignes  cible + survol  survol SANS cible
+            jour        6          3               2
+            semaine    11          5               5
+            liste      14          9               5
+
+        Five of fourteen rows in one uninterrupted scroller, indistinguishable
+        from the nine that are targets — and they are the five upcoming invites,
+        which is the offer `agenda-demarrer-tot` exists to protect. A hover ground
+        is the strongest « this is a target » a list has; paint it on a row that
+        is not one and the row is a control that does nothing.
+
+        So the ground is drawn on the same condition as the stretch. The `onArm`
+        row is not left mute: its own control is `bordered`, which carries
+        `hover:bg-subtle` of its own (`ui/Button.tsx`), so the feedback is the
+        size of the thing that answers.
       */
       className={cn(
-        'relative transition hover:bg-subtle',
+        'relative transition',
+        // The same condition the stretched hit area is drawn on, below.
+        entry.meetingId !== null && 'hover:bg-subtle',
         entry.armed && 'animate-rise-in',
         /*
           And the other end of it. The offer arrived over 150 ms of

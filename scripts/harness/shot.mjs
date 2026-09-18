@@ -577,6 +577,122 @@ const assertRowVerbs = async (page) => {
 }
 
 /**
+ * **A row that lights up under the cursor has to be a row that answers.**
+ *
+ * `DayPane` states the rule and applied it to one of its two branches: « the
+ * stretch follows the word ». A row whose control is *Ouvrir* is a target across
+ * its whole width, because `onOpen` is navigation and navigation is reversible;
+ * a row whose control is *Préparer* is not, because `onArm` mints a meeting and
+ * « the rep clicked somewhere in a 1050px rectangle » is not how a recording of
+ * a client call begins. That half is right and this check does not touch it.
+ *
+ * What was wrong is the *paint*. `hover:bg-subtle` sat on the `li`
+ * unconditionally, so the rows that are not targets lit the full row under the
+ * cursor exactly like the rows that are — and answered nothing when pressed.
+ * Measured before the fix, at 1280×800 and at 960×600:
+ *
+ *     vue      lignes  cible + survol  survol SANS cible  ni l'un ni l'autre
+ *     jour        6          3                2                  1
+ *     semaine    11          5                5                  1
+ *     liste      14          9                5                  0
+ *
+ * The five on *Liste* and on the week are the upcoming invites — the offer
+ * `agenda-demarrer-tot` exists to protect — and the odd one out on the day view
+ * was the backlog's own *Ouvrir*, the one row in the product with that word and
+ * neither the rectangle nor the ground.
+ *
+ * Nothing could see it. `--targets` measures the button's own box; `--geometry`
+ * measures declared hangs; `--scan` reports occlusion, which this *is* — the
+ * stretched pseudo covers the row's text — but reports it identically on the
+ * rows where it is correct. No pass in this harness has ever moved the pointer.
+ *
+ * So this one does: transitions off, hover the row's leading cell (away from the
+ * control), read the ground, and require « the ground moved » to be exactly
+ * « the control's `::after` covers the row ». Both directions — a target that
+ * says nothing is as wrong as a ground that promises nothing.
+ */
+const assertRowAffordance = async (page) => {
+  /*
+   * Transitions off first, for the same reason `--contrast` does it:
+   * `getComputedStyle` answers with the *current animated value*, and the row's
+   * ground is on a `transition`. A reading taken 0 ms after the pointer lands is
+   * a reading of the resting colour; one taken mid-way is a reading of a frame.
+   */
+  const sheet = await page.addStyleTag({
+    content: '*, *::before, *::after { transition: none !important; animation: none !important; }',
+  })
+  try {
+    const rows = await page.evaluate(() => {
+      const out = []
+      for (const li of document.querySelectorAll('main ul > li')) {
+        const box = li.getBoundingClientRect()
+        /*
+         * Wholly inside the viewport, and « wholly » is load-bearing. A row
+         * whose top is on screen and whose centre is not has its `mouse.move`
+         * clamped to the bottom edge, so the pointer lands on the row below and
+         * this reports « a target that does not say so » about a row it never
+         * hovered. That is the false positive the first run of this check
+         * produced on `agenda-liste`, one row past the fold.
+         */
+        if (box.height === 0 || box.top < 0 || box.bottom > innerHeight) continue
+        const control = li.querySelector('button')
+        const after = control ? getComputedStyle(control, '::after') : null
+        out.push({
+          // The leading cell — the clock — which is text on every row grammar
+          // this scroller draws, so the point is never on the control itself.
+          x: Math.round(box.x + 40),
+          y: Math.round(box.y + box.height / 2),
+          verb: control ? (control.textContent ?? '').trim() : null,
+          row: (li.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 44),
+          target: after !== null && after.position === 'absolute' && after.content !== 'none',
+          resting: getComputedStyle(li).backgroundColor,
+        })
+      }
+      return out
+    })
+
+    const offences = []
+    for (const [index, row] of rows.entries()) {
+      await page.mouse.move(row.x, row.y)
+      const hovered = await page.evaluate((at) => {
+        const li = [...document.querySelectorAll('main ul > li')].filter((node) => {
+          const box = node.getBoundingClientRect()
+          return box.height > 0 && box.top >= 0 && box.bottom <= innerHeight
+        })[at]
+        return li ? getComputedStyle(li).backgroundColor : null
+      }, index)
+      const lit = hovered !== null && hovered !== row.resting
+      if (lit && !row.target) {
+        offences.push(
+          `« ${row.row} » s’allume au survol (${row.resting} → ${hovered}) et n’est pas une ` +
+            `cible : seul le contrôle « ${row.verb ?? 'aucun'} » répond`,
+        )
+      }
+      if (!lit && row.target) {
+        offences.push(
+          `« ${row.row} » est une cible sur toute sa largeur et ne le dit pas — aucun fond au ` +
+            'survol',
+        )
+      }
+    }
+    if (offences.length > 0) {
+      throw new Error(
+        `${offences.length} ligne(s) dont le survol et la cible ne coïncident pas :\n   ` +
+          offences.join('\n   ') +
+          '\n  Le fond au survol se dessine à la même condition que `after:inset-0` ' +
+          '(DayPane, PendingGates).',
+      )
+    }
+    return rows.length
+  } finally {
+    // The pointer is left where the eight measured passes expect it: nowhere.
+    // A stage that ends under a hover photographs a hovered screen.
+    await page.mouse.move(0, 0)
+    await sheet.evaluate((node) => node.remove())
+  }
+}
+
+/**
  * impeccable's in-page detector, run against what the browser actually painted.
  *
  * The skill's own URL mode (`detect.mjs http://localhost:5180`) cannot see this
@@ -772,6 +888,7 @@ const SCREENS = {
       await page.getByText('Passées').waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -804,6 +921,7 @@ const SCREENS = {
       await page.getByText(/hors de la période synchronisée/).first().waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -866,6 +984,7 @@ const SCREENS = {
       await said.first().waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -905,6 +1024,7 @@ const SCREENS = {
       await page.getByText('Néovia Santé — cadrage renfort data').first().waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -916,6 +1036,7 @@ const SCREENS = {
       await page.getByText('Néovia Santé — cadrage renfort data').first().waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -962,6 +1083,7 @@ const SCREENS = {
         )
       }
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -991,6 +1113,7 @@ const SCREENS = {
       */
       await rowNamed(page, 'cadrage renfort data').getByRole('button', { name: 'Ouvrir' }).waitFor()
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -3435,6 +3558,7 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()
       await waitForBacklog(page)
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
     },
   },
 
@@ -3551,6 +3675,7 @@ const SCREENS = {
       }
       await page.getByText('Prêt').first().waitFor()
       await assertRowVerbs(page)
+      await assertRowAffordance(page)
       // The grid is still drawn and still empty (DEC-31): this offer did not come
       // from a calendar, and none of the other days may claim it did.
       await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()

@@ -208,7 +208,31 @@ export function PendingGates({
           /* Read once: the branch and the number are the same answer. */
           const stale = staleFor(row, now)
           return (
-          <Row key={row.meeting.id} density="roomy" align="center">
+          <Row
+            key={row.meeting.id}
+            density="roomy"
+            align="center"
+            /*
+              **The same rectangle the day list gives the same word.**
+
+              `DayPane` states the rule — « the stretch follows the word »: every
+              row whose control is *Ouvrir* is a target across its whole width,
+              because `onOpen` is navigation and navigation is reversible; the
+              `onArm` rows are not, because arming mints a meeting. This section
+              draws *Ouvrir*, calls `onOpen`, and sits in the same uninterrupted
+              scroller three inches below — and it had neither the rectangle nor
+              the hover ground. Measured at 1280×800 and 960×600 on `agenda`, six
+              rows in the day column: three target-and-hover, two hover with no
+              target (fixed in `DayPane`), and this one with neither. Three
+              grammars, one ground, nothing on screen saying why the shape
+              changes mid-column — which is the finding `ui/List.tsx`'s own
+              docblock records about this exact scroller.
+
+              Everything to the left is text, so there is nothing underneath for
+              the overlay to take; the `stale` line is text too.
+            */
+            className="relative transition hover:bg-subtle"
+          >
             {/* The same leading column the day pane uses — `ui/List.tsx` says
                 why all three sections of this scroller share one. */}
             <RowLead>{formatDayShort(meetingAnchor(row.meeting))}</RowLead>
@@ -260,6 +284,8 @@ export function PendingGates({
             */}
             <Button
               variant={row.meeting.id === emphasis ? 'primary' : 'bordered'}
+              /* The hit area is the row — see the row's own comment above. */
+              className="after:absolute after:inset-0 after:content-['']"
               onClick={() => onOpen(row.meeting.id)}
             >
               Ouvrir
