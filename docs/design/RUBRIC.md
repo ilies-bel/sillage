@@ -269,7 +269,7 @@ much stronger evidence than either alone:
 
 | axis | A and B agree | corroborated finding |
 |---|---|---|
-| 4 Density | 6.5 / 6.5 | container inside a container — the gate's rail nests value boxes in a tinted panel; historique nests a bordered `li.bg-card.border-card` around a bordered `div.bg-inner.border-subtle`. 14 / 12 / 22 hairlines per viewport in two greys. |
+| 4 Density | 6.5 / 6.5 | **the gate-rail half is withdrawn, see below**; historique's bordered `li.bg-card.border-card` around a bordered `div.bg-inner.border-subtle` stands, as do 14 / 12 / 22 hairlines per viewport in two greys. |
 | 1 Chrome | 7 / 7 | `ui/TitleBar.tsx` is an empty `role="presentation"` strip, 36px full-width, carrying nothing, with the app's own header band stacked under it — 118px, 14.8% of an 800px window, above the first agenda row. Verified in the source. |
 | 9 The whole | 7 / 7.5 | `session-compte-rendu` at 960×600: three columns, three scrollers, two simultaneous page turns, one visible line of the document. |
 | 3 Spacing | 6.5 / 7.5 | a 4px scale with three off-grid half-steps; nine distinct paddings on one screen. |
@@ -303,7 +303,63 @@ quoted back by a reviewer as the basis for a recommendation — and the correcte
 entry there was added this same round. Five of the six rows above survived
 inspection; this is the sixth, and it was the one singled out as strongest.
 
-That list, less this row, is what a round should be spent on.
+### And a second one, which exposes a contradiction in axis 4 itself
+
+Scorer A: « the gate's rail still nests white value boxes in a tinted panel in
+the aside ». Literally true — three grounds, aside → container → box. The word
+doing the damage is *still*: that nesting is not the defect, it is the **repair**,
+and `Review.tsx:2576` carries the before and after.
+
+The rail used to draw eleven value boxes on three nested grounds and let
+**fifty-eight strokes** do all the grouping. Sampled on the shipped screen:
+
+| pair | ratio | ΔL* |
+|---|---|---|
+| container on the aside (`--bg-card` on `--bg-card-soft`) | 1.027:1 | 1.06 |
+| a value box on the container (`--bg-inner` on `--bg-card`) | **1.010:1** | **0.42** |
+
+A just-noticeable difference in L* is about 1. At 0.42 the box and its ground
+were the same colour, so the only reason a rep could see eleven fields was the
+three concentric strokes around each. The fix inverted rather than darkened —
+container to `--bg-subtle`, editable field stays white:
+
+| pair | ratio | ΔL* |
+|---|---|---|
+| container on the aside | 1.077:1 | 2.94 |
+| a value box on the container | 1.117:1 | **4.42** |
+
+Ten times the step, from tokens that already existed, and the strokes came off.
+
+**So the axis contradicts itself on this case.** Axis 4 reads « Grouping by
+space, not by strokes. No container inside a container. » The rail satisfies the
+first sentence *by means of* breaking the second: it groups by ground instead of
+by stroke, and a ground step requires a nested ground. Judged by sentence one it
+is the best-argued region on the surface; judged by sentence two it is a defect.
+Axis 4 has been the lowest or near-lowest axis in every round since round 2,
+which is what you would expect of a criterion that penalises the product's own
+deliberate grouping strategy.
+
+**Left open, deliberately, and not resolved here.** Rewording an axis is not the
+same kind of act as fixing the scoring procedure: the procedure change made two
+rounds measure one product, whereas loosening a criterion would make 90 easier to
+reach, and that is the owner's call and not the integrator's. The conflict is
+recorded so the next blind scorer meets both sentences and the rail's argument
+together, and so nobody spends a round flattening a ground step that was measured
+into place.
+
+### What both withdrawals have in common
+
+Both dissolved the same way: a blind scorer read the rendered screen, matched a
+pattern the rubric names as bad, and could not tell an unfixed defect from an
+argued remedy that looks like one. That is the **cost of blind scoring**, and it
+is a real cost of the change made this round — a scorer who reads the source
+reasoning is anchored by it, and one who does not will keep re-reporting settled
+questions. It does not outweigh an 8-to-18-point systematic bias, but it means a
+corroborated finding is a *lead*, never a work item: check it against the source
+before anyone spends a round on it. Two of six did not survive that check, and
+both were among the three I ranked highest.
+
+That list, less those two rows, is what a round should be spent on.
 
 ### The rule this adds
 
