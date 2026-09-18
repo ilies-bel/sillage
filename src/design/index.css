@@ -390,6 +390,34 @@
    * of argument and a shape assertion in `tokens.test.ts`, was worn by exactly
    * one element.
    *
+   * **That sentence is history, and it reads as the present. Where the exit
+   * half actually stands, counted rather than remembered.** Every animated
+   * declaration on all 85 stages at both sizes, 170 stagings:
+   *
+   *   90ms   6 051 declarations   150ms   408
+   *   `--ease-out` 6 439   ·   `--ease-in` 20 (18 opacity, 2 transform)
+   *   `fadeIn` 58   `riseIn` 58   `widget-arrive` 46   `widget-card-leave` 2
+   *
+   * Four surfaces leave on this rule — the Réglages sheet (`useDismiss`), its
+   * veil, the agenda's withdrawn offer (`useLeaving`) and the end-of-meeting
+   * notice (`useDeparture`) — plus the review gate's eleven `source ▸` panels,
+   * which the paragraph below used to name as open and which now leave on it
+   * too. The widget leaves on `widget-card-leave`. The count of *curves* is
+   * still lopsided and that is correct, not a shortfall: 6 049 of the 6 459
+   * transitions in the product are a hover tint changing `color`, which is a
+   * state going both ways and not a surface arriving or leaving.
+   *
+   * **And it is `--motion` that counts departures, not `--fade`.** A round
+   * opened this as « the `--fade` pass finds zero surfaces animating out ».
+   * `--fade` measures fading *masks* against the line boxes they cover and has
+   * never counted a departure; `--motion` prints « N élément(s) animé(s) dont M
+   * qui s'en vont ». Its M is 0 on most stages and that is not a finding
+   * either: `--motion` reads what is animating at the instant it runs, so an
+   * exit that has finished is invisible to it by construction, which is why the
+   * four `*-sortie` stages frame-sample their own departure with
+   * `judgeDeparture` instead. Reading M off an ordinary stage and concluding
+   * that nothing leaves is the mistake this note exists to stop.
+   *
    * Deliberately the same three declarations as `.widget-leaving` rather than a
    * shared class: that rule is load-bearing in a way this one is not — the
    * renderer reads its duration back off computed style and the main process
@@ -445,10 +473,27 @@
    * the rep closes — and the argument above, which is sound, is about a
    * different component that happens to be reached from the same word.
    *
-   * Measured: eleven panels on the review gate, 438px of DEC-21 evidence
-   * between them, `transition: all 0s`, gone one frame after the press. It is
-   * **open**, not declined. Naming it as open is the minimum; the fix is one
-   * `useDismiss` per panel and it is not in this commit.
+   * Measured then: eleven panels on the review gate, 438px of DEC-21 evidence
+   * between them, `transition: all 0s`, gone one frame after the press. It was
+   * **open**, not declined, and naming it as open was the minimum.
+   *
+   * **It is closed, and this paragraph went on saying otherwise for a round —
+   * which is the twelfth time.** `Review.tsx` runs the panel through
+   * `useDeparture` and swaps `animate-rise-in` for `leaving`. Measured on the
+   * shipped gate at 1280×800, opening all eleven `source ▸` controls and then
+   * closing them: **11 buttons, 11 panels open, 11 panels leaving**, every one
+   * arriving on `riseIn 0.15s cubic-bezier(0.22, 1, 0.36, 1)` and leaving on
+   * `opacity, transform · 0.15s, 0.15s · cubic-bezier(0.64, 0, 0.78, 0)` — the
+   * exit curve, doubled below — with eleven *distinct* intermediate opacities
+   * caught in one frame, 0.998 down to 0.503. Intermediate frames are the
+   * claim a class name cannot make, which is the whole reason `judgeDeparture`
+   * exists; `review-source-sortie` makes it on every smoke.
+   *
+   * Left standing rather than deleted, because the sequence is the lesson: the
+   * rule was argued over thirty lines and had two callers, then eleven panels
+   * were named as an open case, then the open case was fixed and the prose
+   * describing it was not. Three rounds, three different ways for this comment
+   * to be wrong about the file it sits in.
    */
   /*
    * **Doubled, because a `transition` utility of equal specificity was quietly
@@ -1237,6 +1282,26 @@
    * chips, dots and progress bars, where it is invisible and pure cost; and on
    * anything that repaints during a call. The transcript scrolls, and a noise
    * layer re-rasterising on scroll is GPU work on the capture path (DEC-26).
+   *
+   * **The first of those three is being broken, by this product, and here is
+   * what it costs.** `Onboarding.tsx` and `Splash.tsx` put `.grain` on a root
+   * wrapper with every sentence of the screen inside it, which is « under dense
+   * body text » exactly. Counted with `shot.mjs --contrast` over all 85 stages
+   * at both sizes: **138 text runs** clear AA against their own design colour
+   * and do not clear it against the darkest pixel of the tile they sit on — all
+   * 138 the same pair, `--text-muted` at 11–12px on a grained `--bg-canvas`,
+   * **4.83:1 flat and 4.46:1 under the tile** against a 4.5 floor. The rule
+   * above was written from the arithmetic and the arithmetic was right; nothing
+   * had measured whether the product obeyed it.
+   *
+   * It is 0.04 short, which is the reason it has stood for several rounds and
+   * not a reason to leave it standing. `design/tokens.test.ts` pins the number
+   * from both sides now — it decodes the tile's own alpha table out of the
+   * shipped PNG, discovers which grounds `.grain` is painted over from the
+   * classes `src/` writes, and fails if the gap widens *or* if it closes and
+   * the debt entry is left behind. That entry names the two fixes and why
+   * neither is in `src/design/`: a quieter tile needs `shot.mjs --contrast` to
+   * stop hard-coding `9 / 255`, and a darker `--text-muted` needs VISION.md §6.
    */
   .grain {
     background-image: var(--grain);

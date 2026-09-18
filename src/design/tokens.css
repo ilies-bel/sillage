@@ -51,6 +51,53 @@
   --brand-900: #02334b; /* 13.31:1 on #ffffff — headings on a brand tint */
 
   /* canvas & surfaces — cool paper, not white */
+  /*
+   * **The ladder, in L\*, and why it is as tight as it is. Measured.**
+   *
+   *   --bg-inner      #ffffff   100.000        (the notepad; the ceiling)
+   *   --bg-card       #fdfefe    99.582   0.418 below the one above
+   *   --bg-card-soft  #f9fbfd    98.522   1.060
+   *   --bg-canvas     #f7f9fb    97.829   0.693
+   *   --bg-subtle     #eef3f7    95.578   2.252
+   *
+   * Five grounds inside **4.42 L\***, and the top four inside 2.171. That is
+   * not a stylistic choice and it is not slack anyone can take back by
+   * re-picking greys: **the floor is where `--text-muted` stops clearing AA.**
+   * #62707b on #eef3f7 is 4.559:1, and the next 8-bit step down the same hue,
+   * #edf2f6, is 4.519:1. Two steps down is 4.479 — under. So the ladder has
+   * **one** rung of room left at the bottom, 0.348 L\* wide, and nothing at the
+   * top, because `--bg-inner` is white.
+   *
+   * **What that costs, on the gate, today.** The review rail has to clear
+   * `RAIL_FLOOR = 2.5` ΔL\* against the column beside it. Drop
+   * `--bg-card-soft` from the gate's `<aside>` — which takes the review
+   * screen from four nested grounds to three and improves every other figure
+   * on it (column↔document ΔL\* 1.478 → 2.171, deepest chain 4 → 3, minimum
+   * adjacent step 0.693 → 2.171) — and the rail lands on `--bg-canvas` at
+   * **ΔL\* 2.252**, under the floor, at both sizes. Spending the last rung on
+   * `--bg-subtle` buys 2.600 — 0.1 over the floor — by taking the ink's own
+   * margin from 0.059 to 0.019. That is robbing the ink to pay the rail.
+   *
+   * **The constraint is the ink, and moving the ink is the whole fix.** Swept:
+   *
+   *   --text-muted   on grained --bg-canvas   darkest --bg-subtle    ΔL\* the
+   *                  (the 138-run finding)    still clearing AA      rail gets
+   *   #62707b             4.458  ✗                 #edf2f6              2.600
+   *   #5f6d78             4.659  ✓                 #e8edf2              4.320
+   *   #5d6b76             4.799  ✓                 #e5eaef              5.371
+   *
+   * One step down the muted grey closes the grain finding **and** opens more
+   * than double the rail's floor for the gate to spend. The compressed top of
+   * this ladder is a symptom; `--text-muted` sitting 0.059 over AA on the
+   * darkest ground is the cause, and it is the same token the grain measurement
+   * arrives at from the other side.
+   *
+   * **It is not in this commit because none of these five values live here
+   * alone.** Every one of them is in VISION.md §6's palette block and
+   * `tokens.test.ts` pins that block hex-for-hex, deliberately — the palette is
+   * the spec's, not the stylesheet's. `tokens.test.ts` holds the geometry above
+   * so it cannot drift while the decision waits.
+   */
   --bg-canvas: #f7f9fb;
   --bg-card: #fdfefe;
   --bg-card-soft: #f9fbfd;
@@ -520,6 +567,52 @@
 
   /* geometry — radius 10–14px, borders 1px, shadows barely there */
   --radius-sm: 10px;
+  /*
+   * **The middle rung is worn by nothing, and it is still declared because
+   * `shot.mjs --census` fails without it. Both halves are measured.**
+   *
+   * It was mapped as Tailwind's `rounded` DEFAULT, so it was reachable, spelled
+   * correctly, and `grep -rn -- '--radius)'` found it — the shape this file
+   * already lost `--motion-fast`, `shadow-card`, `animate-fade-in` and
+   * `ring-card` to. A token consumed through a Tailwind class whose name does
+   * not contain the token cannot be counted by reading `src/`, so it was
+   * counted on the running renderer: every corner of every element, all 85
+   * stages at both sizes, 170 stagings.
+   *
+   *   10px (`--radius-sm`)    33 524 corners
+   *   14px (`--radius-lg`)       528
+   *    1px (`rounded-bar`)     3 072
+   *   9999px (`rounded-full`)  3 264
+   *   12px                         **0**
+   *
+   * Not nearly none — none. `--census` already says so on every run (« non
+   * porté(s) ici : radius »), and the *reason* is worth more than the count:
+   * bare `rounded` is written on exactly two elements under `src/`, the
+   * provider-field and API-key inputs in `Reglages.tsx`, and **no stage renders
+   * either of them** — a provider row only grows those inputs when it declares
+   * `fields`. The one pair of elements in the product wearing a 12px corner was
+   * also the one pair no screenshot, no `--targets`, no `--contrast` and no
+   * `--geometry` had ever contained, and it wore a corner none of its 61
+   * sibling inputs has.
+   *
+   * **What changed is the corner, not the declaration.** `rounded` now means
+   * `--radius-sm`, so those two inputs draw the corner every other input in the
+   * product draws and nothing can reach a rung the ladder does not spend.
+   * Deleting the Tailwind entry instead would have taken their corner away in
+   * silence — `rounded` with no DEFAULT compiles to no rule at all, which is
+   * `bg-muted/30` exactly.
+   *
+   * **And the token cannot leave from this file alone.** `shot.mjs --census`
+   * reads the ladder from a hand-written `['--radius-sm', '--radius',
+   * '--radius-lg']` and fails every stage with « 2 échelon(s) lus dans :root au
+   * lieu de 3 » if one of the three is missing — measured, exit 15 on `review`.
+   * Its own docblock says it reads the ladder the way `--motion` reads its curve
+   * set, i.e. by prefix; it does not. Until `--census` discovers the rungs
+   * instead of listing them, removing this line turns twelve gates red, so it
+   * stays and says why. `tokens.test.ts` holds it: the rung must be either worn
+   * by a class `src/` writes or named here with its reason, and a debt entry
+   * that has stopped being true fails too.
+   */
   --radius: 12px;
   --radius-lg: 14px;
   --border-width: 1px;

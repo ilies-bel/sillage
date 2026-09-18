@@ -21,6 +21,44 @@ import { describe, expect, test } from "vitest";
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
+/**
+ * Every renderer source, concatenated — what the product actually writes.
+ *
+ * Two tests below ask « does anything draw with this », and the honest answer
+ * cannot come from grepping `tokens.css` or `tailwind.config.js` for a `var()`:
+ * a token reached through a Tailwind class carries none of its own name. Both
+ * `--radius` and `shadow-card` were declared, mapped, greppable and worn by
+ * nothing. So the question is asked of the classes `src/` writes.
+ *
+ * Walked rather than listed, for the reason every other « discovered, never
+ * listed » note in this file gives.
+ */
+const rendererSources = (): string => {
+  /*
+   * `import.meta.glob` and not a `readdirSync` walk: `read()` above resolves
+   * one known sibling, and the same `fileURLToPath(new URL(…))` inside a
+   * function called from a `describe` body throws `The URL must be of scheme
+   * file` under this suite's jsdom environment. The glob is resolved by Vite at
+   * transform time, so it needs no path at all — and a file added to `src/` is
+   * picked up with no list to maintain.
+   */
+  const modules = import.meta.glob("../**/*.{ts,tsx,css}", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>;
+
+  return Object.entries(modules)
+    .filter(
+      // A fixture is not a caller: a class written only inside `__tests__` is a
+      // class no rep ever sees, and counting it would let a dead rung be kept
+      // alive by the very suite that is supposed to notice it.
+      ([at]) => !at.includes("/__tests__/") && !/\.test\.tsx?$/.test(at),
+    )
+    .map(([, source]) => source)
+    .join("\n");
+};
+
 /** `--name: value;` → Map, ignoring comments and `var()` aliases. */
 const declarations = (css: string): Map<string, string> => {
   const found = new Map<string, string>();
@@ -99,13 +137,99 @@ describe("the palette matches VISION.md §6", () => {
 
 describe("the rules VISION.md §6 states in prose", () => {
   const tokens = declarations(read("./tokens.css"));
+  const sources = rendererSources();
 
-  test("radius stays in the 10–14px band", () => {
-    for (const name of ["--radius-sm", "--radius", "--radius-lg"]) {
-      const px = Number.parseInt(tokens.get(name) ?? "", 10);
-      expect(px, name).toBeGreaterThanOrEqual(10);
-      expect(px, name).toBeLessThanOrEqual(14);
+  /*
+   * Discovered, never listed — this named its three rungs by hand, and a fourth
+   * added to `tokens.css` would have been held to nothing. Same shape as the
+   * motion ladder below, and the same fix.
+   */
+  const radiusRungs = [...tokens.keys()].filter((name) => /^--radius(-|$)/.test(name));
+
+  test("the radius ladder still has rungs to check", () => {
+    expect(radiusRungs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test.each(radiusRungs)("%s stays in the 10–14px band", (name) => {
+    const px = Number.parseInt(tokens.get(name) ?? "", 10);
+    expect(px, name).toBeGreaterThanOrEqual(10);
+    expect(px, name).toBeLessThanOrEqual(14);
+  });
+
+  /*
+   * **And every rung is worn — asked of the *class*, not of the `var()`.**
+   *
+   * US-3's acceptance line is that a token nothing draws with is a dead
+   * declaration, and the motion and type ladders below are both held to it by
+   * grepping the config and the stylesheets for `var(--name)`. That test cannot
+   * be written for radius, because a radius is spent through a Tailwind class
+   * whose name carries no part of the token: `rounded-sm` says nothing about
+   * `--radius-sm`. `--radius` passed a `var()` grep for its whole life — it was
+   * declared in `tokens.css`, mapped as `borderRadius.DEFAULT`, and worn by
+   * **0** of the 40 388 rounded corners on the 170 stagings `smoke.mjs` drives.
+   *
+   * So the rung is resolved the way the browser resolves it: through the
+   * `borderRadius` map in `tailwind.config.js` to the class family Tailwind
+   * emits for that key, and then into every source the renderer ships. A key
+   * whose classes appear nowhere is a dead rung whatever its `var()` says, and
+   * a token no live key points at is a dead token.
+   *
+   * The families are spelled the way Tailwind emits them, corner and side
+   * variants included, so `rounded-b-lg` counts for `lg` and `rounded-tl` for
+   * `DEFAULT`. `rounded-full` and `rounded-none` are Tailwind's own and are not
+   * rungs here, which is why the map is read rather than the class list.
+   *
+   * **What this cannot see, stated rather than implied.** A class is written in
+   * `src/`; whether any *stage* renders the element carrying it is a runtime
+   * question, and this check would have passed over `--radius` on HEAD for
+   * exactly that reason — `rounded` was written twice, on two inputs no
+   * screenshot has ever contained. The count that found it is `shot.mjs
+   * --census`, which reads corners off the running renderer. This one catches
+   * the weaker case a census cannot state cheaply: a rung no class anywhere
+   * points at.
+   *
+   * **`UNWORN` is the declared-debt escape and it is held from both sides.** An
+   * entry must carry the reason and the cost, and it must still be *true*: a
+   * rung listed here that something has started wearing fails, so the list can
+   * only be removed from, never left behind.
+   */
+  const UNWORN: Record<string, string> = {
+    "--radius":
+      "worn by 0 of the 40 388 rounded corners on the 170 stagings smoke.mjs drives, and " +
+      "it cannot leave tokens.css alone: shot.mjs --census reads the ladder from a " +
+      "hand-written list of three names and fails every stage at two (exit 15). " +
+      "tailwind.config.js has already moved `rounded` off it onto --radius-sm.",
+  };
+
+  test("every radius rung is worn by a class src/ writes", () => {
+    const config = read("../../tailwind.config.js");
+    const map = /borderRadius:\s*\{([\s\S]*?)\n {6}\}/.exec(config);
+    expect(map, "tailwind.config.js must still declare a borderRadius map").toBeTruthy();
+
+    const keys = [...map![1].matchAll(/^\s{8}(?:\/\*[\s\S]*?\*\/\s*)?([\w-]+|DEFAULT):\s*'([^']+)'/gm)];
+    expect(keys.length, "the borderRadius map still has keys to check").toBeGreaterThanOrEqual(3);
+
+    const side = "(?:-(?:t|r|b|l|s|e|ss|se|es|ee|tl|tr|br|bl))?";
+    const worn = new Set<string>();
+    for (const [, key, value] of keys) {
+      const suffix = key === "DEFAULT" ? "" : `-${key}`;
+      // `\b` will not do: `rounded-sm` must not satisfy `rounded` (DEFAULT).
+      const family = new RegExp(`\\brounded${side}${suffix}(?![\\w-])`);
+      if (family.test(sources)) worn.add(value);
     }
+
+    const dead = radiusRungs.filter(
+      (name) => !worn.has(`var(${name})`) && UNWORN[name] === undefined,
+    );
+    expect(dead, "radius rungs declared, worn by no class in src/, and not declared UNWORN").toEqual(
+      [],
+    );
+
+    const settled = Object.keys(UNWORN).filter((name) => worn.has(`var(${name})`));
+    expect(settled, "UNWORN entries that something has started wearing — delete them").toEqual([]);
+
+    const gone = Object.keys(UNWORN).filter((name) => !radiusRungs.includes(name));
+    expect(gone, "UNWORN entries for rungs tokens.css no longer declares").toEqual([]);
   });
 
   /*
@@ -627,6 +751,313 @@ describe("the palette clears WCAG AA where it has to", () => {
     // across every screen. The darker value they wanted is `--brand-500` or
     // `--brand-700`, which already exist for exactly that.
     expect(contrast(hex("--brand-300"), hex("--bg-inner"))).toBeLessThan(4.5);
+  });
+});
+
+/**
+ * **The ground ladder is five surfaces inside 4.42 L\*, and the number that
+ * pins it is not a grey — it is `--text-muted`.**
+ *
+ * A reviewer reached this file from the review gate: dropping `--bg-card-soft`
+ * from the gate's `<aside>` improves every ground figure on that screen and
+ * then fails `RAIL_FLOOR = 2.5` ΔL\* because the rail lands on `--bg-canvas` at
+ * 2.252. The diagnosis sent over was « the top of the ladder is three tokens
+ * inside 1.75 L\*, spread them ». Recomputed here from the tokens — which is
+ * the point, since another agent's prose is not evidence — the three values are
+ * exactly right: 97.829 / 98.522 / 99.582.
+ *
+ * The prescription is not. There is nowhere to spread *to*. `--bg-inner` is
+ * white, so the top is a wall, and the bottom is wherever `--text-muted` stops
+ * clearing 4.5:1 — which is one 8-bit step below where `--bg-subtle` already
+ * sits. Swept over the hue: #eef3f7 → 4.559, #edf2f6 → 4.519, #ecf1f5 → 4.479,
+ * under AA. **0.348 L\* of slack in the whole ladder**, and spending it on the
+ * rail leaves the ink 0.019 over AA.
+ *
+ * So the ladder is a symptom. Darken the muted grey one step and the rail gets
+ * 4.32 L\* instead of 2.60 — and the same edit closes the grain finding below,
+ * which arrives at the same token from the other direction. Both are held out
+ * of this lane by the same file: all five grounds and `--text-muted` are in
+ * VISION.md §6's palette block, pinned hex-for-hex above.
+ *
+ * Three assertions, and the third is the one that carries the argument:
+ *
+ *  · the grounds are a **ladder** — strictly ordered, no two the same;
+ *  · `--bg-subtle` is its floor and the floor is **stated**, not discovered by
+ *    the next person to measure a screen;
+ *  · and the floor is **binding**: one step darker in the same hue puts
+ *    `--text-muted` under AA, so « just spread the grounds » is arithmetic that
+ *    does not close. Darken the ink and this fails — correctly, because the
+ *    room has opened and the numbers written in `tokens.css` are stale.
+ */
+describe("the ground ladder is a ladder, and the ink sets its floor", () => {
+  const tokens = declarations(read("./tokens.css"));
+  const hex = (name: string): string => {
+    const value = tokens.get(name);
+    expect(value, `${name} must be a hex in tokens.css`).toMatch(/^#[0-9a-f]{6}$/i);
+    return value!;
+  };
+
+  /** CIE L\*, from the same relative luminance every ratio above is built on. */
+  const lightness = (colour: string): number => {
+    const y = luminance(colour);
+    return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (y * 24389) / 27;
+  };
+
+  /** Every ground a screen paints on. Borders are not grounds. */
+  const GROUNDS = ["--bg-inner", "--bg-card", "--bg-card-soft", "--bg-canvas", "--bg-subtle"];
+
+  test("the grounds are strictly ordered and none of them collide", () => {
+    const rungs = GROUNDS.map((name) => [name, lightness(hex(name))] as const);
+    for (let at = 1; at < rungs.length; at += 1) {
+      expect(
+        rungs[at - 1][1] - rungs[at][1],
+        `${rungs[at - 1][0]} → ${rungs[at][0]} is not a step down`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  test("the ladder's whole span is 4.42 L*, and tokens.css says so", () => {
+    const span = lightness(hex("--bg-inner")) - lightness(hex("--bg-subtle"));
+    // Stated to two decimals beside the tokens. A grey re-picked without
+    // re-running the arithmetic moves this and fails here rather than in a
+    // screenshot six rounds later.
+    expect(Number(span.toFixed(2))).toBe(4.42);
+  });
+
+  test("--bg-subtle is the floor, and --text-muted is what puts it there", () => {
+    const muted = hex("--text-muted");
+    const subtle = hex("--bg-subtle");
+    expect(contrast(muted, subtle), "the floor must clear AA").toBeGreaterThanOrEqual(4.5);
+
+    /*
+     * One 8-bit step down the same hue. `--bg-subtle` is #eef3f7 and the grey
+     * one step darker in each channel is what a designer reaching for « a
+     * slightly deeper well » would type — so this is the real next value, not
+     * a synthetic one.
+     */
+    const darker = `#${[1, 3, 5]
+      .map((i) => (Number.parseInt(subtle.slice(i, i + 2), 16) - 1).toString(16).padStart(2, "0"))
+      .join("")}`;
+    const slack = lightness(subtle) - lightness(darker);
+
+    expect(
+      contrast(muted, darker),
+      "there is room below --bg-subtle after all — the ladder can be spread, and the " +
+        "numbers written beside it in tokens.css are now stale",
+    ).toBeLessThan(4.5 + slack);
+
+    /*
+     * And the figure the review gate has to live inside, stated rather than
+     * rediscovered: the rail's ground against the column's, with the gate's
+     * `<aside>` nesting removed. `RAIL_FLOOR` is 2.5 in `shot.mjs`.
+     */
+    const rail = lightness(hex("--bg-canvas")) - lightness(hex("--bg-subtle"));
+    expect(Number(rail.toFixed(2)), "--bg-canvas → --bg-subtle, the gate's rail step").toBe(2.25);
+  });
+});
+
+/**
+ * **A grained surface is a darker surface, and the palette was never measured
+ * against it.**
+ *
+ * `--grain` is a 64×64 tile of black at four alpha levels, painted by `.grain`
+ * over whatever `bg-*` the same element carries. Every ratio in the block above
+ * is against the *flat* colour, and the text VISION.md §6 calls « the darkest
+ * surface any of them lands on » — `--bg-subtle` — is not the darkest pixel a
+ * rep's eye actually sees. The darkest pixel is the flat colour composited with
+ * the tile's deepest alpha.
+ *
+ * Measured on the running renderer, all 85 stages at both sizes: **138 text
+ * runs** clear AA against their own design colour and do not clear it against
+ * the darkest pixel of the tile they sit on. Every one of the 138 is the same
+ * pair — `--text-muted` at 11–12px on a grained `--bg-canvas`, **4.83:1 flat
+ * and 4.46:1 under the tile**, against a 4.5 floor. 0.04 short, on 138 runs,
+ * over eight onboarding stages and `reglages-presentation`.
+ *
+ * Three things are asserted, and the first is why this describe exists at all:
+ *
+ *  · the tile's alphas come out of the **shipped PNG**, decoded here — not out
+ *    of the sentence beside the token claiming « 0, 3, 6, 9 / 255 ». The whole
+ *    file's method is that a comment is not a measurement, and this one is a
+ *    comment about a binary nobody can read by eye;
+ *  · the grained grounds are **discovered** from the classes `src/` writes,
+ *    never listed. `.grain` is on `--bg-canvas` (`Splash`, `Onboarding`) and
+ *    `--bg-card-soft` (`ui/EmptyState`) today; a fourth surface grained
+ *    tomorrow is measured on the commit that grains it;
+ *  · and every ink that carries text clears AA on every one of them, at the
+ *    darkest pixel — or is on `GRAIN_DEBT` with the ratio it actually has.
+ *
+ * **Why the debt list rather than a fix.** Both fixes the measurement allows
+ * are one file outside this lane, and both were built and photographed before
+ * that was known:
+ *
+ *  · bring the tile down to alphas 0/2/4/6 and the darkest pixel clears at
+ *    4.58:1 — but it costs a third of the texture, measured on the splash's
+ *    own grain field in the shipped screenshot: peak-to-peak luminance 9.0 →
+ *    6.0, σ 2.152 → 1.434. And `shot.mjs --contrast` hard-codes `9 / 255` as
+ *    the tile's darkest alpha *and* pins `.grain`'s `background-image` by
+ *    string equality to `var(--grain)`, so a quieter tile leaves that check
+ *    printing « 138 passage(s) … 4.46:1 » about a pixel that no longer exists;
+ *  · or darken `--text-muted` one step to `#5d6b76`, which clears at 4.80:1,
+ *    costs **nothing** — same screenshot, grain field identical at σ 2.152,
+ *    the ink's painted luminance 109.8 → 104.8 — and improves every ground in
+ *    the palette. That one needs VISION.md §6's palette block, which this file
+ *    pins hex-for-hex.
+ *
+ * So the number is pinned here instead, from both sides: it may not get worse,
+ * and an entry that has stopped being true fails rather than lingering.
+ */
+describe("the grain is a surface, and the ink on it is measured", () => {
+  const tokens = declarations(read("./tokens.css"));
+  const sources = rendererSources();
+  const config = read("../../tailwind.config.js");
+
+  /**
+   * The deepest alpha in the shipped tile, read out of the PNG's `tRNS` chunk.
+   *
+   * Indexed-colour with a transparency table is what the tile is, and the
+   * palette is four blacks — so « how dark can one pixel of this get » is the
+   * largest entry in `tRNS`, in 0–255. Decoded rather than trusted: the four
+   * numbers in `tokens.css`'s prose are a claim about a base64 blob, and this
+   * file's entire method is that such a claim is worth what it is checked at.
+   */
+  const tileDarkestAlpha = (): number => {
+    const url = /--grain:\s*url\("data:image\/png;base64,([^"]+)"\)/.exec(tokens.get("--grain") ?? "")
+      ?? /--grain:\s*url\("data:image\/png;base64,([^"]+)"\)/.exec(read("./tokens.css"));
+    expect(url, "tokens.css must still declare --grain as an inline base64 PNG").toBeTruthy();
+
+    const bytes = Buffer.from(url![1], "base64");
+    let at = 8;
+    let trns: Buffer | null = null;
+    let colourType: number | null = null;
+    while (at + 8 <= bytes.length) {
+      const length = bytes.readUInt32BE(at);
+      const type = bytes.toString("ascii", at + 4, at + 8);
+      if (type === "IHDR") colourType = bytes[at + 8 + 9];
+      if (type === "tRNS") trns = bytes.subarray(at + 8, at + 8 + length);
+      at += 12 + length;
+    }
+    expect(colourType, "--grain must still be an indexed PNG (colour type 3)").toBe(3);
+    expect(trns, "--grain must still carry a tRNS transparency table").toBeTruthy();
+    return Math.max(...trns!);
+  };
+
+  /**
+   * The colour tokens `.grain` is painted over, discovered from `src/`.
+   *
+   * **The unit is the whole `className` expression, not one string literal.**
+   * `Onboarding` writes `"bg-canvas grain flex h-full flex-col"` in one
+   * literal, but `ui/EmptyState` writes
+   * `cn('border-card bg-card-soft …', grain && 'grain', className)` — two
+   * literals in one call — so a per-literal scan finds the first surface and
+   * silently misses the second. Measured: one ground instead of two. The
+   * attribute is read whole, brace-matched, and any `bg-*` inside it is a
+   * ground the grain composites over.
+   *
+   * The `bg-*` is resolved through `tailwind.config.js`'s `colors` map, so a
+   * renamed class is a discovery that fails rather than one that goes quiet.
+   */
+  const grainedGrounds = (): string[] => {
+    const colours = new Map<string, string>();
+    for (const [, key, value] of config.matchAll(/^\s{8}'?([\w-]+)'?:\s*'var\((--[\w-]+)\)'/gm)) {
+      colours.set(key, value);
+    }
+    expect(colours.size, "tailwind.config.js must still declare a colours map").toBeGreaterThan(8);
+
+    const found = new Set<string>();
+    for (const opener of sources.matchAll(/className\s*=\s*[{"]/g)) {
+      const start = opener.index! + opener[0].length - 1;
+      const braced = sources[start] === "{";
+      let at = start + 1;
+      let depth = 1;
+      while (at < sources.length && depth > 0) {
+        const ch = sources[at];
+        if (braced && (ch === "{" || ch === "(")) depth += 1;
+        else if (braced && (ch === "}" || ch === ")")) depth -= 1;
+        else if (!braced && ch === '"') depth = 0;
+        at += 1;
+      }
+      const expression = sources.slice(start, at);
+      if (!/\bgrain\b/.test(expression)) continue;
+      for (const [, name] of expression.matchAll(/\bbg-([\w-]+)\b/g)) {
+        const token = colours.get(name);
+        if (token !== undefined) found.add(token);
+      }
+    }
+    return [...found].sort();
+  };
+
+  /**
+   * Ink × grained ground pairs that do NOT clear AA at the tile's darkest
+   * pixel, each with the ratio it has and why it is still here.
+   *
+   * `at` is asserted to two decimals: a widening gap fails, and so does one
+   * that has been closed and left listed.
+   */
+  const GRAIN_DEBT: { ink: string; ground: string; at: number; why: string }[] = [
+    {
+      ink: "--text-muted",
+      ground: "--bg-canvas",
+      at: 4.46,
+      why:
+        "138 text runs on the running renderer, all of them this pair at 11–12px. " +
+        "Both fixes are one file outside src/design: a quieter tile needs " +
+        "shot.mjs --contrast to stop hard-coding 9/255, and a darker --text-muted needs VISION.md §6.",
+    },
+  ];
+
+  const hex = (name: string): string => {
+    const value = tokens.get(name);
+    expect(value, `${name} must be a hex in tokens.css`).toMatch(/^#[0-9a-f]{6}$/i);
+    return value!;
+  };
+
+  /** The colour composited with the tile's darkest pixel — black at `alpha`. */
+  const underTile = (ground: string, alpha: number): string => {
+    const channels = [1, 3, 5].map((i) => Number.parseInt(hex(ground).slice(i, i + 2), 16));
+    return `#${channels.map((c) => Math.round(c * (1 - alpha / 255)).toString(16).padStart(2, "0")).join("")}`;
+  };
+
+  const CARRIES_TEXT = ["--text-strong", "--text-body", "--text-muted", "--brand-700", "--brand-900"];
+
+  test("the tile and the grained grounds are still both discoverable", () => {
+    // Guards the two parsers above. A tile this cannot decode, or a rename that
+    // stops `.grain` being found beside a `bg-*`, would otherwise turn every
+    // assertion below into a loop over nothing — which is the one failure this
+    // file has shipped three times.
+    expect(tileDarkestAlpha()).toBeGreaterThan(0);
+    expect(grainedGrounds().length, "no grained ground found in src/").toBeGreaterThanOrEqual(2);
+  });
+
+  test("every ink clears AA on every grained ground, at the tile's darkest pixel", () => {
+    const alpha = tileDarkestAlpha();
+    const owed = new Set(GRAIN_DEBT.map((d) => `${d.ink} on ${d.ground}`));
+    const short: string[] = [];
+
+    for (const ground of grainedGrounds()) {
+      for (const ink of CARRIES_TEXT) {
+        const ratio = contrast(hex(ink), underTile(ground, alpha));
+        if (ratio >= 4.5) continue;
+        const key = `${ink} on ${ground}`;
+        if (!owed.has(key)) short.push(`${key} — ${ratio.toFixed(2)}:1 under the tile`);
+      }
+    }
+
+    expect(short, "ink below AA on a grained ground and not on GRAIN_DEBT").toEqual([]);
+  });
+
+  test.each(GRAIN_DEBT)("$ink on $ground is still exactly $at:1 under the tile", (debt) => {
+    const alpha = tileDarkestAlpha();
+    expect(
+      grainedGrounds(),
+      `${debt.ground} is no longer a ground anything grains — delete this entry`,
+    ).toContain(debt.ground);
+
+    const ratio = contrast(hex(debt.ink), underTile(debt.ground, alpha));
+    // Both directions. Worse fails; better fails too, because a debt that has
+    // been paid and left on the list is the check lying about the product.
+    expect(Number(ratio.toFixed(2)), debt.why).toBe(debt.at);
+    expect(ratio, "a debt entry that clears AA is a debt that has been paid").toBeLessThan(4.5);
   });
 });
 
