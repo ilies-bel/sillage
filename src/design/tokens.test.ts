@@ -166,7 +166,7 @@ describe("the rules VISION.md §6 states in prose", () => {
    * whose name carries no part of the token: `rounded-sm` says nothing about
    * `--radius-sm`. `--radius` passed a `var()` grep for its whole life — it was
    * declared in `tokens.css`, mapped as `borderRadius.DEFAULT`, and worn by
-   * **0** of the 39 704 rounded corners on the 166 stagings `smoke.mjs` drives.
+   * **0** of the 40 388 rounded corners on the 170 stagings `smoke.mjs` drives.
    *
    * So the rung is resolved the way the browser resolves it: through the
    * `borderRadius` map in `tailwind.config.js` to the class family Tailwind
@@ -195,7 +195,7 @@ describe("the rules VISION.md §6 states in prose", () => {
    */
   const UNWORN: Record<string, string> = {
     "--radius":
-      "worn by 0 of the 39 704 rounded corners on the 166 stagings smoke.mjs drives, and " +
+      "worn by 0 of the 40 388 rounded corners on the 170 stagings smoke.mjs drives, and " +
       "it cannot leave tokens.css alone: shot.mjs --census reads the ladder from a " +
       "hand-written list of three names and fails every stage at two (exit 15). " +
       "tailwind.config.js has already moved `rounded` off it onto --radius-sm.",
@@ -867,7 +867,7 @@ describe("the ground ladder is a ladder, and the ink sets its floor", () => {
  * rep's eye actually sees. The darkest pixel is the flat colour composited with
  * the tile's deepest alpha.
  *
- * Measured on the running renderer, all 83 stages at both sizes: **138 text
+ * Measured on the running renderer, all 85 stages at both sizes: **138 text
  * runs** clear AA against their own design colour and do not clear it against
  * the darkest pixel of the tile they sit on. Every one of the 138 is the same
  * pair — `--text-muted` at 11–12px on a grained `--bg-canvas`, **4.83:1 flat

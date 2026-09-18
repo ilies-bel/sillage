@@ -392,18 +392,18 @@
    *
    * **That sentence is history, and it reads as the present. Where the exit
    * half actually stands, counted rather than remembered.** Every animated
-   * declaration on all 83 stages at both sizes, 166 stagings:
+   * declaration on all 85 stages at both sizes, 170 stagings:
    *
-   *   90ms   5 883 declarations   150ms   404
-   *   `--ease-out` 6 267   ·   `--ease-in` 20 (18 opacity, 2 transform)
-   *   `fadeIn` 58   `riseIn` 56   `widget-arrive` 45   `widget-card-leave` 2
+   *   90ms   6 051 declarations   150ms   408
+   *   `--ease-out` 6 439   ·   `--ease-in` 20 (18 opacity, 2 transform)
+   *   `fadeIn` 58   `riseIn` 58   `widget-arrive` 46   `widget-card-leave` 2
    *
    * Four surfaces leave on this rule — the Réglages sheet (`useDismiss`), its
    * veil, the agenda's withdrawn offer (`useLeaving`) and the end-of-meeting
    * notice (`useDeparture`) — plus the review gate's eleven `source ▸` panels,
    * which the paragraph below used to name as open and which now leave on it
    * too. The widget leaves on `widget-card-leave`. The count of *curves* is
-   * still lopsided and that is correct, not a shortfall: 5 881 of the 6 287
+   * still lopsided and that is correct, not a shortfall: 6 049 of the 6 459
    * transitions in the product are a hover tint changing `color`, which is a
    * state going both ways and not a surface arriving or leaving.
    *
@@ -1286,7 +1286,7 @@
    * **The first of those three is being broken, by this product, and here is
    * what it costs.** `Onboarding.tsx` and `Splash.tsx` put `.grain` on a root
    * wrapper with every sentence of the screen inside it, which is « under dense
-   * body text » exactly. Counted with `shot.mjs --contrast` over all 83 stages
+   * body text » exactly. Counted with `shot.mjs --contrast` over all 85 stages
    * at both sizes: **138 text runs** clear AA against their own design colour
    * and do not clear it against the darkest pixel of the tile they sit on — all
    * 138 the same pair, `--text-muted` at 11–12px on a grained `--bg-canvas`,

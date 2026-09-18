@@ -576,13 +576,13 @@
    * already lost `--motion-fast`, `shadow-card`, `animate-fade-in` and
    * `ring-card` to. A token consumed through a Tailwind class whose name does
    * not contain the token cannot be counted by reading `src/`, so it was
-   * counted on the running renderer: every corner of every element, all 83
-   * stages at both sizes, 166 stagings.
+   * counted on the running renderer: every corner of every element, all 85
+   * stages at both sizes, 170 stagings.
    *
-   *   10px (`--radius-sm`)    32 960 corners
+   *   10px (`--radius-sm`)    33 524 corners
    *   14px (`--radius-lg`)       528
    *    1px (`rounded-bar`)     3 072
-   *   9999px (`rounded-full`)  3 144
+   *   9999px (`rounded-full`)  3 264
    *   12px                         **0**
    *
    * Not nearly none — none. `--census` already says so on every run (« non

@@ -140,8 +140,8 @@ module.exports = {
          * used to mean was drawn by nothing.**
          *
          * This was `var(--radius)`, 12px. Counted on the running renderer — every
-         * corner of every element, all 83 stages at both sizes — 12px appeared on
-         * **0** of 39 704 rounded corners, against 32 960 at `--radius-sm` and 528
+         * corner of every element, all 85 stages at both sizes — 12px appeared on
+         * **0** of 40 388 rounded corners, against 33 524 at `--radius-sm` and 528
          * at `--radius-lg`. A `var(--radius)` grep found it here and said nothing,
          * which is `shadow-card`'s lesson one line further down: a token consumed
          * through a class whose name does not contain it cannot be counted by
