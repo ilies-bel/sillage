@@ -1087,6 +1087,143 @@ const SCREENS = {
     },
   },
 
+  /*
+   * **The arming gesture, walked — and no screenshot in this repo had ever
+   * walked it.**
+   *
+   * A rep sees a call coming and presses *Préparer*. `Agenda.armNow` asks
+   * `agenda:arm`, re-reads the snapshot and calls `onOpen(meetingId)`, so the
+   * press ends on a session screen or it ends nowhere. Every stage that touched
+   * this control **counted** it — `agenda-demarrer-tot` asserts « at least two
+   * *Préparer* on the week » — and counting a button is orthogonal to whether
+   * pressing it arrives.
+   *
+   * It did not arrive. `bridge-stub.mjs` answered `` `evt-${eventId}` `` where
+   * `Agenda.meetingIdFor` is a sha1 digest, so the id named no meeting and the
+   * whole of what the rep saw, measured at both sizes, was
+   *
+   *     réunion introuvable: evt-evt-delcourt-tjm
+   *     Retour
+   *
+   * So this stage presses a named row and photographs where the press lands, and
+   * what it asserts is the thing the picture cannot state on its own: that the
+   * session screen belongs to **the invite that was pressed**, by its objet.
+   * Landing on *a* session screen is what the defect would look like too, if the
+   * stub had invented an id that happened to exist.
+   *
+   * `review` is the scenario, and that is the fixture's own arbitration rather
+   * than a preference. `#arm` declines while another call is recording, and
+   * `m-neovia-cadrage` is `recording` on `agenda` and on `historique`; it is the
+   * standing offer *past* the call on `compte-rendu` and on both enhancement
+   * scenarios; `agenda-appel-imprevu` is `entra: false` and its snapshot carries
+   * no events at all, so there is no invite on it to press. `review` is the one
+   * staged day with nothing live and no standing offer — the one day on which
+   * arming an invite is what the shipped `Agenda` does. The refusal is the stage
+   * below, and it is the same press on the ordinary afternoon.
+   *
+   * No *Démarrer* is pressed: arming is an offer a human accepts (HR-7), so the
+   * screen it lands on is a session that has not started, and that is the whole
+   * point of the gesture.
+   */
+  'agenda-preparer': {
+    scenario: 'review',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Semaine' }).click()
+      await page.getByText('Banque Delcourt — négociation du cadre tarifaire 2026').first().waitFor()
+      await waitForBacklog(page)
+      await rowNamed(page, 'Banque Delcourt — négociation')
+        .getByRole('button', { name: 'Préparer', exact: true })
+        .click()
+      /*
+       * **The error page first, and the order is the assertion.**
+       *
+       * « réunion introuvable » draws no header at all, so a run that waits for
+       * the objet fails on a *locator timeout* — « the screen was slow », which
+       * is the reading that kept this open for the life of the fixture. Measured
+       * with the defect put back (`return { meetingId: \`evt-${eventId}\` }`), at
+       * both sizes: with this check second the stage said « Timeout 5000ms
+       * exceeded, waiting for getByLabel('Objet de la réunion') »; with it first
+       * it names the id and the channel.
+       */
+      const lost = page.getByText(/réunion introuvable/)
+      await Promise.race([
+        page.getByLabel('Objet de la réunion').waitFor({ timeout: 5_000 }),
+        lost.first().waitFor({ timeout: 5_000 }),
+      ]).catch(() => undefined)
+      if ((await lost.count()) > 0) {
+        throw new Error(
+          `la pression a mené à « ${(await lost.first().innerText()).trim()} » : ` +
+            'l’identifiant rendu par `agenda:arm` ne nomme aucune réunion que `meeting:get` ' +
+            'puisse ouvrir, et le rep se retrouve devant une page d’erreur au lieu de l’appel',
+        )
+      }
+      /*
+       * The objet, read off the header field the session screen draws it in —
+       * `Agenda.#arm` passes the event's `context` to `orchestrator.create`, so
+       * the meeting carries the invite's subject and that is what a rep uses to
+       * tell « the call I pressed » from « a call ».
+       */
+      const objet = page.getByLabel('Objet de la réunion')
+      await objet.waitFor({ timeout: 5_000 })
+      const landed = await objet.inputValue()
+      if (landed !== 'Banque Delcourt — négociation du cadre tarifaire 2026') {
+        throw new Error(
+          `*Préparer* sur la ligne Banque Delcourt a ouvert « ${landed} » — la réunion armée ` +
+            'doit être celle de l’invitation pressée (`armNow` renvoie l’événement du rep, ' +
+            'jamais l’offre en cours)',
+        )
+      }
+      // HR-7: what the rep is offered next is *Démarrer*, and it is a second press.
+      await page.getByRole('button', { name: 'Démarrer', exact: true }).first().waitFor()
+    },
+  },
+
+  /*
+   * **The other half of the same press: the refusal, named.**
+   *
+   * `arm` is illegal beside a live recording, and `CLAUDE.md` says the refusal
+   * names the live call — a rule that only exists because the sentence said
+   * « Une réunion est déjà en cours d’enregistrement » and stopped, one round
+   * ago, leaving a rep with two overlapping calls unable to tell which one the
+   * product meant. It was fixed in `Agenda.armNow` and photographed nowhere: the
+   * stub answered every press with an id, so this screen was unreachable from the
+   * harness whatever the sentence said.
+   *
+   * `agenda` is the scenario because Néovia is `recording` on it — the ordinary
+   * afternoon, a call under way and the 16:00 invite already on the week. The
+   * assertion is on the **name**: a refusal that does not carry « Néovia Santé »
+   * is the defect that rule was written for, and it renders identically otherwise.
+   *
+   * It is drawn on the page, in the calendar's own `role="alert"`, and that is
+   * also under assertion here — this was a `window.alert`, which HR-10 forbids
+   * and which no screenshot can contain.
+   */
+  'agenda-preparer-refus': {
+    scenario: 'agenda',
+    async drive(page) {
+      await openAgenda(page)
+      await page.getByRole('button', { name: 'Semaine' }).click()
+      await page.getByText('Banque Delcourt — négociation du cadre tarifaire 2026').first().waitFor()
+      await waitForBacklog(page)
+      await rowNamed(page, 'Banque Delcourt — négociation')
+        .getByRole('button', { name: 'Préparer', exact: true })
+        .click()
+      const alert = page.locator('[role="alert"]').filter({ hasText: 'en cours d’enregistrement' })
+      await alert.first().waitFor({ timeout: 5_000 })
+      const said = (await alert.first().innerText()).replace(/\s+/g, ' ').trim()
+      if (!said.includes('Néovia Santé')) {
+        throw new Error(
+          `le refus ne nomme pas l’appel en cours : « ${said} » — un rep qui a deux appels ` +
+            'qui se chevauchent ne peut pas savoir lequel terminer (DEC-26)',
+        )
+      }
+      // The rep is still on the calendar: a refusal never navigates.
+      await page.getByRole('region', { name: 'Calendrier' }).waitFor()
+      await settled(page)
+    },
+  },
+
   /* One client chip pressed — the filter path, not the typed-query path. */
   'agenda-client': {
     scenario: 'agenda',

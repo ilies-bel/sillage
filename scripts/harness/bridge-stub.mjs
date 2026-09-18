@@ -580,6 +580,43 @@ export function installAppBridge(config) {
 
   const meetingById = (id) => MEETINGS.find((m) => m.id === id) || null
 
+  /**
+   * **The meeting a calendar invite produces, and it has to be one that opens.**
+   *
+   * `Agenda.meetingIdFor` is `evt-` + the first sixteen hex digits of
+   * `sha1(eventId)`, and `#arm` creates the session under that id the first time
+   * an invite is armed — so in the product the id is a pure function of the event
+   * and the meeting behind it always exists.
+   *
+   * Two halves, mirrored here. The **shape** is the product's, `evt-` + sixteen
+   * hex digits, so nothing on screen or in a stage can come to depend on a
+   * fixture-shaped `m-*`. The **digest** is not: this file is serialised into the
+   * page by `addInitScript`, where `node:crypto` does not exist and `crypto.subtle`
+   * is asynchronous while `responders` are synchronous. It is FNV-1a, run twice
+   * over the id with two offset bases. Run over the fixture's nine event ids the
+   * nine results are distinct and twenty characters long, which is the whole of
+   * what it has to be; it is stated rather than implied because « derived the way
+   * the product derives it » would be false about the bytes.
+   *
+   * The half that matters is the second one: a fixture meeting that already
+   * carries this `eventId` **is** the meeting for that invite, whatever its id
+   * spells. That is how `meetingIdFor`'s determinism reads from the outside — arm
+   * the same invite twice and you get the same call back, never a second row.
+   */
+  const meetingIdForEvent = (eventId) => {
+    const digest = (base) => {
+      let hash = base
+      for (let i = 0; i < eventId.length; i += 1) {
+        hash ^= eventId.charCodeAt(i)
+        hash = Math.imul(hash, 0x01000193) >>> 0
+      }
+      return hash.toString(16).padStart(8, '0')
+    }
+    return `evt-${digest(0x811c9dc5)}${digest(0x7ee3a1c7)}`
+  }
+
+  const meetingForEvent = (eventId) => MEETINGS.find((m) => m.eventId === eventId) || null
+
   // ── the live session (Néovia Santé) ───────────────────────────────────────
   const LINES = [
     ['far', 'Bonjour Julien, merci d’avoir décalé, on sortait du comité d’investissement.'],
@@ -2314,6 +2351,25 @@ let RECORDING_STOPPED = false
 
   const corpus = () => (scenario === 'historique-annees' ? CORPUS : HISTORY_ROWS)
 
+  /**
+   * **A row a search returns is a meeting that opens** — one store, two questions.
+   *
+   * `history:search` and `meeting:get` both read `Projections` in the product, so
+   * a row that exists for one and not for the other is a shape the store cannot
+   * hold. This fixture could: `historique-annees` mints its 812 calls by copying
+   * nine rows ninety-one times under `m-…-1` … `m-…-90`, none of which is in
+   * `MEETINGS`, so every result past the first nine named a meeting `meeting:get`
+   * refused — « réunion introuvable: m-neovia-cadrage-1 » — on the search pane
+   * whose results reach `onOpen`. Found by `scripts/__tests__/stubMeetingIds.test.mjs`
+   * while it was being written for `agenda:arm`; 11 rows × 2 halves of the Entra
+   * axis on that scenario.
+   *
+   * The corpus is consulted after `MEETINGS`, never instead of it: a row that
+   * exists in both is the one the stub mutates.
+   */
+  const storedMeeting = (id) =>
+    meetingById(id) || corpus().find((row) => row.meeting.id === id)?.meeting || null
+
   const searchRows = (query, filter, limit) => {
     const needle = fold(query)
     /*
@@ -2433,6 +2489,18 @@ let RECORDING_STOPPED = false
           subject: 'Néovia Santé — cadrage renfort data',
         }
 
+  /**
+   * The offer as it stands **now** — `ARMED_OFFER` is where the day starts, not
+   * where it stays.
+   *
+   * `Agenda.#arm` writes `#armed` and `#withdrawStanding` takes the previous one
+   * back, so a rep who presses *Préparer* changes what the next `agenda:snapshot`
+   * says is armed. Reading a `const` there would have drawn **Prêt** on the row
+   * the rep just left and nothing on the one they just armed, for the rest of the
+   * session.
+   */
+  let standingOffer = ARMED_OFFER
+
   const agendaSnapshot = () =>
     entra
       ? {
@@ -2463,7 +2531,7 @@ let RECORDING_STOPPED = false
            * half somebody happened to stage is a fixture waiting for the next
            * stage.
            */
-          armed: ARMED_OFFER,
+          armed: standingOffer,
           reason: '',
         }
       : {
@@ -2483,7 +2551,7 @@ let RECORDING_STOPPED = false
            * Microsoft account at all. A fixture that kept `null` here would go on
            * photographing the screen the product no longer has.
            */
-          armed: ARMED_OFFER,
+          armed: standingOffer,
           reason:
             scenario === 'agenda-appel-imprevu'
               ? 'Teams émet du son hors calendrier'
@@ -2611,12 +2679,114 @@ let RECORDING_STOPPED = false
     'agenda:snapshot': agendaSnapshot,
     'agenda:refresh': agendaSnapshot,
     /*
-      *Enregistrer* on an upcoming invite. The real handler reaches `Agenda`'s
-      own arm path, so the meeting it returns carries the event's id — and the
-      stub answers the id the product would compose, not a fresh one, because a
-      stage that clicks this then asserts the session it lands on.
-    */
-    'agenda:arm': ({ eventId }) => ({ meetingId: `evt-${eventId}` }),
+     * ***Préparer* on an upcoming invite — the central gesture of this surface,
+     * and until this round it landed on an error page.**
+     *
+     * The line here was `({ meetingId: \`evt-${eventId}\` })`, under a docblock
+     * claiming it answered « the id the product would compose ». It did not:
+     * `Agenda.meetingIdFor` is a sha1 digest, every meeting in this fixture is
+     * `m-*`, and `src/screens/Agenda.tsx` takes that id straight to `onOpen` and
+     * therefore to `meeting:get`. Driven on the shipped stub at 1280×800 and at
+     * 960×600 — press *Préparer* on the 16:00 Banque Delcourt row on the week —
+     * the whole of what the rep then saw was
+     *
+     *     réunion introuvable: evt-evt-delcourt-tjm
+     *     Retour
+     *
+     * `agenda-demarrer-tot` covers that control by *counting* it — « at least two
+     * *Préparer* on the week » — which is orthogonal to whether pressing one
+     * arrives anywhere. No count is put on how long that stood: this tree has one
+     * root commit, so « how many rounds » is not a thing anything here can measure.
+     *
+     * What it answers now is `Agenda.armNow` read against `#arm`, in its order:
+     *
+     *  1. an event that is no longer on screen is refused, in its own words;
+     *  2. a standing offer for this same meeting is **kept as it stands** — `#arm`
+     *     returns early, and `armNow` then finds `#armed.eventId === eventId` and
+     *     answers with it;
+     *  3. a call under way takes the conversation: `#arm` declines to arm, and
+     *     `armNow` names the live call (`CLAUDE.md`: « a refusal names the live
+     *     call ») — which is the shipped sentence, fixed one round ago and, like
+     *     the success, never once photographed;
+     *  4. a meeting past the call cannot be armed — `dispatch` refuses and
+     *     `armNow` throws the flat sentence;
+     *  5. otherwise the invite's meeting is armed, the previous standing offer is
+     *     withdrawn (`#withdrawStanding`, `disarm` → `idle`), and the id comes
+     *     back.
+     *
+     * A meeting is **minted** when the invite has none, which is the ordinary case
+     * on this screen: four of the five upcoming rows have no meeting at all. It
+     * goes into `MEETINGS`, so `meeting:list` shows it, `meeting:get` opens it and
+     * the session screen the rep lands on is a real one — the same reason
+     * `meeting:create` pushes its row rather than forgetting it.
+     */
+    'agenda:arm': ({ eventId }) => {
+      const event = EVENTS.find((candidate) => candidate.id === eventId)
+      if (!event) throw new Error('Cet événement n’est plus dans le calendrier affiché.')
+
+      const existing = meetingForEvent(eventId)
+      const held = existing !== null && standingOffer !== null && standingOffer.meetingId === existing.id
+      if (!held) {
+        const busy = MEETINGS.find((m) => m.state === 'recording' && m.id !== existing?.id)
+        if (busy) {
+          throw new Error(
+            `« ${busy.title} » est déjà en cours d’enregistrement. Terminez-la, puis reprenez ` +
+              'celle-ci — elle reste proposée.',
+          )
+        }
+        // `arm` is legal from `idle`; the two live states keep the offer standing.
+        // Everything past the call is `MeetingSession`'s refusal.
+        if (existing && !['idle', 'armed', 'recording'].includes(existing.state)) {
+          throw new Error('Cette réunion ne peut plus être démarrée.')
+        }
+      }
+
+      let target = existing
+      if (target === null) {
+        target = meeting({
+          id: meetingIdForEvent(eventId),
+          state: 'armed',
+          title: event.context.subject || 'Réunion',
+          eventId,
+          /*
+           * Null, and that is the product's answer rather than a shortcut:
+           * `Agenda.#arm` calls `orchestrator.create` with an id, a title and the
+           * event's context and passes no `clientName`, so `Projections` writes
+           * `event.clientName ?? null`. The account is resolved later, from VSA
+           * and Graph (DEC-7) — never from the objet line the fixture could parse.
+           */
+          clientName: null,
+          scheduledStart: event.context.scheduledStart,
+          createdAt: now,
+          startedAt: null,
+          endedAt: null,
+          confirmedAt: null,
+          updatedAt: now,
+        })
+        MEETINGS.push(target)
+      }
+
+      if (!held) {
+        if (target.state === 'idle') {
+          target.state = 'armed'
+          target.updatedAt = now
+        }
+        /*
+         * `#withdrawStanding`: the offer being replaced is disarmed, and only when
+         * it is still merely `armed` — a recording one is the row to show and is
+         * left exactly where it is.
+         */
+        const previous = standingOffer && standingOffer.meetingId !== target.id
+          ? meetingById(standingOffer.meetingId)
+          : null
+        if (previous && previous.state === 'armed') {
+          previous.state = 'idle'
+          previous.updatedAt = now
+        }
+        standingOffer = { meetingId: target.id, eventId, subject: event.context.subject }
+      }
+      return { meetingId: target.id }
+    },
 
     'meeting:list': () => MEETINGS,
     /*
@@ -2640,7 +2810,8 @@ let RECORDING_STOPPED = false
       return created
     },
     'meeting:get': (payload) => {
-      const m = meetingById(payload.meetingId)
+      // `storedMeeting`, not `meetingById`: the search corpus is the same store.
+      const m = storedMeeting(payload.meetingId)
       if (!m) throw new Error('réunion introuvable: ' + payload.meetingId)
       const live = m.id === 'm-neovia-cadrage'
       return {
