@@ -273,10 +273,37 @@ much stronger evidence than either alone:
 | 1 Chrome | 7 / 7 | `ui/TitleBar.tsx` is an empty `role="presentation"` strip, 36px full-width, carrying nothing, with the app's own header band stacked under it — 118px, 14.8% of an 800px window, above the first agenda row. Verified in the source. |
 | 9 The whole | 7 / 7.5 | `session-compte-rendu` at 960×600: three columns, three scrollers, two simultaneous page turns, one visible line of the document. |
 | 3 Spacing | 6.5 / 7.5 | a 4px scale with three off-grid half-steps; nine distinct paddings on one screen. |
-| 2 Typography | 7.5 / 8 | **both found this one unprompted**: the title step is 1.27× on review (19px over 15px) against 2× on agenda and 2.33× on historique and réglages — smallest on the screen that writes to the CRM. |
+| 2 Typography | 7.5 / 8 | ~~both found this one unprompted: the title step is 1.27× on review~~ — **withdrawn on inspection, see below.** |
 | 8 Craft | 7.5 / 8 | 5 undeclared painted marks on agenda, 11 on réglages. Independently verified here: the four calendar marks carry `data-graphic` in the grid cell (`CalendarGrid.tsx:320`) and **not** in the legend (`:238`), where the dot is the entire content of its element and the four colours are compared side by side. |
 
-That list, not another whole-surface re-score, is what a round should be spent on.
+### One of them dissolved, and that is the point of checking
+
+The typography row above is withdrawn. Both scorers independently measured the
+review gate's title at **1.27×** (19px `--type-heading` over 15px `--type-prose`)
+against 2× and 2.33× elsewhere, and both called it the weak rung. It is neither.
+
+`Review.tsx:1909` argues the case and measures it: the title there is **the
+meeting's own name**, not the word « Revue » — a 28px serif `<h1>Revue</h1>` was
+what stood there, naming the furniture, with the call in muted 12px beside it.
+The rep arrived by pressing *Relire et valider* on that call thirty seconds ago,
+and the one press on this screen writes into that client's CRM, so the strongest
+ink belongs to which call this is. At 960 — the minimum width `main.ts` declares
+— a 28px setting of a real meeting title truncates beside a `⚠ faible` banner
+that is itself load-bearing.
+
+And the axis does not ask for a size ratio. It asks for « a real size *and*
+weight *and* colour step ». The header is `text-heading font-semibold
+text-strong` over 15px/400/body: **all three steps are present**. Two scorers
+reduced a three-part criterion to its first part and scored a documented,
+measured decision as a defect.
+
+Two independent reviewers agreeing makes a finding **worth checking**, not
+correct. That is the same trap as the one in `CLAUDE.md`'s ledger — a figure
+quoted back by a reviewer as the basis for a recommendation — and the corrected
+entry there was added this same round. Five of the six rows above survived
+inspection; this is the sixth, and it was the one singled out as strongest.
+
+That list, less this row, is what a round should be spent on.
 
 ### The rule this adds
 
