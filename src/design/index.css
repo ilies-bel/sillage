@@ -733,6 +733,35 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    /*
+     * **Declared, because inheriting made the same eyebrow two typefaces.**
+     *
+     * This rule set every property of the label except the family, so the
+     * family came from the tag: `SectionHeader` renders `h2` by default and
+     * `h1,h2,h3` above takes `--font-display`, but it also renders `legend`
+     * for the `<fieldset>` in the gate, and a `legend` inherits the body font.
+     * Measured across four screens: **Fraunces on 11 of 12 instances, Inter on
+     * the twelfth** — « CE QUI SERA CRÉÉ », on the confirmation screen, in the
+     * same rail as « PRÊT À ENVOYER », same 11px, same 600, same
+     * `--text-muted`, different typeface. Two blind reviewers found the split
+     * independently, one of them on the agenda where `PASSÉES` and `EN COURS`
+     * sit on one screen in two families.
+     *
+     * `--font-body` and not `--font-display` for all twelve, because the
+     * comment on the `h1,h2,h3` rule already settled which one an eyebrow
+     * wants: it records `.pane-label` « — a 10px uppercase eyebrow — rendering
+     * in Fraunces at display tracking » as « exactly the smudge the comment
+     * warns about », and then removed only the tracking. This removes the
+     * other half. A display face is for the sizes that earn it; at 11px
+     * uppercase with 0.09em tracking, what the serif adds is not voice, it is
+     * noise on the smallest type in the product.
+     *
+     * The tag stays free: `SectionHeader` picks `h2`, `h3` or `legend` for the
+     * document's structure, and the label now looks the same whichever it
+     * picks — which is what stopped being true the day `legend` became a real
+     * case.
+     */
+    font-family: var(--font-body);
     /* The token, not a literal — this rule is `--type-label`'s only consumer
        that had its own copy of the number, and the two had to be changed
        together to move it off the 10px legibility floor. */
