@@ -159,6 +159,9 @@ round 5 did not.
 | 18 | detection | `497240f` | 7 | 7.5 | 6.5 | 5 | 5.5 | 5 | 5 | 5.5 | 5 | **52** |
 | 19 | widget | `f6ffdc7` | 7 | 7 | 5.5 | 5.5 | 6.5 | 6.5 | 5.5 | 5 | 5.5 | **54** |
 | 19 | detection | `9f597b7` | 7 | 7 | 6 | 5 | 5.5 | 5 | 6 | 5.5 | 5.5 | **52.5** |
+| 19 | main | `89882fd` | 7 | 7 | 5.5 | 7 | 6.5 | 6 | 6.5 | 6.5 | 6 | **58** |
+| 20 | widget | `9c9c995` | — | — | — | — | — | — | — | — | — | **53.5** † |
+| 20 | detection | `19cb51a` | — | — | 6.5 | 6 | 6 | 5 | — | — | — | **54.5** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -660,3 +663,126 @@ pressing the one irreversible control. Fixed in `7bd3a94`; the stub now applies
   under a transparent halo. Unchanged. A second detector artefact of the same
   family was confirmed on `onboarding-essai-fait`, where the named element is
   entirely below the fold.
+
+### Round 20 — the walk nobody was running, and a class name in front of every refusal
+
+Main 51.5 → **58**, detection 52.5 → **54.5**, widget 54 → **53.5**. Five lanes,
+split by file ownership rather than by surface, because four rounds of three
+whole-surface reviewers had moved only axes 7 and 9 while axes 1–6 and 8 — 70 of
+the 90 points — stood still.
+
+† The widget lane's per-axis table re-labelled two axes and omitted « The whole »,
+so it sums to 55 rather than the 53.5 it states. The total is carried because it
+is consistent with the one movement the lane argued (motion 6.5 → 6, from a
+baseline of 54); the per-axis row is not carried, because it cannot be
+reconstructed. Recorded rather than quietly reconciled.
+
+**`npm run test:e2e` had been red and unwatched.** It is the only thing that
+exercises the real Electron main process, it is in **neither** `npm run check`
+nor `run-tests.mjs`, and every round this session had reported « twelve gates
+green, both suites green » over a third gate that was failing. It now plays
+**38 of 38**.
+
+My own framing of it was wrong in a way worth recording. I reported « 20 failures
+at `ed4528a`, 7 at `f6ffdc7`, a strict subset — thirteen steps fixed ». The lane
+could not reproduce either number and found why: `scripts/e2e.mjs` guarded one of
+its three prerequisites, and the other two — the native module and 489 MB of
+whisper weights — are gitignored build products that no gate creates. Fully
+provisioned the count is 3; without the weights it is 20. So my figures measured
+one tree's untracked state, not two commits, and the « thirteen steps fixed »
+conclusion does not follow from them. Measure before trusting a sentence applies
+to a coordinator's summary as much as to a comment.
+
+### The worst defect of round 20, and it was in front of every sentence a rep reads
+
+`electron/preload.ts` stripped `/^[A-Za-z]*Error:\s*/` from what Electron
+composes. `core/contracts/refusal.ts` sets `this.name = 'Refusal'` on purpose,
+and `Refusal` does not end in `Error`. So every one of the **34 `refuse()` sites**
+in `register.ts` — every stated reason the product has, DEC-26's whole surface —
+reached the rep as:
+
+    Refusal: Aucune transcription n’a été enregistrée pour cet appel.
+
+An English class name in front of the French, on a French product. `refusal.ts`'s
+own docblock claims « Nothing about the renderer changes… the sentence is the
+same sentence ».
+
+Four instruments were green over it, each for a different reason: renderer tests
+inject a fake bridge throwing a clean `Error`; the harness stubs `window.app`;
+`preloadUnwrap.test.ts`'s fixture composes the wrapper with the literal word
+`Error`, so **the one class the product defines could not be fed to it**, and its
+« a subclass name is stripped too » case uses `TypeError`; and the e2e step
+written for exactly this pressed the wrong control *and* asserted a pattern
+`Refusal:` matches neither half of.
+
+That step had been pressing the navigation rail for 105 commits —
+`page.locator('li').first()`, written when `Historique` had no `Rail` in it and
+broken the commit that added one. Green in both gates the whole time.
+
+### Two fixes from the round before produced two of this round's findings
+
+The panel exit added in round 19 was argued over four routes and driven on one.
+`useDeparture` was fed the press while `meetingId !== null` was ANDed outside the
+hold, so the chevron faded and **the meeting ending tore the panel off at opacity
+1.000** — 340×205 over the client's face, on the route `EndOfMeetingWatch` takes
+on nearly every call. The same animation also emits a `widget:resize` box built
+from two layout passes (`pillTop` moving while `height` stands still), which
+`placeWindow` correctly clamps and then inherits as if the rep had dragged the
+pill — transient in, permanent out, **−162 px**.
+
+And the fix for the first produced a third: holding the panel through the fade
+made `widget-pause-refus` report eleven controls at **22 px** against the 24 px
+floor. 22 is 24 × 0.92, the exit's own scale. Nothing was under-sized — `settled()`
+asked `getAnimations()`, which answers for the compositor, while `useDeparture`
+holds an element on a JS timer for one `--motion` after its exit finishes. A
+class ending `-leaving` now counts as motion.
+
+### What round 20 measured and refused to act on
+
+- **Round 19's nominated one thing was founded on a 4× miscount.** « 80 spans at
+  1 px radius that are 2 px tall and should be `rounded-full` » is **20** elements
+  (80 was a count of *corners*), they measure 5.8 × 3.45–8.88 rather than 2 px
+  tall, and `--widget-soft` **is** cashed in — `index.css` re-points three tokens
+  to it inside `.widget-surface` and the panel's tray wears it. Acting on it would
+  have made the meter worse. I relayed that recommendation into round 20's brief
+  without checking it.
+- **« the caution *Valider* reads olive-brown »** is a request to undo a measured
+  decision: `--warn` was moved to hue 42° specifically to separate it from
+  `--accent`'s 31° after two reviewers found three filled shapes colliding at
+  1.48:1. Acting on it re-creates that finding.
+- **« three radius families in one 400 px column »** does not reproduce — two, at
+  10 px on 39 elements and 14 px on one.
+- **`--motion` reporting « 0 qui s'en vont » on a still screen is not a defect.**
+  Only three stages stage a departure; every other is a settled frame and
+  `settled()` waits transitions out before measuring. Round 18 and 19 both read
+  that zero as a product finding. It overstates it.
+
+### Open, priced, not fixed
+
+- **`pinnedNow.mjs` is not pinned, and its docblock says it is.** It returns
+  *today's* date at 14:35 Paris under « so two runs of the same screen produce the
+  same pixels ». Same commit, consecutive days: the `agenda` scan went « 15
+  signalements, 4 types » to « 16, 5 », the extra being
+  `extreme-negative-tracking` on « Vendredi 18 septembre », three characters
+  longer than « Jeudi 17 septembre ». One detector count moved 26 scans on a
+  weekday name. **Scores taken on different days are not comparable, which is a
+  problem for a process whose whole instrument is comparison between rounds.**
+- **The capture verb names two acts in identical rectangles.** Three pixel-identical
+  89×32.6 « Enregistrer » on one screen: one filled, which only navigates, and two
+  outlined, which create a meeting. Fill is the only carrier, and the stage and the
+  component have to move together.
+- **`aborted` draws nothing and says nothing.** The rep presses *Démarrer une
+  réunion*, lands on the session screen, the recording dies for want of a
+  transcription provider, and that screen offers no control and no sentence —
+  the only place it is said is a status control back on the calendar. Reachable
+  on the primary platform whenever WASAPI loopback fails to open. DEC-39 covers
+  `ended`; `aborted` has no equivalent.
+- **No instrument reads a distribution.** A fifth radius family on the largest
+  object on the widget passes twelve gates, 164 stagings and 51 renderer tests.
+  Every check reads one value against one rule; a *family* is invisible to all of
+  them. Same shape as the ink-ramp gap round 19 closed and the wrapped-cell gap
+  the agenda lane found.
+- **The exit ladder's last painted frame is 0.235–0.599 opacity** on three hooks
+  and four surfaces — the blink the family exists to remove, on the rung whose
+  docblock says it was fixed. The remedy is `transitionend` with the timer as a
+  ceiling.
