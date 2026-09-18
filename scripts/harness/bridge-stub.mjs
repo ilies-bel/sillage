@@ -1251,7 +1251,6 @@ let RECORDING_STOPPED = false
   const HISTORY_ROWS = [
     {
       meeting: meetingById('m-nordis-support'),
-      status: 'À valider',
       intents: [],
       matches: [
         {
@@ -1262,7 +1261,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-lefort-cv'),
-      status: 'À valider',
       intents: [],
       matches: [
         {
@@ -1284,7 +1282,6 @@ let RECORDING_STOPPED = false
     */
     {
       meeting: meetingById('m-neovia-cadrage'),
-      status: 'À valider',
       intents: [],
       matches: [
         {
@@ -1295,7 +1292,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-sodexial-staffing'),
-      status: 'Validée',
       intents: [
         intent('m-sodexial-staffing', 'crm.task', 'Tâche compte-rendu (VerySwing)', 'drained', {
           remoteId: 'TASK-4471',
@@ -1313,7 +1309,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-marechal-erp'),
-      status: 'Validée',
       intents: [
         intent('m-marechal-erp', 'crm.task', 'Tâche compte-rendu (VerySwing)', 'drained', {
           remoteId: 'TASK-4468',
@@ -1334,7 +1329,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-delcourt-premier'),
-      status: 'Validée',
       intents: [
         intent('m-delcourt-premier', 'crm.task', 'Tâche compte-rendu (VerySwing)', 'drained', {
           remoteId: 'TASK-4455',
@@ -1349,7 +1343,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-nordis-renouvellement'),
-      status: 'Validée',
       intents: [
         intent('m-nordis-renouvellement', 'crm.task', 'Tâche compte-rendu (VerySwing)', 'drained', {
           remoteId: 'TASK-4402',
@@ -1368,7 +1361,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-arkelia-bilan'),
-      status: 'Abandonnée',
       intents: [],
       matches: [
         { where: 'notes', excerpt: 'appel coupé au bout de 5 min, à reprogrammer' },
@@ -1376,7 +1368,6 @@ let RECORDING_STOPPED = false
     },
     {
       meeting: meetingById('m-lefort-decouverte'),
-      status: 'Validée',
       intents: [
         intent('m-lefort-decouverte', 'crm.task', 'Tâche compte-rendu (VerySwing)', 'drained', {
           remoteId: 'TASK-4310',
@@ -2209,14 +2200,59 @@ let RECORDING_STOPPED = false
       [
         row.meeting.title,
         row.meeting.clientName,
-        row.status,
+        statusOf(row.meeting),
         markNotesOf(row.meeting.id),
         row.matches.map((m) => m.excerpt).join(' '),
       ].join(' '),
     )
 
   const PERIOD_DAYS = { toute: null, '7j': 7, '30j': 30, '90j': 90 }
-  const STATUS_LABEL = { tous: null, 'a-valider': 'À valider', validees: 'Validée', abandonnees: 'Abandonnée' }
+
+  /*
+   * **The bucket is a set of *states*, and it used to be a hand-written word.**
+   *
+   * `HISTORY_ROWS` carried a literal `status: 'À valider'` per row and the chip
+   * filtered on that string — so the fixture decided, by hand, which bucket a
+   * meeting was in, and it got the flagship one wrong. `m-neovia-cadrage` is
+   * `recording` on every scenario but four, and it was labelled « À valider »:
+   * `history:search { statut: 'a-valider' }` returned the call the rep is
+   * recording *right now*, so the rail said « 3 appels en attente de validation »
+   * where the product says two, and `agenda-hors-fenetre` drew the live call as a
+   * row of « En attente de validation » — the section that exists for calls that
+   * were recorded and never confirmed.
+   *
+   * Restated from `core/domain/historySearch.ts`, which a stub cannot import, and
+   * held to it by `modules/extract/__tests__/harnessFixture.test.ts`: it drives
+   * every scenario through `passesFilter` and refuses a row the product would not
+   * have returned.
+   */
+  const STATUS_STATES = {
+    tous: null,
+    'a-valider': ['ended', 'extracting', 'awaiting_confirmation'],
+    validees: ['pushing', 'done'],
+    abandonnees: ['aborted'],
+  }
+
+  /*
+   * `register.ts`'s own `STATE_LABEL`, which is where a row's status comes from
+   * on the shipped channel: `rows.push({ meeting, status: STATE_LABEL[meeting.state], … })`.
+   * Derived and no longer stored, so a fixture cannot hold a word that disagrees
+   * with the state beside it — which is what `review:confirm` did too, stamping
+   * « Validée » on a meeting it had just moved to `pushing` (« Envoi… »).
+   */
+  const STATE_LABEL = {
+    idle: 'En attente',
+    armed: 'Prêt',
+    recording: 'En cours',
+    ended: 'Terminée',
+    extracting: 'Analyse…',
+    awaiting_confirmation: 'À valider',
+    pushing: 'Envoi…',
+    done: 'Validée',
+    aborted: 'Abandonnée',
+  }
+
+  const statusOf = (meeting) => STATE_LABEL[meeting.state]
 
   /*
    * The anchor `core/contracts/meeting.ts` exports, restated here because a stub
@@ -2245,12 +2281,30 @@ let RECORDING_STOPPED = false
       for (const row of HISTORY_ROWS) {
         if (out.length >= 812) break
         const id = copy === 0 ? row.meeting.id : `${row.meeting.id}-${copy}`
+        /*
+         * **Every instant moves, not only the one the list sorts on.**
+         *
+         * This shifted `scheduledStart` alone and left `createdAt`, `startedAt`
+         * and `endedAt` on today, so the eight hundred and twelve calls were all
+         * created this afternoon and « il y a 30 semaines » was a date with no
+         * meeting behind it. Harmless while the period chip read
+         * `startedAt || createdAt` — the two lies cancelled — and a fixture whose
+         * period filter and whose printed dates disagree the moment either is
+         * fixed.
+         */
+        const back = copy * 7 * 24 * HOUR
+        const slid = (instant) => (instant === null || instant === undefined ? instant : instant - back)
         out.push({
           ...row,
           meeting: {
             ...row.meeting,
             id,
-            scheduledStart: (row.meeting.scheduledStart || row.meeting.createdAt) - copy * 7 * 24 * HOUR,
+            scheduledStart: (row.meeting.scheduledStart || row.meeting.createdAt) - back,
+            createdAt: slid(row.meeting.createdAt),
+            startedAt: slid(row.meeting.startedAt),
+            endedAt: slid(row.meeting.endedAt),
+            confirmedAt: slid(row.meeting.confirmedAt),
+            updatedAt: slid(row.meeting.updatedAt),
           },
         })
       }
@@ -2308,17 +2362,25 @@ let RECORDING_STOPPED = false
       })
     }
     if (filter.client) rows = rows.filter((row) => row.meeting.clientName === filter.client)
+    /*
+     * `anchorOf`, and it used to be `startedAt || createdAt` — with `anchorOf`
+     * declared four lines above it, under a comment saying « if the two ever
+     * disagree, the screenshots are of a product that does not exist ». They
+     * disagreed. `historique-annees` builds its 812 calls by moving
+     * `scheduledStart` back a week per copy and leaving the other two instants
+     * on today, so « 7 jours » answered 536 rows the product drops.
+     */
     const days = PERIOD_DAYS[filter.periode]
-    if (days) rows = rows.filter((row) => (row.meeting.startedAt || row.meeting.createdAt) >= now - days * 24 * HOUR)
-    const wanted = STATUS_LABEL[filter.statut]
-    if (wanted) rows = rows.filter((row) => row.status === wanted)
+    if (days) rows = rows.filter((row) => anchorOf(row.meeting) >= now - days * 24 * HOUR)
+    const states = STATUS_STATES[filter.statut]
+    if (states) rows = rows.filter((row) => states.indexOf(row.meeting.state) !== -1)
     if (filter.intention && filter.intention !== 'toutes') {
       rows = rows.filter((row) => row.intents.some((i) => i.kind === filter.intention))
     }
     // One row past the limit, the way the handler collects it: `>= limit` cannot
     // tell « exactly fifty » from « fifty and more », and told a rep to narrow a
     // search that was already complete.
-    return rows.slice(0, limit + 1)
+    return rows.slice(0, limit + 1).map((row) => ({ ...row, status: statusOf(row.meeting) }))
   }
 
   // ── the bridge ────────────────────────────────────────────────────────────
@@ -3005,8 +3067,12 @@ let RECORDING_STOPPED = false
         meeting.confirmedAt = now
         meeting.updatedAt = now
       }
-      const row = HISTORY_ROWS.find((r) => r.meeting.id === payload.meetingId)
-      if (row) row.status = 'Validée'
+      /*
+       * The state above is the whole of it: `status` is derived from it now
+       * (`statusOf`), and stamping « Validée » here put that word on a meeting
+       * this handler had just moved to `pushing`, which `register.ts` calls
+       * « Envoi… ». DEC-4's own distinction — confirmed is not landed.
+       */
       harness.emit('session:changed', { meetingId: payload.meetingId, state: 'pushing' })
       return { ok: true, state: 'pushing', intentIds: payload.intentIds || [] }
     },

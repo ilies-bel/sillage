@@ -46,6 +46,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findDeterministicLeaks } from '../deterministicLeaks.ts'
 import { SettingsSnapshotSchema } from '../../../core/contracts/settings.ts'
+import { passesFilter } from '../../../core/domain/historySearch.ts'
+import type { HistoryFilter, HistoryIntent } from '../../../core/contracts/history.ts'
+import type { Meeting, MeetingState } from '../../../core/contracts/meeting.ts'
 /*
  * The harness stub is plain JS with no declaration — it runs in a browser page,
  * not under `tsc`. Imported dynamically and typed at the call site, so this test
@@ -62,6 +65,33 @@ const loadStub = async (): Promise<(o: { scenario: string; now: number; entra: b
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STUB = path.resolve(HERE, '../../../../scripts/harness/bridge-stub.mjs')
+
+/**
+ * **`register.ts`'s own `STATE_LABEL`, read rather than restated.**
+ *
+ * It is the table the shipped `history:search` writes a row's status from —
+ * `rows.push({ meeting, status: STATE_LABEL[meeting.state], … })` — and it is
+ * private to that file. `modules/*` may not import `app/*` (the boundary rule),
+ * and a fourth hand-written copy of nine French words is a fourth thing to drift:
+ * there are already two, and they disagree on `idle`. So it is parsed out of the
+ * source, the way this file already parses the stub, and the parse asserts its own
+ * yield — a regex that silently finds nothing is the check that measures nothing.
+ */
+const SHIPPED_STATE_LABEL: Record<MeetingState, string> = (() => {
+  const source = readFileSync(path.resolve(HERE, '../../../app/ipc/register.ts'), 'utf8')
+  const block = /const STATE_LABEL: Record<Meeting\['state'\], string> = \{([^}]*)\}/.exec(source)
+  assert.ok(block, 'STATE_LABEL est introuvable dans app/ipc/register.ts — ce test ne lit plus rien')
+  const table: Record<string, string> = {}
+  for (const line of (block[1] ?? '').matchAll(/^\s*([a-z_]+):\s*'([^']*)',/gm)) {
+    table[line[1] as string] = line[2] as string
+  }
+  assert.equal(
+    Object.keys(table).length,
+    9,
+    `STATE_LABEL a rendu ${Object.keys(table).length} entrée(s) — la table a neuf états`,
+  )
+  return table as Record<MeetingState, string>
+})()
 
 /**
  * Everyone the fixture's own meeting has on it — read from the stub rather than
@@ -1050,5 +1080,190 @@ test('the fixture calls a recipe change changed, the way register.ts does', asyn
     offences,
     [],
     'le fixture ne peut pas produire l’entrée que meeting:recipe existe pour',
+  )
+})
+
+/**
+ * **The fixture's `history:search` has to partition the way the product
+ * partitions — and it did not, on the chip that matters most.**
+ *
+ * `HISTORY_ROWS` carried a hand-written `status: 'À valider'` per row and
+ * `searchRows` filtered the `statut` chip on that string, so the fixture decided
+ * bucket membership by hand. `m-neovia-cadrage` is `recording` on every scenario
+ * but four — it is the call the demo is built around, being recorded at 14:35 —
+ * and it was labelled « À valider ». `core/domain/historySearch.ts` puts
+ * `recording` in **none** of the three buckets on purpose: « a meeting that has
+ * not happened yet is not a history entry ».
+ *
+ * Driven on the shipped screen at 1280×800 and at 960×600 before the fix
+ * (`scratch/probe-pending.mjs`):
+ *
+ *     rail                  « 3 appels en attente de validation »   (product: 2)
+ *     section heading       « 3 réunions en attente de validation »
+ *     agenda-hors-fenetre   3 rows, the first one the live call
+ *
+ * So *En attente de validation* — the section whose whole subject is DEC-4's
+ * quietest failure, a compte-rendu recorded and never confirmed — was
+ * photographed offering the rep a call that had not ended yet. Eight agenda
+ * stages × two sizes × nine measured passes, all green: none of them reads a
+ * count against the state behind it, and until the round that made the backlog
+ * wait a real wait nothing had photographed it at all.
+ *
+ * The `periode` axis was the same defect one line down, and louder. The stub
+ * declares `anchorOf` — `scheduledStart ?? startedAt ?? createdAt`, restated from
+ * `core/contracts/meeting.ts` under a comment reading « if the two ever disagree,
+ * the screenshots are of a product that does not exist » — and then filtered on
+ * `startedAt || createdAt`. `historique-annees` builds 812 calls by walking
+ * `scheduledStart` back a week per copy and leaving the other instants on today,
+ * so measured over that scenario:
+ *
+ *     7 jours   536 rows the product drops
+ *     30 jours  774
+ *     90 jours  699
+ *
+ * on the one scenario that exists to photograph « les 50 plus récents … sur 812
+ * appels parcourus ».
+ *
+ * **What that axis is worth now, said rather than assumed.** Two things were
+ * wrong there and fixing both leaves the axis green over either one alone: the
+ * filter reads `anchorOf`, *and* the corpus now slides all five of a copy's
+ * instants instead of one, so the fixture no longer contains a meeting whose
+ * anchor and whose creation fall in different buckets. Measured on the nine base
+ * rows, every `anchorOf − (startedAt || createdAt)` is 0.00 j
+ * (`scratch/probe-anchors.mjs`). So `statut` is the axis this check reproduces —
+ * red on eleven scenarios, 1 to 90 rows each — and `periode`, `intention` and
+ * `client` are guards against the next fixture. Reverting the two period changes
+ * together puts 536 / 774 / 699 back.
+ *
+ * The check is the product's own predicate, not a second copy of it: every row
+ * the stub returns for a filter must satisfy `passesFilter`, and every row it
+ * withholds must fail it. Both directions, because a fixture that returns too few
+ * stages an empty state the product never shows. Fourteen axes per scenario —
+ * four `statut`, four `periode`, four `intention`, three `client` — over every
+ * scenario the stub branches on, both halves of the Entra axis.
+ */
+test('the fixture’s history:search partitions the way historySearch.ts partitions', async () => {
+  const source = readFileSync(STUB, 'utf8')
+  const scenarios = [
+    ...new Set([...source.matchAll(/scenario [!=]== '([^']+)'/g)].map((m) => m[1] as string)),
+    // The default branch, which is what `agenda`, `session` and every other
+    // unbranched stage gets. It is not a literal in the stub, so the scan above
+    // cannot find it and the flagship screen would sit outside this check.
+    '__inconnu__',
+  ].sort()
+  assert.ok(
+    scenarios.length >= 8,
+    `l’énumération des scénarios n’en a trouvé que ${scenarios.length} — le stub a changé de ` +
+      'forme et ce test ne regarde plus rien',
+  )
+
+  type Row = { meeting: Meeting; status: string; intents: HistoryIntent[] }
+  type Answer = { rows: Row[]; clients: string[] }
+
+  const offences: string[] = []
+  let axes = 0
+
+  for (const scenario of scenarios) {
+    for (const entra of [true, false]) {
+      await withStub(scenario, entra, async (invoke) => {
+        // `tous`, no query, no cap: the corpus the other answers are drawn from.
+        const all = (await invoke('history:search', { query: '', filter: {}, limit: 5_000 })) as Answer
+        if (all.rows.length === 0) return
+
+        const asked: Partial<HistoryFilter>[] = [
+          ...(['tous', 'a-valider', 'validees', 'abandonnees'] as const).map((statut) => ({ statut })),
+          ...(['toute', '7j', '30j', '90j'] as const).map((periode) => ({ periode })),
+          ...(['toutes', 'crm.task', 'crm.opportunity', 'mail.draft'] as const).map((intention) => ({
+            intention,
+          })),
+          ...all.clients.slice(0, 3).map((client) => ({ client })),
+        ]
+
+        /*
+         * The axes go out together. `history:search` is held back 150 ms by the
+         * fixture's own latency table — it is the placeholder a stage has to be
+         * able to photograph — and fourteen axes × thirteen scenarios × two
+         * halves of the Entra axis, one at a time, is a minute of waiting for a
+         * synchronous answer. The responder runs at call time; only the resolve
+         * is delayed, so this measures the same thing in two seconds.
+         */
+        const answers = await Promise.all(
+          asked.map(async (axis) => {
+            const filter: HistoryFilter = {
+              client: null,
+              periode: 'toute',
+              statut: 'tous',
+              intention: 'toutes',
+              ...axis,
+            }
+            const got = (await invoke('history:search', {
+              query: '',
+              filter,
+              limit: 5_000,
+            })) as Answer
+            return { axis, filter, got }
+          }),
+        )
+
+        for (const { axis, filter, got } of answers) {
+          axes += 1
+          const returned = new Set(got.rows.map((row) => row.meeting.id))
+          const owed = new Set(
+            all.rows
+              .filter((row) =>
+                passesFilter({
+                  meeting: row.meeting,
+                  intents: row.intents,
+                  filter,
+                  now: PINNED_NOW,
+                }),
+              )
+              .map((row) => row.meeting.id),
+          )
+          const extra = [...returned].filter((id) => !owed.has(id))
+          const missing = [...owed].filter((id) => !returned.has(id))
+          const where = `${scenario}/entra=${entra} ${JSON.stringify(axis)}`
+          if (extra.length > 0) {
+            offences.push(
+              `${where} : ${extra.length} ligne(s) que passesFilter refuse — ` +
+                `${extra.slice(0, 3).join(', ')}`,
+            )
+          }
+          if (missing.length > 0) {
+            offences.push(
+              `${where} : ${missing.length} ligne(s) que passesFilter accepte et que le ` +
+                `fixture retient — ${missing.slice(0, 3).join(', ')}`,
+            )
+          }
+          /*
+           * And the word beside the row, which is where the defect entered: the
+           * shipped channel writes `status: STATE_LABEL[meeting.state]`
+           * (`app/ipc/register.ts`), so a fixture row whose word disagrees with
+           * its own state is a row no handler can produce. The table is read out
+           * of `register.ts` rather than restated here — a third copy is a third
+           * thing to drift.
+           */
+          for (const row of got.rows) {
+            const owedLabel = SHIPPED_STATE_LABEL[row.meeting.state]
+            if (row.status !== owedLabel) {
+              offences.push(
+                `${where} : ${row.meeting.id} est « ${row.status} » alors que son état ` +
+                  `${row.meeting.state} s’écrit « ${owedLabel} » dans register.ts`,
+              )
+            }
+          }
+        }
+      })
+    }
+  }
+
+  assert.ok(
+    axes > 100,
+    `${axes} axe(s) interrogés — une journée vide satisferait ce test`,
+  )
+  assert.deepEqual(
+    [...new Set(offences)],
+    [],
+    'le fixture répond à history:search un ensemble que le produit ne peut pas répondre',
   )
 })
