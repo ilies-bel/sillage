@@ -135,7 +135,36 @@ module.exports = {
       },
       borderRadius: {
         sm: 'var(--radius-sm)',
-        DEFAULT: 'var(--radius)',
+        /*
+         * **`rounded` means the corner the product draws, because the corner it
+         * used to mean was drawn by nothing.**
+         *
+         * This was `var(--radius)`, 12px. Counted on the running renderer — every
+         * corner of every element, all 83 stages at both sizes — 12px appeared on
+         * **0** of 39 704 rounded corners, against 32 960 at `--radius-sm` and 528
+         * at `--radius-lg`. A `var(--radius)` grep found it here and said nothing,
+         * which is `shadow-card`'s lesson one line further down: a token consumed
+         * through a class whose name does not contain it cannot be counted by
+         * reading `src/`.
+         *
+         * Bare `rounded` is written on exactly two elements under `src/` — the
+         * provider-field and API-key inputs in `Reglages.tsx` — and no stage
+         * renders either, so the only 12px corner in the product was on the only
+         * pair of inputs no screenshot had ever contained. Every other input in
+         * the product is `rounded-sm`.
+         *
+         * Deleting the entry instead of re-pointing it would have taken their
+         * corner away in silence: `rounded` with no `DEFAULT` compiles to no rule
+         * at all, exactly like `bg-muted/30`.
+         *
+         * `--radius` itself is still declared in `tokens.css`, and that is not an
+         * oversight — `shot.mjs --census` reads the ladder from a hand-written
+         * list of three names and fails every stage at two. `tokens.css` carries
+         * the measurement and the blocker; `tokens.test.ts` holds the rung to
+         * being either worn by a class `src/` writes or named there with its
+         * reason.
+         */
+        DEFAULT: 'var(--radius-sm)',
         lg: 'var(--radius-lg)',
         /*
          * **The one radius that is not a card corner.** The input meter's bars

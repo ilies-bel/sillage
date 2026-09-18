@@ -21,6 +21,44 @@ import { describe, expect, test } from "vitest";
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
+/**
+ * Every renderer source, concatenated — what the product actually writes.
+ *
+ * Two tests below ask « does anything draw with this », and the honest answer
+ * cannot come from grepping `tokens.css` or `tailwind.config.js` for a `var()`:
+ * a token reached through a Tailwind class carries none of its own name. Both
+ * `--radius` and `shadow-card` were declared, mapped, greppable and worn by
+ * nothing. So the question is asked of the classes `src/` writes.
+ *
+ * Walked rather than listed, for the reason every other « discovered, never
+ * listed » note in this file gives.
+ */
+const rendererSources = (): string => {
+  /*
+   * `import.meta.glob` and not a `readdirSync` walk: `read()` above resolves
+   * one known sibling, and the same `fileURLToPath(new URL(…))` inside a
+   * function called from a `describe` body throws `The URL must be of scheme
+   * file` under this suite's jsdom environment. The glob is resolved by Vite at
+   * transform time, so it needs no path at all — and a file added to `src/` is
+   * picked up with no list to maintain.
+   */
+  const modules = import.meta.glob("../**/*.{ts,tsx,css}", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>;
+
+  return Object.entries(modules)
+    .filter(
+      // A fixture is not a caller: a class written only inside `__tests__` is a
+      // class no rep ever sees, and counting it would let a dead rung be kept
+      // alive by the very suite that is supposed to notice it.
+      ([at]) => !at.includes("/__tests__/") && !/\.test\.tsx?$/.test(at),
+    )
+    .map(([, source]) => source)
+    .join("\n");
+};
+
 /** `--name: value;` → Map, ignoring comments and `var()` aliases. */
 const declarations = (css: string): Map<string, string> => {
   const found = new Map<string, string>();
@@ -99,13 +137,99 @@ describe("the palette matches VISION.md §6", () => {
 
 describe("the rules VISION.md §6 states in prose", () => {
   const tokens = declarations(read("./tokens.css"));
+  const sources = rendererSources();
 
-  test("radius stays in the 10–14px band", () => {
-    for (const name of ["--radius-sm", "--radius", "--radius-lg"]) {
-      const px = Number.parseInt(tokens.get(name) ?? "", 10);
-      expect(px, name).toBeGreaterThanOrEqual(10);
-      expect(px, name).toBeLessThanOrEqual(14);
+  /*
+   * Discovered, never listed — this named its three rungs by hand, and a fourth
+   * added to `tokens.css` would have been held to nothing. Same shape as the
+   * motion ladder below, and the same fix.
+   */
+  const radiusRungs = [...tokens.keys()].filter((name) => /^--radius(-|$)/.test(name));
+
+  test("the radius ladder still has rungs to check", () => {
+    expect(radiusRungs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test.each(radiusRungs)("%s stays in the 10–14px band", (name) => {
+    const px = Number.parseInt(tokens.get(name) ?? "", 10);
+    expect(px, name).toBeGreaterThanOrEqual(10);
+    expect(px, name).toBeLessThanOrEqual(14);
+  });
+
+  /*
+   * **And every rung is worn — asked of the *class*, not of the `var()`.**
+   *
+   * US-3's acceptance line is that a token nothing draws with is a dead
+   * declaration, and the motion and type ladders below are both held to it by
+   * grepping the config and the stylesheets for `var(--name)`. That test cannot
+   * be written for radius, because a radius is spent through a Tailwind class
+   * whose name carries no part of the token: `rounded-sm` says nothing about
+   * `--radius-sm`. `--radius` passed a `var()` grep for its whole life — it was
+   * declared in `tokens.css`, mapped as `borderRadius.DEFAULT`, and worn by
+   * **0** of the 39 704 rounded corners on the 166 stagings `smoke.mjs` drives.
+   *
+   * So the rung is resolved the way the browser resolves it: through the
+   * `borderRadius` map in `tailwind.config.js` to the class family Tailwind
+   * emits for that key, and then into every source the renderer ships. A key
+   * whose classes appear nowhere is a dead rung whatever its `var()` says, and
+   * a token no live key points at is a dead token.
+   *
+   * The families are spelled the way Tailwind emits them, corner and side
+   * variants included, so `rounded-b-lg` counts for `lg` and `rounded-tl` for
+   * `DEFAULT`. `rounded-full` and `rounded-none` are Tailwind's own and are not
+   * rungs here, which is why the map is read rather than the class list.
+   *
+   * **What this cannot see, stated rather than implied.** A class is written in
+   * `src/`; whether any *stage* renders the element carrying it is a runtime
+   * question, and this check would have passed over `--radius` on HEAD for
+   * exactly that reason — `rounded` was written twice, on two inputs no
+   * screenshot has ever contained. The count that found it is `shot.mjs
+   * --census`, which reads corners off the running renderer. This one catches
+   * the weaker case a census cannot state cheaply: a rung no class anywhere
+   * points at.
+   *
+   * **`UNWORN` is the declared-debt escape and it is held from both sides.** An
+   * entry must carry the reason and the cost, and it must still be *true*: a
+   * rung listed here that something has started wearing fails, so the list can
+   * only be removed from, never left behind.
+   */
+  const UNWORN: Record<string, string> = {
+    "--radius":
+      "worn by 0 of the 39 704 rounded corners on the 166 stagings smoke.mjs drives, and " +
+      "it cannot leave tokens.css alone: shot.mjs --census reads the ladder from a " +
+      "hand-written list of three names and fails every stage at two (exit 15). " +
+      "tailwind.config.js has already moved `rounded` off it onto --radius-sm.",
+  };
+
+  test("every radius rung is worn by a class src/ writes", () => {
+    const config = read("../../tailwind.config.js");
+    const map = /borderRadius:\s*\{([\s\S]*?)\n {6}\}/.exec(config);
+    expect(map, "tailwind.config.js must still declare a borderRadius map").toBeTruthy();
+
+    const keys = [...map![1].matchAll(/^\s{8}(?:\/\*[\s\S]*?\*\/\s*)?([\w-]+|DEFAULT):\s*'([^']+)'/gm)];
+    expect(keys.length, "the borderRadius map still has keys to check").toBeGreaterThanOrEqual(3);
+
+    const side = "(?:-(?:t|r|b|l|s|e|ss|se|es|ee|tl|tr|br|bl))?";
+    const worn = new Set<string>();
+    for (const [, key, value] of keys) {
+      const suffix = key === "DEFAULT" ? "" : `-${key}`;
+      // `\b` will not do: `rounded-sm` must not satisfy `rounded` (DEFAULT).
+      const family = new RegExp(`\\brounded${side}${suffix}(?![\\w-])`);
+      if (family.test(sources)) worn.add(value);
     }
+
+    const dead = radiusRungs.filter(
+      (name) => !worn.has(`var(${name})`) && UNWORN[name] === undefined,
+    );
+    expect(dead, "radius rungs declared, worn by no class in src/, and not declared UNWORN").toEqual(
+      [],
+    );
+
+    const settled = Object.keys(UNWORN).filter((name) => worn.has(`var(${name})`));
+    expect(settled, "UNWORN entries that something has started wearing — delete them").toEqual([]);
+
+    const gone = Object.keys(UNWORN).filter((name) => !radiusRungs.includes(name));
+    expect(gone, "UNWORN entries for rungs tokens.css no longer declares").toEqual([]);
   });
 
   /*
