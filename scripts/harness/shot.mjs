@@ -16,8 +16,10 @@
  *   --echo           fail on a visible string the screen draws more than once
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
+ *   --scrollers      content hidden inside a scroller the arming guard cannot see
  *   --motion         every transition through the tokens, and silent under reduced motion
  *   --fade           every fading mask against the line box it fades over
+ *   --census         how many rungs of one ladder a screen stands on at once
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -5445,6 +5447,8 @@ function parseArgs(argv) {
     contrast: false,
     motion: false,
     fade: false,
+    census: false,
+    scrollers: false,
   }
   const positional = []
   for (let i = 0; i < argv.length; i++) {
@@ -5469,6 +5473,7 @@ function parseArgs(argv) {
     else if (arg === '--scrollers') flags.scrollers = true
     else if (arg === '--motion') flags.motion = true
     else if (arg === '--fade') flags.fade = true
+    else if (arg === '--census') flags.census = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -5492,7 +5497,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -5609,8 +5614,16 @@ async function main() {
   let tightest = { by: Infinity, text: '' }
   let inset = []
   let groups = 0
-  let strokes = []
   let small = []
+  /*
+   * Collected here, before `--expand`, for `--geometry`'s reason: unclipping the
+   * scrollers changes the geometry of everything this counts.
+   */
+  let counted = null
+  if (flags.census) {
+    await page.evaluate(() => document.fonts.ready)
+    counted = await census(page)
+  }
   if (flags.geometry) {
     await page.evaluate(() => document.fonts.ready)
     const seen = await geometry(page)
@@ -5619,7 +5632,6 @@ async function main() {
     tightest = seen.tightest
     inset = seen.inset
     groups = seen.groups
-    strokes = seen.strokes
   }
 
   if (flags.targets) {
@@ -6683,22 +6695,13 @@ async function main() {
     if (clipped.length === 0)
       console.log(
         measured === 0
-          ? `  géométrie: aucun marqueur suspendu, ${groups} groupe(s) sans cadre alignés, ${icons(strokes)}`
-          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} », ${groups} groupe(s) sans cadre alignés, ${icons(strokes)}`,
+          ? `  géométrie: aucun marqueur suspendu, ${groups} groupe(s) sans cadre alignés`
+          : `  géométrie: ${measured} mesurés, marge la plus courte ${tightest.by}px sur « ${tightest.text} », ${groups} groupe(s) sans cadre alignés`,
       )
     else {
       console.log(`  ✗ géométrie: ${clipped.length} élément(s) hors de leur cadre`)
       for (const item of clipped.slice(0, 8)) {
         console.log(`   ✗ ${item.what} « ${item.text} » — ${item.by}px à gauche du cadre`)
-      }
-      process.exitCode = 4
-    }
-    if (strokes.length > 1) {
-      console.log(
-        `  ✗ géométrie: ${strokes.length} épaisseurs de trait d'icône sur un même écran`,
-      )
-      for (const item of strokes) {
-        console.log(`   ✗ stroke-width ${item.width} — ${item.count} icône(s), près de « ${item.near} »`)
       }
       process.exitCode = 4
     }
@@ -6710,6 +6713,92 @@ async function main() {
         console.log(`   ✗ ${item.tag} « ${item.text} » — contenu rentré de ${item.by}px sous un filet pleine largeur`)
       }
       process.exitCode = 4
+    }
+  }
+  if (flags.census) {
+    /*
+     * **The census is printed whether or not it fails**, for `--fade`'s reason:
+     * a run that visited zero rounded boxes must not be able to print the same
+     * sentence as a run that measured every corner on the screen. The counts are
+     * the evidence, and a rung nobody wears is stated rather than inferred —
+     * `--radius` (12px) is declared in `tokens.css`, mapped as Tailwind's
+     * `rounded` DEFAULT, and worn by **zero** elements across all 82 stages at
+     * both sizes, which is the same shape `tailwind.config.js` deleted
+     * `shadow-card` for eleven lines above where it declares this one.
+     */
+    const rungs = counted.worn
+      .sort((a, b) => a.value - b.value)
+      .map((r) => `${r.name.replace('--radius', 'radius')} ${r.value}px ×${r.n}`)
+    const total = (list) => list.reduce((sum, item) => sum + item.n, 0)
+    const others = [
+      counted.stadiums.length > 0 ? `${total(counted.stadiums)} pastille(s)/puce(s)` : null,
+      counted.caps.length > 0
+        ? `${total(counted.caps)} embout(s) de barre à ${counted.caps.map((c) => c.value + 'px').join('/')}`
+        : null,
+    ].filter((entry) => entry !== null)
+    console.log(
+      `  recensement: ${counted.rounded} boîte(s) arrondie(s) sur ${counted.ladder.length} ` +
+        `échelon(s) déclarés — ${rungs.length === 0 ? 'aucun échelon de carte' : rungs.join(', ')}` +
+        (others.length > 0 ? `, ${others.join(', ')}` : '') +
+        (counted.unworn.length > 0 ? ` · non porté(s) ici : ${counted.unworn.join(', ')}` : '') +
+        ` · ${counted.controls.length} hauteur(s) de contrôle décidée(s) par l'auteur` +
+        (counted.controls.length > 0
+          ? ` (${counted.controls.map((c) => `${c.h}×${c.n}`).join(' ')})`
+          : '') +
+        ` · ${icons(counted.strokes)}`,
+    )
+
+    /*
+     * **The ladder has to exist.** Rename `--radius-lg` and this check would
+     * otherwise go on printing a green sentence over a ladder one rung shorter —
+     * a check people can work around is worse than none.
+     */
+    if (counted.ladder.length < 3) {
+      console.log(
+        `  ✗ recensement: ${counted.ladder.length} échelon(s) lus dans :root au lieu de 3 — ` +
+          'la mesure n’a pas d’échelle contre laquelle mesurer',
+      )
+      process.exitCode = 15
+    }
+
+    if (counted.stray.length > 0) {
+      console.log(`  ✗ recensement: ${counted.stray.length} rayon(s) hors échelle`)
+      for (const item of counted.stray.slice(0, 8)) {
+        console.log(`     ${item.value} sur ${item.size} — « ${item.near} »`)
+      }
+      process.exitCode = 15
+    }
+
+    /*
+     * Two, not one: a 10px control inside a 14px card is concentric radius and
+     * is the pattern 102 of the 164 stagings wear. Three is a screen standing
+     * on a ladder nobody is climbing.
+     */
+    if (counted.worn.length > 2) {
+      console.log(
+        `  ✗ recensement: ${counted.worn.length} échelons de rayon de carte sur un même écran — ` +
+          rungs.join(', '),
+      )
+      for (const item of counted.worn) console.log(`     ${item.value}px — « ${item.near} »`)
+      process.exitCode = 15
+    }
+
+    if (counted.strokes.length > 1) {
+      console.log(`  ✗ recensement: ${counted.strokes.length} épaisseurs de trait d'icône sur un même écran`)
+      for (const item of counted.strokes) {
+        console.log(`     stroke-width ${item.width} — ${item.count} icône(s), près de « ${item.near} »`)
+      }
+      process.exitCode = 15
+    }
+
+    if (counted.split.length > 0) {
+      console.log(
+        `  ✗ recensement: ${counted.split.length} composant(s) dessiné(s) à deux hauteurs sur un même écran`,
+      )
+      for (const item of counted.split.slice(0, 8)) {
+        console.log(`     « ${item.near} » — ${item.tall.join(' / ')}`)
+      }
+      process.exitCode = 15
     }
   }
   if (unanswered.length) console.log(`  canaux sans réponse: ${[...new Set(unanswered)].join(', ')}`)
@@ -8885,41 +8974,275 @@ async function geometry(page) {
     }
 
 
+    return { clipped: out, measured: all.length, tightest, inset, groups }
+  })
+}
+
+/**
+ * **The census: how many rungs of one ladder is a screen standing on at once?**
+ *
+ * Every measured check in this harness asks about **one** element. `--targets`
+ * asks one box against 24×24. `--contrast` asks one ink against one ground.
+ * `check:tokens` asks whether one value is on the declared ladder. None of them
+ * can ask the question a craft review actually asks, which is a question about a
+ * *distribution*: this card is standing on four radius families and five control
+ * heights at the same time, and every individual value is impeccable.
+ *
+ * That gap was falsified in both directions before this function was written.
+ * `rounded-[7px]` — an arbitrary value — turns `check:tokens` red, so the
+ * arbitrary-value hole is shut. `rounded` — 12px, a **declared** rung — put on
+ * the widget's panel left **twelve gates green, 164 stagings green over all nine
+ * existing checks, and 52 widget renderer tests green**, with the largest object
+ * on that surface wearing a third radius family nothing in the repo could see;
+ * `--census` alone went red and named the element. A rung is not a defect;
+ * standing on all of them at once is.
+ *
+ * ## Three ladders, one shape
+ *
+ * **Corner radius.** The rungs are read out of `:root` at runtime
+ * (`--radius-sm`, `--radius`, `--radius-lg`) the way `--motion` builds its
+ * allowed curve set, so renaming a token turns this red instead of quietly
+ * shrinking what it checks. The two rungs that are *not* in `:root` —
+ * `rounded-bar` (1px, declared in `tailwind.config.js` for the input meter's
+ * caps) and `rounded-full` — are not named here either: they are recognised by
+ * **shape**, because naming them would be a second copy of the ladder that can
+ * go stale.
+ *
+ *   - a radius equal to a card rung is a card corner, whatever it is on;
+ *   - otherwise a radius at or past half the element's shorter side is a
+ *     stadium or a circle — `rounded-full` on a dot, a pill, a chip — which is a
+ *     different shape and not a rung on the corner ladder;
+ *   - otherwise an element whose shorter side is under the smallest card rung
+ *     cannot wear a card rung at all: it is a cap on a bar. `LevelMeter`'s bars
+ *     measure about 6×4–9 and `tailwind.config.js` argues at length that the
+ *     10–14 band would round each of them into a dot. Round 20 read the 80
+ *     corners those 20 spans produce as « 80 spans that should be
+ *     `rounded-full` », which is wrong twice over, and this exemption is
+ *     measured rather than claimed so the next round does not repeat it;
+ *   - anything else is **off the ladder** and is a finding.
+ *
+ * The rule that fails is: at most **two** card rungs on one screen. Two, not
+ * one, because a 10px control inside a 14px card is concentric radius and is
+ * deliberate — swept over the whole list, **102 of the 164 stagings** wear
+ * exactly that pair and the remaining 62 wear `--radius-sm` alone. Three is a
+ * ladder nobody is climbing. The middle rung, `--radius` at 12px, is worn by
+ * **zero** elements in all 164 — which is why the sentence names what a run did
+ * *not* find as well as what it did, the same shape `tailwind.config.js`
+ * deleted `shadow-card` for eleven lines above where it declares this one.
+ *
+ * **Control height.** A raw height census is noise: a control that wraps is
+ * sized by the client's sentence, not by its author. So only *authored* heights
+ * are counted — a field, or a control holding at most one line box — and the
+ * rule is the sharpest one the data supports: **one component may not be drawn
+ * at two heights on one screen.** A component is its tag plus its class list,
+ * which is what a React component produces and what `--echo` already uses to
+ * recognise a repetition along a list.
+ *
+ * Swept over all 82 stages at both sizes before any fix, that rule fires on
+ * **35 stagings across 27 screens**, and on two controls:
+ *
+ *   - the widget, 16 stagings (8 stages × both sizes) — « Retirer ce moment
+ *     marqué » at **24px and 39px** on one 340px card. Its neighbour was worse
+ *     and invisible to the rule, because all five of them agreed: « Marquer
+ *     cette prise de parole » drawn **24×58.5** five times over. Both buttons
+ *     carry `min-h-[24px]` inside `<li class="group flex">`, whose
+ *     `align-items` defaults to `stretch`, so the glyph the rep aims at was
+ *     centred on the whole turn: measured on `widget-ouvert`, the seven rows of
+ *     that panel put their control's glyph at **12, 19.5 and 29.3px** from the
+ *     row top while every speaker label and first line sat at one offset. The
+ *     control column tracked how long the client spoke. `self-start` on both:
+ *     all seven now at 12px, and the widget's authored height families drop
+ *     from four to two;
+ *   - the compte-rendu, 19 stagings — **all of them at 960×600 only**, which is
+ *     the half of the matrix a comfortable pass never reads. « Voir la source
+ *     dans la transcription » at **24.38px and 48.75px**: the button is
+ *     `inline-block`, its text fits one line at 438 of 453 available pixels,
+ *     and the `opacity-0` magnifier that follows it does not — so the
+ *     followable line is drawn two line boxes tall with nothing on the second,
+ *     and `hover:bg-inner` fills all of it. Not fixed here: it is
+ *     `src/screens/session/CompteRenduDocument.tsx`, another lane's file.
+ *
+ * Note what the rule cannot see, since a blind spot stated is a blind spot the
+ * next round does not have to rediscover: a component drawn at **one** wrong
+ * height everywhere — the five 24×58.5 bookmarks — is a single-valued
+ * distribution and passes. The printed line is the evidence for that case; the
+ * failure is only for the split.
+ *
+ * The looser rules were measured and rejected rather than guessed, over the
+ * same 164 stagings: « two controls in one flex row at different heights »
+ * fires on **90 stagings / 45 screens** (a ghost beside a primary is a
+ * hierarchy, not a defect), and « one accessible name, two heights » on
+ * **66 / 33** (the day grid's *Aujourd'hui* and the nav's *Aujourd'hui* are two
+ * different controls that share a word).
+ *
+ * **Icon stroke.** Moved here from `--geometry`, unchanged, because it is the
+ * same question and there should be one place that asks it.
+ */
+async function census(page) {
+  return page.evaluate(() => {
+    const round = (n) => Math.round(n * 100) / 100
+
     /*
-     * **One icon weight, and there were three.**
+     * **The ladder is read, not written.** If `:root` stops answering, this
+     * check has no ladder to measure against and must say so — a census over an
+     * empty ladder is the « green because it looked at nothing » failure this
+     * harness has now shipped three times.
+     */
+    const root = getComputedStyle(document.documentElement)
+    const rungs = []
+    for (const name of ['--radius-sm', '--radius', '--radius-lg']) {
+      const raw = root.getPropertyValue(name).trim()
+      const value = Number.parseFloat(raw)
+      if (raw !== '' && Number.isFinite(value)) rungs.push({ name, value: round(value) })
+    }
+    const ladder = rungs.map((r) => r.value)
+    const smallest = Math.min(...ladder)
+
+    const CORNERS = [
+      'borderTopLeftRadius',
+      'borderTopRightRadius',
+      'borderBottomRightRadius',
+      'borderBottomLeftRadius',
+    ]
+    const worn = new Map()
+    const stadiums = new Map()
+    const caps = new Map()
+    const stray = []
+    let rounded = 0
+
+    /*
+     * **Authored, not wrapped.** A control holding two line boxes is as tall as
+     * the client's sentence made it; only a control holding one — or a field,
+     * which has no child text node at all — has a height its author chose.
+     */
+    const lineBoxes = (el) => {
+      let n = 0
+      const walk = (node) => {
+        for (const child of node.childNodes) {
+          if (child.nodeType === 3 && (child.textContent ?? '').trim() !== '') {
+            const range = document.createRange()
+            range.selectNodeContents(child)
+            for (const rect of range.getClientRects()) if (rect.height > 0) n += 1
+          } else if (child.nodeType === 1) walk(child)
+        }
+      }
+      walk(el)
+      return n
+    }
+
+    const shapes = new Map()
+    const heights = new Map()
+    const CONTROLS =
+      'button, a[href], input:not([type="hidden"]), select, [role="button"], [role="tab"], [role="switch"], [role="checkbox"]'
+
+    for (const el of document.querySelectorAll('*')) {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
+      const box = el.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0) continue
+      const shorter = Math.min(box.width, box.height)
+      const near = ((el.getAttribute('aria-label') || el.textContent || '').trim() || el.tagName)
+        .replace(/\s+/g, ' ')
+        .slice(0, 30)
+
+      const values = [...new Set(CORNERS.map((corner) => style[corner]).filter((v) => v !== '0px' && v !== '0%'))]
+      if (values.length > 0) rounded += 1
+      for (const value of values) {
+        /*
+         * A percentage radius is off the ladder by construction: it is a share
+         * of the box, so it is a different value on every element that wears it.
+         */
+        if (value.includes('%')) {
+          stray.push({ value, near, size: `${Math.round(box.width)}×${Math.round(box.height)}` })
+          continue
+        }
+        const radius = round(Number.parseFloat(value))
+        const rung = rungs.find((r) => Math.abs(r.value - radius) < 0.51)
+        if (rung) {
+          const seen = worn.get(rung.name) ?? { value: rung.value, n: 0, near }
+          seen.n += 1
+          worn.set(rung.name, seen)
+        } else if (shorter < smallest && radius < smallest) {
+          /*
+           * Asked **before** the stadium test, and the order is load-bearing: a
+           * meter bar is 6px wide and its height rides the rep's voice, so at
+           * 2px tall a 1px cap is also « at least half the shorter side » and
+           * the same twenty spans were counted as caps on one frame and as
+           * pills on the next. A cap is the more specific case, so it goes first.
+           */
+          const seen = caps.get(String(radius)) ?? { n: 0, near }
+          seen.n += 1
+          caps.set(String(radius), seen)
+        } else if (radius >= shorter / 2 - 0.01) {
+          const seen = stadiums.get(String(radius)) ?? { n: 0, near }
+          seen.n += 1
+          stadiums.set(String(radius), seen)
+        } else {
+          stray.push({ value, near, size: `${Math.round(box.width)}×${Math.round(box.height)}` })
+        }
+      }
+
+      if (el.matches(CONTROLS)) {
+        const field = el.tagName === 'INPUT' || el.tagName === 'SELECT'
+        if (field || lineBoxes(el) <= 1) {
+          const height = round(box.height)
+          const key = `${el.tagName.toLowerCase()}.${[...el.classList].sort().join('.')}`
+          const shape = shapes.get(key) ?? { near, tall: new Map() }
+          shape.tall.set(height, (shape.tall.get(height) ?? 0) + 1)
+          shapes.set(key, shape)
+          const tally = heights.get(String(height)) ?? { n: 0, near }
+          tally.n += 1
+          heights.set(String(height), tally)
+        }
+      }
+    }
+
+    /*
+     * Sub-pixel is not a second height: a 24px box lands on 23.99 under a
+     * fractional line-height, exactly as `--targets` allows. A whole pixel apart
+     * is a decision somebody made.
+     */
+    const split = []
+    for (const [key, shape] of shapes) {
+      const tall = [...shape.tall.keys()]
+      if (tall.length < 2) continue
+      if (Math.max(...tall) - Math.min(...tall) <= 1) continue
+      split.push({
+        near: shape.near,
+        shape: key.slice(0, 80),
+        tall: [...shape.tall].sort((a, b) => a[0] - b[0]).map(([h, n]) => `${h}px ×${n}`),
+      })
+    }
+
+    /*
+     * **One icon weight, and there were three.** Moved here from `--geometry`
+     * unchanged: it is the same question this function exists to ask, and it was
+     * the only distribution rule in the repo before it.
      *
-     * Measured over every stage at both sizes: 500 icons at `stroke-width: 2`
-     * (lucide's default, 36 screens, sizes 12 to 22), **250 at 1.75** (25 screens,
-     * all 16px — two hand-rolled `<svg>`s, the app rail's glyph and the Réglages
-     * nav's, with no recorded reason for the number), and 4 at 1 on the widget.
-     * Ten scans drew two weights at once: the agenda's empty day and its
-     * out-of-window notice put a 1.75 rail glyph and a 2 lucide icon on one
-     * screen, 16px against 18–22px.
-     *
-     * Per screen rather than per product, and the distinct weights are printed on
-     * every run so drift between screens is still readable off the output — a
-     * cross-screen rule would have to carry an exemption for the widget's 10px
-     * icons, which is a decision for the surface that owns them and not for this
-     * check.
+     * Measured over every stage at both sizes when it was written: 500 icons at
+     * `stroke-width: 2` (lucide's default), 250 at 1.75 (two hand-rolled
+     * `<svg>`s with no recorded reason for the number), and 4 at 1 on the widget.
+     * Re-swept the round this moved: **792 icons, every one of them at 2, and no
+     * staging drawing two weights** — so it is a regression guard and nothing
+     * else today, which is a thing a check has to be able to say about itself.
+     * Falsified rather than assumed: putting `strokeWidth="1.75"` back on the app
+     * rail's hand-rolled glyph (`ui/Rail.tsx`) — the exact regression — turns
+     * **50 stagings across 25 screens** red, every one of them a screen that
+     * draws the rail beside a lucide icon.
      *
      * The weight is read off the `<svg>` first and off its first stroked child
      * second, because lucide puts it on the root and a hand-rolled glyph may put
      * it on the path. Icons only — anything wider than 24px is a mark or a
-     * wordmark (`ui/Logo.tsx` is 32 and 64) and has its own weight by right.
+     * wordmark (`ui/Logo.tsx` is 32 and 64) and has its own weight by right. A
+     * **filled** glyph has no stroke weight and reading one off it invented a
+     * third value: the widget's pause and stop marks are `fill="currentColor"`
+     * with no stroke, and `getComputedStyle().strokeWidth` answers the CSS
+     * initial `1px` for them.
      */
     const weights = new Map()
     for (const svg of document.querySelectorAll('svg')) {
       const box = svg.getBoundingClientRect()
       if (box.width === 0 || box.width > 24) continue
-      /*
-       * **A filled glyph has no stroke weight, and reading one off it invented a
-       * third value.** The widget's pause and stop marks are `fill="currentColor"`
-       * with no stroke at all, and `getComputedStyle().strokeWidth` answers the CSS
-       * initial `1px` for them — so the first version of this rule reported « 2
-       * épaisseurs » on nine marks that draw no stroke, on a surface it had no
-       * finding about. The weight is taken from the element that actually declares
-       * one, and only when that element is painting a stroke.
-       */
       const carrier = svg.hasAttribute('stroke-width') ? svg : svg.querySelector('[stroke-width]')
       if (carrier === null) continue
       const painted = getComputedStyle(carrier).stroke
@@ -8931,11 +9254,21 @@ async function geometry(page) {
         seen.near = (svg.closest('button, a, label, li, div')?.textContent ?? '').trim().slice(0, 30)
       weights.set(key, seen)
     }
-    const strokes = [...weights]
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([width, seen]) => ({ width, count: seen.count, near: seen.near }))
 
-    return { clipped: out, measured: all.length, tightest, inset, groups, strokes }
+    return {
+      ladder: rungs,
+      rounded,
+      worn: [...worn].map(([name, seen]) => ({ name, value: seen.value, n: seen.n, near: seen.near })),
+      unworn: rungs.filter((r) => !worn.has(r.name)).map((r) => `${r.name} (${r.value}px)`),
+      stadiums: [...stadiums].map(([value, seen]) => ({ value, n: seen.n, near: seen.near })),
+      caps: [...caps].map(([value, seen]) => ({ value, n: seen.n, near: seen.near })),
+      stray,
+      controls: [...heights].sort((a, b) => b[1].n - a[1].n).map(([h, t]) => ({ h, n: t.n, near: t.near })),
+      split,
+      strokes: [...weights]
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([width, seen]) => ({ width, count: seen.count, near: seen.near })),
+    }
   })
 }
 

@@ -13,8 +13,8 @@ client's CRM. A defect lives in one or the other, rarely in both, and each was
 introduced after something shipped that the other could not have caught.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--no-png] [--sans-entra]
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all nine checks
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--no-png] [--sans-entra]
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all ten checks
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 

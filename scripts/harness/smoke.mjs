@@ -54,7 +54,7 @@
  * a count of characters — and `ch` is the advance of the digit zero, so it
  * rendered eighty-one. Nothing counted, so nothing noticed, for four rounds.
  *
- * It carries `--echo`, which asks the one question none of the other nine can:
+ * It carries `--echo`, which asks the one question no other pass can:
  * does this screen draw the same visible string twice? The home screen printed
  * the day in the header and again as an `h2` 108 pixels lower, under
  * « Calendrier » in 42px serif — every string correct, every contrast passing,
@@ -173,7 +173,16 @@ const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--echo', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--viewport', viewport],
+      /*
+       * `--census` is here and not merely in `shot.mjs` for the reason the
+       * repo's eighth shape names: a check nobody runs is a control that is
+       * present and does nothing. It is also the only pass that reads a
+       * *distribution* rather than one value against one rule, so it is the
+       * only one that can fail over a screen on which every individual value is
+       * impeccable — which means it is exactly the pass a hand-run reviewer
+       * would never think to add.
+       */
+      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--echo', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--census', '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''

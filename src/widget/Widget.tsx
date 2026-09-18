@@ -2821,8 +2821,21 @@ function TurnRow({
           call is the flicker DEC-14 forbids. Opacity, never `display`, so the
           keyboard can still reach it — `focus-visible:opacity-100` is what
           makes that true rather than merely intended.
+
+          **`self-start`, because the row it sits in is a flex box.**
+          `align-items` defaults to `stretch`, so `min-h-[24px]` was a floor on
+          a control that had no ceiling: measured on `widget-ouvert`, the five
+          of these on that panel were drawn **24×58.5** and their bookmark sat
+          **29.3px** from the row top — vertically centred on the whole turn,
+          a line and a half below the sentence it marks and below the speaker
+          label opposite it. The neighbouring « Retirer ce moment marqué » put
+          its glyph at 12 or 19.5 depending on how long the note was, so the
+          one column of controls on the surface a rep watches for fifty minutes
+          had no baseline: it tracked how long the client spoke. All seven rows
+          now answer 24px and 12px. `--census`'s split rule is what found it
+          and is what keeps it — no jsdom test can measure a stretched box.
         */
-        className="no-drag text-muted hover:text-brand-700 focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+        className="no-drag text-muted hover:text-brand-700 focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center self-start rounded-sm opacity-0 transition group-hover:opacity-100"
       >
         <Bookmark />
       </button>
@@ -2970,7 +2983,13 @@ function MarkRow({ mark, onForget }: { mark: MomentMark; onForget: (id: string) 
           type="button"
           onClick={() => onForget(mark.id)}
           aria-label="Retirer ce moment marqué"
-          className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm opacity-0 transition group-hover:opacity-100"
+          /*
+            `self-start` for `TurnRow`'s reason, and this is the instance that
+            was visible to the check: a one-line note drew this × at 24px and a
+            two-line note at **39px**, on one card, so the same control moved
+            8px down the row whenever the rep's own sentence wrapped.
+          */
+          className="no-drag text-muted hover:text-danger focus-visible:opacity-100 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center self-start rounded-sm opacity-0 transition group-hover:opacity-100"
         >
           <span aria-hidden className="text-ui leading-none">
             ×
