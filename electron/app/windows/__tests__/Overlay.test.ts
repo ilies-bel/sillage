@@ -183,6 +183,50 @@ test('a display going away puts the pill back on screen with no widget:resize', 
   assert.ok(staging.window.state.bounds > sent, 'la fenêtre n’a pas été déplacée')
 })
 
+test('one frame that changes no size cannot move the pill', () => {
+  /*
+   * **The panel's exit sends a box whose two numbers come from different
+   * layouts, and it moved the pill 162 pixels and kept it there.**
+   *
+   * Driven on the shipped `Overlay` with the three boxes `scripts/e2e.mjs`
+   * measured on the real window, in order. The middle one is the frame the exit
+   * produces: the pill has already returned to the top of the content
+   * (`pillTop: 20`) while the wrapper is still the open height (258). It asks
+   * for a 258-tall window whose pill sits where the collapsed one's did, near
+   * the bottom of the work area — which cannot be honoured, so `placeWindow`
+   * clamps it, correctly. The cost is that the anchor is read back off the
+   * window on the next message, so the clamp is inherited as though the rep had
+   * dragged the pill there.
+   *
+   * The existing tests here could not see it: every one of them sends a single
+   * measurement, and this needs three in a row with a shrink at the end.
+   */
+  const staging = staged([LAPTOP])
+
+  staging.overlay.resize({ width: 321, height: 78, pillTop: 20, pillHeight: 38 })
+  const anchored = pillTop(staging.window.state, 20)
+
+  // Opening. The pill is the anchor, so it does not move — this half already held.
+  staging.overlay.resize({ width: 380, height: 258, pillTop: 199, pillHeight: 38 })
+  assert.equal(
+    pillTop(staging.window.state, 199),
+    anchored,
+    'ouvrir le panneau a déplacé la pastille',
+  )
+
+  // The frame that lies: the open size, the collapsed offset.
+  staging.overlay.resize({ width: 380, height: 258, pillTop: 20, pillHeight: 38 })
+  // And the real collapse behind it.
+  staging.overlay.resize({ width: 321, height: 78, pillTop: 20, pillHeight: 38 })
+
+  const settled = pillTop(staging.window.state, 20)
+  assert.equal(
+    settled,
+    anchored,
+    `la pastille s’est arrêtée ${settled - anchored} px plus haut qu’avant l’ouverture`,
+  )
+})
+
 test('a window already on a display is left exactly where it is', () => {
   // Idempotence is what makes it safe to call on every `display-metrics-changed`,
   // including the ones fired for a display the pill is not on.

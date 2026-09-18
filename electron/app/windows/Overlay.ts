@@ -728,19 +728,58 @@ export class Overlay {
       height: Math.round(box.pillHeight) || this.#pillHeight,
     }
 
-    const origin = placeAroundPill(pill, to, areas, this.#size)
-    this.#size = to
-    this.#pillTop = pill.offsetTop
-    this.#pillHeight = pill.height
+    /*
+     * **A message that changes no size is not a resize, and one frame of it
+     * moved the pill 162 pixels and kept it there.**
+     *
+     * The two numbers in a box come from one layout pass or they are not a
+     * measurement: `height` says how tall the frame is and `pillTop` says how
+     * much of it is above the pill, so `pillTop` cannot change while `height`
+     * stands still. The widget's panel exit produces exactly that frame — the
+     * pill is already back at the top of the content while the wrapper is still
+     * the open height. Measured on the shipped `Overlay`, pressing *Replier*:
+     *
+     *   box={380,258,pillTop:199} winY=1021  → y=842   pill stays at 1041  ✓
+     *   box={380,258,pillTop:20}  winY=842   → y=859   ← the frame that lies
+     *   box={321,78,pillTop:20}   winY=859   → y=859   pill now at 879
+     *
+     * The middle one asks for a 258-tall window whose pill is 20px from its top
+     * and 1041px down a 1123px work area. That cannot be honoured, so
+     * `placeWindow` clamps it — correctly; the rule it is enforcing is the one
+     * that keeps a frameless always-on-top window recoverable. But the anchor is
+     * read back off the window on the next message, so a clamp is remembered as
+     * though the rep had dragged the pill there, and the third message settles
+     * 162px above where the first one started. Transient in, permanent out.
+     *
+     * So a box that reports the size the window already has is answered and not
+     * acted on: nothing about where this window belongs has changed, and
+     * `#pillTop` is not updated either, because recording an offset the frame
+     * contradicts is how the next message inherits the lie. `#measured` and the
+     * first show are *not* skipped — the renderer's first measurement is the cue
+     * to become visible, and a widget that never appears over a recording is a
+     * worse failure than any placement.
+     *
+     * The frame itself is the renderer's to stop emitting; this is the half that
+     * decides whether one bad frame is a flicker or a move.
+     */
+    const resized = !this.#measured || to.width !== this.#size.width || to.height !== this.#size.height
+    const origin = resized
+      ? placeAroundPill(pill, to, areas, this.#size)
+      : { x, y }
+    if (resized) {
+      this.#size = to
+      this.#pillTop = pill.offsetTop
+      this.#pillHeight = pill.height
 
-    // One call, so the move and the resize cannot be observed apart — two calls
-    // draw a frame of the new size at the old origin, which over a video call
-    // reads as a flinch.
-    this.#moving = true
-    try {
-      window.setBounds({ ...origin, ...to })
-    } finally {
-      this.#moving = false
+      // One call, so the move and the resize cannot be observed apart — two
+      // calls draw a frame of the new size at the old origin, which over a video
+      // call reads as a flinch.
+      this.#moving = true
+      try {
+        window.setBounds({ ...origin, ...to })
+      } finally {
+        this.#moving = false
+      }
     }
     /*
      * **The pass-through survives a resize, and that took a bug to learn.**
@@ -771,7 +810,9 @@ export class Overlay {
     // renderer has already acted on is the previous value that edge is measured
     // against. Returned as well, because the renderer needs it before it lays
     // the panel out and a broadcast is one tick too late for that.
-    this.#above = opensAbove({ ...pill, screenTop: origin.y + pill.offsetTop }, areas)
+    // From the offset this window is actually laid out with — which is the one
+    // just recorded, or the one that stood when the box changed no size.
+    this.#above = opensAbove({ ...pill, screenTop: origin.y + this.#pillTop }, areas)
     return { ok: true, above: this.#above }
   }
 
