@@ -173,4 +173,35 @@ if (renderer.length > 0) {
   }
 }
 
+/*
+ * **What this suite did not run, said out loud, and counted.**
+ *
+ * `npm run test:e2e` is the only thing in this repo that starts the real main
+ * process — the preload, the IPC channel names, the Zod schemas on both sides
+ * of them, the SQLite file, the boot sweep, `before-quit`, the second
+ * `BrowserWindow`. It is in neither gate: not here, not in `npm run check`'s
+ * twelve. It cannot be. It needs a Vite dev server on a port this script does
+ * not own, a Rust addon, 489 MB of weights and a display, and CI is
+ * `ubuntu-latest` with `--ignore-scripts`; a gate that is red on every machine
+ * for a reason unrelated to the change is a gate people learn to skip, which is
+ * strictly worse than one that is honest about its edges.
+ *
+ * What it must not do is let two green suites read as « the product is green ».
+ * This round measured the walk at **20 of 38 failing** on a tree where both
+ * gates were green, and at least one of those steps had been failing for 105
+ * commits with nobody looking. So the number is printed from the walk itself
+ * rather than written down here — a step added there changes this line, and a
+ * sentence that cannot go stale is the only kind worth printing.
+ *
+ * `scripts/e2eWalk.test.mjs` is the part of it that *is* a check: it reads the
+ * walk in this suite and refuses the two shapes that cost this round.
+ */
+const walk = readFileSync(join(ROOT, 'scripts', 'e2e.mjs'), 'utf8')
+const walkSteps = [...walk.matchAll(/await step\(\s*['"`]/g)].length
+console.log(
+  `\nℹ ${walkSteps} étape(s) de bout en bout ne sont dans aucune des deux portes : ` +
+    'le vrai processus principal n’est démarré que par « npm run test:e2e » ' +
+    '(serveur de dev requis). Lancez-le avant de dire que tout est vert.',
+)
+
 process.exit((result.status ?? 1) || rendererStatus)
