@@ -367,11 +367,33 @@ export function Widget() {
   const { shown: cardShown, leaving: cardLeaving } = useDeparture(card !== null)
   /**
    * The panel, held the same way — it is the largest thing on this window and it
-   * left between two frames. The condition is the press, so `useDismiss` would
-   * serve the chevron and not the three other ways it closes (the footer's
-   * *Replier*, the meeting ending, the window going); one hook covers all four.
+   * left between two frames.
+   *
+   * **The condition is not the press.** It shipped as `useDeparture(open)` with
+   * `meetingId !== null` ANDed at the render site, *outside* the hold — so the
+   * chevron faded and the meeting ending tore the panel off on the frame
+   * `widget:state` answered `{ meeting: null }`. Driven with the same sampler
+   * `shot.mjs` uses, at 1280×800: the chevron gives « 11 images, entre les deux
+   * 5, dernière 0.000 », the meeting ending gave « 9 images, entre les deux 0,
+   * dernière 1.000 » and no exit class at all. `EndOfMeetingWatch` ends a call
+   * on every meeting that runs past its grace, so that is the route a rep meets
+   * on nearly every call, and the object being torn away at full opacity is
+   * 340×205 over the client's face.
+   *
+   * The docblock this replaces also named « the footer's *Replier* » as one of
+   * four routes. There is no such control: `onClose` has one caller in this
+   * file, inside « Arrêter définitivement ». Three routes, and the hold now
+   * takes the two that are a state rather than a gesture.
    */
-  const { shown: panelShown, leaving: panelLeaving } = useDeparture(open)
+  const { shown: panelShown, leaving: panelLeaving } = useDeparture(open && meetingId !== null)
+  /**
+   * Held for the fade, exactly as `drawnCard` is and for the same reason: the
+   * meeting is already `null` for the whole of the departure, so reading it
+   * would render an empty panel and the hold would buy nothing.
+   */
+  const lastMeetingId = useRef<string | null>(null)
+  if (meetingId !== null) lastMeetingId.current = meetingId
+  const drawnMeetingId = meetingId ?? lastMeetingId.current
   const lastCard = useRef<WidgetCard | null>(null)
   if (card !== null) lastCard.current = card
   const drawnCard = card ?? lastCard.current
@@ -885,9 +907,9 @@ export function Widget() {
               }}
             />
           )}
-          {panelShown && meetingId !== null ? (
+          {panelShown && drawnMeetingId !== null ? (
             <Panel
-              meetingId={meetingId}
+              meetingId={drawnMeetingId}
               above={above}
               leaving={panelLeaving}
               heading={meeting?.clientName ?? meeting?.title ?? ''}

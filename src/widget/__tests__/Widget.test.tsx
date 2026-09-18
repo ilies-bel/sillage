@@ -639,6 +639,50 @@ test('the panel is held long enough to leave, and comes back clean', async () =>
   expect(document.querySelectorAll('.widget-panel-arrive, .widget-panel-leaving')).toHaveLength(1)
 })
 
+/**
+ * **The route the rep actually meets, which the test beside this one did not.**
+ *
+ * The panel's exit shipped argued over four ways it closes and driven on one.
+ * The condition fed to `useDeparture` was the press, and `meetingId !== null`
+ * was ANDed at the render site *outside* the hold — so the chevron faded and
+ * the meeting ending unmounted the panel on the frame `widget:state` answered
+ * `{ meeting: null }`. Sampled frame by frame at 1280×800: the chevron gave
+ * « 11 images, entre les deux 5, dernière 0.000 » and the meeting ending gave
+ * « 9 images, entre les deux 0, dernière 1.000 » with no exit class at all.
+ *
+ * `EndOfMeetingWatch` ends a call on every meeting that runs past its grace, so
+ * this is the common exit, not the rare one — and what was being torn off at
+ * full opacity is 340×205 painted over the client's face on an always-on-top
+ * window.
+ *
+ * The harness cannot hold this: `departureOf` needs a control to press, and
+ * this route is a state change with no gesture anywhere on the surface. That is
+ * why the check lives here and why the stage could not have caught it.
+ */
+test('the panel is held when the meeting ends under the rep', async () => {
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+  fireEvent.click(screen.getByRole('button', { name: /le panneau/ }))
+  await screen.findByPlaceholderText('Noter ce moment…')
+
+  const panel = () => document.querySelector('.widget-panel-arrive, .widget-panel-leaving')
+  expect(panel()?.classList.contains('widget-panel-arrive')).toBe(true)
+
+  // Not a gesture: the watch ended it, and `session:changed` is what tells this
+  // window to re-read a channel that now answers `{ meeting: null }`.
+  bridge.when('widget:state', () => ({ mentionSentence: MENTION_SENTENCE_DEFAULT, meeting: null }))
+  bridge.emit('session:changed', { meetingId: 'm1', state: 'ended' })
+
+  await waitFor(() => {
+    expect(panel(), 'le panneau a été arraché au lieu de partir').not.toBeNull()
+    expect(
+      panel()?.classList.contains('widget-panel-leaving'),
+      'le panneau est resté sans classe de sortie',
+    ).toBe(true)
+  })
+  await waitFor(() => expect(panel()).toBeNull())
+})
+
 test('the mention card arrives and leaves too', async () => {
   const clipboard = withClipboard()
   try {

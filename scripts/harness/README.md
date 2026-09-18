@@ -14,7 +14,7 @@ introduced after something shipped that the other could not have caught.
 
 ```
 node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--no-png] [--sans-entra]
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all eight checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all nine checks
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 
@@ -44,7 +44,7 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Eight measured checks, and each exists because something shipped past a
+**Nine measured checks, and each exists because something shipped past a
 screenshot.** `--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
 the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
@@ -279,7 +279,7 @@ what `serve.mjs` drops the meta for.
 | `onboarding-suite` | step 3's **second screenful**, which the beats naming the pill and the detector put below the fold at both sizes (US-18). It presses the page turn and requires every press to move the scroller and the last beat to end up whole in the column — « does this control do anything », the question none of the nine measured checks asks |
 | `onboarding-essai-fait` | the dry run **after it answered**, with the case that matters: the rep was heard and the machine was not. That is the failure a rep cannot find on their own, because their own voice is in the transcript and the recording looks like it worked |
 | `reglages-essai` | the same dry run where a rep in trouble actually looks for it — under the *Requis* rows, one of which says « Audio · connecté », which is a device that opened and not a sound that arrived (DEC-45) |
-| `reglages-transcription` | the STT table — **the harness had never rendered it**: no stage opened this pane, and the fixture's provider rows were missing `fields`, which `ProviderRowSchema` requires and `ProviderLine` reads, so the pane threw and the whole app went blank. Seventy-four stagings and six measured checks had never touched the surfaces where HR-4, DEC-30, DEC-34 and DEC-35 live |
+| `reglages-transcription` | the STT table — **the harness had never rendered it**: no stage opened this pane, and the fixture's provider rows were missing `fields`, which `ProviderRowSchema` requires and `ProviderLine` reads, so the pane threw and the whole app went blank. Seventy-four stagings and the measured checks of the day had never touched the surfaces where HR-4, DEC-30, DEC-34 and DEC-35 live |
 | `reglages-modele` | the language-model table, same story — and where DEC-34's « no environment variable » lives: every provider setting is a declared field rendered as a text input |
 | `reglages-hors-ligne` | « Cette machine uniquement » (DEC-37) **after** the press: the one switch in this product that refuses something, and the state worth photographing is the consequence — every off-machine engine gone from the tables below, including a selected one. The fixture applies the constraint rather than flipping a flag |
 | `reglages-raccourcis` | the keyboard, printed from `app/shortcuts.ts`. Its own pane, and its own stage, because a printed table that drifts from the matcher is exactly what nobody looks at again |
@@ -303,7 +303,7 @@ what `serve.mjs` drops the meta for.
 | `review-sans-opportunite` | the gate with the opportunity unchecked — nine rows read-only, the reason stated once above the group rather than eleven times |
 | `review-citation-prose` | the prose given the provenance the fields already had (DEC-21): a « … » quotation inside the compte-rendu followed into the transcript, on the screen whose whole argument is that nothing ships unchecked |
 | `widget` | **the in-meeting widget, collapsed** (DEC-49) — its own window, which is why the stage carries `?window=widget` rather than a gesture: there is no route to it from inside the app and there must not be one. The meter is on it whether the panel is open or not |
-| `widget-sortie` | **the pill leaving** — `widget:leave`, the broadcast `Overlay.dismiss()` sends so the one surface drawn over another application fades instead of vanishing between two frames. Its picture is a blank card by construction (an exit ends at opacity zero), which is the point: `smoke.mjs` drives every stage with `--no-png` and what it takes from this one is `--motion`, which asks which end of the motion the slow part belongs to. `.widget-leaving` had been visited by none of the eight checks on any of the 104 stagings, and shipped for a round wearing the *entering* curve — a blink, then 88 ms of a fully transparent always-on-top window over the rep's call |
+| `widget-sortie` | **the pill leaving** — `widget:leave`, the broadcast `Overlay.dismiss()` sends so the one surface drawn over another application fades instead of vanishing between two frames. Its picture is a blank card by construction (an exit ends at opacity zero), which is the point: `smoke.mjs` drives every stage with `--no-png` and what it takes from this one is `--motion`, which asks which end of the motion the slow part belongs to. `.widget-leaving` had been visited by none of the checks on any staging, and shipped for a round wearing the *entering* curve — a blink, then 88 ms of a fully transparent always-on-top window over the rep's call |
 | `widget-entree` | **the pill arriving** (DEC-50) — the other end of the one motion a rep watches, and the end nobody had looked at: measured on the real window the panel had `transitionDuration: 0s`, `animationName: none` and `transform-origin` at the CSS initial centre whichever way it stacked, so it appeared between two frames over the face of the person on the call. Four assertions, three of which only a stage can make: the `widget:resize` that sized the window was taken with **nothing animating and nothing transformed** (recorded at the instant of the call, not read back afterwards — `getBoundingClientRect` includes transforms, and the first draft of this feature sent `pillHeight: 35` for a 38 px card); the reported pill matches the resting one; the curve that reached the element **exceeds 1 somewhere in its span**; and the panel's origin is the edge **on the pill's side**, both ways up |
 | `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
 | `widget-pause` | the paused call: the footer's *Pause* becomes *Reprendre* and the pill draws « En pause » where the clock was. Nothing changes on the press — only on `recording:paused`, which the stub emits the way the main process does |
@@ -313,7 +313,7 @@ what `serve.mjs` drops the meta for.
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
 told which renderer it is by `?window=widget` (`src/main.tsx`). The six widget stages are
-photographed over the app’s own canvas rather than over a video call — the eight checks measure
+photographed over the app’s own canvas rather than over a video call — the nine checks measure
 the pill against paper, and the contrast a rep actually sees is against whatever Teams is
 painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
 the harness page has five hundred pixels of paper around the pill, so the shadow lands
