@@ -48,7 +48,15 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'border-card bg-card-soft rounded-lg border px-6 py-12 text-center',
+        /*
+          `px-gutter py-gutter` and no longer `px-6 py-12`: twenty-four by
+          forty-eight, and the declared scale stops at `--space-gutter` (32). A
+          symmetric padding past the top of the ladder is not a gutter the
+          `--rhythm` pass spares — that exemption is for a one-sided indent —
+          it is a card padded off the scale, on **16 stagings**. Thirty-two a
+          side is the top rung and still the most generous box in the product.
+        */
+        'border-card bg-card-soft rounded-lg border px-gutter py-gutter text-center',
         grain && 'grain',
         className,
       )}

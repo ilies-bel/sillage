@@ -194,9 +194,18 @@ export function LevelMeter({ meetingId, variant = 'header', paused = false }: Le
        * tell them more about the microphone. Stacked, the key costs fifteen
        * pixels of header height, on the axis this screen has to spare.
        */
-      className="flex shrink-0 flex-col items-end gap-0.5"
+      /*
+        `gap-tight` between the instrument and the line that explains its grey,
+        `gap-hair` inside the instrument between the key and the bars. It was
+        `gap-0.5` outside and `gap-tight` inside — two pixels around a six-pixel
+        group, so the thing that holds the meter together was spaced wider than
+        the seam separating it from the caption underneath, which is a group
+        drawn inside out. Both values are now steps of the declared scale (2px
+        is not one), and the column is four pixels taller for it.
+      */
+      className="flex shrink-0 flex-col items-end gap-tight"
     >
-      <div className="flex items-stretch gap-tight">
+      <div className="flex items-stretch gap-hair">
       {/*
         The key. Two words, one per half, on the same baselines the bars grow
         from — so the label is not describing the meter, it is *on* the row it
