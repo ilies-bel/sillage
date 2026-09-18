@@ -205,6 +205,26 @@ type WidgetCard =
 const CARD_MOTION = (leaving: boolean): string =>
   leaving ? 'widget-card-leaving' : 'widget-card-arrive'
 
+/**
+ * **The seam between the pill and the card that hangs under it, and it was the
+ * tightest distance on the surface instead of the loosest.**
+ *
+ * Both notice cards wore `mt-tight` — 6 px — while the pill's own two halves
+ * stand `gap-inline` apart, 12. Painted at both smoke sizes, `--rhythm` reads it
+ * « 12px dedans contre 6px autour » on `widget-refus` and « 11.78px dedans contre
+ * 6.36px autour » on `widget-carte-sortie`, plus « 6px dedans contre 6px autour »
+ * for the card's own `gap-tight`, which ties with it exactly. So separation
+ * *shrank* going up the hierarchy: two rectangles, each with looser internal
+ * rhythm than the space parting them, read as one stack.
+ *
+ * `mt-row`, 16, is the first rung above the pill's 12 — `mt-inline` would tie with
+ * it and the check would be right to keep saying so. The window is the size of its
+ * own content (DEC-49), so this is ten more pixels of height reported back through
+ * `widget:resize`; `--fade`, `--motion` and `--geometry` are the passes that watch
+ * what that does.
+ */
+const CARD_SEAM = 'mt-row'
+
 export function Widget() {
   const state = useInvoke('widget:state', {})
   /*
@@ -1699,7 +1719,7 @@ function Refus({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay ${CARD_SEAM} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1786,7 +1806,7 @@ function Mention({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay ${CARD_SEAM} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>

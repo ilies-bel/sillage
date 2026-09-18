@@ -7223,7 +7223,23 @@ async function main() {
         (byRule.size > 0
           ? ` · épargnés : ${[...byRule].map(([why, n]) => `${n} ${why}`).join(', ')}`
           : '') +
-        ` · ${beat.pairs} groupe(s) imbriqué(s), ${beat.read} titre(s) mesuré(s)`,
+        ` · ${beat.pairs} groupe(s) imbriqué(s)` +
+        (beat.distributed > 0 ? ` (${beat.distributed} à espace réparti)` : '') +
+        `, ${beat.read} titre(s) mesuré(s)` +
+        /*
+         * **What claim 3 did not measure, printed rather than assumed.**
+         *
+         * `edgeDrawn` and `plane` both *remove* candidates, and a check that
+         * quietly stops looking is the third shape this repo ships. These two and
+         * `read` are the whole heading population on the screen — one straddles a
+         * scroller's edge, one ends with nothing on one of its two sides — so a
+         * change that gutted the claim would show as « 0 titre(s) mesuré(s) »
+         * beside a large second number, and not as a green run. Swept over all 170
+         * stagings the split is **356 measured, 4 straddling, 35 unpaired**,
+         * against 377 measured before the two exclusions existed.
+         */
+        (beat.straddling > 0 ? ` · ${beat.straddling} à cheval sur un bord` : '') +
+        (beat.unpaired > 0 ? ` · ${beat.unpaired} sans voisin d’un côté` : ''),
     )
 
     /*
@@ -10140,14 +10156,26 @@ const RHYTHM_ALLOWANCES = [
  * count at seven would have made the palette untunable, which is the cost
  * `--radius` paid for rounds.
  *
- * ## What it found on `main`, and it is the axis's own answer
+ * ## What it found when it was introduced, and it is the axis's own answer
  *
  * Swept over all 85 stages at both sizes: **59 553 painted spacings over 54 886
  * elements, 79.6 % of them on the ladder**; 820 gaps spared as graphics, 80 as
  * indents, 60 as typography; 254 nested group pairs and 484 headings measured.
- * **156 of the 170 stagings are red**, over **63 distinct sites** — 39 off the
+ * **156 of the 170 stagings were red**, over **63 distinct sites** — 39 off the
  * ladder, 8 groups no tighter than their surroundings, 16 headings with more room
  * below than above.
+ *
+ * **Closed the same round, and the numbers below are the *opening* ones — do not
+ * read them as a description of this tree.** The same sweep today: **51 831
+ * painted spacings over 54 872 elements, 98.1 % on the ladder**, 278 nested pairs
+ * (5 with their space distributed rather than declared), 356 headings measured,
+ * **0 of 170 stagings red**. Nineteen of the last twenty-one findings were
+ * product — lanes g, h, i and j moved padding onto the ladder, regrouped the
+ * session pill, the calendar header and the widget's card seam — and three were
+ * this pass measuring something no rep could see: a heading against a box on
+ * another plane, a heading against a box past its own scroller's edge, and a
+ * group whose interval is `justify-between`'s leftover room. Each of the three
+ * has its own docblock below, with the staging and the pixels that produced it.
  *
  * The off-ladder mass is one number: **2px, painted 9 716 times** — `p-0.5`,
  * `py-0.5`, `mt-0.5` — which outnumbers `--space-row` (16px, 3 483) by three to
@@ -10157,10 +10185,10 @@ const RHYTHM_ALLOWANCES = [
  * owes a name, or 39 sites that owe a rung, is a decision for the token lane, and
  * this pass's job is that nobody can take it without the count.
  *
- * **The fourteen green stagings are every `widget-*` stage that does not open the
- * panel** — the surface lane e regrouped this round, and the only one in the
- * product that stands on one ladder. The rule is reachable; it is one surface
- * away from being reached everywhere.
+ * **The fourteen green stagings were every `widget-*` stage that does not open the
+ * panel** — the surface lane e regrouped, and at the time the only one in the
+ * product that stood on one ladder. That it is now all 170 is the answer to the
+ * question the sentence was asking: the rule was reachable.
  */
 async function rhythm(page) {
   return page.evaluate(() => {
@@ -10304,6 +10332,82 @@ async function rhythm(page) {
       return false
     }
     const onScreen = (el) => shown(el) && !clipped(el)
+
+    /**
+     * **The plane a box is laid out on, because a distance across two of them is
+     * nobody's decision.**
+     *
+     * `clipped` answers « is this box on the screen », and a box can be on the
+     * screen, overlap the heading horizontally, and still be no part of the space
+     * above it: the Réglages sheet is `position: fixed`, so the page underneath it
+     * is *behind*, not above. Measured on `reglages` at 960×600 — h3 « Requis » at
+     * y 113.3–130.34 inside the sheet, its « box above » the calendar's own
+     * `header` at y 36–105.59 in the page behind, reported 7.7 above against 12
+     * below; and the mirror of it, h2 « Passées » in the page with its box above
+     * inside the sheet. **Nine of the fifteen claim-3 findings on `main` were this
+     * one shape**, over five `reglages-*` stagings, and every one of those headings
+     * is green with the sheet shut.
+     *
+     * The plane is the nearest `absolute` or `fixed` ancestor, which is CSS's own
+     * statement that this box's place is not decided by the flow around it — not a
+     * list of roles. `[role="dialog"]` is the case that was found; `[role="menu"]`
+     * (`src/ui/OverflowMenu.tsx`) is the same defect and this covers it without
+     * being told, and so would any popover a later round adds. `sticky` is
+     * deliberately *not* a plane: it stays in flow and its box is still spaced by
+     * the boxes around it.
+     *
+     * Memoised up the chain, so the walk is one pass over the tree and not one per
+     * candidate: 377 headings against ~1 000 boxes each would otherwise be a
+     * `getComputedStyle` per pair.
+     */
+    const planes = new Map()
+    const plane = (el) => {
+      if (el === null) return null
+      if (planes.has(el)) return planes.get(el)
+      const position = getComputedStyle(el).position
+      const answer = position === 'absolute' || position === 'fixed' ? el : plane(el.parentElement)
+      planes.set(el, answer)
+      return answer
+    }
+
+    /**
+     * **An edge that is not painted has no space beside it.**
+     *
+     * The side of a heading that matters is the side being measured, and a
+     * heading that straddles the bottom of its own scroller has no bottom edge on
+     * the screen at all. Lane a's `clipped` removes the *neighbour* that is out of
+     * sight, which is right, and left this behind: with the true neighbour gone
+     * the search walks on to a farther box, usually one pinned outside the
+     * scroller, and reports a distance nothing authored.
+     *
+     * Measured on `onboarding` at 960×600 — the h3 « Sillage s’adapte à votre
+     * vocabulaire » at y 443.42–465.11 inside a scroller whose padding box ends at
+     * **458.81**: its own paragraph, 6 px under it, is entirely below that edge and
+     * was dropped, so « below » became **25.7 px** to the sticky page-turn button
+     * at y 490.81, which lives outside the scroller. The authored rhythm is 20
+     * above and 6 below and is correct. Same shape on `onboarding-essai` at
+     * 1280×800 (16/4 read as 16/30.61) and, the other way up, on
+     * `review-garde-tapis` at 960×600, where the h2 « Email de relance (brouillon) »
+     * has its *top* edge scrolled above its scroller and « above » is 5.47 px to
+     * the sticky h1 painted over it.
+     *
+     * Four of the fifteen findings on `main`. The viewport's own fold stays not a
+     * clip, for `clipped`'s reason.
+     */
+    const edgeDrawn = (el, side) => {
+      const box = el.getBoundingClientRect()
+      const edge = side === 'top' ? box.top : box.bottom
+      for (let host = el.parentElement; host; host = host.parentElement) {
+        const style = getComputedStyle(host)
+        if (style.overflowY === 'visible') continue
+        const rect = host.getBoundingClientRect()
+        const top = rect.top + Number.parseFloat(style.borderTopWidth)
+        const bottom = rect.bottom - Number.parseFloat(style.borderBottomWidth)
+        if (edge < top - 0.5 || edge > bottom + 0.5) return false
+      }
+      return true
+    }
+
     /** The computed value. `auto` and a percentage are not lengths to compare. */
     const typed = (el, prop, fallback) => {
       try {
@@ -10446,6 +10550,37 @@ async function rhythm(page) {
       const box = el.getBoundingClientRect()
       return Math.min(box.width, box.height) <= stroke * 2 + 0.01
     }
+    /**
+     * **Free space handed out between children is not a spacing anybody chose.**
+     *
+     * `justify-content: space-between` (and `-around`, `-evenly`) puts the
+     * container's *leftover* room between its children, so the distance painted
+     * there is `container size − content size` — a residue of two other numbers,
+     * exactly the kind this pass already refuses to read when it takes margins
+     * through the Typed OM instead of `getComputedStyle` (the rail's `mt-auto`
+     * reads back as 511.03 px, a number no author wrote).
+     *
+     * Measured on `session` at 1280×800: `.meter-key` is
+     * `flex-col justify-between` with **no gap**, two 11 px words over the level
+     * meter's 28 px, and the 6 px between « moi » and « client » is what is left of
+     * the instrument's height. The pass called that group flat — « 6px dedans
+     * contre 4px autour » — against the meter's own authored `gap-hair`. The label
+     * pair is positioned *by* the drawing beside it, which is the drawing
+     * exemption one box out; there is nothing on either word to change. Five
+     * stagings, over `session`, `session-libre`, `session-sans-entra` and
+     * `reglages-essai`.
+     *
+     * **Inside only, and that asymmetry is the argument rather than a convenience.**
+     * The *outer* measure is already immune: it is `Math.min`, so a distributed
+     * row's filler is the one distance it never picks — which is why the docblock
+     * above chose `Math.min` in the first place. The *inner* measure is `Math.max`,
+     * so it picks the filler every time. The declared gap is still compared, so a
+     * `justify-between` group that also asks for 12 px between its children is
+     * measured on the 12 it asked for.
+     */
+    const DISTRIBUTED = new Set(['space-between', 'space-around', 'space-evenly'])
+    let distributedGroups = 0
+
     /** Edge-to-edge distances between a container's groups, on its own axis. */
     const distances = (container) => {
       const style = getComputedStyle(container)
@@ -10484,7 +10619,11 @@ async function rhythm(page) {
         const inside = getComputedStyle(kid)
         if (!laid(inside) || drawing(kid) || separator(kid)) continue
         if ([...kid.children].filter(shown).length < 2) continue
-        const within = distances(kid)
+        // See `DISTRIBUTED`: the painted intervals of such a group are its own
+        // leftover room, so only the gap it declared is a decision.
+        const shares = DISTRIBUTED.has(inside.justifyContent)
+        if (shares) distributedGroups += 1
+        const within = shares ? null : distances(kid)
         const declaredInner = Math.max(typed(kid, 'column-gap', 0) ?? 0, typed(kid, 'row-gap', 0) ?? 0)
         // The loosest distance *inside* the group, against the tightest
         // *between* groups: « tight groups, generous separation » stated exactly.
@@ -10512,13 +10651,26 @@ async function rhythm(page) {
     const boxes = visible.map((el) => ({ el, box: el.getBoundingClientRect() }))
     const headings = []
     let read = 0
+    let straddling = 0
+    let unpaired = 0
     for (const head of document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')) {
       if (!onScreen(head)) continue
+      /*
+       * Both edges, because both sides are compared and a heading missing either
+       * one is not half-measurable, it is unmeasurable — see `edgeDrawn`.
+       */
+      if (!edgeDrawn(head, 'top') || !edgeDrawn(head, 'bottom')) {
+        straddling += 1
+        continue
+      }
+      const room = plane(head)
       const box = head.getBoundingClientRect()
       let above = null
       let below = null
       for (const { el, box: other } of boxes) {
         if (el === head || head.contains(el) || el.contains(head)) continue
+        // See `plane`: a box the flow around this heading does not place.
+        if (plane(el) !== room) continue
         /*
          * Horizontally over the heading, by at least half the narrower of the
          * two: a box in the next column is not the space above this title.
@@ -10534,7 +10686,10 @@ async function rhythm(page) {
           if (below === null || gap < below) below = gap
         }
       }
-      if (above === null || below === null) continue
+      if (above === null || below === null) {
+        unpaired += 1
+        continue
+      }
       read += 1
       if (below - above > finest) {
         headings.push({
@@ -10556,6 +10711,9 @@ async function rhythm(page) {
       declaredPairs,
       flat,
       read,
+      straddling,
+      unpaired,
+      distributed: distributedGroups,
       headings,
     }
   })

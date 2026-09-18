@@ -546,7 +546,23 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month, inRange.length))}
         </h1>
 
-        <div className="flex items-center gap-inline">
+        {/*
+          `gap-row` and not `gap-inline`, because two unrelated controls cannot
+          stand as close together as the parts of one of them.
+
+          `StatusControl` draws « ● Audio à vérifier › » with `gap-inline` between
+          its own label and its chevron; this row put the same 12 px between that
+          whole chip and *Démarrer une réunion*. `--rhythm` reads it « 12px dedans
+          contre 12px autour » at both smoke sizes on `reglages-essai`, which is
+          the staging where the status has something to say.
+
+          It is the outer distance that moves rather than the chip's, because the
+          ladder has no step between 8 (the chip's dot to its word) and 12, and
+          because there is room: measured at 960×600 the header's title ends at
+          x 414.28 and this group starts at 792.66 — 378 px of `justify-between`
+          filler between them, so four more pixels here take nothing from anything.
+        */}
+        <div className="flex items-center gap-row">
           {/*
             The one general status (DEC-32). VISION.md §6 puts it here and
             nowhere else — this header is the only one in the product that is
