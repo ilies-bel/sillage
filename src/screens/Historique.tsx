@@ -323,15 +323,48 @@ export function Historique({
             A collapsed list is now the calendar's list; an expanded row is a
             card, once.
           */
-          <ul
-            aria-label="Appels enregistrés"
-            className="divide-y divide-[var(--border-subtle)]"
-          >
-            {rows.map((row) => (
+          /*
+            **The hairline is on the row, because `divide-*` was repainting the
+            open record's box.**
+
+            This list wore `divide-y divide-[var(--border-subtle)]` and the open
+            row wore `border-card` — and `divide-*` compiles to a
+            `border-color` *shorthand* on `& > :not([hidden]) ~ :not([hidden])`,
+            which is specificity (0,3,0) against a utility's (0,1,0). Measured
+            on the shipped `historique@1280×800`, the open record's four sides:
+
+                border-top    rgb(226,233,239) 1px
+                border-right  rgb(226,233,239) 1px
+                border-bottom rgb(226,233,239) 0px
+                border-left   rgb(226,233,239) 1px
+
+            `rgb(226,233,239)` is `--border-subtle`, the divider's own colour —
+            not the `--border-card` `rgb(211,222,230)` the row asks for, which
+            is ΔL* 12.13 from the ground against the divider's 5.84. So « the
+            stroke marks the open record, not the list » was drawing the open
+            record in the list's own hairline, at half the contrast, and
+            `divide-y`'s `border-bottom-width: 0` had taken the bottom edge of
+            the card away entirely: three sides in the wrong colour and a fourth
+            that was not painted at all.
+
+            A row cannot both be a divided child and own a box, so the divider
+            comes off the container and onto the rows that want one. `rule` is
+            false for the first row (nothing above it to divide from), for the
+            open row (it has its own edge) and for the row *after* it (the
+            card's bottom edge and `my-hair` are already there, and a hairline
+            two pixels under a border is the list reading as two grammars).
+          */
+          <ul aria-label="Appels enregistrés">
+            {rows.map((row, index) => (
               <Row
                 key={row.meeting.id}
                 row={row}
                 expanded={expanded === row.meeting.id}
+                rule={
+                  index > 0 &&
+                  expanded !== row.meeting.id &&
+                  expanded !== rows[index - 1].meeting.id
+                }
                 onToggle={() => toggle(row.meeting.id)}
               />
             ))}
@@ -393,10 +426,16 @@ export function Historique({
 interface RowProps {
   row: HistoryRow
   expanded: boolean
+  /**
+   * Whether this row draws the list's hairline above itself. Decided by the
+   * list, which is the only thing that can see a row's neighbours — the note
+   * at the `<ul>` says why it is not `divide-y`.
+   */
+  rule: boolean
   onToggle: () => void
 }
 
-function Row({ row, expanded, onToggle }: RowProps) {
+function Row({ row, expanded, rule, onToggle }: RowProps) {
   const { meeting } = row
   const self = useRef<HTMLLIElement>(null)
 
@@ -435,14 +474,24 @@ function Row({ row, expanded, onToggle }: RowProps) {
         // The stroke marks the open record, not the list. `-mx-px` so the
         // border sits over the hairlines rather than beside them, and the row
         // does not step sideways as it opens.
-        expanded ? 'bg-card border-card -mx-px my-hair rounded-sm border' : 'bg-transparent',
+        expanded
+          ? 'bg-card border-card -mx-px my-hair rounded-sm border'
+          : cn('bg-transparent', rule && 'border-subtle border-t'),
       )}
     >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="hover:bg-card-soft w-full text-left transition"
+        /*
+          `--bg-subtle` and not `--bg-card-soft`: the row sits on the canvas,
+          and `--bg-card-soft` on `--bg-canvas` is ΔL* **0.693** — below the
+          just-noticeable difference, so the only feedback this control gave on
+          hover was one a display cannot resolve. `--bg-subtle` is ΔL* **2.252**
+          there, and it is the hover the calendar's rows already use for the
+          same object one click away.
+        */
+        className="hover:bg-subtle w-full text-left transition"
       >
         <UiRow as="div" density="roomy" align="center" className="bg-transparent">
           {/*
@@ -602,7 +651,17 @@ function Record({
   if (!record) return <p className="text-muted px-block pb-row text-ui">Chargement…</p>
 
   return (
-    <div className="bg-inner border-subtle grid grid-cols-2 gap-6 border-t px-block py-row">
+    /*
+      No fill: this is the inside of the open record, not a surface on it.
+
+      It wore `--bg-inner` `rgb(255,255,255)` on the record's `--bg-card`
+      `rgb(253,254,254)` — ΔL* **0.418**, measured in the page, which is the
+      same number the review gate's field rail retired as « the box and the
+      thing it sits on are the same colour ». The `border-t` below the excerpt
+      is what separates the record's heading from its contents, and it was
+      already doing all of it.
+    */
+    <div className="border-subtle grid grid-cols-2 gap-6 border-t px-block py-row">
       {/*
         **No « TRANSCRIPTION » over it.** A transcript names itself: every row is
         an offset, a side and a sentence, and nothing else on this record looks

@@ -1014,3 +1014,104 @@ describe('Historique is the expanded form of the calendar’s search', () => {
     expect(screen.getByText('Chargement…')).toBeTruthy()
   })
 })
+
+/**
+ * **Who owns the stroke around the open record.**
+ *
+ * The list wore `divide-y divide-[var(--border-subtle)]` and the open row wore
+ * `border-card`, and `divide-*` compiles to a `border-color` *shorthand* on
+ * `& > :not([hidden]) ~ :not([hidden])` — specificity (0,3,0) against the
+ * utility's (0,1,0). Measured in the shipped renderer on `historique@1280×800`,
+ * the open record's own four sides came back
+ * `rgb(226,233,239) 1px / 1px / 0px / 1px`: three sides painted in the
+ * *divider's* colour (ΔL* 5.84 from the ground) instead of the `border-card`
+ * `rgb(211,222,230)` it asks for (ΔL* 12.13), and a bottom edge that
+ * `divide-y`'s `border-bottom-width: 0` had removed altogether.
+ *
+ * **These two tests cannot see a colour and do not claim to.** jsdom resolves
+ * no stylesheet and measures every box as zero, so what is asserted here is the
+ * *mechanism* — which element owns the hairline — because that is what decided
+ * the paint. The colours are in the commit body, measured with a probe against
+ * the running renderer at both smoke sizes.
+ */
+describe('the stroke marks the open record, and the list does not repaint it', () => {
+  const fourRows = () =>
+    answered({
+      rows: [
+        row({ meeting: meeting({ id: 'm1', clientName: 'Acme Industries' }) }),
+        row({ meeting: meeting({ id: 'm2', clientName: 'Nordis' }) }),
+        row({ meeting: meeting({ id: 'm3', clientName: 'Groupe Lefort' }) }),
+        row({ meeting: meeting({ id: 'm4', clientName: 'Sertim' }) }),
+      ],
+    })
+
+  /*
+   * The list's *own* rows: an open record contains lists of its own (the
+   * intents, the group chips), so `getAllByRole('listitem')` scoped to the
+   * list still returns their items too and the fourth row stops being the
+   * fourth row the moment one opens.
+   */
+  const items = (): HTMLElement[] =>
+    [...screen.getByRole('list', { name: 'Appels enregistrés' }).children] as HTMLElement[]
+
+  const open = async (name: RegExp): Promise<void> => {
+    await screen.findByRole('list', { name: 'Appels enregistrés' })
+    await act(async () => {
+      fireEvent.click(calls().getByRole('button', { name }))
+    })
+  }
+
+  test('no ancestor of the open row sets a border colour for it', async () => {
+    fourRows()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await open(/Nordis/)
+
+    const opened = items()[1]
+    expect(opened.className).toContain('border-card')
+
+    /*
+     * The whole defect, expressed as the thing that caused it: a `divide-*`
+     * utility anywhere above a row that draws its own box wins the
+     * `border-color` shorthand and the row is drawn in the list's hairline.
+     * Walking to the document root rather than to the `<ul>` — the rule is
+     * inherited by selector, not by nesting depth, so an ancestor three levels
+     * up would do it just as well.
+     */
+    for (let node = opened.parentElement; node; node = node.parentElement) {
+      expect(node.className).not.toMatch(/\bdivide-/)
+    }
+  })
+
+  test('the hairline is on the row, once, and never beside the open record’s edge', async () => {
+    fourRows()
+    bridge.when('history:record', () => record())
+
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await open(/Nordis/)
+
+    const [first, opened, after, last] = items()
+    // Nothing above the first row to divide it from.
+    expect(first.className).not.toMatch(/border-t\b/)
+    // The open record has its own four sides; a hairline on top of them is the
+    // list drawing the same edge twice.
+    expect(opened.className).not.toMatch(/border-t\b/)
+    // And under them: the card's own bottom edge plus `my-hair` is already
+    // there, so a hairline two pixels below it is two grammars for one gap.
+    expect(after.className).not.toMatch(/border-t\b/)
+    // Everywhere else the list is still a divided list.
+    expect(last.className).toMatch(/border-t\b/)
+    expect(last.className).toContain('border-subtle')
+  })
+
+  test('with nothing open, every row but the first draws the hairline', async () => {
+    fourRows()
+
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await settled()
+
+    const drawn = items().map((li) => /border-t\b/.test(li.className))
+    expect(drawn).toEqual([false, true, true, true])
+  })
+})
