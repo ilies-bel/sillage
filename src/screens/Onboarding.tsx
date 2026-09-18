@@ -210,8 +210,37 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
 
   const index = ORDER.indexOf(step)
 
+  /*
+   * **No `.grain` on this screen, and it is the one measurement nobody had
+   * taken.**
+   *
+   * VISION §6 names the surfaces the tile is for — « splash, empty transcript
+   * pane, empty signal rail, empty-state panels » — and then « never on dense
+   * text ». This screen is four hundred words of body prose at the muted sizes
+   * the palette only just clears AA at, and it wore `grain` on its root for
+   * twenty-one rounds.
+   *
+   * Measured on the shipped PNG at 1280×800, a glyph-free band **inside the
+   * reading column** (390,322 500×8 CSS px): σ **2.152 → 0.000**, peak-to-peak
+   * **9.0 → 0.00**, mean luminance 244.80 → 248.72 — the tile was under every
+   * sentence at full strength, indistinguishable from the empty margin beside
+   * it. `--text-muted` #5d6b76 goes from 4.799:1 under the tile's darkest pixel
+   * to 4.908:1 on the flat ground.
+   *
+   * Two things this is *not*. It is not the splash: measured the same way, the
+   * splash's prose sits inside a `bg-scrim` card whose ground is already
+   * σ 0.000 while its canvas grains at 2.149, so the tile never reaches a word
+   * there and its `.grain` stays — `index.css` and VISION both name that file
+   * beside this one, from the class list rather than from the pixels. And it is
+   * not « paint an opaque ground under the measure »: tried, screenshotted, and
+   * the 58ch column came out as a lighter slab cut hard at the text's own edges
+   * with no padding around it, which is chrome this screen deliberately dropped.
+   *
+   * The texture is not lost to the product: `Splash` and `ui/EmptyState` still
+   * carry it, which is both of §6's listed surfaces that exist today.
+   */
   return (
-    <div className="bg-canvas grain flex h-full flex-col">
+    <div className="bg-canvas flex h-full flex-col">
       {/*
         Centred, and the column is the same `.measure` every prose surface in
         this app uses. It was left-aligned against the window edge, which on a
@@ -220,7 +249,14 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         failed to load. `mx-auto` on the header, the body and the footer alike,
         so the three stay on one axis as the step changes height.
       */}
-      <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-row pt-7">
+      {/*
+          `pt-7` was 28px, and the ladder's rungs are 4/6/8/12/16/20/32 — a
+          number this file chose for itself, painted on 18 of this screen's
+          stagings. It steps with the window like the calendar's own header:
+          20 at 960×600, where every step of this screen already overflows its
+          box, and 32 above the `lg` breakpoint. Net at the tight size, −8.
+        */}
+        <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-row pt-block lg:pt-gutter">
         {/* See `ui/Logo.tsx` — this drew the previous product's mark, invisibly. */}
         <Logo className="h-8 w-8 self-center" />
         <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
