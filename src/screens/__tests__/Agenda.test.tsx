@@ -16,6 +16,7 @@
  *    list is empty, the reason says so, and *Nouvelle réunion* is still there —
  *    because without Graph it is the only way into the product.
  */
+import { readFileSync } from 'node:fs'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { CalendarEvent } from '../../../electron/core/contracts/calendar.ts'
@@ -1451,6 +1452,145 @@ const account = () => ({
   username: 'moi@esn.fr',
   name: 'Moi',
   tenantId: 't1',
+})
+
+// ── The floor size (HR-2, `app/main.ts` 960×600) ────────────────────────────
+
+/**
+ * **At the floor size, more of the window was chrome than was meetings.**
+ *
+ * Measured on the shipped screen through `scripts/harness/shot.mjs` at
+ * 960×600 — the minimum `app/main.ts` declares, which is a size a rep can put
+ * this window at, not a hypothesis — against the same screen at 1280×800:
+ *
+ *                              960×600            1280×800
+ *     barre de titre        34 560 px²   6.0 %   46 080 px²   4.5 %
+ *     rail                  99 264 px²  17.2 %  171 136 px²  16.7 %
+ *     en-tête               63 970 px²  11.1 %   86 163 px²   8.4 %
+ *     colonne calendrier   123 496 px²  21.4 %  218 370 px²  21.3 %
+ *     ————————————————————————————————————————————————————————————
+ *     chrome permanente    321 290 px²  55.8 %  521 749 px²  51.0 %
+ *     lignes de réunion    153 200 px²  26.6 %  277 326 px²  27.1 %
+ *
+ * The figure that started this was « 45 % », and it is the *width*: the rail
+ * and the calendar column are 176 + 256 = 432 px of 960, 45.0 %. By area the
+ * chrome was 55.8 % and the meetings 26.6 % — the reviewer's number named the
+ * half of it that is easiest to see.
+ *
+ * What made the floor worse than the comfortable size was not that the chrome
+ * had no steps — the rail and the calendar column both have one — but that the
+ * *gutters* had none: `px-gutter` on the page header and on the day column,
+ * 32 px a side, and `pt-7` above the title, were the same pixels at 960 as at
+ * 1280, across the whole 784 px to the right of the rail. The day list paid
+ * for them: its meeting title had 167 px at 960 against 375 at 1280, and three
+ * of the day's six rows were whole on screen, against all six at 1280.
+ *
+ * **What this test can and cannot see.** jsdom measures every box as zero, so
+ * it cannot re-take that measurement; what it can read is the declaration each
+ * box ships, and Tailwind's scale plus this repo's own `--space-*` tokens turn
+ * those into the pixels the browser lays out. Checked against the harness at
+ * 960: aside 240 / px 12, header pt 20 pb 12 px 16, main px 16 pt 12 — the
+ * values this arithmetic produces. The rule it holds is the one worth holding:
+ * **at the floor size the column the rep opened the window for keeps more of
+ * the width than the chrome beside it.**
+ */
+
+/*
+ * The seven `--space-*` values, read from the file that owns them rather than
+ * copied here — a second copy of a token is a second thing to update. Vitest
+ * stubs CSS imports (`css: false`), so `?raw` hands back an empty string and
+ * this has to go through the filesystem; vitest's root is the repo.
+ */
+const TOKENS = readFileSync(`${process.cwd()}/src/design/tokens.css`, 'utf8')
+
+/** `--space-row: 16px` → 16. */
+const spaceToken = (name: string): number => {
+  const found = TOKENS.match(new RegExp(`--space-${name}:\\s*(\\d+)px`))
+  if (!found) throw new Error(`token --space-${name} introuvable`)
+  return Number(found[1])
+}
+
+/**
+ * The pixel value of a spacing or width utility. Tailwind's own scale is
+ * quarter-rem steps at a 16px root (`w-60` = 60 × 4 = 240px); everything else
+ * on this screen is one of the seven named tokens.
+ */
+const px = (value: string): number =>
+  /^[\d.]+$/.test(value) ? Number(value) * 4 : spaceToken(value)
+
+/**
+ * The value a box declares for one utility, at the base step or at `lg`.
+ * `(?:^|\s)` is what keeps the base step from matching `lg:px-gutter` — a
+ * prefix is separated by a colon, never by whitespace.
+ */
+const step = (el: Element, prefix: string, at: 'base' | 'lg'): number | null => {
+  const classes = el.getAttribute('class') ?? ''
+  const found = classes.match(
+    at === 'lg'
+      ? new RegExp(`(?:^|\\s)lg:${prefix}-([\\w.]+)`)
+      : new RegExp(`(?:^|\\s)${prefix}-([\\w.]+)`),
+  )
+  return found ? px(found[1]) : null
+}
+
+describe('the chrome gives way at the size the window is allowed to be', () => {
+  /** 960×600 is `app/main.ts`'s declared minimum; `lg` is Tailwind's 1024. */
+  const FLOOR = 960
+
+  const shell = async () => {
+    signedOut()
+    const { container } = render(
+      <Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />,
+    )
+    await screen.findByRole('region', { name: 'Calendrier' })
+    const rail = screen.getByRole('navigation', { name: 'Navigation principale' }).parentElement
+    if (!rail) throw new Error('rail introuvable')
+    const aside = container.querySelector('aside')
+    // The page header, by the `h1` it holds — the calendar's pager is a
+    // `header` too, and both answer to `banner`.
+    const header = screen.getByRole('heading', { level: 1 }).closest('header')
+    const day = screen.getByRole('main')
+    if (!aside || !header) throw new Error('en-tête ou colonne calendrier introuvable')
+    return { rail, aside, header, day }
+  }
+
+  test('at 960 the day column keeps more of the width than the chrome beside it', async () => {
+    const { rail, aside, day } = await shell()
+
+    const railWidth = step(rail, 'w', 'base')
+    const asideWidth = step(aside, 'w', 'base')
+    const gutters = step(day, 'px', 'base')
+    expect(railWidth).not.toBeNull()
+    expect(asideWidth).not.toBeNull()
+    expect(gutters).not.toBeNull()
+
+    const chrome = (railWidth ?? 0) + (asideWidth ?? 0) + 2 * (gutters ?? 0)
+    const readable = FLOOR - chrome
+
+    // 176 + 240 + 2×16 = 448 against 512. It shipped at 176 + 256 + 2×32 = 496
+    // against 464, which is the finding this test was written for.
+    expect(readable).toBeGreaterThan(chrome)
+  })
+
+  test('every chrome box below lg is narrower than the one at lg, on both axes', async () => {
+    const { aside, header, day } = await shell()
+
+    const boxes: readonly (readonly [string, Element, readonly string[]])[] = [
+      ['calendrier', aside, ['w', 'px']],
+      ['en-tête', header, ['px', 'pt', 'pb']],
+      ['liste du jour', day, ['px', 'py']],
+    ]
+
+    for (const [name, el, axes] of boxes) {
+      for (const axis of axes) {
+        const base = step(el, axis, 'base')
+        const wide = step(el, axis, 'lg')
+        expect(base, `${name}: ${axis} sans valeur de base`).not.toBeNull()
+        expect(wide, `${name}: ${axis} identique à 960 et à 1280`).not.toBeNull()
+        expect(base ?? 0, `${name}: ${axis}`).toBeLessThan(wide ?? 0)
+      }
+    }
+  })
 })
 
 // Guard against the suite silently passing because nothing rendered.

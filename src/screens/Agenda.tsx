@@ -484,8 +484,18 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
       {/*
         Full width, with the border that separates it from the two columns
         below. The screen is a surface, not a page of floating cards.
+
+        **Its gutters step with the window, because at the floor they were the
+        largest thing on it that answered nothing.** `px-gutter pb-row pt-7` —
+        32px a side and 28 above — was the same number of pixels at 960×600 as
+        at 1280×800, on a header whose content is a date, a status dot and one
+        button. Measured through `shot.mjs`, that header was 63 970 px², 11.1 %
+        of a 960×600 window against 8.4 % of a 1280×800 one; at the smaller
+        step it is 54 562, 9.5 %. Nothing in it moved and nothing in it shrank
+        — the type is the type, the controls are the controls (`--targets`
+        still reads « toutes ≥ 24 px »), and what gave way is the air.
       */}
-      <header className="border-subtle flex items-baseline justify-between gap-row border-b px-gutter pb-row pt-7">
+      <header className="border-subtle flex items-baseline justify-between gap-row border-b px-row pb-inline pt-block lg:px-gutter lg:pb-row lg:pt-7">
         {/*
           **The page is named by what changed, and the day is drawn once.**
 
@@ -607,12 +617,24 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           client.
 
           Three steps rather than a breakpoint that hides it, because DEC-31
-          says the calendar is always drawn: 256 under 1024, 288 to 1280, 320
-          above. The grid's own columns are what set the floor — seven day
-          numbers and their marks fit 256 with room, and below that the cells
-          would start to crowd.
+          says the calendar is always drawn: 240 under 1024, 288 to 1280, 320
+          above — and the first of those was 256 until the floor was measured
+          rather than estimated. What sets it is WCAG 2.2's 24×24 on a day cell,
+          not the look of the grid: the cell is `(colonne − 2×padding)/7` less
+          the 2px the `td` holds it in, so 240 with `px-inline` draws **26.7px**
+          cells against 256 with `px-row`'s 28.4 — measured, both, through
+          `shot.mjs` at 960×600.
+
+          **And the number that decides it is the Windows one** (HR-2). This
+          column is `overflow-y-auto` and on `agenda-sans-entra` it really does
+          scroll — 681px of content in 494 — where a classic scrollbar takes
+          17px out of the column's own width and macOS's overlay one takes
+          none. Measured at that width the cell is **24.28px**, still over the
+          floor; at 224 the same measurement gives **22.0** and the grid fails
+          `--targets` on the platform this ships to while passing on the one
+          it is written on.
         */}
-        <aside className="bg-card-soft border-subtle w-64 shrink-0 overflow-y-auto border-r px-row py-row lg:w-72 xl:w-80">
+        <aside className="bg-card-soft border-subtle w-60 shrink-0 overflow-y-auto border-r px-inline py-row lg:w-72 lg:px-row xl:w-80">
           <CalendarGrid
             month={month}
             onMonth={setMonth}
@@ -650,8 +672,18 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           which column is the subject and which is the index, and it is also
           what stops the window from ending in bare canvas half way down: below
           the last row there is still a surface, which is what a page is.
+
+          **And its gutters are the header's question asked of the column that
+          pays for it.** 32px a side on a 528px column is 12 % of the width the
+          rep is actually reading, at the one size where the meeting title was
+          already down to 167px (against 375 at 1280×800) and wrapping to two
+          clamped lines. With the calendar column at 240 and these gutters at
+          16, the title is **215px** and the meetings a rep can see go from
+          153 200 px² to 177 240 — 26.6 % of the window to 30.8 %. At 1280×800
+          every one of those numbers is unchanged, to the pixel: this is the
+          floor's problem and only the floor's.
         */}
-        <main className="bg-card min-h-0 min-w-0 flex-1 overflow-y-auto px-gutter py-row">
+        <main className="bg-card min-h-0 min-w-0 flex-1 overflow-y-auto px-row py-inline lg:px-gutter lg:py-row">
           {/*
             Above the list, and the product's only entry into the past
             (VISION.md §6). It is drawn signed out and on an empty corpus: the
