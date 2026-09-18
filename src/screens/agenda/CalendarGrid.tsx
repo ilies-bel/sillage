@@ -232,10 +232,52 @@ function Legend() {
         probe in `shot.mjs` is the standing check this wants, and that file is
         another lane's.
       */}
+      {/*
+        **`data-graphic`, and the legend is the stronger case of the two, not the
+        weaker one.**
+
+        The grid's dot opts in (below) and this one did not, so the four colours
+        whose whole job is to be told apart were the four the 3:1 floor had never
+        been measured on. `--contrast` saw them — it counted them in its
+        *undeclared* census, which is a heuristic and by design never fails — so
+        « contraste: texte AA, 10 graphique(s) à 3:1, 5 marque(s) non déclarée(s) »
+        was printed on every agenda stage, at both sizes, with four of those five
+        being this key.
+
+        The grid's exemption argument does not reach here in either direction. A
+        `StateDot` on a row is a second carrier of a word already written down —
+        1.4.11's own exemption, and why it stays out. A grid cell has a date and
+        nothing else, so its dot is the only thing saying which day carries the
+        mark. This is the third case: the swatch is not *about* its own label, it
+        is the sample a rep matches against a 6px dot two inches above. If it is
+        not separable from the ground, the key does not key anything — and it is
+        the one place the four appear side by side.
+
+        Measured on the shipped screen once declared, at 1280×800 and at 960×600,
+        on the aside's `--bg-card-soft` `rgb(249,251,253)`:
+
+            réunion enregistrée      bg-brand-500       3.24:1
+            réunion prévue           border-brand-500   3.24:1
+            enregistrement en cours  bg-accent          3.26:1
+            réunion prête            border-accent      3.26:1
+
+        All four clear it, by a quarter of a point. That margin is the reason to
+        declare rather than the reason not to: nothing was holding it, and the
+        two hollow marks are carried by a 1px border on a 6px dot, which is the
+        thinnest ink this product draws.
+
+        `MARK_NAME` and not `label`, so the name this reports is the one the grid
+        reports for the same mark and a census cannot show the same colour under
+        two names.
+      */}
       <ul className="text-muted grid grid-cols-1 gap-y-tight text-label">
         {LEGEND.map(({ mark, label }) => (
           <li key={mark} className="flex items-center gap-tight">
-            <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', MARK_CLASS[mark])} />
+            <span
+              aria-hidden
+              data-graphic={MARK_NAME[mark]}
+              className={cn('h-1.5 w-1.5 shrink-0 rounded-full', MARK_CLASS[mark])}
+            />
             {label}
           </li>
         ))}
