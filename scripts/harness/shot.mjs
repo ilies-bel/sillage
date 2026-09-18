@@ -214,6 +214,21 @@ const departureOf = (page, target, press) =>
  * held on screen for a whole `--motion` and spending all of it transparent
  * passes the first and fails the second, which is exactly what the widget card's
  * exit did when it was written as a transition under a filled arrival.
+ *
+ * **`session-attente-sortie` argues the opposite about the same measurement, and
+ * the argument is now measured rather than inherited.** That stage records the
+ * last sampled opacity flaking at 0.40 and 0.56 « under `smoke.mjs`'s four
+ * parallel lanes », and measures a held *duration* instead. The tracer it was
+ * written against re-queried `[role="status"].leaving` every frame; this one
+ * follows one node and stops on `isConnected`, so the last sample is the last
+ * frame the element was alive for however starved the loop got.
+ *
+ * Driven on the three app-window sites added this round, five rounds of
+ * `reglages-sortie`, `review-source-sortie` and `agenda-ligne-sortie` at both
+ * smoke sizes, four in flight at a time (`scratch/x-stress.mjs`): **30 mesures,
+ * 0 échec, min 0.000, médiane 0.000, max 0.000** against a 0.05 threshold. The
+ * distribution has no tail to trip over. Re-run that before widening the
+ * threshold, and re-run it before narrowing it.
  */
 const judgeDeparture = (what, exit) => {
   if (exit.error) throw new Error(`${what} : ${exit.error}`)
