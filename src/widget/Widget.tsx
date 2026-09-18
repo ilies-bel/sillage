@@ -2792,7 +2792,23 @@ function TurnRow({
   paused: boolean
 }) {
   return (
-    <li className="group flex gap-snug">
+    /*
+      **`items-baseline`, because the two columns are two type sizes.**
+
+      The speaker's side is `text-meta` (11px) and the turn is `text-ui` (12px),
+      both `leading-relaxed` — so their line boxes are 17.875 and 19.5 and,
+      top-aligned, their baselines were **2.1px apart** on every row of the log
+      (12.4 against 14.5 from the row top, measured on `widget-ouvert`). « Client »
+      floated above the sentence it names, five times down a 340px column, on the
+      one surface a rep reads for the length of a call. Baseline-aligned they are
+      0.1px apart and no row is any taller — the flex line's cross size is
+      unchanged at 58.5/39/24.
+
+      Not applied to `MarkRow` below: its left column is a glyph, not text, and a
+      flex box with no text in it has no baseline to align to — it would fall back
+      to its bottom margin edge, which is a different rule wearing the same word.
+    */
+    <li className="group flex items-baseline gap-snug">
       <span className="text-muted w-12 shrink-0 text-meta leading-relaxed">
         {/*
           No interlocutor list here, so this says « Client » — correctly. The
