@@ -824,8 +824,16 @@ same hue (200°), darkened, ratios measured against white.
 
 `--text-muted` was `#7d8c98` in the first draft of this palette. It measures 3.27:1 on
 `--bg-canvas` and 3.09:1 on `--bg-subtle` — below AA at every size it is used, and it is also
-`--ink-agent`, the colour the whole compte-rendu is written in (DEC-5). `#62707b` is the
-lightest value on the same hue that clears 4.5:1 on all five surfaces.
+`--ink-agent`, the colour the whole compte-rendu is written in (DEC-5). `#5d6b76` is the
+lightest value on the same hue that clears 4.5:1 on all five surfaces *and* under the grain
+tile, which is darker than any of them.
+
+`#62707b` stood here for twenty-one rounds and cleared all five flat surfaces at 4.56:1 —
+but eleven screens put `.grain` on a wrapper holding their prose, and under the tile's
+darkest pixel the same ink measured **4.458:1**, below the floor, on 138 text runs. The
+harness computed that number on every run and printed it as information; nothing failed on
+it, so it survived several rounds in plain sight. Measured after the move: 4.799 under the
+tile, 4.908 on `--bg-subtle`, 5.48 on white.
 
 Two accents, two jobs, and they must not be confused: **orange means "this meeting is armed or
 recording" and nothing else** — never a selected tab, a primary button or a link. Brand blue
