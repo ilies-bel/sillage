@@ -33,6 +33,19 @@ Score the **product as it is now**, never the delta. A round that fixed a lot ca
 still score 6 — and an axis that was 8 last round and is 7 now is a regression,
 which is the thing a single verdict could never show.
 
+**Score blind, and score it before you read the History.** Read the axes and the
+scale, look at the product, write the whole table — *then* read « History » to
+write the Movement section. A scorer who knows last round's number scores last
+round's number: two blind readings of the same commit came in at 66 and 68 where
+the anchored protocol had been reading 49.5–58, a systematic 8–18 points, and the
+two blind readings disagreed with each other by 2. The axes are reliable; the
+anchoring was not. See « Round 21: the instrument, measured ».
+
+**The agent that hunted the defects does not assign the score.** Ending a round
+`NOT IMPRESSED` « unless nothing survives » is the right mandate for finding
+faults and the wrong one for measuring, because every measurement then in hand is
+a fault. Split the roles.
+
 **Every score carries the one measurement that pins it.** A number with no
 observation behind it is the fourth shape on `CLAUDE.md`'s list. Half-points are
 allowed; a range is not.
@@ -162,6 +175,8 @@ round 5 did not.
 | 19 | main | `89882fd` | 7 | 7 | 5.5 | 7 | 6.5 | 6 | 6.5 | 6.5 | 6 | **58** |
 | 20 | widget | `9c9c995` | — | — | — | — | — | — | — | — | — | **53.5** † |
 | 20 | detection | `19cb51a` | — | — | 6.5 | 6 | 6 | 5 | — | — | — | **54.5** |
+| 21 | main | `c558d61` | 7 | 7.5 | 6.5 | 6.5 | 8 | 8 | 8 | 7.5 | 7 | **66** ‡ |
+| 21 | main | `c558d61` | 7 | 8 | 7.5 | 6.5 | 8 | 8 | 7.5 | 8 | 7.5 | **68** ‡ |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -174,6 +189,101 @@ timestamped every measurement it kept to 17:44–18:05, and verified that
 `electron/` — where all nine of its findings live — is untouched in that diff.
 So the numbers stand; what does not is the method, and the cost of the collision
 was borne by the reviewer rather than by me.
+
+
+## Round 21: the instrument, measured — ‡ the two blind readings
+
+**Two scorers, the same commit, the same prompt, neither allowed to read this
+section. 66 and 68.** The last anchored reading of this surface was **58**
+(round 19) and the one before it **49.5** (round 17).
+
+Round 16's narrative already says it, in the reviewers' own words: « the
+surfaces did not decline, the instrument widened ». That was five rounds ago
+and nothing was done about it, so here is the measurement.
+
+### What the series says
+
+All 47 recorded totals, by surface:
+
+| surface | peak | at round | latest | net, first to last | mean Δ/round | rounds to 90 at that rate |
+|---|---|---|---|---|---|---|
+| main | 58 | 7 | 58 (r19) | **+0.5** over 13 rounds | +0.04 | 832 |
+| detection | 58 | 7 | 54.5 (r20) | **−3.5** over 16 rounds | +0.03 | 1065 |
+| widget | 54.5 | 6 | 53.5 (r20) | +4.5 over 16 rounds | +0.28 | 130 |
+
+Every surface peaked at round 6–7 and has never beaten that peak. Detection ran
+**ten consecutive non-positive deltas** (58 → 50.5, rounds 7–17); main ran
+58 → 49.5 and then recovered **+6.5 in one round**. A product does not decline
+for eleven consecutive rounds while every round lands fixes with twelve gates
+green, and it does not gain 6.5 points in one. That shape — a long slow slide
+punctuated by a snap-back — is a drifting scale, not a changing product.
+
+### The blind test
+
+Two `sillage-adversary` instances, identical prompts, same clean tree at
+`c558d61`, each told not to read this History and to disregard any past score
+it saw. Neither knew of the other.
+
+| | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | total |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A | 7 | 7.5 | 6.5 | 6.5 | 8 | 8 | 8 | 7.5 | 7 | **66** |
+| B | 7 | 8 | 7.5 | 6.5 | 8 | 8 | 7.5 | 8 | 7.5 | **68** |
+| Δ | 0 | .5 | 1 | 0 | 0 | 0 | .5 | .5 | .5 | **2** |
+
+**The axes are fine.** Nine axes, maximum disagreement of one point on any of
+them, two points on ninety — that is good inter-rater reliability, and it says
+the rubric's definitions are well enough specified for two strangers to apply
+them the same way. Both tables also sum to their own totals, which round 20's
+did not.
+
+**The protocol was the defect.** Blind, the surface reads 66–68. Anchored, the
+same surface read 49.5–58. The gap is systematic, it is 8 to 18 points, and
+three things in the old protocol produce it:
+
+1. **The scorer's mandate is to find fault.** `sillage-adversary` ends
+   `NOT IMPRESSED` « unless nothing survives ». The number is assigned by the
+   agent that has just spent a round hunting defects, and the rubric asks it to
+   pin every score to « the one measurement » — but the measurements in its
+   hands are all faults.
+2. **It reads the previous score.** The report's « Movement » section requires
+   comparing against the last round, so the scorer anchors on the last *number*
+   rather than on the product. Small negative steps then compound: eleven of
+   them cost main 8.5 points with nothing behind them.
+3. **The ceiling has no exemplar.** « Granola as the 10 » is a feel, judged
+   fresh each round by a different instance.
+
+### What changes, and what does not
+
+The axes, the 1–10 descriptions and what a 10 means are **unchanged**. Only the
+procedure changes, and the precedent is `pinnedNow`: an instrument that made two
+rounds measure two different products was fixed so they measure one.
+
+**66–68 is not progress and must not be read as a jump.** It is a
+re-measurement of a product that was already there. Roughly nine points of what
+was being called « the gap to 90 » was measurement artefact.
+
+### Where the remaining ~22 points actually are
+
+Both scorers worked independently and converged on the same defects, which is
+much stronger evidence than either alone:
+
+| axis | A and B agree | corroborated finding |
+|---|---|---|
+| 4 Density | 6.5 / 6.5 | container inside a container — the gate's rail nests value boxes in a tinted panel; historique nests a bordered `li.bg-card.border-card` around a bordered `div.bg-inner.border-subtle`. 14 / 12 / 22 hairlines per viewport in two greys. |
+| 1 Chrome | 7 / 7 | `ui/TitleBar.tsx` is an empty `role="presentation"` strip, 36px full-width, carrying nothing, with the app's own header band stacked under it — 118px, 14.8% of an 800px window, above the first agenda row. Verified in the source. |
+| 9 The whole | 7 / 7.5 | `session-compte-rendu` at 960×600: three columns, three scrollers, two simultaneous page turns, one visible line of the document. |
+| 3 Spacing | 6.5 / 7.5 | a 4px scale with three off-grid half-steps; nine distinct paddings on one screen. |
+| 2 Typography | 7.5 / 8 | **both found this one unprompted**: the title step is 1.27× on review (19px over 15px) against 2× on agenda and 2.33× on historique and réglages — smallest on the screen that writes to the CRM. |
+| 8 Craft | 7.5 / 8 | 5 undeclared painted marks on agenda, 11 on réglages. Independently verified here: the four calendar marks carry `data-graphic` in the grid cell (`CalendarGrid.tsx:320`) and **not** in the legend (`:238`), where the dot is the entire content of its element and the four colours are compared side by side. |
+
+That list, not another whole-surface re-score, is what a round should be spent on.
+
+### The rule this adds
+
+**A score is taken blind.** Read the axes and the scale, look at the product,
+write the table — then and only then read this History to write the Movement
+section. A scorer that knows last round's number is measuring last round's
+number. And the agent that hunted the defects does not assign the score.
 
 
 ## Round 16: three reviewers, three surfaces, one verdict about the author
