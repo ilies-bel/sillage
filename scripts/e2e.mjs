@@ -469,8 +469,25 @@ try {
      * process and crosses the bridge; nothing else in this repo sees it make
      * that trip.
      */
-    await page.getByRole('list', { name: 'Appels enregistrés' }).waitFor()
-    await page.locator('li').first().getByRole('button').first().click()
+    /*
+     * **Scoped to the list, because `li` is not only a call.**
+     *
+     * This read `page.locator('li').first()`, which was the first call row when
+     * it was written and has been the *navigation rail* since `a36e39e` put a
+     * permanent `Rail` on this screen — `SectionNav` draws its destinations as
+     * `<ul><li>`, above the list, so the press landed on « Aujourd’hui » and the
+     * run left for the calendar. Every assertion below it then waited twenty
+     * seconds for a field that is not on that screen, and the two steps that
+     * read this record failed with it. 105 commits, green in both gates the
+     * whole time, because `test:e2e` is in neither.
+     *
+     * The list already names itself one line above; using that name is also the
+     * stronger read, since a rail item satisfying this locator is now a failure
+     * rather than a pass on the wrong control.
+     */
+    const calls = page.getByRole('list', { name: 'Appels enregistrés' })
+    await calls.waitFor()
+    await calls.locator('> li').first().getByRole('button').first().click()
     await page.getByLabel('Poser une question sur cet appel').fill('Quel TJM ?')
     await page.getByRole('button', { name: 'Demander' }).click()
     const alert = await page.getByRole('alert').first()
@@ -487,8 +504,22 @@ try {
      * stack-shaped prefix naming an internal channel, in front of the French, on
      * the surface DEC-26 exists to keep readable. `preload.ts` takes it back off.
      */
-    if (/Error invoking remote method|^Error:/.test(text.trim())) {
+    /*
+     * **And the shape is « a name and a colon », not the word `Error`.**
+     *
+     * The test above named one prefix and looked for one prefix, so when this
+     * step was finally driven at the right control it read « Refusal: Aucune
+     * transcription n'a été enregistrée pour cet appel. » — `Refusal` is
+     * `core/contracts/refusal.ts`'s own `name`, Electron serialises
+     * `<name>: <message>`, and `^Error:` matches it no better than a rep does.
+     * An ASCII identifier in front of a French sentence is the defect whatever
+     * the identifier is called; no sentence this product states opens that way.
+     */
+    if (/Error invoking remote method/.test(text.trim())) {
       throw new Error(`la plomberie Electron fuit dans la phrase : ${text}`)
+    }
+    if (/^[A-Za-z][A-Za-z0-9]*:\s/.test(text.trim())) {
+      throw new Error(`un nom de classe est resté devant la phrase : ${text}`)
     }
     if (!/^[A-ZÀÂÉÈÊÎÔÙÜÇ]/.test(text.trim())) {
       throw new Error(`refus qui ne commence pas par une phrase : ${text}`)
