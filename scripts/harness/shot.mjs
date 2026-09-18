@@ -456,10 +456,11 @@ const CAPTURE_VERB = /^(Enregistrer|Démarrer)$/
  * `useHistorySearch`, which debounces 200 ms, and the stub answers `history:search`
  * after 150 ms of its own. `settled()` waits for animations and for a held
  * departure; it does not wait for a question nobody has asked yet. Measured on
- * the shipped screen at 1280×800 with a probe that sampled the DOM twice:
+ * the shipped screen at 1280×800 and at 960×600 with a probe that sampled the
+ * DOM twice (`scratch/probe-backlog.mjs`):
  *
- *     before (the instant every stage photographs) : null
- *     after  (+1500 ms)                            : 3 réunions en attente de validation, 1 ligne
+ *     before (the instant every stage photographs) : rien
+ *     after  (+1500 ms)                            : « 3 appels en attente de validation »
  *
  * So the section that catches DEC-4's quietest failure — a compte-rendu recorded,
  * written and never confirmed — has **never been photographed**, its count has
@@ -469,22 +470,57 @@ const CAPTURE_VERB = /^(Enregistrer|Démarrer)$/
  * élément(s) animé(s) » to 68 the moment the wait was added, which is the size of
  * what was missing from the census.
  *
- * Keyed on the heading's **role**: the rail's `sr-only` note contains the same
- * sentence, and `getByText` is a strict-mode violation across the two.
+ * Keyed on the heading's **role** for the section: the rail's note contains the
+ * same sentence casefolded, and `getByText` is a strict-mode violation across
+ * the two.
  */
 const waitForBacklog = async (page) => {
   const backlog = page.getByRole('heading', { name: 'En attente de validation' })
   /*
-   * A day with nothing owed draws no section at all — « rien à valider » is a
-   * congratulation a rep reads on no morning, and `PendingGates` returns null. So
-   * the wait is for *an answer*, not for the section: the rail's own note appears
-   * either way and is the thing the answer moves.
+   * **The rail's note, and it is required.** A wait that swallows its own
+   * failure is not a wait: with `.catch(() => undefined)` — which is how this
+   * shipped — the stage went straight back to photographing the pre-answer
+   * screen, and green. Falsified by slowing the stub's `history:search` from
+   * 150 ms to 9000 ms and driving `agenda` at 1280×800: the swallowing version
+   * printed « ✓ agenda », this one fails on the locator.
+   *
+   * It is the **rail's** note and not the section's heading, because the section
+   * is conditional on the day as well as on the answer — `PendingGates` returns
+   * null on a day with nothing owed, since « rien à valider » is a congratulation
+   * a rep reads on no morning.
+   *
+   * The precondition, measured rather than assumed, because the docblock this
+   * replaces claimed the count was « drawn on every agenda screen » and it is
+   * not: `ui/Rail.tsx` builds `noteLabel` only under `pending !== null &&
+   * pending > 0`, so a *fixture that owes nothing* would reach this line and
+   * time out. Every scenario that calls this owes three — probed at the instant
+   * `openAgenda()` resolves and again 1500 ms later, on `agenda`, on
+   * `agenda-appel-imprevu`, at both sizes:
+   *
+   *     at openAgenda()  : 0 nœud(s) portant la phrase
+   *     +1500 ms         : 14, « 3 appels en attente de validation »
+   *
+   * A new stage whose fixture owes nothing has to say so here rather than be
+   * given the `.catch` back.
    */
-  await page
-    .getByText(/appels? en attente de validation/)
-    .first()
-    .waitFor({ timeout: 4_000 })
-    .catch(() => undefined)
+  try {
+    await page
+      .getByText(/appels? en attente de validation/)
+      .first()
+      .waitFor({ timeout: 5_000 })
+  } catch {
+    throw new Error(
+      'la réponse à la question « à valider » n’a jamais atteint l’écran : le rail ne ' +
+        'porte pas son compte. Soit `history:search` reste sans réponse, soit la mise en ' +
+        'scène ne doit rien — auquel cas `Rail.tsx` ne dessine pas de note et c’est ici ' +
+        'qu’il faut le dire, pas dans un `.catch`.',
+    )
+  }
+  /*
+   * The section itself, when there is one. Attempted and not required: the two
+   * halves fail differently, and only the rail's is a fact about every stage
+   * that calls this.
+   */
   await backlog.waitFor({ timeout: 1_500 }).catch(() => undefined)
   await settled(page)
 }
