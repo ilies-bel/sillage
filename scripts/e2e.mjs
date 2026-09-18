@@ -1003,10 +1003,28 @@ try {
      * needs the real `app`.
      */
     await page.getByRole('region', { name: 'Calendrier' }).waitFor({ timeout: 45_000 })
+    /*
+     * **Which meeting the quit is about, taken from the product's own broadcast.**
+     *
+     * The count below is over the whole database, so « 2 » used to mean either a
+     * genuine double-end on this quit or a row some earlier close had already
+     * ended — two different bugs with two different costs, and the message could
+     * not tell them apart. Naming the meeting this step started makes the
+     * failure say which: the one it expects is identified, and every other row
+     * carrying the quit's reason is listed with its state.
+     */
+    await page.evaluate(() => {
+      window.__recorded = []
+      window.app.on('session:changed', (payload) => {
+        if (payload.state === 'recording') window.__recorded.push(payload.meetingId)
+      })
+    })
     await page.getByRole('button', { name: 'Démarrer une réunion' }).click()
     // *Terminer* on screen means the state machine took `start`: this meeting is
     // recording, with the devices and the transcriber behind it.
     await page.getByRole('button', { name: 'Terminer' }).waitFor({ timeout: 30_000 })
+    const onTheCall = await page.evaluate(() => window.__recorded.at(-1) ?? null)
+    if (onTheCall === null) throw new Error('aucune réunion n’est passée en « recording »')
 
     const started = Date.now()
     // Playwright's close is the polite one — it reaches `before-quit`, which is
@@ -1053,10 +1071,20 @@ try {
           'la fenêtre a abandonné un enregistrement',
       )
     }
+    if (!quitEnded.includes(onTheCall)) {
+      throw new Error(
+        `la réunion en cours (${onTheCall}) n’a pas été terminée par « fermeture de l’application » — ` +
+          'le quit n’a pas été différé, ou la réunion a été récupérée au démarrage suivant à la place',
+      )
+    }
     if (quitEnded.length !== 1) {
+      // Named, because « 2 » is two different bugs: a second meeting genuinely
+      // ended by *this* quit, or a row an earlier close in this run had already
+      // ended and nobody noticed.
+      const others = quitEnded.filter((id) => id !== onTheCall)
       throw new Error(
         `${quitEnded.length} réunion(s) terminées par « fermeture de l’application » (attendu : 1) — ` +
-          'le quit n’a pas été différé, ou la réunion a été récupérée au démarrage suivant à la place',
+          `en plus de l’appel en cours : ${others.join(', ')}`,
       )
     }
 
