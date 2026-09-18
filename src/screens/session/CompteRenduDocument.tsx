@@ -250,9 +250,38 @@ export function CompteRenduDocument({
                       for the keyboard as hover does for the pointer. Brand
                       blue, not warn: this is a way in, not a doubt.
                     */}
+                    {/*
+                      **Zero inline width, because a decorative glyph must never
+                      own a line.** At 960 the compte-rendu column is narrow
+                      enough that a followable line can fill it to within less
+                      than the magnifier's 14px, and the icon then wrapped alone
+                      onto a second line: the control's box went from 24.38px to
+                      48.75px — exactly two line boxes — for one line of text.
+                      Measured on `review` at 960×600, the two rows the census
+                      compared:
+
+                        « 2 × Data Engineer … »  span top=1913 w=392  svg top=1916
+                        « 1 × Lead Data … »      span top=1938 w=438  svg top=1965
+
+                      At rest the icon is `opacity-0`, so what a rep saw was one
+                      line in the column sitting under 24 pixels of nothing, and
+                      a hit area twice its neighbours'. `--census` found it on
+                      its first run and no other pass could: `--targets` asks
+                      whether a control clears 24px and this one cleared it
+                      twice over, `--geometry` measures declared hangs, and the
+                      reading measure is about characters, not boxes. It takes a
+                      check that reads a *distribution* to see that one member
+                      of a family is the odd one.
+
+                      The glyph is painted, not laid out: it keeps its 14px box
+                      for the eye and contributes nothing to the line's width,
+                      so it can no longer create the break opportunity that
+                      orphaned it. It sits in the button's own `px-hair`, after
+                      text that has already been measured to fit.
+                    */}
                     <Search
                       aria-hidden
-                      className="text-brand ml-hair inline size-3.5 -translate-y-px opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
+                      className="text-brand ml-hair inline size-3.5 w-0 -translate-y-px overflow-visible opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
                     />
                   </button>
                 ) : (
