@@ -186,14 +186,16 @@ npm run dist              # package (scripts/package-app.mjs), either host
 ```
 npm run dev -- --port 5180 --strictPort        # first, in another shell
 node scripts/harness/shot.mjs review scratch/review.png --scan
-node scripts/harness/smoke.mjs                 # every stage × two sizes, all nine checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all ten checks
 ```
 
 `--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--scrollers`,
-`--motion` and `--fade` are the nine `smoke.mjs` passes (`smoke.mjs:176`); `--scan` is a
-tenth it does not. This said « six » and named the first list for three rounds, omitting
-exactly the three added most recently — which are the three a reviewer is likeliest to
-assume unrun and re-run by hand. Each exists because something shipped past a screenshot. **Both sizes,
+`--motion`, `--fade` and `--census` are the ten `smoke.mjs` passes (`smoke.mjs:185`);
+`--scan` is an eleventh it does not. This said « six » and named the first list for three
+rounds, then « nine » for one round after `--census` landed, each time omitting exactly the
+passes added most recently — which are the ones a reviewer is likeliest to assume unrun and
+re-run by hand. **Count them in `smoke.mjs` before repeating this sentence**; it has now
+been wrong twice, in the same direction, about a list it sits four lines above. Each exists because something shipped past a screenshot. **Both sizes,
 always** — 1280×800 and 960×600, the minimum `main.ts` declares. A design pass that only
 reads `src/` has not looked at the product. Stages are held together by the product's own
 French strings, so a copy change breaks one silently.
