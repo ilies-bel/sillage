@@ -301,9 +301,20 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
           in both frames, which is why the caller stopped supplying one: `cette`
           is a determiner the component knows how to put « de » in front of.
         */}
+        {/*
+          **`pt-row` is not decoration: without it the step title touches the
+          header.**
+
+          The column is `my-auto`, which centres a short step and collapses to
+          zero the moment the content is taller than the box — and at 960×600
+          every step is. Measured there, the `h2` of each step stood **0px under
+          the header and 12px above its own first paragraph**: a title with more
+          room below it than above, which is the third of `--rhythm`'s claims,
+          red on ten stagings. 16 above, 12 below.
+        */}
         <ReadingColumn
           subject={{ determiner: 'cette', noun: 'étape' }}
-          className="flex flex-col px-gutter pb-block"
+          className="flex flex-col px-gutter pb-block pt-row"
         >
           <div className="measure mx-auto my-auto w-full">
             {step === 'quoi' ? <Quoi /> : step === 'besoins' ? <Besoins onReglages={(section) => void toReglages(section)} /> : <Essai onReglages={() => void toReglages('connecteurs')} />}

@@ -581,7 +581,7 @@ function Sheet({
   children: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-gutter">
       {/*
         The veil, and it is a control: pressing outside a sheet closes it, which
         is the gesture everybody already has. `aria-hidden` because the ✕ in the
@@ -625,6 +625,13 @@ function Sheet({
             it does not become a full-screen panel on a large display, and
             floored by `max-h-full` at 960×600 where the window is the smaller
             of the two.
+
+            **The inset and this cap agreed on nothing.** The frame outside was
+            `p-6` — 48px of window spent — against a cap reserving 64, so the
+            sheet stopped 16px short of its own margin at every height below the
+            680px ceiling, and 24 is not a step on the ladder either
+            (4/6/8/12/16/20/32). `p-gutter` is the step, and 32+32 is the 64 the
+            cap already names: one number, written once.
           */
           'border-card bg-card relative flex h-[min(680px,calc(100vh-64px))] max-h-full w-[784px] max-w-full overflow-hidden rounded-lg border',
           leaving ? 'leaving' : 'animate-rise-in',
@@ -677,9 +684,20 @@ function Sheet({
               <p className="text-danger measure text-ui">{notice}</p>
             </div>
           ) : null}
+          {/*
+            **`p-gutter`, and the top of it is what the pane title stands on.**
+
+            Was `px-gutter pb-10 pt-row`: 40 at the foot is off the ladder, and
+            16 at the head put the pane's own `h2` **13px under the drag region
+            and 24.3px above its first paragraph** — measured at 960×600, where
+            `max-h-full` takes the sheet to the window's edge and the title has
+            the title bar directly over it. A heading with more room below than
+            above is the third of `--rhythm`'s three claims, and it was red on
+            eight stagings of this one component. 32 above, 20.3 below.
+          */}
           <ReadingColumn
             subject={{ determiner: 'la', noun: 'section' }}
-            className="px-gutter pb-10 pt-row"
+            className="p-gutter"
           >
           {/*
             The pane's own title row. The ✕ is at the right of it, on the
@@ -687,7 +705,7 @@ function Sheet({
             icon-only rectangle with a tooltip: it clears 24×24 and it carries a
             French name.
           */}
-          <div className="mb-block flex items-baseline gap-row">
+          <div className="mb-row flex items-baseline gap-row">
             <h2 className="font-display text-strong min-w-0 flex-1 truncate text-display leading-none">
               {title}
             </h2>
@@ -747,7 +765,7 @@ function Raccourcis() {
               `kbd`, and not a styled span: this is a key on a keyboard, and the
               element that says so is the one a screen reader announces as one.
             */}
-            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-0.5 font-mono text-meta">
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-hair font-mono text-meta">
               {shortcut.keys}
             </kbd>
           </Row>
@@ -765,7 +783,15 @@ function Raccourcis() {
         they do not have, and the lede names the typed forms because that is how
         most people will meet them.
       */}
-      <SectionHeader>Dans le bloc-notes</SectionHeader>
+      {/*
+        `mt-block`, because `SectionHeader` carries `mb-inline` and nothing
+        above it. Measured at 960×600 this heading stood **0px under the last
+        row of the table before it and 12px above its own lede** — a second
+        group's name closer to the first group's contents than to its own, which
+        is `--rhythm`'s third claim inverted. 20 above, 12 below. The same
+        `mt-block` « Facultatifs » already carries, for the same reason.
+      */}
+      <SectionHeader className="mt-block">Dans le bloc-notes</SectionHeader>
       <Lede>
         En début de ligne, <Typed>#&nbsp;</Typed>, <Typed>##&nbsp;</Typed>, <Typed>-&nbsp;</Typed>,{' '}
         <Typed>1.&nbsp;</Typed>, <Typed>&gt;&nbsp;</Typed>, <Typed>---&nbsp;</Typed> et{' '}
@@ -778,7 +804,7 @@ function Raccourcis() {
         {NOTE_SHORTCUTS.map((shortcut) => (
           <Row as="div" key={shortcut.combo} align="center">
             <span className="text-strong text-copy min-w-0 flex-1">{shortcut.label}</span>
-            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-0.5 font-mono text-meta">
+            <kbd className="text-muted border-card bg-inner shrink-0 rounded-sm border px-tight py-hair font-mono text-meta">
               {shortcut.keys}
             </kbd>
           </Row>
@@ -863,7 +889,7 @@ function OfflineOnly({
         checked={value}
         disabled={busy}
         onChange={(event) => onChange(event.target.checked)}
-        className="accent-brand-700 mt-0.5 h-4 w-4 shrink-0"
+        className="accent-brand-700 mt-hair h-4 w-4 shrink-0"
       />
       <span className="min-w-0">
         <span className="text-strong block text-ui font-medium">
@@ -1118,7 +1144,9 @@ function Models({ section, busy, onDownload, onCancel, onSelect }: ModelsProps) 
                 <span className="text-muted block text-meta">{MODEL_STATE[row.status](row)}</span>
               </span>
 
-              <span className="flex shrink-0 items-center gap-inline">
+              {/* `gap-snug`, not `gap-inline`: 12 inside a row also spaced 12 is
+                  not a group — the same finding as the provider line above. */}
+              <span className="flex shrink-0 items-center gap-snug">
                 {/*
                   **Size, accuracy and speed — the three the lede promises.**
 
@@ -1329,7 +1357,15 @@ function ProviderLine({
           ) : null}
         </span>
 
-        <span className="flex shrink-0 items-center gap-row">
+        {/*
+          **`gap-snug`, because this cluster is a group and the row around it is
+          not.** It was `gap-row` — 16 inside a row spaced 12 — so the two things
+          that belong together (where the engine runs, what it costs) stood
+          *further* apart than they stood from the provider's name. `--rhythm`'s
+          second claim, « un groupe qui n'est pas plus serré que ce qui l'entoure
+          n'est pas un groupe », red on 8 stagings from this one span.
+        */}
+        <span className="flex shrink-0 items-center gap-snug">
           <span className="text-muted flex items-center gap-hair text-meta">
             <span>{RESIDENCY_LABEL[row.residency]}</span>
             {row.cost === 'free' ? null : (

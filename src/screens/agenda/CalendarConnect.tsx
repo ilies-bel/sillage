@@ -52,7 +52,7 @@ export function CalendarConnect({
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="text-strong text-ui font-semibold">Agenda Outlook</h3>
-          <p className="text-muted mt-0.5 text-meta leading-relaxed">
+          <p className="text-muted mt-hair text-meta leading-relaxed">
             {auth.reason ??
               'Non connecté. Vos réunions, leurs participants et l’objet de l’invitation apparaîtront ici.'}
           </p>
