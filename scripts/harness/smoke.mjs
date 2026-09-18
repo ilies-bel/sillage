@@ -169,6 +169,38 @@ const screens = () =>
  */
 const SIZES = ['1280x800', '960x600']
 
+/**
+ * **The passes, declared once and counted rather than remembered.**
+ *
+ * This used to be an inline argument vector and `CLAUDE.md` a sentence beside
+ * it; the sentence has been wrong twice, in the same direction, each time
+ * omitting the passes added most recently — which are the ones a reviewer is
+ * likeliest to assume unrun and re-run by hand. The run prints
+ * `PASSES.length` at the end, so the number is read off the thing that was
+ * actually passed.
+ *
+ * `--rhythm` and `--cells` are the two newest and they are here rather than
+ * only in `shot.mjs` for the repo's eighth shape: a check nobody runs is a
+ * control that is present and does nothing. They also both read *painted*
+ * geometry over every stage, which is the half a hand-run reviewer never
+ * reaches — `--cells` exists because ten passes were green over a client name
+ * rendered in 40.3 px, and `--scrollers` could not see it by construction.
+ */
+const PASSES = [
+  '--geometry',
+  '--targets',
+  '--prose',
+  '--echo',
+  '--a11y',
+  '--contrast',
+  '--scrollers',
+  '--motion',
+  '--fade',
+  '--census',
+  '--rhythm',
+  '--cells',
+]
+
 const drive = (screen, viewport) =>
   new Promise((resolve) => {
     const child = spawn(
@@ -182,7 +214,7 @@ const drive = (screen, viewport) =>
        * impeccable — which means it is exactly the pass a hand-run reviewer
        * would never think to add.
        */
-      [SHOT, screen, 'unused.png', '--no-png', '--geometry', '--targets', '--prose', '--echo', '--a11y', '--contrast', '--scrollers', '--motion', '--fade', '--census', '--viewport', viewport],
+      [SHOT, screen, 'unused.png', '--no-png', ...PASSES, '--viewport', viewport],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''
@@ -229,7 +261,10 @@ for (let at = 0; at < all.length; at += LANES) {
 process.stdout.write('\n')
 
 if (failures.length > 0) {
-  console.error(`\n${failures.length} mise(s) en scène sur ${all.length} ne se jouent plus :\n`)
+  console.error(
+    `\n${failures.length} mise(s) en scène sur ${all.length} ne se jouent plus ` +
+      `(${PASSES.length} passes : ${PASSES.join(' ')}) :\n`,
+  )
   for (const { screen, reason } of failures) console.error(`  ✗ ${screen}\n    ${reason}`)
   console.error(
     '\nUne mise en scène tient par les chaînes du produit. Si une copie a changé, c’est le' +
@@ -238,4 +273,7 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(`${all.length} mises en scène jouées (${screenList.length} écrans × ${SIZES.length} tailles).`)
+console.log(
+  `${all.length} mises en scène jouées (${screenList.length} écrans × ${SIZES.length} tailles, ` +
+    `${PASSES.length} passes).`,
+)

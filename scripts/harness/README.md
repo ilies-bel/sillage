@@ -13,7 +13,7 @@ client's CRM. A defect lives in one or the other, rarely in both, and each was
 introduced after something shipped that the other could not have caught.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--no-png] [--sans-entra]
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--no-png] [--sans-entra]
 node scripts/harness/smoke.mjs                 # every stage × two sizes, with all ten checks
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
@@ -44,8 +44,18 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Nine measured checks, and each exists because something shipped past a
-screenshot.** `--geometry` (ten of twenty-three gutter markers clipped),
+**Twelve measured checks, and each exists because something shipped past a
+screenshot.** The list is not prose — it is `PASSES` in `smoke.mjs`, and
+`scripts/__tests__/harnessPasses.test.mjs` holds this line to it:
+
+    --geometry --targets --prose --echo --a11y --contrast --scrollers --motion --fade --census --rhythm --cells
+
+This sentence said « six » for three rounds, then « nine » for one, while the
+paragraph it sits in ended « All eight run on every stage » — three counts, none
+of them right, each omitting the passes added most recently, which are the ones a
+reviewer assumes unrun and re-runs by hand. It is a check now.
+
+`--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
 the source), `--prose` (`66ch` rendering eighty-one characters for four rounds
 because nothing counted), `--a11y` (a control whose only name is « ‹ »),
@@ -60,7 +70,8 @@ the rep's call, and every curve in `:root` being an allowed curve is precisely w
 check could not see it — and note what it still cannot ask, which is why `widget-entree`
 makes its own assertions rather than leaning on this: `--motion` reads *declarations*, so
 it can say that the widget's arrival is on tokens and going the right way and never that
-the window was sized off an untransformed box), `--fade`, and `--scrollers`, below. All eight run on every stage at 1280×800 *and* at 960×600 —
+the window was sized off an untransformed box), `--fade`, `--scrollers`, `--census`,
+`--rhythm` and `--cells`, below. All twelve run on every stage at 1280×800 *and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
@@ -156,6 +167,102 @@ of the box that clips it, and the tightest clearance on the screen is printed.
 Ten of twenty-three markers were clipped for three review rounds: every one of
 them was in the accessibility tree, every one read correctly in `innerText`, and
 a third of the `###` was simply not painted.
+
+**`--rhythm` is the only instrument rubric axis 3 has ever had.** The axis reads
+« One scale, visible at a glance. Tight groups, generous separation, more space
+above a heading than below », and it has been the widget's lowest axis by a point
+and a half while **no pass read a gap**: `--census` prints byte-identical output
+on either side of a change that regroups a whole surface. This reads every painted
+`gap`, `padding` and `margin` through the Typed OM — `getComputedStyle` answers
+with the *used* margin, so the rail's `mt-auto` reads back as `511.03px`, a number
+no author wrote — and asks the axis's three questions separately. The seven steps
+are read out of `:root`, never restated, so a renamed token turns it red rather
+than quietly shrinking what it checks.
+
+Four rules decide what is not rhythm, and each is a rule and not a list: a
+container whose children hold no text, no name and no behaviour is a **drawing**
+(the meter's bars, 820 gaps); a value equal to what a bare tag of the same name
+gets is the **baseline** (`th`/`td` at 1px, found by building a probe element in
+the page rather than by being told); a value that is not a whole pixel came from
+the **type** and not the ladder (60, all in `CompteRenduDocument`); and a
+one-sided horizontal padding past the widest step is a **gutter**, which is
+`--geometry`'s subject (80). `RHYTHM_ALLOWANCES` in `shot.mjs` carries what no
+rule could recognise — two entries, both argued in the tree before this existed —
+and `scripts/__tests__/rhythmAllowances.test.mjs` holds each of them to a live
+site in `src/`, because « does this deviation still exist anywhere » is a question
+about the tree and not about one screen.
+
+Swept over all 85 stages at both sizes: **59 553 painted spacings over 54 886
+elements, 79.6 % on the ladder**, 254 nested group pairs, 484 headings.
+**156 of 170 stagings red, over 63 distinct sites.** The off-ladder mass is one
+number — **2px, painted 9 716 times**, which outnumbers `--space-row` at 16px
+(3 483) by three to one. The fourteen green stagings are every `widget-*` stage
+that does not open the panel: the one surface in the product standing on one
+ladder, and the one a lane regrouped this round.
+
+What it cannot see, so nobody has to rediscover it: claim 2 compares a group
+against what surrounds it, so a row with **no** groups in it is invisible to it.
+The widget's pill before its fix was six flat children at one interval — nothing
+nested, nothing to compare. Driven with `src/widget/Widget.tsx` put back, claim 2
+stays silent and claim 1 turns red on `10px pad Left`, which is the same finding
+the declaration-reading test made from the class list. The two are complementary.
+
+**`--cells` finds a growing cell starved by its fixed siblings**, which every
+other pass is blind to **by construction**. A search result at 960×600 rendered
+the client's name in 40.3 px while four fixed-width siblings kept 382 of the row's
+430; `line-clamp-2` then cut the word, so three results read « Sodex / comi… »,
+« Group Maréc / quali… », « Banqu Delcou / prem… ». All ten passes were green over
+it: a `-webkit-box` clamp overflows in the **block** direction, so
+`scrollWidth === clientWidth` and `--scrollers` has nothing to measure, and
+`--prose` counts characters a line rather than cells.
+
+So this measures the width the cell's contents *want*, with a `Range` over the
+contents rather than `scrollWidth` — verified on the defect itself, where the
+Range reports 187.1 px inside an 88.3 px box. The rule is an arithmetic and not a
+ranking: **the cell that grows is short of its own text while the cells that do
+not grow are holding slack.** The proposed « the growing cell is the smallest cell
+in the row » was measured against the same row and does **not** fire — the row is
+`64 / 88.3↔ / 80 / 112 / 61.7` and a 61.7 px button is smaller than the starved
+cell. The floor is one character of the cell's own resolved font, through a canvas
+the way `--prose` measures its advance: with no floor the sweep reports one site
+on `main`, 1.5 px short — a quarter of a character — against the defect's 98.8 px,
+sixteen characters, and nothing in 5 070 growing cells sits between them. A cell
+that can scroll is exempt, that being `--scrollers`' subject; an ellipsis is
+**reported and not required**, because on the row this exists for the starved cell
+itself resolves to `text-overflow: clip`, with the ellipsis on one child and the
+clamp on another.
+
+**Two instruments were answering a narrower question than they appeared to, and
+both are fixed here.** `--census` read its radius ladder from a hand-written
+`['--radius-sm', '--radius', '--radius-lg']` under a docblock saying it read
+`:root` by prefix, and its guard was `< 3` — so `--radius` (12px, worn by **0 of
+40 388** corners over 170 stagings, which `--census` itself printed every run)
+could not be deleted from `tokens.css` without failing every stage at exit 15.
+The instrument that proved the token dead was the reason it was unremovable. It
+discovers `--radius*` now and refuses only an *empty* ladder. Driven both ways:
+deleting the unworn rung leaves the census green on 2 rungs; deleting a rung
+classes still wear does **not** turn it red and cannot — `rounded-sm` resolves
+`var(--radius-sm)`, and a `var()` with no token is an invalid declaration the
+browser drops, so the corner is simply not painted (40 rounded boxes → 1, exit
+0). `src/design/tokens.test.ts` is the instrument that catches that, and it does
+(2 tests red).
+
+`--contrast` had the same shape twice over: it composited the grain at a
+hard-coded `9 / 255` — so the remedy `index.css` names in its own words, « a
+quieter tile », would not have moved the number by a thousandth — and it printed
+the result on the **green** line. It decodes the tile now (shipped grain: 64×64,
+four levels 0/3/6/9, mean 4.47) and fails on it. The judgement call was settled
+by measuring rather than by arguing about textures: swept for the darkest window
+of each shape on the torus the repeat makes, `1×1`, `1×2` and `1×4` are all at
+9.000, `1×6` 8.500, `1×8` 7.875, `2×8` 7.313, `8×8` 5.813. **A 1×4 run of the
+darkest level exists**, one CSS pixel wide and four tall, and a 12px Inter stem
+is about 1.2px wide — so a quarter of a lowercase letter can sit entirely on the
+darkest level. The minimum is reachable, not theoretical, so it is the statistic;
+the `1×8` mean would pass the shipped palette at 4.52:1, which is an answer about
+a letter nobody reads one stem of. Falsified both ways: `--text-muted` at
+`#5e6b76` → green, a tile rewritten at alpha 4 → « noir 4/255 » and green, the
+shipped pair → **138 passages across 18 stagings, 4.83:1 declared against 4.46:1
+under the grain, floor 4.5**.
 
 **`--no-expand` is the flag a design pass wants.** Three screens ask for
 `expand` in their own plan because what matters on them sits below an inner
