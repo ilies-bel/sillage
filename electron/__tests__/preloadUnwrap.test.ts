@@ -21,7 +21,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { refuse } from '../core/contracts/refusal.ts'
@@ -97,31 +97,72 @@ test('no refusal this app ships can be eaten by the strip', () => {
    * removed whatever the identifier is called, which is what makes the strip as
    * wide as the rule — and it would be a truncation if a French sentence ever
    * opened on an ASCII word and a colon. So the sentences are read rather than
-   * assumed: every literal handed to `refuse(...)` under `electron/`, checked
-   * against the same expression the bridge applies.
+   * assumed.
+   *
+   * **This check was narrower than that sentence for a round, in both halves.**
+   * It said « every literal handed to `refuse(...)` under `electron/`, checked
+   * against the same expression the bridge applies », and did neither:
+   *
+   *   - it read four hardcoded paths, and **two of them contain no `refuse(` at
+   *     all** — `app/session/Agenda.ts` and `modules/llm/config.ts`, read for
+   *     nothing. A new file calling `refuse()` was never opened, and the
+   *     `seen >= 20` floor could not notice, because `app/ipc/register.ts`
+   *     satisfies it alone with 35.
+   *   - it tested `/^[A-Za-z][A-Za-z0-9]*:\s/` — whitespace **required** — while
+   *     the bridge applies `\s*`, optional. A sentence opening « mot:» with no
+   *     space would be eaten and this would stay green. Nothing is eaten today,
+   *     which is why it was stale rather than broken, and why nobody saw it.
+   *
+   * Both halves are now read from the thing they are about. The expression comes
+   * out of the copy above, which the last test in this file holds to
+   * `preload.ts` line for line — so the chain is literal → copy → bridge, with
+   * no regular expression typed twice. And the sources are walked rather than
+   * listed.
    *
    * Only the *start* of each message can be eaten, which is why a first literal
    * is enough even where the call spans lines.
    */
-  const files = [
-    'app/ipc/register.ts',
-    'app/session/Agenda.ts',
-    'core/contracts/ask.ts',
-    'modules/llm/config.ts',
-  ]
+  const strip = /\.replace\((\/(?:[^/\\]|\\.)+\/)/.exec(unwrap.toString())?.[1]
+  assert.ok(strip, 'le remplacement de `unwrap` est introuvable — la copie a changé de forme')
+  const eats = new RegExp(strip.slice(1, -1))
+
+  const sources: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '__tests__' || entry.name === 'generated' || entry.name === 'node_modules') continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith('.ts')) sources.push(full)
+    }
+  }
+  walk(path.resolve(HERE, '..'))
+
   let seen = 0
-  for (const file of files) {
-    const source = readFileSync(path.resolve(HERE, '..', file), 'utf8')
+  const holders = new Set<string>()
+  for (const file of sources) {
+    const source = readFileSync(file, 'utf8')
     for (const [, literal] of source.matchAll(/refuse\(\s*['"`]([^'"`\n]*)/g)) {
       seen += 1
+      holders.add(file)
       assert.ok(
-        !/^[A-Za-z][A-Za-z0-9]*:\s/.test(literal),
+        !eats.test(literal),
         `« ${literal} » commence par un identifiant et deux points — le préfixe la tronquerait`,
       )
     }
   }
-  // A scan that matched nothing would be a green check over no subject.
-  assert.ok(seen >= 20, `seulement ${seen} refus lus — la lecture des sources a cessé de trouver`)
+
+  /*
+   * A walk that found nothing would be a green check over no subject, and that
+   * is the shape this test was already in. The three floors are measured, not
+   * chosen: 154 `.ts` files under `electron/` outside tests and `generated/`,
+   * 33 literal `refuse('…)` sites, in 2 files (`app/ipc/register.ts` and
+   * `core/contracts/ask.ts`; `core/contracts/refusal.ts` declares the function
+   * and calls it nowhere). Each floor is set below its measurement so ordinary
+   * growth does not fail it, and each fails if the walk stops reaching.
+   */
+  assert.ok(sources.length >= 100, `${sources.length} fichiers parcourus — la marche ne descend plus dans electron/`)
+  assert.ok(holders.size >= 2, `${holders.size} fichier(s) portent un refus littéral — la marche en a perdu`)
+  assert.ok(seen >= 30, `seulement ${seen} refus lus — la lecture des sources a cessé de trouver`)
 })
 
 test('a message that is not Electron’s wrapper is passed through untouched', () => {
