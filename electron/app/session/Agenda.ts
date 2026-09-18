@@ -419,9 +419,41 @@ export class Agenda {
         .liveIds()
         .find((id) => this.#options.orchestrator.stateOf(id) === 'recording')
       if (busy !== undefined) {
+        /*
+         * **The name, which the paragraph above promised and the code did not
+         * deliver.** `busy` was found and then used as a boolean: the sentence
+         * said « Une réunion est déjà en cours d'enregistrement » and stopped.
+         * Three lines under « So the live call is named », and under
+         * `CLAUDE.md`'s « a refusal names the live call ».
+         *
+         * It is not a nicety. The rep who reads this is mid-afternoon with two
+         * overlapping calls in the list and has just pressed the row they think
+         * is free; an unnamed refusal tells them the product disagrees but not
+         * which of the two it means, so the recoverable act — end that one,
+         * press this one again — is the one thing the sentence withholds. DEC-26
+         * is exactly this: a refusal is a fact the rep can act on.
+         *
+         * Three sources, because a live call is one of three things and the
+         * refusal must not invent a name for any of them. A calendar meeting is
+         * in `#window.events` under `meetingIdFor`; the standing offer carries
+         * its own subject; a call the rep started themselves is in
+         * `#ownMeetings`. When none of the three knows it — a recording older
+         * than the own-meetings window, with no event and no standing offer —
+         * the sentence falls back to the unnamed one rather than printing a
+         * placeholder, because « la réunion « undefined » est en cours » is
+         * worse than saying less.
+         */
+        const live =
+          this.#window.events.find((candidate) => meetingIdFor(candidate.id) === busy)?.context
+            .subject ??
+          (this.#armed?.meetingId === busy ? this.#armed.subject : undefined) ??
+          this.#ownMeetings(this.#clock()).find((meeting) => meeting.id === busy)?.title
         throw new Error(
-          'Une réunion est déjà en cours d’enregistrement. Terminez-la, puis reprenez ' +
-            'celle-ci — elle reste proposée.',
+          live
+            ? `« ${live} » est déjà en cours d’enregistrement. Terminez-la, puis reprenez ` +
+              'celle-ci — elle reste proposée.'
+            : 'Une réunion est déjà en cours d’enregistrement. Terminez-la, puis reprenez ' +
+              'celle-ci — elle reste proposée.',
         )
       }
       throw new Error('Cette réunion ne peut plus être démarrée.')

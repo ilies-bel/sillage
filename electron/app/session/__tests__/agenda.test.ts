@@ -519,6 +519,40 @@ test('armNow is still an offer — it never starts recording (HR-7)', async () =
   h.store.close()
 })
 
+test('the refusal beside a live recording names the call that is live', async () => {
+  /*
+   * `CLAUDE.md`: « `arm` is illegal beside a live recording, and a refusal names
+   * the live call. » `Agenda.ts` says the same thing in its own docblock — « So
+   * the live call is named, and the sentence says what to do » — and then found
+   * `busy` and used it as a boolean. The sentence stopped at « Une réunion est
+   * déjà en cours d'enregistrement », which is the one fact the rep already has.
+   *
+   * The rep here is the one the docblock above describes: two overlapping calls,
+   * the 14:00 still running into the 15:00 slot. They press the row they believe
+   * is free. An unnamed refusal says the product disagrees and withholds which of
+   * the two it means, so the recoverable act — finish that one, press this again —
+   * is the part it does not tell them. DEC-26: a refusal is a fact the rep can act
+   * on, never a dead end.
+   *
+   * Asserted on the subject rather than on the whole sentence, so rewording the
+   * instruction does not fail this and dropping the name does.
+   */
+  const h = harness([
+    event('LIVE', { subject: 'Banque Delcourt — cadre tarifaire' }),
+    event('NEXT', { subject: 'Néovia Santé — cadrage' }),
+  ])
+  const live = h.agenda.armNow('LIVE')
+  h.orchestrator.dispatch(live.meetingId as never, 'start', null)
+  assert.equal(h.orchestrator.stateOf(live.meetingId as never), 'recording')
+
+  assert.throws(
+    () => h.agenda.armNow('NEXT'),
+    /Banque Delcourt — cadre tarifaire/,
+    'le refus doit nommer l’appel en cours, pas seulement dire qu’il y en a un',
+  )
+  h.store.close()
+})
+
 test('armNow refuses an event the fold does not hold', async () => {
   /*
    * The id crosses the bridge from the renderer, so it is matched against the
