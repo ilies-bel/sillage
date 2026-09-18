@@ -556,7 +556,26 @@ function Elapsed({ since }: { since: number | null }) {
       tone="recording"
       label={formatElapsed(now - since)}
       labelClassName="text-strong tabular-nums"
-      className="text-ui"
+      /*
+        `gap-tight` over `StateDot`'s own `gap-snug`, and it is the pill's rhythm
+        that asks for it rather than this component's taste.
+
+        Painted at both smoke sizes, the pill read « ● 8 00:05:00 8 ▮▮▮ »: the dot
+        sat exactly as far from its clock as the clock sat from the level meter, so
+        the one group in it — a state and the time it has been in — was not drawn as
+        a group. `--rhythm` reports it « 8px dedans contre 8px autour », on
+        `session`, `session-libre` and `session-sans-entra`.
+
+        Which side moves is decided by the header around it, measured at 960×600:
+        its own children stand **12 px** apart, so the pill's outer gap cannot go up
+        to 12 without becoming the same distance as the separation between the pill
+        and the meeting's title — and it cannot grow at all without taking width
+        from `MeetingTitle`, which is the `flex-1 min-w-0` cell beside it (226.25 px
+        of 960, everything to its right already ending at 928 of 960). So the inner
+        one comes down: 12 outside the pill, 8 across it, 6 from the dot to its
+        word, and the pill is 2 px narrower than it was.
+      */
+      className="text-ui gap-tight"
     />
   )
 }

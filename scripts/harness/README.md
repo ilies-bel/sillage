@@ -192,13 +192,33 @@ and `scripts/__tests__/rhythmAllowances.test.mjs` holds each of them to a live
 site in `src/`, because « does this deviation still exist anywhere » is a question
 about the tree and not about one screen.
 
-Swept over all 85 stages at both sizes: **59 553 painted spacings over 54 886
-elements, 79.6 % on the ladder**, 254 nested group pairs, 484 headings.
-**156 of 170 stagings red, over 63 distinct sites.** The off-ladder mass is one
-number — **2px, painted 9 716 times**, which outnumbers `--space-row` at 16px
-(3 483) by three to one. The fourteen green stagings are every `widget-*` stage
-that does not open the panel: the one surface in the product standing on one
-ladder, and the one a lane regrouped this round.
+Three more rules landed when the axis was closed, and each removes a measurement
+no rep could have seen rather than a finding. A neighbour on another **plane** —
+the nearest `absolute` or `fixed` ancestor — is not the space above a heading: the
+Réglages sheet is `position: fixed`, so on `reglages@960` the h3 « Requis » inside
+it was measured against the calendar `header` **behind** it, 7.7 px above against
+12 below, and nine of the fifteen claim-3 findings were that one shape. An **edge
+that is not painted** has no space beside it: on `onboarding@960` the h3 « Sillage
+s’adapte à votre vocabulaire » straddles its scroller's bottom at y 458.81, so its
+own paragraph 6 px under it was clipped away and « below » became 25.7 px to a
+sticky button outside the scroller — the authored rhythm is 20/6 and correct; four
+findings, including the mirror of it on `review-garde-tapis@960`. And free space a
+container **distributes** is nobody's spacing: `.meter-key` is `flex-col
+justify-between` with no gap, so the 6 px between « moi » and « client » is the
+level meter's own height showing through, which is the drawing exemption one box
+out; five stagings. Claim 2's outer measure was already immune to that by taking
+`Math.min`, which is why only the inner one needed it.
+
+Swept over all 85 stages at both sizes when it was introduced: **59 553 painted
+spacings over 54 886 elements, 79.6 % on the ladder**, 254 nested group pairs, 484
+headings, **156 of 170 stagings red over 63 distinct sites**, the off-ladder mass
+one number — **2px, painted 9 716 times**, outnumbering `--space-row` at 16px
+(3 483) three to one. The same sweep at the end of the round: **51 831 painted
+spacings over 54 872 elements, 98.1 % on the ladder**, 278 nested pairs (5 with
+their space distributed), **356 headings measured, 4 straddling an edge, 35 with
+nothing on one side**, and **0 of 170 stagings red**. Those last three are printed
+on every run beside `read`, because an exclusion that is not counted is a check
+quietly measuring less.
 
 What it cannot see, so nobody has to rediscover it: claim 2 compares a group
 against what surrounds it, so a row with **no** groups in it is invisible to it.

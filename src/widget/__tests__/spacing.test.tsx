@@ -5,9 +5,11 @@
  * rhythm, 6.5, the lowest on the window by a point and a half. The axis makes
  * three claims — one scale, tight groups against generous separation, and a
  * heading's space above it — and nothing in this repo measured any of them.
- * `smoke.mjs` has ten passes and none reads a gap; `--census` reads radii and
+ * `smoke.mjs` had ten passes and none read a gap; `--census` reads radii and
  * author-decided control heights; jsdom returns zero for every box, so a
- * renderer test cannot read a painted rectangle either.
+ * renderer test cannot read a painted rectangle either. `--rhythm` is the
+ * eleventh and it does read one — count them in `smoke.mjs` rather than trusting
+ * this sentence, which is the third place in the tree to have said « ten ».
  *
  * What a test *can* read is what the shipped component declares, and that is
  * what both halves below do. The numbers each one is pinned to were measured on
