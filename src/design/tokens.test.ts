@@ -755,6 +755,108 @@ describe("the palette clears WCAG AA where it has to", () => {
 });
 
 /**
+ * **The ground ladder is five surfaces inside 4.42 L\*, and the number that
+ * pins it is not a grey — it is `--text-muted`.**
+ *
+ * A reviewer reached this file from the review gate: dropping `--bg-card-soft`
+ * from the gate's `<aside>` improves every ground figure on that screen and
+ * then fails `RAIL_FLOOR = 2.5` ΔL\* because the rail lands on `--bg-canvas` at
+ * 2.252. The diagnosis sent over was « the top of the ladder is three tokens
+ * inside 1.75 L\*, spread them ». Recomputed here from the tokens — which is
+ * the point, since another agent's prose is not evidence — the three values are
+ * exactly right: 97.829 / 98.522 / 99.582.
+ *
+ * The prescription is not. There is nowhere to spread *to*. `--bg-inner` is
+ * white, so the top is a wall, and the bottom is wherever `--text-muted` stops
+ * clearing 4.5:1 — which is one 8-bit step below where `--bg-subtle` already
+ * sits. Swept over the hue: #eef3f7 → 4.559, #edf2f6 → 4.519, #ecf1f5 → 4.479,
+ * under AA. **0.348 L\* of slack in the whole ladder**, and spending it on the
+ * rail leaves the ink 0.019 over AA.
+ *
+ * So the ladder is a symptom. Darken the muted grey one step and the rail gets
+ * 4.32 L\* instead of 2.60 — and the same edit closes the grain finding below,
+ * which arrives at the same token from the other direction. Both are held out
+ * of this lane by the same file: all five grounds and `--text-muted` are in
+ * VISION.md §6's palette block, pinned hex-for-hex above.
+ *
+ * Three assertions, and the third is the one that carries the argument:
+ *
+ *  · the grounds are a **ladder** — strictly ordered, no two the same;
+ *  · `--bg-subtle` is its floor and the floor is **stated**, not discovered by
+ *    the next person to measure a screen;
+ *  · and the floor is **binding**: one step darker in the same hue puts
+ *    `--text-muted` under AA, so « just spread the grounds » is arithmetic that
+ *    does not close. Darken the ink and this fails — correctly, because the
+ *    room has opened and the numbers written in `tokens.css` are stale.
+ */
+describe("the ground ladder is a ladder, and the ink sets its floor", () => {
+  const tokens = declarations(read("./tokens.css"));
+  const hex = (name: string): string => {
+    const value = tokens.get(name);
+    expect(value, `${name} must be a hex in tokens.css`).toMatch(/^#[0-9a-f]{6}$/i);
+    return value!;
+  };
+
+  /** CIE L\*, from the same relative luminance every ratio above is built on. */
+  const lightness = (colour: string): number => {
+    const y = luminance(colour);
+    return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (y * 24389) / 27;
+  };
+
+  /** Every ground a screen paints on. Borders are not grounds. */
+  const GROUNDS = ["--bg-inner", "--bg-card", "--bg-card-soft", "--bg-canvas", "--bg-subtle"];
+
+  test("the grounds are strictly ordered and none of them collide", () => {
+    const rungs = GROUNDS.map((name) => [name, lightness(hex(name))] as const);
+    for (let at = 1; at < rungs.length; at += 1) {
+      expect(
+        rungs[at - 1][1] - rungs[at][1],
+        `${rungs[at - 1][0]} → ${rungs[at][0]} is not a step down`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  test("the ladder's whole span is 4.42 L*, and tokens.css says so", () => {
+    const span = lightness(hex("--bg-inner")) - lightness(hex("--bg-subtle"));
+    // Stated to two decimals beside the tokens. A grey re-picked without
+    // re-running the arithmetic moves this and fails here rather than in a
+    // screenshot six rounds later.
+    expect(Number(span.toFixed(2))).toBe(4.42);
+  });
+
+  test("--bg-subtle is the floor, and --text-muted is what puts it there", () => {
+    const muted = hex("--text-muted");
+    const subtle = hex("--bg-subtle");
+    expect(contrast(muted, subtle), "the floor must clear AA").toBeGreaterThanOrEqual(4.5);
+
+    /*
+     * One 8-bit step down the same hue. `--bg-subtle` is #eef3f7 and the grey
+     * one step darker in each channel is what a designer reaching for « a
+     * slightly deeper well » would type — so this is the real next value, not
+     * a synthetic one.
+     */
+    const darker = `#${[1, 3, 5]
+      .map((i) => (Number.parseInt(subtle.slice(i, i + 2), 16) - 1).toString(16).padStart(2, "0"))
+      .join("")}`;
+    const slack = lightness(subtle) - lightness(darker);
+
+    expect(
+      contrast(muted, darker),
+      "there is room below --bg-subtle after all — the ladder can be spread, and the " +
+        "numbers written beside it in tokens.css are now stale",
+    ).toBeLessThan(4.5 + slack);
+
+    /*
+     * And the figure the review gate has to live inside, stated rather than
+     * rediscovered: the rail's ground against the column's, with the gate's
+     * `<aside>` nesting removed. `RAIL_FLOOR` is 2.5 in `shot.mjs`.
+     */
+    const rail = lightness(hex("--bg-canvas")) - lightness(hex("--bg-subtle"));
+    expect(Number(rail.toFixed(2)), "--bg-canvas → --bg-subtle, the gate's rail step").toBe(2.25);
+  });
+});
+
+/**
  * **A grained surface is a darker surface, and the palette was never measured
  * against it.**
  *

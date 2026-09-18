@@ -51,6 +51,53 @@
   --brand-900: #02334b; /* 13.31:1 on #ffffff — headings on a brand tint */
 
   /* canvas & surfaces — cool paper, not white */
+  /*
+   * **The ladder, in L\*, and why it is as tight as it is. Measured.**
+   *
+   *   --bg-inner      #ffffff   100.000        (the notepad; the ceiling)
+   *   --bg-card       #fdfefe    99.582   0.418 below the one above
+   *   --bg-card-soft  #f9fbfd    98.522   1.060
+   *   --bg-canvas     #f7f9fb    97.829   0.693
+   *   --bg-subtle     #eef3f7    95.578   2.252
+   *
+   * Five grounds inside **4.42 L\***, and the top four inside 2.171. That is
+   * not a stylistic choice and it is not slack anyone can take back by
+   * re-picking greys: **the floor is where `--text-muted` stops clearing AA.**
+   * #62707b on #eef3f7 is 4.559:1, and the next 8-bit step down the same hue,
+   * #edf2f6, is 4.519:1. Two steps down is 4.479 — under. So the ladder has
+   * **one** rung of room left at the bottom, 0.348 L\* wide, and nothing at the
+   * top, because `--bg-inner` is white.
+   *
+   * **What that costs, on the gate, today.** The review rail has to clear
+   * `RAIL_FLOOR = 2.5` ΔL\* against the column beside it. Drop
+   * `--bg-card-soft` from the gate's `<aside>` — which takes the review
+   * screen from four nested grounds to three and improves every other figure
+   * on it (column↔document ΔL\* 1.478 → 2.171, deepest chain 4 → 3, minimum
+   * adjacent step 0.693 → 2.171) — and the rail lands on `--bg-canvas` at
+   * **ΔL\* 2.252**, under the floor, at both sizes. Spending the last rung on
+   * `--bg-subtle` buys 2.600 — 0.1 over the floor — by taking the ink's own
+   * margin from 0.059 to 0.019. That is robbing the ink to pay the rail.
+   *
+   * **The constraint is the ink, and moving the ink is the whole fix.** Swept:
+   *
+   *   --text-muted   on grained --bg-canvas   darkest --bg-subtle    ΔL\* the
+   *                  (the 138-run finding)    still clearing AA      rail gets
+   *   #62707b             4.458  ✗                 #edf2f6              2.600
+   *   #5f6d78             4.659  ✓                 #e8edf2              4.320
+   *   #5d6b76             4.799  ✓                 #e5eaef              5.371
+   *
+   * One step down the muted grey closes the grain finding **and** opens more
+   * than double the rail's floor for the gate to spend. The compressed top of
+   * this ladder is a symptom; `--text-muted` sitting 0.059 over AA on the
+   * darkest ground is the cause, and it is the same token the grain measurement
+   * arrives at from the other side.
+   *
+   * **It is not in this commit because none of these five values live here
+   * alone.** Every one of them is in VISION.md §6's palette block and
+   * `tokens.test.ts` pins that block hex-for-hex, deliberately — the palette is
+   * the spec's, not the stylesheet's. `tokens.test.ts` holds the geometry above
+   * so it cannot drift while the decision waits.
+   */
   --bg-canvas: #f7f9fb;
   --bg-card: #fdfefe;
   --bg-card-soft: #f9fbfd;
