@@ -14,9 +14,11 @@
  * to do something twice.
  */
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { StrictMode, useRef } from 'react'
+import { StrictMode, useCallback, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { durationMs, useDeparture, useDismiss } from '../useDismiss.ts'
+import { useLeaving } from '../useLeaving.ts'
 
 // No global auto-cleanup in this project (`src/ui/ui.test.tsx` does the same).
 afterEach(cleanup)
@@ -309,5 +311,154 @@ describe('useDeparture under StrictMode', () => {
     expect(strip()?.className).toBe('')
     act(() => void vi.advanceTimersByTime(300))
     expect(strip()).not.toBeNull()
+  })
+})
+
+/**
+ * **Every rung comes back to rest, and the first one never did.**
+ *
+ * The three hooks are one rule about when a hold starts (`holdOneMotion`) and
+ * one rule about when it ends: the exit state a departure sets is spent by that
+ * departure and may not survive it. Two of the three enforce that by
+ * construction — `useDeparture` moves to `out` and `useLeaving` drops the key —
+ * and `useDismiss` did not. It set `leaving` true and nothing ever set it false.
+ *
+ * **What that cost, measured on the shipped app** (`scratch/r21-reopen.mjs`,
+ * `scratch/r21-piege.mjs`, both sizes). `App.tsx` holds this hook's state one
+ * component above the sheet's own mount, so the flag outlives the sheet it was
+ * set for. Open Réglages, close it, open it again:
+ *
+ *     1re ouverture   leaving false   opacity 1.000   veil 1.000
+ *     2e ouverture    leaving true    opacity 0.000   veil 0.000
+ *
+ * A `role="dialog"` at zero opacity, still translated by its exit
+ * (`matrix(1, 0, 0, 1, 0, 3)`) and still `pointer-events: auto`, over the whole
+ * screen. The rep asked for Réglages and got nothing; `elementFromPoint` at the
+ * centre of the window lands **inside** the dialog, so every press on the
+ * calendar behind it goes to a settings row nobody can see. And there is no way
+ * out: `dismiss()` sets a flag that is already set, so the effect keyed on it
+ * does not re-run — `Échap` and the ✕ were both driven, four presses, and the
+ * sheet is still there. Quitting the app is the only exit. Réglages is where
+ * the transcription model, the language model and the CRM credentials live, so
+ * the second visit is the ordinary one.
+ *
+ * **Nothing could see it, and one stage opened the sheet twice.**
+ * `reglages-sortie` closes with `Échap`, reopens, and closes again with the ✕ —
+ * on the reopened, already-`leaving`, already-transparent sheet. Its four
+ * assertions are « opacity < 1 » (0 passes), « every curve is `--ease-in` »
+ * (the rule is on the element, so it passes), « every duration is 0.15s »
+ * (same), and « the tracer saw at least 3 frames » (three frames of 0.000
+ * passes). Its veil assertion fires only when the veil is at zero *while the
+ * sheet is above 0.2*, which a sheet at 0.000 never is. Driven at HEAD with
+ * `--motion --fade` at both smoke sizes: « ✓ reglages-sortie 1280×800 … 85
+ * élément(s) animé(s) dont 2 qui s'en vont, tous par les jetons, dans le bon
+ * sens », and the same at 960×600. Every assertion on that stage is satisfied
+ * by the defect it exists to stop, and the frame it photographs is the
+ * invisible sheet.
+ *
+ * So the check is written here, at the width of the rule: the three rungs
+ * together, each made to leave, brought back, and made to leave again. A
+ * fixture that drives one hook cannot express « every rung returns to rest » —
+ * which is the shape round 19 shipped when it fixed one rung and concluded the
+ * family was right.
+ */
+const KEY = () => 'r'
+const ONE = [{ id: 'r' }]
+const NONE: { id: string }[] = []
+
+/** `useDismiss`, wired the way `App.tsx` wires it: the hook above the mount. */
+function DismissRung() {
+  const [open, setOpen] = useState(true)
+  const { leaving, dismiss } = useDismiss(useCallback(() => setOpen(false), []))
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Ouvrir
+      </button>
+      {open ? <p data-testid="rung" className={leaving ? 'leaving' : ''} /> : null}
+      <button type="button" onClick={dismiss}>
+        Fermer
+      </button>
+    </>
+  )
+}
+
+/** `useDeparture`, wired the way `EnhancementNotice` and `Review` wire it. */
+function DepartureRung() {
+  const [present, setPresent] = useState(true)
+  const { shown, leaving } = useDeparture(present)
+  return (
+    <>
+      <button type="button" onClick={() => setPresent(true)}>
+        Ouvrir
+      </button>
+      {shown ? <p data-testid="rung" className={leaving ? 'leaving' : ''} /> : null}
+      <button type="button" onClick={() => setPresent(false)}>
+        Fermer
+      </button>
+    </>
+  )
+}
+
+/** `useLeaving`, wired the way `DayPane` wires it: a row dropping out of a list. */
+function LeavingRung() {
+  const [present, setPresent] = useState(true)
+  const rows = useLeaving(present ? ONE : NONE, KEY)
+  return (
+    <>
+      <button type="button" onClick={() => setPresent(true)}>
+        Ouvrir
+      </button>
+      {rows.map((row) => (
+        <p key={row.id} data-testid="rung" className={row.leaving ? 'leaving' : ''} />
+      ))}
+      <button type="button" onClick={() => setPresent(false)}>
+        Fermer
+      </button>
+    </>
+  )
+}
+
+const RUNGS: [string, () => ReactElement][] = [
+  ['useDismiss', DismissRung],
+  ['useDeparture', DepartureRung],
+  ['useLeaving', LeavingRung],
+]
+
+describe.each(RUNGS)('the exit does not outlive the departure it was set for (%s)', (_name, Rung) => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      getPropertyValue: () => '150ms',
+    } as unknown as CSSStyleDeclaration)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  const rung = () => screen.queryByTestId('rung')
+  const press = (name: string) => act(() => screen.getByRole('button', { name }).click())
+  const oneMotion = () => act(() => void vi.advanceTimersByTime(FRAMES + 150))
+
+  test('it comes back at rest, and it can leave a second time', () => {
+    render(<Rung />)
+    expect(rung()?.className).toBe('')
+
+    press('Fermer')
+    expect(rung()?.className).toBe('leaving')
+    oneMotion()
+    expect(rung()).toBeNull()
+
+    // The whole assertion: what the rep sees on the *second* visit.
+    press('Ouvrir')
+    expect(rung()).not.toBeNull()
+    expect(rung()?.className).toBe('')
+
+    // And the way out still works, which is the half that traps them.
+    press('Fermer')
+    expect(rung()?.className).toBe('leaving')
+    oneMotion()
+    expect(rung()).toBeNull()
   })
 })

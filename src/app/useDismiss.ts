@@ -82,6 +82,44 @@ const motionMs = (): number => {
  * One helper and not three copies, because the three rungs — `useDismiss`,
  * `useLeaving`, `useDeparture` — are one rule about when a hold starts, and this
  * repo has watched a two-copy invariant drift twice.
+ *
+ * **Where the whole ladder lands, frame-sampled on the shipped app**
+ * (`scratch/r21-ladder.mjs`, the technique `shot.mjs`'s `departureOf` uses — rAF
+ * for every painted frame, `MutationObserver` for the detach). All five
+ * surfaces that wear an exit, three passes each, both smoke sizes:
+ *
+ *     Réglages     · useDismiss    11–13 images, 5–7 entre les deux, 195–223 ms
+ *     source ▸     · useDeparture  12–13 images, 5   entre les deux, 185–203 ms
+ *     ligne agenda · useLeaving    11–12 images, 5–6 entre les deux, 220–247 ms
+ *     bandeau fin  · useDeparture  11–12 images, 4–6 entre les deux, 172–185 ms
+ *     carte widget · useDeparture  11–13 images, 5–6 entre les deux, 189–209 ms
+ *
+ * Last painted opacity **0.000 on twenty-nine of the thirty samples**, and
+ * 0.032 on the thirtieth — so the ladder ends on nothing, which is the standing
+ * question about it. Under `prefers-reduced-motion`, 2–4 images, **zero** between
+ * the two ends on all five, detached at 26–94 ms: the collapse comes from the
+ * `0ms` token and not from a second code path. The one helper carries every
+ * rung; there is no rung left cutting its own fade.
+ *
+ * **`transitionend` was the nominated remedy and it is declined, with
+ * numbers** (`scratch/r21-endevents.mjs`, both media states, every shipped exit
+ * rule). « Leave when the motion actually ends, with the timer as a ceiling »
+ * assumes the motion emits an end event. Two of the four exit rules are
+ * `@keyframes`, so `transitionend` never arrives on them at all:
+ *
+ *     .leaving               transitionend@170ms   ·  reduce: aucun événement
+ *     .widget-leaving        transitionend@179ms   ·  reduce: aucun événement
+ *     .widget-card-leaving   animationend@172ms    ·  reduce: animationend@22ms
+ *     .widget-panel-leaving  animationend@157ms    ·  reduce: animationend@24ms
+ *
+ * And `.leaving` — the app window's only exit rule, worn by every rung in this
+ * file's family — emits **nothing** under `prefers-reduced-motion`, because a
+ * `0s` transition never runs. So the event would be dead on the two widget
+ * surfaces and dead on every app surface for the rep who asked for less motion:
+ * the ceiling would be the mechanism in the majority of cases, with a second
+ * one beside it to keep in step. It would be bought for a number that is
+ * already 0.000 on twenty-nine samples in thirty, and it can strand a surface
+ * where the timer cannot.
  */
 export function holdOneMotion(run: () => void): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -162,7 +200,43 @@ export function useDismiss(onClose: () => void): Dismiss {
     if (!leaving) return
     // `holdOneMotion`, not a bare `setTimeout`: the hold has to start when the
     // motion does and not one frame before it. The measurement is up there.
-    const cancel = holdOneMotion(() => latest.current())
+    const cancel = holdOneMotion(() => {
+      /*
+       * **The flag is spent by the departure it was set for — and for as long
+       * as this hook existed it was not.**
+       *
+       * `setLeaving(true)` had no counterpart: nothing ever set it false. The
+       * other two rungs return to rest by construction (`useDeparture` moves to
+       * `out`, `useLeaving` drops the key), so the ladder looked symmetrical and
+       * this one latched.
+       *
+       * It is fatal here and nowhere else, because of where the state lives.
+       * `App.tsx` calls this hook one component **above** the sheet's own mount
+       * — it has to, since the sheet's unmount is the route changing up there —
+       * so the flag outlives the surface it was set for and is still true the
+       * next time the rep opens Réglages. Driven on the shipped app, both sizes
+       * (`scratch/r21-reopen.mjs`): first open `opacity 1.000`, second open
+       * `.leaving`, **`opacity 0.000`**, veil `0.000`, `pointer-events: auto`.
+       * An invisible full-screen dialog that eats every press meant for the
+       * calendar behind it, and no way out — `dismiss()` sets a flag that is
+       * already set, so the effect keyed on it never re-runs and neither `Échap`
+       * nor the ✕ does anything (`scratch/r21-piege.mjs`, four presses). Réglages
+       * is where the transcription model, the language model and the CRM
+       * credentials live; the second visit is the ordinary one.
+       *
+       * **Before `onClose`, and in the same commit.** React batches both setters
+       * inside this timer, so the shipped caller — whose `onClose` is a route
+       * change that unmounts the sheet — paints one frame, not two, and no
+       * resting sheet flashes back over the calendar. A caller whose `onClose`
+       * declines to unmount gets its surface back at rest, which is the honest
+       * outcome of a close that did not happen and is not a transparent trap.
+       *
+       * Ordered before rather than after so a throwing `onClose` cannot leave
+       * the flag latched again.
+       */
+      setLeaving(false)
+      latest.current()
+    })
     cancelHold.current = cancel
     return cancel
   }, [leaving])

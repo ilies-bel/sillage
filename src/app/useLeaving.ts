@@ -53,21 +53,63 @@ export function useLeaving<T extends object>(
    * the state it writes actually differs.
    */
   const signature = items.map(keyOf).join('\u0000')
+  const seen = useRef(signature)
 
-  useEffect(() => {
+  /*
+   * **Which rows have gone is decided during render, and for as long as this
+   * hook existed it was decided in an effect.**
+   *
+   * An effect runs *after* the commit. So on the frame the row left the array,
+   * React had already taken its `<li>` out of the document; the effect then
+   * called `setLeaving` and a second commit put a **different** element back,
+   * created already wearing `.leaving`. A CSS transition interpolates from the
+   * last value the browser painted on that element, and a node that has never
+   * been painted has none — so the exit did not run at all.
+   *
+   * Frame-sampled on the agenda, the node caught at birth by a
+   * `MutationObserver` and every frame it is alive read off `getComputedStyle`
+   * (`scratch/x-birth.mjs`), the two rows the clock jump removes, both smoke
+   * sizes. Before, at 1280×800 and 960×600:
+   *
+   *     NOUVEL élément, 11 images, **0 entre les deux**,
+   *       1re opacité 0.000, dernière 0.000, détachée à 246 / 257 ms
+   *
+   * Eleven painted frames and not one of them between the two ends: the row
+   * blinked out and left a hole open for a quarter of a second — a worse frame
+   * than no exit, produced by the hook whose whole purpose is to remove that
+   * frame, on the one row it was written for. After:
+   *
+   *     même élément, 11 images, **5 entre les deux**,
+   *       1re opacité 0.998 / 0.995, dernière 0.000, détachée à 243 / 239 ms
+   *
+   * and under `prefers-reduced-motion`, 2–3 images, 0 entre les deux, detached
+   * at 87–106 ms — the collapse comes from the `0ms` token, not from a branch.
+   *
+   * `useDeparture` already derives its `shown` during render and
+   * `useDismiss.ts` states this exact reason for it — « the surface unmounts,
+   * the effect then sets `leaving`, and it remounts wearing the exit ». This
+   * hook is the older of the two and never got the same treatment. Adjusting
+   * state during render is React's own escape hatch for state derived from
+   * props: it re-runs this component before committing anything, so the row is
+   * never removed from the document and the class lands on the element the rep
+   * has been looking at.
+   *
+   * The guard is the comparison it feeds, so it is idempotent under StrictMode's
+   * double invocation — the first pass mutates and schedules, the second sees
+   * them equal and schedules nothing. That is the same argument `useDeparture`
+   * makes, and it is **asserted rather than argued**: `useLeaving.test.tsx`
+   * drives the whole hook inside `<StrictMode>` and pins node identity, one held
+   * row in its old position, and exactly one `--motion`. Driven with the guard
+   * removed, all eleven tests in that file fail on a render loop; driven with it
+   * weakened to an array-identity comparison, the stale-payload test that buys
+   * `useDeparture` its existence fails. The guard is load-bearing both ways.
+   */
+  if (seen.current !== signature) {
+    seen.current = signature
     const live = new Set(items.map(keyOf))
     const gone = previous.current.filter((item) => !live.has(keyOf(item)))
     for (const item of gone) departedAt.current.set(keyOf(item), previous.current.indexOf(item))
     previous.current = items
-
-    // Back before it finished leaving: stop the timer and let the live one render.
-    for (const key of live) {
-      const cancel = timers.current.get(key)
-      if (cancel === undefined) continue
-      cancel()
-      timers.current.delete(key)
-    }
-
     setLeaving((was) => {
       const kept = was.filter((item) => !live.has(keyOf(item)))
       const added = gone.filter((item) => !kept.some((other) => keyOf(other) === keyOf(item)))
@@ -75,18 +117,38 @@ export function useLeaving<T extends object>(
       if (added.length === 0 && kept.length === was.length) return was
       return [...kept, ...added]
     })
+  }
 
-    if (gone.length === 0) return
+  /**
+   * The held rows, as a value that changes only when the *set* of them does —
+   * `leaving` is rebuilt on every departure, so an effect depending on the array
+   * would re-arm every hold each time any row moved.
+   */
+  const heldSignature = leaving.map(keyOf).join('\u0000')
+
+  useEffect(() => {
+    const held = new Set(leaving.map(keyOf))
+
+    // Back before it finished leaving: stop the timer and let the live one render.
+    for (const [key, cancel] of Array.from(timers.current)) {
+      if (held.has(key)) continue
+      cancel()
+      timers.current.delete(key)
+    }
+
     /*
      * `holdOneMotion` and not a `setTimeout` armed here: a hold armed in an
      * effect starts a frame *before* the style that begins the exit resolves, so
      * it expires with that frame of the fade still to run — and `--ease-in` puts
      * almost all of its change at the end. The numbers are in `useDismiss.ts`.
      * The duration is still read off `--motion` and never written, one level in.
+     *
+     * One hold per key and never a second: a row already on its way out keeps
+     * the clock it started with, so a neighbour departing beside it cannot
+     * restart its fade.
      */
-    for (const item of gone) {
-      const key = keyOf(item)
-      timers.current.get(key)?.()
+    for (const key of held) {
+      if (timers.current.has(key)) continue
       timers.current.set(
         key,
         holdOneMotion(() => {
@@ -99,8 +161,8 @@ export function useLeaving<T extends object>(
         }),
       )
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see `signature`
-  }, [signature, keyOf])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see `heldSignature`
+  }, [heldSignature, keyOf])
 
   // Cleared on unmount, so a pane closed mid-exit leaves no timer behind.
   useEffect(() => {
