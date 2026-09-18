@@ -187,19 +187,52 @@ function Legend() {
   return (
     <div className="border-subtle mt-row border-t pt-row">
       {/*
-        **A 2×2 grid, because a key that reflows cannot teach a two-axis code.**
+        **One entry per line, because the 2×2 never once drew as a 2×2.**
 
-        It was `flex flex-wrap`, so the four entries landed 2/2 at 1280 and
-        **2/1/1** at 960 — three ragged rows at the size `main.ts` declares as the
-        floor. The code has two dimensions: hue says *which kind* (blue is a
-        meeting, orange is a recording) and fill says *offered or happening*. A
-        wrap that puts them in an arbitrary order scrambles both, and the one
-        block whose whole job is to teach the code is the first thing to break.
+        The history is worth the paragraph. It was `flex flex-wrap`, which landed
+        2/2 at 1280 and **2/1/1** at 960 — three ragged rows at the size
+        `main.ts` declares as the floor. The fix was `grid-cols-2`, argued as « a
+        key that reflows cannot teach a two-axis code »: hue says *which kind*,
+        fill says *offered or happening*, so the columns are the two fills and
+        the rows the two hues.
 
-        Ordered so the columns are the two fills and the rows the two hues, which
-        is the code drawn as a table rather than a sentence.
+        The reflow moved inside the cell. This `ul` is **287 px** wide at 1280×800
+        and at 1440×900, and **223 px** at 960×600 — it is fixed by the left
+        column, not by the window — so two equal columns leave, after the 12 px
+        `gap-x-inline` and each row's 6 px dot and 6 px `gap-tight`,
+        **125.5 px** of room at the wide size and **93.5 px** at the floor.
+        Measured in the legend's own 11px face: « enregistrement en cours »
+        is 127.1, « réunion enregistrée » 101.1, « réunion prévue » 78.2,
+        « réunion prête » 69.3.
+
+        So at 1280 one of the four wrapped and at 960 two did — and because a
+        grid row stretches, both cells of a row grew with the one that broke.
+        What shipped was 17 px over 34.1 px at the wide size and 34.1 over 34.1
+        at the floor: the 2×2 drawn as « enregistrement en / cours » beside
+        « réunion / prête ». The wide size misses by **1.6 px**, which is not a
+        margin to hold a key on across a font fallback on the primary platform
+        (HR-2).
+
+        Shortening the labels was the other way out and it is closed: the only
+        set that fits 93.5 px is adjectival (« en cours », « prête »), and
+        « en cours » *is* `STATE_LABEL.recording` as the row beside it draws it —
+        the echo this list was corrected for two rounds ago — while a masculine
+        noun (« appel prêt ») breaks the gender agreement `MARK_NAME` needs to
+        keep tracking this list for a screen reader.
+
+        One column costs 92.2 px against 59.1 at 1280 and 76.2 at 960, and buys
+        four whole phrases instead of eight fragments. The two axes survive the
+        turn: read down, the pairs are filled-blue, hollow-blue, filled-orange,
+        hollow-orange — the same table, transposed.
+
+        **Nothing in the harness can see this.** `--scrollers` is silent because
+        a wrapped cell grows rather than clips, `--prose` counts only `.measure`
+        surfaces, and `--geometry` measures only what declares `data-hangs`.
+        `scratch/legend.mjs` in the round-20 report is the driver; a `--wraps`
+        probe in `shot.mjs` is the standing check this wants, and that file is
+        another lane's.
       */}
-      <ul className="text-muted grid grid-cols-2 gap-x-inline gap-y-tight text-label">
+      <ul className="text-muted grid grid-cols-1 gap-y-tight text-label">
         {LEGEND.map(({ mark, label }) => (
           <li key={mark} className="flex items-center gap-tight">
             <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', MARK_CLASS[mark])} />
