@@ -177,6 +177,9 @@ round 5 did not.
 | 20 | detection | `19cb51a` | — | — | 6.5 | 6 | 6 | 5 | — | — | — | **54.5** |
 | 21 | main | `c558d61` | 7 | 7.5 | 6.5 | 6.5 | 8 | 8 | 8 | 7.5 | 7 | **66** ‡ |
 | 21 | main | `c558d61` | 7 | 8 | 7.5 | 6.5 | 8 | 8 | 7.5 | 8 | 7.5 | **68** ‡ |
+| 21 | widget | `69e0b89` | 8.5 | 8 | 6.5 | 9 | 8 | 9 | 8.5 | 8.5 | 8.5 | **74.5** ‡ |
+| 21 | main | `69e0b89` | 8.5 | 7.5 | 8 | 6.5 | 9 | 7 | 8.5 | 7 | 8 | **70** ‡ |
+| 21 | detection | `69e0b89` | 7 | 7 | 7.5 | 7.5 | 8.5 | 8.5 | 7.5 | 8 | 7.5 | **69** ‡ |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -367,6 +370,97 @@ That list, less those two rows, is what a round should be spent on.
 write the table — then and only then read this History to write the Movement
 section. A scorer that knows last round's number is measuring last round's
 number. And the agent that hunted the defects does not assign the score.
+
+
+## Round 21, closed: the first movement this project has measured
+
+Three blind scorers, one per surface, at `69e0b89`. Nobody read the History.
+
+| surface | round 21, blind | last anchored | anchored peak, 20 rounds |
+|---|---|---|---|
+| widget | **74.5** | 53.5 | 54.5 (r6) |
+| main | **70** | 58 | 58 (r7) |
+| detection | **69** | 54.5 | 58 (r7) |
+
+**Main is the one with a controlled comparison.** Two blind readings mid-round,
+before any lane merged, gave 66 and 68. The post-merge blind reading is 70. So
+the round moved it **+3 on a consistent instrument** — small, real, and the
+first such number in twenty-one rounds. The other two surfaces have no blind
+predecessor, so their gap against the anchored series is re-measurement, not
+progress, and is recorded as such.
+
+Every table summed to its own total. Both later scorers **verified their own
+provenance unprompted** — each checked that the diff across its run touched no
+file under `src/` or `electron/` — which is the round-14 error policing itself
+without being asked.
+
+### What the round shipped
+
+Twenty-five commits. Three defects reachable on Windows, the primary platform:
+three terminal states (`pushing`, `done`, `aborted`) drawing a screen with
+nothing on it, reachable every time WASAPI loopback fails to open; a dry-run
+*Autoriser* that could take no branch at all on a granted host; and a correct
+French refusal rendered 810px above the top of the window. Plus a full-screen
+invisible dialog with no way out on reopening Réglages; an exit animation that
+painted **zero** intermediate frames, the row blinking out and leaving a hole
+for a quarter second; a capture verb on two presses that do not capture; a
+backlog counting the call the rep was still recording; four legend colours
+clearing 3:1 by a quarter of a point with nothing measuring them; and an arming
+refusal that found the live call and then called it « une réunion ».
+
+### The instruments moved more than the product
+
+**`--census`, the tenth pass.** The standing finding named in three separate
+rounds — no check reads a distribution, so a *family* is invisible to all nine
+— now has an instrument. On its first run it found a hover glyph orphaned onto
+its own line, doubling a followable line's box at 960 while `--targets`,
+`--geometry` and `--prose` all passed it; and the widget's row controls
+stretching so the glyph tracked how long the client spoke.
+
+**`--contrast` was measuring one element in twelve.** `groundOf` tested
+`background-image` before `background-color`, and the app root carries both, so
+**290 text runs were skipped, every one blocked by the declared `--grain`** —
+85–94% of the text on the first screen a rep ever sees, under a green line
+reading « texte AA ».
+
+**The screen list documented 60 of 83 stages**, with zero stale rows: it never
+went wrong, it stopped being extended. The 23 missing were the most recently
+added, i.e. exactly the screens covering what the last few rounds found.
+
+**Three checks were narrower than their own prose** — the refusal scan reading
+four files of which two hold no refusal, the backlog wait swallowing its own
+failure, and the preload-strip bound testing `\s` where the bridge applies
+`\s*`.
+
+### What this cost, stated rather than omitted
+
+The integrator (me) was wrong five times, each from reasoning where measuring
+was available: a false premise about `settled()` propagated into all four lane
+briefs; two corroborated findings recorded and then withdrawn, both from the
+three I had ranked highest; three successive wrong diagnoses of the census's
+first failure, two of them sent to the owning lane as findings before anything
+was measured — the check was right every time; and a suggested fix
+(`box.height > lineHeight * 1.5`) that the lane measured and found would have
+destroyed the census's own headline finding, because the widget's row controls
+compute a 21.7px line-height.
+
+Two tooling faults cost real work and are now in `CLAUDE.md`: the
+`-m "$(cat <<EOF)"` commit form silently strips bodies, which happened to six
+commits across three lanes, and **`git stash` is shared by every worktree** —
+one lane's pop applied another's four files into the wrong tree and dropped
+their entry, recovered only through `git fsck --unreachable`.
+
+### Still open
+
+`.pane-label`, the arming-refusal name and the harness stage list were closed
+after the scores were taken, so they are not in the three totals above. Not
+closed: the four-ground nesting and 40/56/28 hairlines on the gate and
+historique (axis 4, the lowest axis on two surfaces); « 0 qui s'en vont » on the
+main screens, where eleven evidence panels vanish in one frame; 45% of the
+960×600 detection window spent on chrome; and the arming gesture itself, which
+**has never been walked** — the bridge answers `agenda:arm` with `evt-${eventId}`
+against a fixture whose meetings are all `m-*`, so pressing *Préparer* lands on
+« réunion introuvable », and the stage that exists for it only counts buttons.
 
 
 ## Round 16: three reviewers, three surfaces, one verdict about the author
