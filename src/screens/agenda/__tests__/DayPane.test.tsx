@@ -158,13 +158,21 @@ describe('DayPane — a call under way is not a call about to start', () => {
    * *before* it read the state, so `STATE_LABEL.recording` was unreachable on the
    * agenda for every calendar-armed meeting, which is the primary path (HR-9).
    * Measured on the shipped screen: fifty minutes into a recording the row still read
-   * « Prêt » and still wore the day's one filled *Enregistrer*, whose whole case is
+   * « Prêt » and still wore the day's one filled control, whose whole case is
    * that it points at the one thing the rep is there to do.
+   *
+   * **The verb is *Ouvrir* and it used to be *Enregistrer*.** The press is
+   * `onOpen` on both branches — driven at the bridge in
+   * `agenda/__tests__/verbs.test.tsx`, it reaches no IPC channel at all — so the
+   * word was the product's capture verb on a control that does not capture, and
+   * the *same* word as the arm control on an upcoming row, which is a different
+   * act. What distinguishes the offer is « PRÊT » and the fill, both asserted here.
    */
   test('the offer says Prêt and carries the day’s one filled primary', () => {
     draw({ armed: true, state: 'armed' })
     expect(screen.getByText('Prêt')).toBeTruthy()
-    const control = screen.getByRole('button', { name: 'Enregistrer' })
+    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+    const control = screen.getByRole('button', { name: 'Ouvrir' })
     expect(control.className).toContain('bg-brand-700')
   })
 
@@ -197,7 +205,7 @@ describe('DayPane — a call under way is not a call about to start', () => {
   test('an armed row the screen did not name keeps the quiet ink', () => {
     draw({ armed: true, state: 'armed' }, null)
     expect(screen.getByText('Prêt')).toBeTruthy()
-    const control = screen.getByRole('button', { name: 'Enregistrer' })
+    const control = screen.getByRole('button', { name: 'Ouvrir' })
     expect(control.className).not.toContain('bg-brand-700')
   })
 
@@ -216,7 +224,7 @@ describe('DayPane — a call under way is not a call about to start', () => {
  * **Exactly one filled control across both of the pane's lists** (US-26).
  *
  * The shipped home screen drew six outlined controls of identical weight in the
- * right-hand column — four *Ouvrir* and two *Enregistrer*, measured at 1280×800 —
+ * right-hand column — four *Ouvrir* and two arm controls, measured at 1280×800 —
  * and the rep's next action was exactly one of them. The count is what regressed
  * and what a screenshot cannot state, so it is asserted as a count: a pane drawing
  * two blues looks perfectly reasonable in a picture.

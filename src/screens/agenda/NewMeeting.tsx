@@ -207,13 +207,19 @@ export function NewMeeting({
         **Never the second filled blue on the screen.**
 
         Measured at 1280×800: « Démarrer une réunion » at x=1099 and the armed
-        row's « Enregistrer » at x=1140, both `--brand-700`, 172px apart and
-        horizontally overlapping. « One primary per view » (VISION.md §6) was two
-        — and the wrong one was louder: the top one creates an *untitled* meeting
-        for right now, the bottom one records the client call that has already
-        started. When the calendar is offering that row, this steps down; it is
-        still the way in on every other day, and on a day with nothing armed it
-        is the only fill on screen.
+        row's control at x=1140, both `--brand-700`, 172px apart and
+        horizontally overlapping. « One primary per view » (VISION.md §6) was two.
+        When the calendar is offering that row, this steps down; it is still the
+        way in on every other day, and on a day with nothing armed it is the only
+        fill on screen.
+
+        **The sentence that used to be here said the armed row « records the
+        client call that has already started ».** It does not and never has:
+        driven at the bridge (`agenda/__tests__/verbs.test.tsx`), pressing it
+        reaches no channel at all — it is `onOpen`, pure navigation. *This*
+        button is the one that records, which is the whole reason it is the
+        louder of the two when nothing is armed, and the reason the row's verb
+        stopped being the capture verb this round.
       */
       variant={armedElsewhere ? 'bordered' : 'primary'}
       onClick={() => void create({ title: '', clientName: null, scheduledStart: null })}

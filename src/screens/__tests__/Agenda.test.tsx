@@ -624,17 +624,28 @@ describe('armed is an offer, never a recording (HR-7)', () => {
 
     /*
       An unarmed row is information, not a control — a dead button on it is
-      exactly what DEC-26 forbids.
+      exactly what DEC-26 forbids… on a **past** row. An upcoming one carries
+      *Préparer*, which is a different act and therefore a different word.
 
-      And the armed one says *Enregistrer*, not *Ouvrir*: those are two
-      different acts, and the row for the call that is starting now is the one
-      control on this screen that should carry the weight. It used to wear the
-      same outline as every other row while the filled primary in the header
-      started a *different*, unscheduled meeting.
+      **This block used to say « the armed one says *Enregistrer*, not *Ouvrir*:
+      those are two different acts ».** They were not two acts. The test directly
+      below presses that button and asserts it does nothing but `onOpen` — the
+      same act as every *Ouvrir* on the day — and the two sat four lines apart
+      for four rounds, each passing. Meanwhile the *upcoming* row carried the
+      same word over a genuinely different act (`agenda:arm`), so one word
+      covered two acts and one act went by two words, both at once.
+
+      What marks the offer is the fill and « PRÊT », which is what is asserted
+      here. `agenda/__tests__/verbs.test.tsx` presses every control on this
+      screen and holds the label → act map to a bijection.
+
+      Only one control is on screen at `SUITE_HOUR`: the 14:00 row is past by
+      two hours, which is this test's own subject — a past invite the app never
+      opened carries nothing.
     */
-    expect(screen.queryByRole('button', { name: 'Ouvrir' })).toBeNull()
-    const record = screen.getByRole('button', { name: 'Enregistrer' })
-    expect(record.className).toContain('bg-brand-700')
+    const controls = screen.getAllByRole('button', { name: /^(Ouvrir|Préparer|Enregistrer)$/ })
+    expect(controls.map((button) => button.textContent)).toEqual(['Ouvrir'])
+    expect(controls[0]!.className).toContain('bg-brand-700')
   })
 
   test('the armed row opens the meeting the agenda already created', async () => {
@@ -650,7 +661,7 @@ describe('armed is an offer, never a recording (HR-7)', () => {
       }))
 
     render(<Agenda onOpen={(id) => opened.push(id)} onHistorique={() => {}} onReglages={() => {}} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir' }))
 
     expect(opened).toEqual(['evt-abc'])
   })

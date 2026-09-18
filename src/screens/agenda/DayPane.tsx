@@ -13,7 +13,7 @@
  *  · **A row with no session carries no *Ouvrir*** (DEC-26) — a *past* invite
  *    the app never opened is information, and a dead *Ouvrir* on it would be the
  *    exact dead control that decision forbids. An **upcoming** one is not
- *    information: it is a call that can be started, and it carries *Enregistrer*
+ *    information: it is a call that can be started, and it carries *Préparer*
  *    instead. Reading the rule as « no meeting, no button » left four of the
  *    five upcoming rows with nothing on them at all.
  *  · **An empty range says why it is empty**, in the calendar's own words, and
@@ -121,12 +121,16 @@ interface DayPaneProps {
   refreshing?: boolean
   onOpen: (meetingId: string) => void
   /**
-   * Start a scheduled call now, keeping the invite it came from.
+   * Arm a scheduled call now, keeping the invite it came from (*Préparer*).
    *
    * Separate from `onOpen` because they are different acts on different things:
    * one opens a meeting that exists, the other asks `agenda:arm` to bring one
    * into being from a calendar event — which is the same path the clock takes,
    * so the attendees and the subject survive.
+   *
+   * It does **not** start a capture, and the verb no longer says it does — see
+   * the control itself. `session:command { start }` is reached from exactly two
+   * places in this product and neither of them is a day row.
    */
   onArm: (eventId: string) => void
 }
@@ -316,21 +320,12 @@ interface EntryRowProps {
   /** This is the screen's one filled control — see `DayPaneProps.emphasis`. */
   filled: boolean
   onOpen: (meetingId: string) => void
-  /** Start a scheduled call now, keeping the invite (`agenda:arm`). */
+  /** Arm a scheduled call now, keeping the invite (`agenda:arm`) — *Préparer*. */
   onArm: (eventId: string) => void
 }
 
 function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowProps) {
   const meetingId = entry.meetingId
-  /**
-   * Whether this row's verb is « Ouvrir ».
-   *
-   * Both branches of the control below call `onOpen`; the verb differs because
-   * an armed meeting is one the rep is about to record and an ended one is one
-   * they are going to read. It is named because two things now read it — the
-   * label and whether the row is a target — and they must not drift apart.
-   */
-  const opens = !(entry.armed && entry.state !== 'recording')
 
   /*
    * **The clock leads, on every row of this pane and of the queue beside it.**
@@ -410,7 +405,7 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
           for « ease-out on the way in, ease-in on the way out » and only half of
           it was built, which `--motion` has reported as « 0 qui s'en vont » on
           every app screen for six rounds. It matters most on this row because
-          this row is the screen's one filled *Enregistrer*: a control that size
+          this row is the screen's one filled control: a control that size
           vanishing with no frame in between reads as a misclick.
         */
         leaving && 'leaving pointer-events-none',
@@ -439,7 +434,7 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         `STATE_LABEL.recording = 'En cours'` was **unreachable on the agenda for
         every calendar-armed meeting**, which is the primary path (HR-9). Measured
         on the shipped screen: at fifty minutes into a recording the row still read
-        « Prêt » and still wore the day's one filled *Enregistrer* — whose whole
+        « Prêt » and still wore the day's one filled control — whose whole
         case (HR-7) is that it points at the one thing the rep is there to do, and
         it was pointing at a call already being recorded and saying it had not
         started. Every review round has photographed this on the flagship stage,
@@ -493,11 +488,37 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         cannot see the recording, it cannot see the pending list, and two lists
         deciding separately is two blues.
 
-        The **verb** stays this row's own, and it is not the same question.
-        *Enregistrer* means « start capturing a call that is beginning now », which
-        is what an armed row offers; *Ouvrir* means « take me to this meeting »,
-        which is what a call already recording, and a compte-rendu waiting to be
-        validated, both want. A live call is opened, never started again.
+        **And the verb is no longer the row's own, because the act is not the
+        row's own.** This branch had two labels over one `onClick`: an armed row
+        said *Enregistrer*, everything else said *Ouvrir*, on the argument that
+        « an armed meeting is one the rep is about to record ». Driven through the
+        shipped screen (`scratch/verbs.test.tsx`), with an armed row and an
+        upcoming invite on one day:
+
+            VERBS ON SCREEN: ["Démarrer une réunion","Enregistrer","Enregistrer"]
+            PRESS «Enregistrer» #0: channels=[]                          navigated=true
+            PRESS «Enregistrer» #1: channels=["agenda:arm", …]           navigated=true
+            PRESS «Démarrer une réunion»: channels=["meeting:create","session:command", …]
+
+        Two identical rectangles, two different acts — and **neither of them
+        records**. The armed row's press reaches no channel at all: it is
+        `onOpen`, the same navigation the three rows under it perform, and
+        `Agenda.armNow`'s own docblock says so (« It opens the session but does
+        **not** start recording: HR-7 says arming is an offer a human accepts »).
+        The one control on the screen that does dispatch `session:command
+        { start }` is the header's *Démarrer une réunion*, whose verb is the other
+        one. The product's capture verb is *Démarrer* — `Session.tsx` uses it for
+        the press that opens the microphone — so *Enregistrer* on a day row was
+        the capture verb on the two controls that do not capture, on the screen a
+        rep opens every morning, in front of HR-7's « armed is an offer, never a
+        recording ».
+
+        So the word follows the act. This branch is `onOpen` on every row, so it
+        is *Ouvrir* on every row; the `onArm` branch below is a different act and
+        gets a different word. What separates the armed row from the four under
+        it is `StateDot`'s « PRÊT » and the fill — a state and an emphasis, which
+        is what they are — and no longer a verb making a promise the press does
+        not keep.
       */}
       {meetingId ? (
         /*
@@ -513,29 +534,28 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         <Button
           variant={filled ? 'primary' : 'bordered'}
           /*
-            **The row is the target only where the verb is « Ouvrir ».**
+            **The row is the target wherever the verb is « Ouvrir », which is
+            now every row this branch draws.**
 
-            The stretch was on every row whose action is `onOpen`, and one of
-            those rows says *Enregistrer* — a meeting already armed, whose verb
-            is aspirational because the rep records it from the session screen.
-            Measured on `agenda-appel-imprevu`: `elementFromPoint` at 30% across
-            a 672px row returned the button named « Enregistrer ». Two controls
-            on that screen carry the product's capture verb, one of them arms
-            and records from an 89px button and the other navigates from an
-            invisible rectangle two thirds of the screen wide, and nothing on
-            screen separates them.
+            The stretch used to be withheld from the armed row, and the reason
+            was sound while that row said *Enregistrer*: measured on
+            `agenda-appel-imprevu`, `elementFromPoint` at 30% across a 672px row
+            returned a button carrying the product's capture verb, and a 672px
+            invisible rectangle is a lot of surface on which to say the wrong
+            thing about recording a client.
 
-            The behaviour was always right — this branch only ever navigates,
-            and the `onArm` branch below never got the stretch. What was wrong
-            is that the *appearance* said otherwise, and a 672px target is a lot
-            of surface on which to say the wrong thing about recording a client.
-            So the stretch follows the word: « Ouvrir » takes the row, and a row
-            that reads *Enregistrer* keeps its button.
+            The word is right now, so the rule it encoded — « the stretch follows
+            the word » — puts the rectangle back. Every press here is `onOpen`,
+            navigation is reversible, and a rep who lands on the wrong session
+            screen presses *Retour*. The `onArm` branch below still has no
+            stretch, and that is the half of the rule that matters: arming mints
+            a meeting, and « the rep clicked somewhere in a 1050px rectangle » is
+            not how one should begin.
           */
-          className={cn(opens && "after:absolute after:inset-0 after:content-['']")}
+          className="after:absolute after:inset-0 after:content-['']"
           onClick={() => onOpen(meetingId)}
         >
-          {opens ? 'Ouvrir' : 'Enregistrer'}
+          Ouvrir
         </Button>
       ) : entry.eventId !== null && !entry.past ? (
         /*
@@ -559,12 +579,32 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
 
           `bordered`, always, and this row is not an `emphasis` candidate at all:
           a row with no meeting has no id to name. One row owns the screen's single
-          filled control (HR-7, US-26); a column of blue *Enregistrer*s down the
-          upcoming list would take that weight away from the call that is actually
+          filled control (HR-7, US-26); a column of blue verbs down the upcoming
+          list would take that weight away from the call that is actually
           happening.
+
+          **« Préparer », and it used to say « Enregistrer ».** Driven at the
+          bridge (`scratch/verbs.test.tsx`), the press reaches
+          `agenda:arm` → `agenda:snapshot` → `meeting:list` and then navigates.
+          It reaches `session:command` never. `Agenda.armNow`'s own docblock is
+          explicit — « It opens the session but does **not** start recording:
+          HR-7 says arming is an offer a human accepts, and the rep pressing a
+          row is asking to be taken to the call, not to have capture begin behind
+          a list » — so the button was the product's capture verb on a press that
+          does not capture, and it was the *same* word as the armed row above,
+          which does not even do this much. One verb, two acts, on a screen whose
+          central safety claim is that arming is not recording.
+
+          *Préparer* is what happens: the invite becomes a meeting carrying its
+          `eventId`, its subject and its attendees, the row starts wearing « PRÊT »
+          — the same word — and the session screen it opens offers *Démarrer*,
+          which is this product's one verb for opening a microphone (`Session.tsx`,
+          and the header's *Démarrer une réunion* beside this list). Two presses,
+          which is what the code has always done; the second one is now the only
+          one that claims to.
         */
         <Button variant="bordered" onClick={() => onArm(entry.eventId as string)}>
-          Enregistrer
+          Préparer
         </Button>
       ) : null}
 

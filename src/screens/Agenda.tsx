@@ -241,7 +241,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    *
    * Measured on the shipped home screen at 1280×800, at 14:35 with the Néovia call
    * being recorded: six controls in the right-hand column — *Ouvrir* at y=206,
-   * *Enregistrer* at 276 and 345, *Ouvrir* at 464, 534 and 681 — every one of them
+   * the arm control at 276 and 345, *Ouvrir* at 464, 534 and 681 — every one of them
    * `bordered`, `rgb(255,255,255)` on a 1px `rgb(211,222,230)` border. And
    * *Démarrer une réunion* in the header was **bordered too**, because
    * `NewMeeting` steps it down beside an armed row (`armedElsewhere`) and the armed
@@ -374,7 +374,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
   )
 
   /**
-   * *Enregistrer* on an upcoming invite: arm it now, then open it.
+   * *Préparer* on an upcoming invite: arm it now, then open it.
    *
    * The arming is the **same** one the clock performs — `agenda:arm` reaches
    * `Agenda.armNow`, which calls the private `#arm` that `decideArming` calls —
@@ -384,9 +384,16 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    *
    * It opens the session but does **not** start recording: HR-7 says arming is
    * an offer a human accepts, and the rep pressing a row is asking to be taken
-   * to the call, not to have capture begin behind a list. *Enregistrer* on the
+   * to the call, not to have capture begin behind a list. *Démarrer* on the
    * session screen is the second press, and it is the same second press an
    * automatically armed meeting asks for.
+   *
+   * **The button said *Enregistrer* until this round, and the paragraph above is
+   * why that was wrong** — this handler has never once reached
+   * `session:command`. So did the armed row's, which reaches no channel at all:
+   * two identical rectangles carrying the product's capture verb, neither of
+   * them capturing, on one screen. `agenda/__tests__/verbs.test.tsx` presses
+   * every control this screen draws and refuses a label that covers two acts.
    *
    * A refusal is shown rather than swallowed — `#arm` declines an event whose
    * meeting has already been held, and « rien ne se passe » on a button is the
@@ -558,7 +565,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
 
               Its own comment is « never the second filled blue on the screen »,
               with the measurement beside it: *Démarrer une réunion* at x=1099 and
-              the armed row's *Enregistrer* at x=1140, both `--brand-700`, 172px
+              the armed row's control at x=1140, both `--brand-700`, 172px
               apart and horizontally overlapping — « one primary per view »
               (VISION.md §6) being two. That reasoning is about the *fill*, not
               about arming; arming was simply the only thing that could take it.

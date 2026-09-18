@@ -395,19 +395,133 @@ const pressAndSettle = async (page, { control, at, how, label }) => {
 }
 
 /**
- * The verb on a day-list row, which is **not** one word.
+ * The verb on a day-list row that holds a meeting — **one word, now**.
  *
- * The armed meeting — the call starting now — carries a filled *Enregistrer*;
- * every other row carries an outline *Ouvrir*, because opening a meeting that
- * exists and starting a capture are two different acts. A stage that hard-codes
- * either one photographs half the calendar and hangs on the other half: renaming
- * this button broke six stages at once, including both of the features that were
- * under review at the time.
+ * It was `/^(Ouvrir|Enregistrer)$/`, and the docblock argued for the set: « the
+ * armed meeting carries a filled *Enregistrer*; every other row carries an
+ * outline *Ouvrir*, because opening a meeting that exists and starting a capture
+ * are two different acts ». They were the same act. Driven at the bridge
+ * (`src/screens/agenda/__tests__/verbs.test.tsx`), a press on the armed row
+ * reaches **no IPC channel at all** — it is `onOpen`, exactly like every
+ * *Ouvrir* beside it — while the *upcoming* row wore the same word over
+ * `agenda:arm`, which is a different act, and neither of the three reached
+ * `session:command`. The capture verb was on the two controls that do not
+ * capture, and this constant is the place the harness agreed to stop asking.
  *
- * Matched as a set rather than as a string, so a stage says « the way into this
- * row » and stops caring which of the two it is.
+ * A row that holds a meeting says *Ouvrir*. A row that holds only an invite says
+ * *Préparer* and is a different stage's business (`agenda-demarrer-tot`), which
+ * is why this is no longer a set: « the way into this row » and « the way to arm
+ * an invite » are two questions and one regex answered both.
  */
-const OPEN_ROW = /^(Ouvrir|Enregistrer)$/
+const OPEN_ROW = /^Ouvrir$/
+
+/**
+ * **The whole verb vocabulary of the calendar's right-hand column, declared.**
+ *
+ * The half of « one verb, one act » a photograph can hold.
+ *
+ * `src/screens/agenda/__tests__/verbs.test.tsx` owns the other half: it presses
+ * every control on the screen and refuses a word that covers two acts, or an act
+ * that goes by two words. It can do that because it has a bridge that records
+ * every `invoke`. A stage cannot — a press here navigates — so what a stage can
+ * assert is the *vocabulary*, and that turns out to be the half that failed.
+ *
+ * What failed: *Enregistrer* sat on two day rows and neither of them reached
+ * `session:command`. The capture verb in this product is **Démarrer** — it is
+ * what `Session.tsx` puts on the press that opens the microphone, and what the
+ * header puts on the one control here that does. So the rule is narrow and
+ * checkable from the paint: **no control inside the day list may carry the
+ * capture verb**, and every verb it does carry must be one the product declared.
+ *
+ * Run on *every* agenda stage rather than on the one that happened to stage the
+ * collision, because « how many words does this screen spend » is a fact about
+ * the screen and the stage that photographed it was asserting « at least one
+ * *Enregistrer* » — it got louder as the defect got worse. `agenda-demarrer-tot`
+ * asked for « at least two » of the same word. Both were counting the wrong thing
+ * as hard as they could.
+ */
+const ROW_VERBS = new Set(['Ouvrir', 'Préparer'])
+
+/**
+ * Every verb the product uses for « a microphone opens now ». Nothing in the day
+ * list may say one: `agenda:arm` and `onOpen` are the only two acts on offer
+ * there, and neither of them records.
+ */
+const CAPTURE_VERB = /^(Enregistrer|Démarrer)$/
+
+/**
+ * **Wait for *En attente de validation*, which no agenda stage ever did.**
+ *
+ * `Agenda` asks `history:search` for the `à valider` backlog through
+ * `useHistorySearch`, which debounces 200 ms, and the stub answers `history:search`
+ * after 150 ms of its own. `settled()` waits for animations and for a held
+ * departure; it does not wait for a question nobody has asked yet. Measured on
+ * the shipped screen at 1280×800 with a probe that sampled the DOM twice:
+ *
+ *     before (the instant every stage photographs) : null
+ *     after  (+1500 ms)                            : 3 réunions en attente de validation, 1 ligne
+ *
+ * So the section that catches DEC-4's quietest failure — a compte-rendu recorded,
+ * written and never confirmed — has **never been photographed**, its count has
+ * never been photographed, and neither has the left rail's `À valider N` note,
+ * which is fed by the same answer. Eight measured checks × eight agenda stages ×
+ * two sizes, all green, none of them looking at it. `--motion` went from « 66
+ * élément(s) animé(s) » to 68 the moment the wait was added, which is the size of
+ * what was missing from the census.
+ *
+ * Keyed on the heading's **role**: the rail's `sr-only` note contains the same
+ * sentence, and `getByText` is a strict-mode violation across the two.
+ */
+const waitForBacklog = async (page) => {
+  const backlog = page.getByRole('heading', { name: 'En attente de validation' })
+  /*
+   * A day with nothing owed draws no section at all — « rien à valider » is a
+   * congratulation a rep reads on no morning, and `PendingGates` returns null. So
+   * the wait is for *an answer*, not for the section: the rail's own note appears
+   * either way and is the thing the answer moves.
+   */
+  await page
+    .getByText(/appels? en attente de validation/)
+    .first()
+    .waitFor({ timeout: 4_000 })
+    .catch(() => undefined)
+  await backlog.waitFor({ timeout: 1_500 }).catch(() => undefined)
+  await settled(page)
+}
+
+const assertRowVerbs = async (page) => {
+  const found = await page.evaluate(() => {
+    const main = document.querySelector('main')
+    if (!main) return null
+    return [...main.querySelectorAll('li button')].map((button) => ({
+      label: (button.textContent ?? '').trim(),
+      row: (button.closest('li')?.textContent ?? '').trim().slice(0, 60),
+    }))
+  })
+  if (found === null) throw new Error('aucun <main> : la liste du jour n’est pas à l’écran')
+
+  const capturing = found.filter((control) => /^(Enregistrer|Démarrer)$/.test(control.label))
+  if (capturing.length > 0) {
+    throw new Error(
+      `${capturing.length} contrôle(s) de la liste du jour portent le verbe de capture — ` +
+        capturing.map((c) => `« ${c.label} » sur « ${c.row} »`).join(' ; ') +
+        '. Aucun n’ouvre un micro : agenda:arm arme, onOpen navigue, et ' +
+        'session:command n’est atteint que depuis « Démarrer une réunion ».',
+    )
+  }
+
+  const undeclared = [...new Set(found.map((c) => c.label))].filter(
+    (label) => !ROW_VERBS.has(label),
+  )
+  if (undeclared.length > 0) {
+    throw new Error(
+      `verbe(s) non déclaré(s) sur une ligne du jour : ${undeclared
+        .map((label) => `« ${label} »`)
+        .join(', ')} — déclare-les dans ROW_VERBS avec l’acte qu’ils nomment`,
+    )
+  }
+  return found
+}
 
 /**
  * impeccable's in-page detector, run against what the browser actually painted.
@@ -603,6 +717,8 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByText('Néovia Santé — cadrage renfort data').first().waitFor()
       await page.getByText('Passées').waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -633,6 +749,8 @@ const SCREENS = {
       await page.getByRole('button', { name: 'Mois suivant' }).click()
       await page.waitForTimeout(400)
       await page.getByText(/hors de la période synchronisée/).first().waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -693,6 +811,8 @@ const SCREENS = {
       // Whichever of the three the range calls for — a past day does not say
       // « à venir » about itself, which is the whole point of the copy.
       await said.first().waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -730,6 +850,8 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Semaine' }).click()
       await page.getByText('Néovia Santé — cadrage renfort data').first().waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -739,6 +861,8 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Liste' }).click()
       await page.getByText('Néovia Santé — cadrage renfort data').first().waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -757,8 +881,18 @@ const SCREENS = {
    * The stage asserts the *count*, because that is the thing that regressed and
    * the thing a screenshot cannot state: one filled primary on the armed row
    * (HR-7 — there is at most one, and it owns the screen's weight), and a
-   * bordered *Enregistrer* on each remaining upcoming row. Photographing a
-   * screen with buttons on it would pass either way.
+   * bordered arm control on each remaining upcoming row. Photographing a screen
+   * with buttons on it would pass either way.
+   *
+   * **The word is *Préparer* and it used to be *Enregistrer*, and this stage was
+   * counting the collision rather than the feature.** « at least two
+   * *Enregistrer* on the week » went *greener* the worse the ambiguity got: the
+   * armed row wore the same word over a different act, so a week holding one
+   * offer and one invite satisfied it with two controls that do two things.
+   * Driven at the bridge (`src/screens/agenda/__tests__/verbs.test.tsx`), neither
+   * of them reached `session:command` — the capture verb was on two presses that
+   * do not capture. So the count is of the arm control by its own name, and
+   * `assertRowVerbs` below refuses the capture verb anywhere in the list.
    */
   'agenda-demarrer-tot': {
     scenario: 'agenda',
@@ -766,13 +900,15 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Semaine' }).click()
       await page.getByText('Banque Delcourt — négociation du cadre tarifaire 2026').first().waitFor()
-      const armable = page.getByRole('button', { name: 'Enregistrer', exact: true })
+      await waitForBacklog(page)
+      const armable = page.getByRole('button', { name: 'Préparer', exact: true })
       const count = await armable.count()
       if (count < 2) {
         throw new Error(
-          `only ${count} « Enregistrer » on the week — an upcoming invite with no meeting must still be startable`,
+          `only ${count} « Préparer » on the week — an upcoming invite with no meeting must still be armable`,
         )
       }
+      await assertRowVerbs(page)
     },
   },
 
@@ -801,6 +937,7 @@ const SCREENS = {
         somebody reads the words, and the timeout made it silent.
       */
       await rowNamed(page, 'cadrage renfort data').getByRole('button', { name: 'Ouvrir' }).waitFor()
+      await assertRowVerbs(page)
     },
   },
 
@@ -3243,6 +3380,8 @@ const SCREENS = {
       // The grid itself, not a placeholder (DEC-31): a real, pressable day.
       await page.getByRole('button', { name: /aucune réunion$/ }).first().waitFor()
       await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()
+      await waitForBacklog(page)
+      await assertRowVerbs(page)
     },
   },
 
@@ -3314,18 +3453,51 @@ const SCREENS = {
       await openAgenda(page)
       // The offer itself, named for what it is rather than for a process.
       await page.getByText('Appel non planifié — Teams').first().waitFor()
+      await waitForBacklog(page)
       /*
-       * And it is the *armed* control, which is what distinguishes an offer from
-       * a row in the history: `DayPane` draws the one filled primary on the day
-       * as « Enregistrer », and « Ouvrir » on everything else.
+       * **And it is the row the screen gave its weight to, which is the assertion
+       * that survived the verb.**
+       *
+       * This used to read « `DayPane` draws the one filled primary on the day as
+       * *Enregistrer*, and *Ouvrir* on everything else », and counted the word.
+       * The word was wrong: driven at the bridge
+       * (`src/screens/agenda/__tests__/verbs.test.tsx`), a press on the armed row
+       * reaches **no IPC channel at all** — it is `onOpen`, the same act as every
+       * *Ouvrir* under it — while an upcoming invite carried the same word over
+       * `agenda:arm`, and the only control on the screen that reaches
+       * `session:command` is the header's *Démarrer une réunion*. So the stage
+       * was asserting « at least one control carries the capture verb » on a
+       * screen where nothing that carries it captures.
+       *
+       * What distinguishes an offer from a row in the history is not a word: it
+       * is « PRÊT » and the fill (US-26, HR-7). Both are read off the paint here,
+       * and the fill is read as a computed colour rather than as a class, because
+       * a class name is a declaration and this is a photograph.
        */
-      const record = page.getByRole('button', { name: 'Enregistrer', exact: true })
-      if ((await record.count()) === 0) {
+      const offer = page
+        .locator('li')
+        .filter({ hasText: 'Appel non planifié — Teams' })
+        .getByRole('button')
+        .first()
+      await offer.waitFor()
+      const ink = await offer.evaluate((button) => ({
+        label: (button.textContent ?? '').trim(),
+        background: getComputedStyle(button).backgroundColor,
+      }))
+      if (ink.label !== 'Ouvrir') {
         throw new Error(
-          'no « Enregistrer » on the day — an unscheduled call was detected and the ' +
-            'screen offers no way to record it, which is the whole feature',
+          `l’appel détecté porte « ${ink.label} » — la ligne armée ouvre la session, ` +
+            'elle ne démarre pas de capture (Agenda.armNow)',
         )
       }
+      if (/^rgba?\(\s*255,\s*255,\s*255/.test(ink.background)) {
+        throw new Error(
+          `l’appel détecté ne porte pas le contrôle plein du jour : fond ${ink.background}. ` +
+            'La détection a produit une ligne et l’écran ne dit pas laquelle est la sienne.',
+        )
+      }
+      await page.getByText('Prêt').first().waitFor()
+      await assertRowVerbs(page)
       // The grid is still drawn and still empty (DEC-31): this offer did not come
       // from a calendar, and none of the other days may claim it did.
       await page.getByRole('button', { name: 'Démarrer une réunion' }).waitFor()
