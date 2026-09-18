@@ -48,7 +48,7 @@ import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { Button, Logo, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
-import type { SectionId } from './Reglages.tsx'
+import { SECTION_FOR_CONNECTOR, type SectionId } from './Reglages.tsx'
 
 export interface OnboardingProps {
   /** Recorded as seen, then the calendar. The rep is never sent here again. */
@@ -84,28 +84,34 @@ const ORDER: readonly Step[] = ['quoi', 'besoins', 'essai']
  */
 const ASKED = REQUIRED_CONNECTORS.filter((id) => id !== 'transcribe')
 
+/**
+ * `section` is not written out here any more: `SECTION_FOR_CONNECTOR` is
+ * Réglages' own table of where a required subsystem is repaired, and two copies
+ * of it drift the first time a pane is renamed — which is the same reason
+ * `meetingAnchor` and `speakerLabel` live in one place.
+ */
 const NEEDS: Record<
   (typeof REQUIRED_CONNECTORS)[number],
   { title: string; why: string; section: SectionId }
 > = {
   capture: {
+    section: SECTION_FOR_CONNECTOR.capture,
     title: 'Le micro et l’audio de votre ordinateur',
     // The clause « vous seul le serez » used to close this sentence *and* the
     // permission warning forty pixels below it, verbatim, on the row a first-run
     // rep reads most carefully. The warning is the one that has to carry it: it
     // is the one that appears only when it is true.
     why: 'Sillage ne rejoint jamais la réunion : il écoute ce que votre machine joue et ce que dit votre micro. Il lui faut les deux pour que l’appel soit entier.',
-    section: 'connecteurs',
   },
   transcribe: {
+    section: SECTION_FOR_CONNECTOR.transcribe,
     title: 'La transcription',
     why: 'Sur cette machine par défaut. Le modèle est téléchargé une fois et reste ici.',
-    section: 'transcription',
   },
   llm: {
+    section: SECTION_FOR_CONNECTOR.llm,
     title: 'L’analyse',
     why: 'Ce qui écrit le compte-rendu à la fin de l’appel : un modèle sur cette machine ou un fournisseur avec votre clé. À choisir dans Réglages.',
-    section: 'llm',
   },
 }
 

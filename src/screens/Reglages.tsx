@@ -58,6 +58,7 @@ import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts
 import {
   OPTIONAL_CONNECTORS,
   REQUIRED_CONNECTORS,
+  type RequiredConnectorId,
 } from '../../electron/core/contracts/status.ts'
 import type {
   ConnectorRow,
@@ -131,6 +132,22 @@ const SECTIONS: readonly SectionNavItem<SectionId>[] = [
  * one click the control hands over cost a second one.
  */
 const LANDING: SectionId = 'connecteurs'
+
+/**
+ * **Where a required subsystem is repaired** — one table, because three screens
+ * now send a rep here by connector and three copies of this would drift the
+ * first time a pane was renamed.
+ *
+ * It lives beside `SECTIONS` rather than beside any of its readers: the sections
+ * are declared here, so an id that stops existing stops compiling here first.
+ * `capture` is *Connecteurs* and not a pane of its own — its remedy is a consent
+ * and a *Requis* row, which is what that pane holds.
+ */
+export const SECTION_FOR_CONNECTOR: Record<RequiredConnectorId, SectionId> = {
+  capture: 'connecteurs',
+  transcribe: 'transcription',
+  llm: 'llm',
+}
 
 interface ReglagesProps {
   onBack: () => void

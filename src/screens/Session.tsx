@@ -42,6 +42,8 @@ import { Notepad } from '../editor/Notepad.tsx'
 import { EditorErrorBoundary } from '../editor/editor-error-boundary'
 import { CompteRenduPane } from './session/CompteRenduPane.tsx'
 import { EnhancementNotice } from './session/EnhancementNotice.tsx'
+import { OutcomeNotice } from './session/OutcomeNotice.tsx'
+import type { SectionId } from './Reglages.tsx'
 import { LevelMeter } from './session/LevelMeter.tsx'
 import { MeetingTitle } from './session/MeetingTitle.tsx'
 import { RecipePicker, RecipeSwitchNotice, useRecipeChoice } from './session/RecipePicker.tsx'
@@ -60,12 +62,18 @@ interface SessionProps {
    */
   onReview?: (meetingId: string) => void
   /**
-   * Réglages, offered from one place on this screen: the notice that says no
-   * model is configured. Optional so a harness can mount the screen without a
-   * router — the notice then states the situation and omits the shortcut, which
-   * is the correct degradation, because the sentence is the part that matters.
+   * Réglages, offered from two places on this screen: the notice that says no
+   * model is configured, and the one that says the recording was abandoned.
+   * Optional so a harness can mount the screen without a router — the notices
+   * then state the situation and omit the shortcut, which is the correct
+   * degradation, because the sentence is the part that matters.
+   *
+   * It takes the pane, because the two callers send the rep to different ones:
+   * a missing model is *Modèle de langage* and a dead capture is *Connecteurs*.
+   * `App.tsx` has always passed `(section?) => …`; the prop was the narrower of
+   * the two and threw the argument away.
    */
-  onReglages?: () => void
+  onReglages?: (section?: SectionId) => void
 }
 
 export function Session({ meetingId, onBack, onReview, onReglages }: SessionProps) {
@@ -378,6 +386,16 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         subtree along with it.
       */}
       <EnhancementNotice meetingId={meetingId} {...(onReglages ? { onReglages } : {})} />
+
+      {/*
+        And what became of the meeting when the machine stopped for good.
+
+        Under `EnhancementNotice` because the two never draw together — that one
+        answers `ended` and `extracting`, this one the three terminal states — and
+        because the order on the day a tenth state makes them overlap should be
+        « what is still happening » above « what already happened ».
+      */}
+      <OutcomeNotice state={current} {...(onReglages ? { onReglages } : {})} />
 
       {/*
         Only ever drawn when a switch is armed against an existing compte-rendu.
