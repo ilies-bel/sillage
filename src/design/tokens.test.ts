@@ -913,3 +913,111 @@ describe("the ink ramp is three steps everywhere it is declared", () => {
     }
   }
 });
+
+/*
+ * ── the input meter's geometry, and the two files that describe it ──────────
+ *
+ * **`borderRadius.bar` exists for a shape, and the two places that justify it
+ * disagree about what that shape is.** `tailwind.config.js` says the bars are
+ * « three pixels wide »; `LevelMeter.tsx`, arguing for the same square cap,
+ * says « five and a half pixels across a twelve pixel half ». At most one of
+ * those is the product, and neither is both variants: the strip is a fixed
+ * `SHAPE.width` divided by `SHAPE.bars` columns with a 2px gutter between them,
+ * so the width is *derived*, and the two variants derive differently.
+ *
+ * Nothing measured either number. They read like observations and are the shape
+ * this repo has been wrong about more often than any other — a figure computed
+ * once, written down as a figure seen, and then quoted by the next reader as
+ * the basis for a decision. The radius the two docblocks argue for is right;
+ * only their arithmetic is wrong, which is the worst case, because a correct
+ * conclusion is what stops anyone re-checking the premise.
+ *
+ * So the figures are re-derived here from the shipped `SHAPE` and the shipped
+ * classes, on the same principle as the contrast ratios above: a sentence that
+ * has gone stale fails the suite. The prose must carry every variant's pair,
+ * which is also what stops the next edit describing one variant and leaving the
+ * other silently contradicted.
+ */
+describe("the input meter's bars", () => {
+  const meter = read("../screens/session/LevelMeter.tsx");
+  const config = read("../../tailwind.config.js");
+
+  /** `const HISTORY = 20` — `SHAPE.header` counts its bars through it. */
+  const constant = (name: string): number => {
+    const found = meter.match(new RegExp(`const ${name} = (\\d+)`));
+    if (found === null) throw new Error(`${name} is no longer declared in LevelMeter.tsx`);
+    return Number(found[1]);
+  };
+
+  /** Tailwind's default scale, which this config extends rather than replaces. */
+  const rem = (cls: string): number => {
+    const found = cls.match(/^h-(\d+)$/);
+    if (found === null) throw new Error(`h-N is no longer how SHAPE states its height: ${cls}`);
+    return Number(found[1]) * 4;
+  };
+
+  /**
+   * The gutters, read rather than assumed: `gap-[2px]` between the columns of
+   * the strip, `gap-px` between the two channels stacked inside one column.
+   */
+  const BETWEEN_BARS = (() => {
+    const found = meter.match(/items-stretch gap-\[(\d+)px\]/);
+    if (found === null) throw new Error("the strip no longer sets its column gutter with gap-[Npx]");
+    return Number(found[1]);
+  })();
+  const BETWEEN_HALVES = /flex flex-1 flex-col gap-px/.test(meter) ? 1 : NaN;
+
+  const SHAPE = [...meter.matchAll(/(\w+): \{ bars: (\w+), width: (\d+), height: '(h-\d+)' \}/g)].map(
+    ([, variant, bars, width, height]) => ({
+      variant,
+      bars: /^\d+$/.test(bars) ? Number(bars) : constant(bars),
+      width: Number(width),
+      height: rem(height),
+    }),
+  );
+
+  test("SHAPE still declares both variants, so the figures below cover the whole subject", () => {
+    expect(SHAPE.map((s) => s.variant)).toEqual(["header", "pill"]);
+    expect(BETWEEN_HALVES, "the two channels no longer sit in one gap-px column").toBe(1);
+  });
+
+  /*
+   * One bar: the strip's width less its gutters, over the number of columns,
+   * by half the strip's height less the gutter between the two channels. The
+   * half is the *ceiling* a bar grows to — `Bar` is `w-full` with no border and
+   * a percentage height — so it is the dimension a radius would be clamped
+   * against, which is the only thing either docblock is arguing about.
+   */
+  const figures = SHAPE.map(({ variant, bars, width, height }) => ({
+    variant,
+    wide: (width - BETWEEN_BARS * (bars - 1)) / bars,
+    tall: (height - BETWEEN_HALVES) / 2,
+  }));
+
+  for (const { variant, wide, tall } of figures) {
+    const stated = `${wide}×${tall}px`;
+
+    test(`${variant} is ${stated}, and LevelMeter.tsx says so`, () => {
+      expect(meter, `LevelMeter.tsx does not carry « ${stated} » for ${variant}`).toContain(stated);
+    });
+
+    test(`${variant} is ${stated}, and tailwind.config.js says so`, () => {
+      expect(config, `tailwind.config.js does not carry « ${stated} » for ${variant}`).toContain(stated);
+    });
+
+    /*
+     * The conclusion both docblocks reach, checked rather than restated: the
+     * smallest radius on the card scale would be clamped to half the bar's
+     * shorter side, i.e. it would round the cap away entirely. That is why
+     * `bar` is a rung of its own and not a fourth step on that scale.
+     */
+    test(`${variant} would lose its cap to the smallest card radius`, () => {
+      const smallest = Number.parseFloat(declarations(read("./tokens.css")).get("--radius-sm") ?? "");
+      expect(smallest, "--radius-sm is no longer a px value in tokens.css").toBeGreaterThan(0);
+      expect(
+        smallest,
+        `${variant} is ${stated}; a ${smallest}px radius clamps to ${Math.min(wide, tall) / 2}px, i.e. the whole cap`,
+      ).toBeGreaterThanOrEqual(Math.min(wide, tall) / 2);
+    });
+  }
+});

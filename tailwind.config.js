@@ -139,8 +139,19 @@ module.exports = {
         lg: 'var(--radius-lg)',
         /*
          * **The one radius that is not a card corner.** The input meter's bars
-         * are three pixels wide (`session/LevelMeter.tsx`), and the 10–14px
-         * band VISION §6 sets for a *box* would round each of them into a dot.
+         * are 5.5×13.5px in the header and 5.8×11.5px in the pill
+         * (`session/LevelMeter.tsx`) — derived, not chosen: `SHAPE` fixes the
+         * strip's width and how many columns cross it, so a bar is whatever is
+         * left over once the gutters are taken out. The 10–14px band VISION §6
+         * sets for a *box* is wider than the narrow side of either, so it
+         * clamps to half that side and rounds the cap away entirely.
+         *
+         * This said « three pixels wide » for two rounds — a width neither
+         * variant has ever had, and one `LevelMeter.tsx` contradicted in its
+         * own docblock — while the conclusion it supports was right the whole
+         * time, which is exactly why nobody went back to the premise.
+         * `design/tokens.test.ts` now re-derives both pairs from `SHAPE` and
+         * fails if either sentence stops matching the product.
          * They wore `rounded-[1px]`, an arbitrary value, which is the shape
          * `check:tokens` now rejects everywhere else — so it is named here
          * instead of exempted there. A rung for a cap on a bar, not a fourth

@@ -336,12 +336,23 @@ function Bar({ rms, floor, channel, paused }: BarProps) {
          * **And the cap stays square.** A round one was tried, on the argument
          * that every voice instrument a rep has used looks like that and their
          * eye would read it without being taught. It does not survive this
-         * geometry: the bars are wider than they are tall — five and a half
-         * pixels across a twelve pixel half — so a full radius turns each one
-         * into a *circle*, and ten circles over ten circles is a dot matrix.
-         * The reading was lost, not softened. This is an instrument (DEC-38),
-         * and a square edge is what lets a rep see which bars are grey; a
-         * lozenge is decoration wearing a measurement's clothes.
+         * geometry. A bar's slot is 5.5×13.5px in the header and 5.8×11.5px in
+         * the pill, and the bar inside it is that wide by a *percentage* of
+         * that height, floored at 6% — so for most of its range it is far
+         * wider than it is tall (below 41% deflection in the header, 50% in
+         * the pill) and at rest it is a 5.5px mark less than a pixel high. A
+         * card radius clamps to half the narrow side, which at that end of the
+         * range is the whole bar: twenty lozenges over twenty in the header,
+         * ten over ten in the pill, and the reading is a dot matrix.
+         *
+         * It was lost, not softened. This is an instrument (DEC-38), and a
+         * square edge is what lets a rep see which bars are grey; a lozenge is
+         * decoration wearing a measurement's clothes.
+         *
+         * Both pairs above are re-derived from `SHAPE` by
+         * `design/tokens.test.ts`, because this sentence used to give one
+         * variant's width, the other's count, and a half-height belonging to
+         * neither.
          */
         className={`w-full rounded-bar ${
           /*
