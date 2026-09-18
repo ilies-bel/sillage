@@ -24,6 +24,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { refuse } from '../core/contracts/refusal.ts'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PRELOAD = path.resolve(HERE, '../preload.ts')
@@ -33,12 +34,24 @@ const unwrap = (channel: string, error: unknown): Error => {
   const message = error instanceof Error ? error.message : String(error)
   const prefix = `Error invoking remote method '${channel}': `
   if (!message.startsWith(prefix)) return error instanceof Error ? error : new Error(message)
-  const inner = message.slice(prefix.length).replace(/^[A-Za-z]*Error:\s*/, '')
+  const inner = message.slice(prefix.length).replace(/^[A-Za-z][A-Za-z0-9]*:\s*/, '')
   return new Error(inner)
 }
 
+/**
+ * What Electron puts on the wire for a rejected `invoke`: its own prefix, then
+ * the thrown value's **`name`**, then the message.
+ *
+ * Composed from a real error rather than from the word `Error`, because the
+ * fixture that hardcoded it is the reason this file was green over the defect
+ * for as long as `Refusal` has existed. A test whose fixture cannot produce the
+ * shape the product produces asserts nothing about the product.
+ */
+const asElectronWraps = (channel: string, error: Error): Error =>
+  new Error(`Error invoking remote method '${channel}': ${error.name}: ${error.message}`)
+
 const wrapped = (channel: string, inner: string): Error =>
-  new Error(`Error invoking remote method '${channel}': Error: ${inner}`)
+  asElectronWraps(channel, new Error(inner))
 
 test('the rep reads the sentence the main process wrote, and nothing else', () => {
   const french = 'Aucune transcription n’a été enregistrée pour cet appel.'
@@ -56,6 +69,59 @@ test('a refusal that names the screen to go to keeps its own colon', () => {
 test('a subclass name is stripped too', () => {
   const raw = new Error("Error invoking remote method 'review:confirm': TypeError: pas de compte")
   assert.equal(unwrap('review:confirm', raw).message, 'pas de compte')
+})
+
+test('the shipped Refusal reaches the rep as the sentence and nothing else', () => {
+  /*
+   * **The class the product actually throws across this boundary**, not a
+   * stand-in. `core/contracts/refusal.ts` sets `name = 'Refusal'` so the
+   * diagnostic log can tell « I am telling the rep something » from « something
+   * went wrong », and `ipc/register.ts` throws it at thirty-four sites — every
+   * « Aucune transcription n’a été enregistrée pour cet appel. », every « le
+   * coffre-fort n’est pas disponible sur cette machine ».
+   *
+   * The strip read `/^[A-Za-z]*Error:/`, which matches every built-in and not
+   * this one, so what a rep read was « Refusal: » in front of the French.
+   * Measured over the real preload in a real window on `meeting:get`,
+   * `meeting:ask` and `settings:setProviderField` before this line existed.
+   */
+  const french = 'Aucune transcription n’a été enregistrée pour cet appel.'
+  const thrown = refuse(french)
+  assert.equal(thrown.name, 'Refusal', 'le nom sérialisé par Electron')
+  assert.equal(unwrap('meeting:ask', asElectronWraps('meeting:ask', thrown)).message, french)
+})
+
+test('no refusal this app ships can be eaten by the strip', () => {
+  /*
+   * The other half of widening it. « One leading identifier and a colon » is
+   * removed whatever the identifier is called, which is what makes the strip as
+   * wide as the rule — and it would be a truncation if a French sentence ever
+   * opened on an ASCII word and a colon. So the sentences are read rather than
+   * assumed: every literal handed to `refuse(...)` under `electron/`, checked
+   * against the same expression the bridge applies.
+   *
+   * Only the *start* of each message can be eaten, which is why a first literal
+   * is enough even where the call spans lines.
+   */
+  const files = [
+    'app/ipc/register.ts',
+    'app/session/Agenda.ts',
+    'core/contracts/ask.ts',
+    'modules/llm/config.ts',
+  ]
+  let seen = 0
+  for (const file of files) {
+    const source = readFileSync(path.resolve(HERE, '..', file), 'utf8')
+    for (const [, literal] of source.matchAll(/refuse\(\s*['"`]([^'"`\n]*)/g)) {
+      seen += 1
+      assert.ok(
+        !/^[A-Za-z][A-Za-z0-9]*:\s/.test(literal),
+        `« ${literal} » commence par un identifiant et deux points — le préfixe la tronquerait`,
+      )
+    }
+  }
+  // A scan that matched nothing would be a green check over no subject.
+  assert.ok(seen >= 20, `seulement ${seen} refus lus — la lecture des sources a cessé de trouver`)
 })
 
 test('a message that is not Electron’s wrapper is passed through untouched', () => {

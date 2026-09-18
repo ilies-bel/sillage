@@ -49,9 +49,24 @@ const unwrap = (channel: string, error: unknown): Error => {
   const message = error instanceof Error ? error.message : String(error)
   const prefix = `Error invoking remote method '${channel}': `
   if (!message.startsWith(prefix)) return error instanceof Error ? error : new Error(message)
-  // What is left is `Error: <ours>`, or a subclass name — one leading
-  // `<Name>: ` and no more, because the sentence itself may contain a colon.
-  const inner = message.slice(prefix.length).replace(/^[A-Za-z]*Error:\s*/, '')
+  // What is left is `<Name>: <ours>`, where `<Name>` is `error.name` as Electron
+  // serialised it — one leading name and no more, because the sentence itself
+  // may contain a colon.
+  //
+  // **The name is not always `…Error`, and that cost a rep the whole sentence.**
+  // This read `/^[A-Za-z]*Error:/`, which is every built-in and none of ours:
+  // `core/contracts/refusal.ts` sets `name = 'Refusal'` on purpose — it is the
+  // type that separates « I am telling the rep something » from « something went
+  // wrong » — and it is thrown at thirty-four sites in `ipc/register.ts`. So the
+  // sentence a rep read was « Refusal: Aucune transcription n’a été enregistrée
+  // pour cet appel. », an English class name in front of the French, on the one
+  // surface DEC-26 exists for. Measured over the real bridge on `meeting:get`,
+  // `meeting:ask` and `settings:setProviderField`.
+  //
+  // So one leading identifier, whatever it is called. What that must never do is
+  // eat a French sentence that opens on a word and a colon; `preloadUnwrap`
+  // reads every refusal this app ships and asserts none of them can be.
+  const inner = message.slice(prefix.length).replace(/^[A-Za-z][A-Za-z0-9]*:\s*/, '')
   return new Error(inner)
 }
 
