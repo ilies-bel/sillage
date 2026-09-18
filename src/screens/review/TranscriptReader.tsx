@@ -463,7 +463,7 @@ export function TranscriptReader({
                   <button
                     type="button"
                     onClick={() => setPicked(segment.id)}
-                    className="hover:bg-subtle flex w-full gap-snug rounded-sm px-hair py-0.5 text-left transition"
+                    className="hover:bg-subtle flex w-full gap-snug rounded-sm px-hair py-hair text-left transition"
                   >
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {formatOffset(segment.startMs)}

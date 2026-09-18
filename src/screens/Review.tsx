@@ -3238,7 +3238,9 @@ function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowP
           {field.span ? (
             <Button
               variant="link"
-              className="mt-0.5 text-meta"
+              // `mt-hair`: the gap under the quote it follows, on the scale's
+              // smallest declared rung rather than the half-rung `mt-0.5` is.
+              className="mt-hair text-meta"
               onClick={() =>
                 onLocate({
                   quote: field.span?.quote ?? '',
@@ -3455,7 +3457,16 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
           « Cette machine uniquement » already uses, which is the other and only
           other checkbox in the product. `check:tokens` now refuses the pair.
         */
-        className="accent-brand-700 mt-0.5 shrink-0"
+        /*
+          `mt-hair` and not `mt-0.5`. Two pixels is on no rung of this product's
+          scale (`tokens.css`), and here it was not even buying the alignment it
+          was there for: measured on the shipped gate at both smoke sizes, the
+          box is 13px tall beside a `min-h-[24px]` label, so two pixels of offset
+          put its centre **3.5px above** the label's on all three intents. Four
+          puts it 1.5px above — nearer the line it belongs to, on the rung
+          `--space-hair` is declared for.
+        */
+        className="accent-brand-700 mt-hair shrink-0"
       />
       <span className="min-w-0 flex-1">
         {/*

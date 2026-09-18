@@ -81,13 +81,25 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
         than naming a value and leaving the subject to the paragraph beside it.
         Same shape as the row's `source ▸`: `min-h-[24px]` and `inline-flex
         items-center`, because this sits on a baseline under the section header
-        and padding would push the document down instead of growing the target.
+        and padding pushes the document down instead of growing the target.
+
+        `py-hair` and not `py-0.5`, and what that costs is measured rather than
+        waved through. Two pixels is on no rung of the scale `tokens.css`
+        declares; four is the smallest that is. Driven on `review` at 1280×800
+        and 960×600, the chip goes **24 → 27.05 px** — the floor stops being
+        what decides its height — so the document under it starts three pixels
+        lower. Three pixels is the whole of it: `review-modele-differe` still
+        gives *Valider* back in **0 page turns** at both sizes, and the six
+        `review-garde-*` stagings report the same press counts to the press
+        (7/6 and 14/14 on `garde-mort`, 7 and 15 on `garde-tapis`). The target
+        was never 24 px because of this padding; it was 24 because of the floor,
+        and it still clears it.
       */}
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((shown) => !shown)}
-        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-hair rounded-sm border px-snug py-0.5 text-meta transition"
+        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-hair rounded-sm border px-snug py-hair text-meta transition"
       >
         {`Modèle : ${recipe.title}`}
         <span aria-hidden>{open ? '▾' : '▸'}</span>

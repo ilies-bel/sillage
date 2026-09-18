@@ -130,7 +130,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 
             {/* The evidence, on its own line so the row above stays scannable. */}
-            <Matches matches={row.matches} className="w-full space-y-0.5 pl-16" />
+            <Matches matches={row.matches} className="w-full space-y-hair pl-16" />
           </Row>
         ))}
       </List>

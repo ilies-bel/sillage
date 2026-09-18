@@ -222,7 +222,21 @@ export function Historique({
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="px-gutter pb-row pt-7">
+      {/*
+        **`pt-gutter`, not `pt-7`.** Twenty-eight pixels is on no rung of this
+        product's scale — 4/6/8/12/16/20/32 (`tokens.css`) — and it was the
+        largest authored length on this screen that was not. The two rungs
+        either side are 20 and 32; 32 is the one already spent on this header's
+        own left and right (`px-gutter`), so the air above the title is now the
+        same measurement as the air beside it instead of a third number nobody
+        can name.
+
+        The calendar's header carries the same `pt-7` (`Agenda.tsx`), under a
+        docblock about its gutters stepping at the window floor. Two screens one
+        click apart should open their top band on the same rung; that file is
+        another lane's this round, and it is a finding, not a fix made here.
+      */}
+      <header className="px-gutter pb-row pt-gutter">
         <div className="flex items-baseline gap-row">
           <Button variant="nav" onClick={onBack}>
             ‹ Calendrier
@@ -516,7 +530,7 @@ function Row({ row, expanded, rule, onToggle }: RowProps) {
         </UiRow>
       </button>
 
-      <Matches matches={row.matches} className="px-block pb-2.5" />
+      <Matches matches={row.matches} className="px-block pb-snug" />
       <PushFailure intents={row.intents} />
 
       {expanded ? <Record meetingId={meeting.id} intents={row.intents} onReady={settle} /> : null}
@@ -565,7 +579,7 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
   if (failed.length === 0) return null
 
   return (
-    <div className="px-block pb-2.5">
+    <div className="px-block pb-snug">
       {failed.map((intent) => (
         <p key={intent.intentId} className="text-ui">
           <span className="text-warn">{intent.label} — échec.</span>{' '}
@@ -661,7 +675,7 @@ function Record({
       is what separates the record's heading from its contents, and it was
       already doing all of it.
     */
-    <div className="border-subtle grid grid-cols-2 gap-6 border-t px-block py-row">
+    <div className="border-subtle grid grid-cols-2 gap-block border-t px-block py-row">
       {/*
         **No « TRANSCRIPTION » over it.** A transcript names itself: every row is
         an offset, a side and a sentence, and nothing else on this record looks
@@ -993,10 +1007,18 @@ function Transcript({
         const isHit = needle !== null && !marked && foldQuote(segment.text).includes(needle)
         if (isHit) marked = true
         return (
+          /*
+            The wash is inset on the scale, `py-hair` and `px-hair`, not the
+            half-rung `py-0.5` it wore: four pixels either way is the smallest
+            step `tokens.css` declares and the same one the `-mx-hair` beside
+            it already uses, so the tint is one measurement rather than two.
+            The rows around it are `space-y-hair` apart, so the band still ends
+            four pixels clear of the next turn's ink.
+          */
           <li
             key={row.key}
             ref={isHit ? hit : undefined}
-            className={`flex gap-snug rounded-sm text-ui ${isHit ? 'bg-brand-50 -mx-hair px-hair py-0.5' : ''}`}
+            className={`flex gap-snug rounded-sm text-ui ${isHit ? 'bg-brand-50 -mx-hair px-hair py-hair' : ''}`}
           >
             <span className="text-muted w-10 shrink-0 tabular-nums text-meta">
               {formatOffset(segment.startMs)}

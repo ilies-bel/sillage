@@ -173,7 +173,16 @@ export function SearchBar({
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           maxLength={200}
-          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-2.5 py-tight text-ui"
+          /*
+            `px-snug` and not `px-2.5`: ten pixels is on no rung of this
+            product's scale (4/6/8/12/16/20/32, `tokens.css`) and it was the one
+            authored length on this row that was not — the field sat 10 in from
+            its own border while the chips under it stepped in sixes. Eight is
+            the rung above the `py-tight` on the same element, so the field is
+            still wider inside than it is tall inside, which is what stops a
+            one-line input reading like a button.
+          */
+          className="text-strong bg-inner border-card placeholder:text-muted min-w-[16rem] flex-1 rounded-sm border px-snug py-tight text-ui"
         />
 
         {onHistorique ? (
@@ -239,7 +248,7 @@ export function SearchBar({
           {dataAxes && clients.length > 0 ? (
             <>
               <Rule />
-              <div role="group" aria-label="Client" className="flex shrink-0 gap-tight">
+              <div role="group" aria-label="Client" className="flex shrink-0 gap-hair">
                 {clients.map((client) => (
                   <Chip
                     key={client}
@@ -286,6 +295,22 @@ export function SearchBar({
  * same distinction `Segmented` draws against `SectionNav`). The toggle is also
  * the only way off an axis now, so it is load-bearing rather than decorative —
  * pressing the pressed chip sends `neutral` back.
+ *
+ * **`gap-hair` inside, `gap-tight` around** — four pixels between two chips of
+ * one axis against the row's six, and that is a measurement rather than a
+ * preference. The row is a scroller whose whole design problem is horizontal:
+ * driven on `agenda-search`, sixteen chips wanted 1340px of a 632px row at
+ * 1280×800 and of a 472px one at 960×600 — eight and six of them wholly on
+ * screen. Two pixels off each of the twelve intra-axis gaps is 24px of that
+ * back, and it takes the separation the rep actually sees between two axes
+ * (21px, the row's six plus the `Rule`'s two `mx-hair` and its stroke) from
+ * 3.5× the intra-axis gap to 5.25×.
+ *
+ * Note what the six was *not* doing: `--rhythm` reads the declared `column-gap`
+ * of a container against its child's, so it reported these four groups as « no
+ * tighter inside than around ». Painted, they never were — the `Rule` between
+ * two axes carries its own margins and the pass cannot see them. The number
+ * that was wrong here is the one on the ladder, not the grouping.
  */
 function Axis<Value extends string, Neutral extends string>({
   label,
@@ -303,7 +328,7 @@ function Axis<Value extends string, Neutral extends string>({
   onSelect: (value: Value | Neutral) => void
 }) {
   return (
-    <div role="group" aria-label={label} className="flex shrink-0 gap-tight">
+    <div role="group" aria-label={label} className="flex shrink-0 gap-hair">
       {values.map((value) => (
         <Chip
           key={value}
@@ -472,8 +497,10 @@ function Page({ direction, onClick }: { direction: -1 | 1; onClick: () => void }
  * The hairline between two axes. Decoration — it carries no name and no state.
  *
  * The margin is the point: with the row's `gap-tight` alone, the space between
- * two axes equals the space between two chips of the same axis, and four groups
- * read as one run of thirteen chips.
+ * two axes would be six pixels against the four inside an axis — a difference
+ * nobody reads as a boundary, and four groups would read as one run of sixteen
+ * chips. With the two `mx-hair` and the stroke it is 21px against 4, measured
+ * on `agenda-search` at both smoke sizes.
  */
 function Rule(): ReactNode {
   return <span aria-hidden className="border-subtle mx-hair h-4 shrink-0 self-center border-l" />
