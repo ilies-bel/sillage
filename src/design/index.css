@@ -1237,6 +1237,26 @@
    * chips, dots and progress bars, where it is invisible and pure cost; and on
    * anything that repaints during a call. The transcript scrolls, and a noise
    * layer re-rasterising on scroll is GPU work on the capture path (DEC-26).
+   *
+   * **The first of those three is being broken, by this product, and here is
+   * what it costs.** `Onboarding.tsx` and `Splash.tsx` put `.grain` on a root
+   * wrapper with every sentence of the screen inside it, which is « under dense
+   * body text » exactly. Counted with `shot.mjs --contrast` over all 83 stages
+   * at both sizes: **138 text runs** clear AA against their own design colour
+   * and do not clear it against the darkest pixel of the tile they sit on — all
+   * 138 the same pair, `--text-muted` at 11–12px on a grained `--bg-canvas`,
+   * **4.83:1 flat and 4.46:1 under the tile** against a 4.5 floor. The rule
+   * above was written from the arithmetic and the arithmetic was right; nothing
+   * had measured whether the product obeyed it.
+   *
+   * It is 0.04 short, which is the reason it has stood for several rounds and
+   * not a reason to leave it standing. `design/tokens.test.ts` pins the number
+   * from both sides now — it decodes the tile's own alpha table out of the
+   * shipped PNG, discovers which grounds `.grain` is painted over from the
+   * classes `src/` writes, and fails if the gap widens *or* if it closes and
+   * the debt entry is left behind. That entry names the two fixes and why
+   * neither is in `src/design/`: a quieter tile needs `shot.mjs --contrast` to
+   * stop hard-coding `9 / 255`, and a darker `--text-muted` needs VISION.md §6.
    */
   .grain {
     background-image: var(--grain);
