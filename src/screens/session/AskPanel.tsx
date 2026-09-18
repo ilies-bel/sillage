@@ -260,10 +260,16 @@ export function AskPanel({
                   setQuestion(suggestion)
                   void ask(suggestion)
                 }}
-                // `min-h-[24px]`, WCAG 2.2 target size: `py-0.5` around
-                // `--type-meta` resolves to twenty-three pixels, and these sit
-                // in a wrapped row where a miss lands on the chip below.
-                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-snug py-0.5 text-meta transition"
+                /*
+                  `py-hair`, for `Chip`'s reason and with the same measurement:
+                  two pixels is not a step of this scale, and around
+                  `--type-meta` it resolved to 23.05px so `min-h-[24px]` was
+                  doing the work of the padding to clear WCAG 2.2's 24px floor.
+                  At four the box is 27.05px on its own. `min-h-[24px]` stays as
+                  the declared floor — these sit in a wrapped row where a miss
+                  lands on the suggestion below.
+                */
+                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-snug py-hair text-meta transition"
               >
                 {suggestion}
               </button>
@@ -407,7 +413,7 @@ function Answer({
                       dead button (DEC-26).
                     */
                     disabled={onLocate === undefined}
-                    className="hover:bg-subtle flex w-full gap-snug rounded-sm px-hair py-0.5 text-left transition disabled:hover:bg-transparent"
+                    className="hover:bg-subtle flex w-full gap-snug rounded-sm p-hair text-left transition disabled:hover:bg-transparent"
                   >
                     <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                       {time}
@@ -432,7 +438,7 @@ function Answer({
              * than as the citation being wrong.
              */
             return (
-              <li key={citation.span.quote} className="flex gap-snug px-hair py-0.5">
+              <li key={citation.span.quote} className="flex gap-snug p-hair">
                 <span className="text-muted w-10 shrink-0 tabular-nums text-meta leading-relaxed">
                   {/* No time claimed, because there is nowhere to point. */}
                   {time}

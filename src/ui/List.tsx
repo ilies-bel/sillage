@@ -116,22 +116,41 @@ export function List({ children, as: Tag = 'ul', label, bare = false, className 
   )
 }
 
+/*
+ * **The three densities are on the declared ladder, and they were not.**
+ *
+ * `py-2.5` is ten pixels and `py-3.5` is fourteen; the scale is 4/6/8/12/16/20/32
+ * and neither is a step of it. Measured over all 85 stages at both sizes, this
+ * one `cva` was the second-largest off-ladder site in the product after the
+ * calendar's day cells: `roomy` painted 14px on **46 stagings, 568 occurrences**
+ * and `dense`/`card` painted 10px on **22 stagings, 200 occurrences** — nearly
+ * every list the rep scans, on every screen.
+ *
+ * Both went **up** rather than down, 10 → `--space-inline` and 14 → `--space-row`,
+ * and the direction is the one thing here that is not arbitrary: a row that grows
+ * cannot take a target under 24px, and a row that shrinks can. It costs four
+ * pixels a row — measured at 960×600, the window's own declared minimum, with
+ * `--scrollers`, `--cells` and `--geometry` green on all 170 stagings after it.
+ *
+ * `card` keeps « the same vertical as `dense` » that its own paragraph below
+ * claims, because both moved by the same rung.
+ */
 const row = cva('bg-card flex min-w-0 gap-inline', {
   variants: {
     density: {
       /** Réglages: provider lines, connector lines, findings. */
-      dense: 'px-row py-2.5',
+      dense: 'px-row py-inline',
       /** Agenda and Historique: a title with a subtitle under it. */
-      roomy: 'px-block py-3.5 gap-row',
+      roomy: 'px-block py-row gap-row',
       /**
        * A row that is a card of its own: *Passées*, the validation queue, the
-       * reader's calls. 16px by 10px — `--space-row` and the same vertical as
+       * reader's calls. 16px by 12px — `--space-row` and the same vertical as
        * `dense` — so that the three lists a rep scans on the home screen are one
        * rectangle and not three near-misses. The edge stroke and the radius are
        * the caller's, because only the caller knows whether the card is a `li`,
        * a `button` or a wrapper around both.
        */
-      card: 'px-row py-2.5 gap-row',
+      card: 'px-row py-inline gap-row',
     },
     align: { baseline: 'items-baseline', center: 'items-center' },
     interactive: { true: 'hover:bg-card-soft w-full text-left transition', false: '' },

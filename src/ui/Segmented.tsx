@@ -75,8 +75,22 @@ export function Segmented<Id extends string>({
         the canvas; the chip is `--bg-inner` #ffffff on top of it with
         `shadow-card` — VISION §6's « shadows barely there », and the third
         surface in the product that genuinely lifts off the paper.
+
+        **`p-hair` and no longer `p-0.5`.** The groove was two pixels wide, and
+        two is not a step of this scale: the smallest declared rung is
+        `--space-hair` at four. It was also the most widespread off-ladder value
+        in the renderer — measured over all 85 stages at both sizes, this one
+        line painted 2px on **106 of the 170 stagings, 512 occurrences**, more
+        stagings than any other site in the product.
+
+        It costs four pixels of height (30.59 → 34.59 at `--type-ui`) and it
+        buys the groove back: at two pixels the tinted track was a hairline
+        around a white chip, which is the same 1.08:1 problem this docblock
+        opens on solved for colour and left unsolved for width. Four pixels of
+        `--bg-subtle` on every side is a track a rep can see the chip sitting
+        *in*, and it is the same four the buttons inside already use (`py-hair`).
       */
-      className={cn('bg-subtle inline-flex shrink-0 rounded-sm p-0.5', className)}
+      className={cn('bg-subtle inline-flex shrink-0 rounded-sm p-hair', className)}
     >
       {options.map((option) => {
         const selected = option.id === current

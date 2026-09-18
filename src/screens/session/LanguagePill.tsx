@@ -24,7 +24,7 @@ export function LanguagePill() {
   const chip = languageChip(TRANSCRIPTION_LANGUAGE)
   return (
     <span
-      className="header-legend border-card bg-inner text-muted inline-flex shrink-0 items-center gap-tight rounded-sm border px-snug py-0.5 text-meta"
+      className="header-legend border-card bg-inner text-muted inline-flex shrink-0 items-center gap-tight rounded-sm border px-snug py-hair text-meta"
       aria-label={`Transcription en ${chip === 'FR' ? 'français' : chip}`}
     >
       <Languages aria-hidden size={12} strokeWidth={2} />

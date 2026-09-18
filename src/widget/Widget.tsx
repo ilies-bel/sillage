@@ -2671,7 +2671,16 @@ function Panel({
         {confirmEnd ? (
           <span />
         ) : (
-          <span className="flex items-center gap-inline">
+          /*
+            `gap-tight`, the same six the confirmation cluster below already
+            uses and the same six the pill's own two halves use. It was
+            `gap-inline` — twelve — inside a `gap-snug` row, so the pair that is
+            one group was spaced *wider* than the floor separating it from the
+            group at the other end of the footer. The row is `justify-between`
+            and the card is a fixed 340px, so nothing moves but the six pixels
+            between these two words.
+          */
+          <span className="flex items-center gap-tight">
             <Button
               variant="nav"
               className="no-drag font-medium px-hair"

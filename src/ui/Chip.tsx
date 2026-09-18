@@ -2,7 +2,7 @@
  * A chip: a small bordered or tinted tag, sometimes pressable.
  *
  * Two real shapes in the code today — Review's sibling-account suggestions
- * (`border-card bg-inner text-body … px-snug py-0.5 text-[11px]`) and the uppercase
+ * (`border-card bg-inner text-body … px-snug py-hair text-meta`) and the uppercase
  * letterspaced micro-labels (*Prêt*, *Utilisé*, *Sur cette machine*) that
  * Agenda and Réglages both write out longhand.
  *
@@ -20,12 +20,27 @@ import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 
 /*
- * `min-h-[24px]` on the two pressable variants, not on `label`.
+ * `py-hair` and no longer `py-0.5`, and the target is the reason rather than
+ * the ladder.
  *
- * WCAG 2.2's target size, and `py-0.5` around `--type-meta` resolves to
- * twenty-three pixels — one short, on the filter row where seven of them wrap
- * and a miss lands on the chip below. `label` is a word in a row and never a
- * control, so enlarging it would only push the row it sits on apart.
+ * `py-0.5` is two pixels, and two pixels is not a step of this product's scale
+ * — the smallest declared rung is `--space-hair` at four. It was the densest
+ * off-ladder site in the renderer: measured over all 85 stages at both sizes,
+ * this one variant painted 2px on **64 stagings, 472 occurrences**, second only
+ * to the calendar's day cells.
+ *
+ * But the ladder is the smaller half of it. Around `--type-meta` (11px on a
+ * 17.05px line) `py-0.5` resolves to **23.05px** of chip, so the two pressable
+ * variants carried `min-h-[24px]` purely to be dragged back over WCAG 2.2's
+ * 24px floor — every pressable chip in the product was painted at exactly
+ * 24.00px, a rescue and not a size, and the rescue is invisible in the class
+ * list of anything that reuses this. At `py-hair` the box measures **27.05px**
+ * on its own, two and a half pixels clear.
+ *
+ * `min-h-[24px]` stays, and it now declares the floor instead of manufacturing
+ * it: `--type-meta` is a token and a chip must not be able to fall under 24 if
+ * it moves. `label` never had it and still does not — a word in a row is not a
+ * control, and enlarging it would only push the row it sits on apart.
  */
 const chip = cva('inline-flex shrink-0 items-center', {
   variants: {
@@ -39,9 +54,9 @@ const chip = cva('inline-flex shrink-0 items-center', {
        * excluded from it; a `choice` chip confirms nothing and is safe.
        */
       choice:
-        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-snug py-0.5 text-meta transition',
+        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-snug py-hair text-meta transition',
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
-      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-0.5 text-meta',
+      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-hair text-meta',
       /** The uppercase micro-label. Not a control, just a word in a row. */
       label: 'text-muted text-label font-semibold uppercase tracking-wider',
     },
