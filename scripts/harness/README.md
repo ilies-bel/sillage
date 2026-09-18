@@ -310,10 +310,33 @@ what `serve.mjs` drops the meta for.
 | `widget-pause` | the paused call: the footer's *Pause* becomes *Reprendre* and the pill draws « En pause » where the clock was. Nothing changes on the press — only on `recording:paused`, which the stub emits the way the main process does |
 | `widget-refus` | **a refused mark, on the pill, with no panel open.** `meeting:mark` refuses whenever the meeting is not `recording` — `EndOfMeetingWatch` can make that true with the pill still floating over the call — and the sentence went into an `sr-only` paragraph measuring 1×1 with `clip: rect(0,0,0,0)`, on a window with no `role="alert"` in it, while the counter correctly did not move because nothing had been written. The stage measures the box, not the picture, and asserts the counter stayed put |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
+| `agenda-demarrer-tot` | the **Semaine** view with an armable call ahead of its hour — the offer to start early, beside the invites that are not yet armable |
+| `review-rail` | the gate's measured rail with every value box drawn, read by `measureRail` — the eleven fields the confirmation is about |
+| `review-rail-inerte` | the same rail after the rep's own press removes the opportunity: nine of the eleven boxes lose their fill, because a field the gate cannot ship is text on the ground, not an input |
+| `review-garde-frappe` | the guard while the rep is **typing** into the compte-rendu — `Ctrl/⌘ Entrée` must not fire from inside an editable |
+| `review-decocher` | the gate with intents unticked one at a time, so the primary's count follows what will actually ship |
+| `review-refus` | all three intents refused — the state where nothing is left to send and the primary must say so rather than stay pressable |
+| `review-sans-opportunite-valider` | the no-opportunity gate driven through its page turn to the end, so *Valider* is reached the way a rep reaches it |
+| `review-source-sortie` | the source panel **leaving** — the departure frame-sampled, not the rule asserted |
+| `session-attente-sortie` | « Compte-rendu en attente » on its way out (DEC-39): the notice that states the case and waits, measured as it goes |
+| `session-remonter` | the compte-rendu read to its end, so the page turn has somewhere to go back to |
+| `session-suivi` | *Rédiger la relance* answered — the follow-up draft with the question that produced it above the answer |
+| `session-suivi-sans-entra` | the same chip with **no Entra registration**: the compte-rendu never requires a Microsoft account, so the follow-up must say what it can and cannot do |
+| `reglages-sortie` | the Réglages sheet **closing**, reached by the keyboard first — the departure that left an invisible full-screen dialog behind for a round |
+| `onboarding-refus` | step 2 with screen capture **refused** — the machine-wide state the first stage could not reach, and the settings pane rather than a second prompt |
+| `onboarding-micro` | the same step with the **microphone** blocked, which is a different permission with a different way out |
+| `onboarding-gere` | the permission blocked **by policy**: « votre service informatique », where no button the rep can press will change it |
+| `widget-sombre` | the panel open over a dark ground — the overlay re-points its ink, and the contrast a rep sees is against what Teams is painting |
+| `widget-attente` | « Aucun enregistrement »: no clock, no meter, no mark button, which is the half a `waitFor` on one string cannot prove |
+| `widget-ennui` | a long quiet call — the surface a rep watches for fifty minutes with nothing arriving |
+| `widget-survol` | the panel under the cursor, so every hover step is painted rather than declared |
+| `widget-pause-refus` | *Pause* refused: the control stays, and the sentence names the cause instead of a *Réessayer* |
+| `widget-carte-sortie` | the card leaving, read off whatever the alert or status element is actually saying |
+| `widget-panneau-sortie` | the panel leaving while the pill stays — the departure that must not tear the panel off its anchor |
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
-told which renderer it is by `?window=widget` (`src/main.tsx`). The six widget stages are
+told which renderer it is by `?window=widget` (`src/main.tsx`). The fourteen widget stages are
 photographed over the app’s own canvas rather than over a video call — the nine checks measure
 the pill against paper, and the contrast a rep actually sees is against whatever Teams is
 painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
