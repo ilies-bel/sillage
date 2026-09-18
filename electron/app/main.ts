@@ -411,6 +411,16 @@ const createOverlayWindow = (options: OverlayWindowOptions): BrowserWindow => {
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
+    /*
+     * Electron's default, set on purpose. The bullet above has claimed this flag
+     * since the window existed and nothing here ever wrote it, so « it is never
+     * *given* focus by the app; the rep clicking it is the only way it takes any »
+     * rested on a default. `focusable: false` is the obvious change to make to an
+     * always-on-top pill, and it would have taken the note field and US-11's only
+     * transport with it, silently. `overlayWindow.test.ts` now reads the docblock
+     * and this object and refuses to let them disagree.
+     */
+    focusable: true,
     // The renderer paints the pill; anything painted here is a rectangle around
     // it. `transparent: true` needs this to be `#00000000` on Windows, where a
     // named colour is composited opaque.
