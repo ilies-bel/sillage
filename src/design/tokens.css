@@ -62,41 +62,43 @@
    *
    * Five grounds inside **4.42 L\***, and the top four inside 2.171. That is
    * not a stylistic choice and it is not slack anyone can take back by
-   * re-picking greys: **the floor is where `--text-muted` stops clearing AA.**
-   * #62707b on #eef3f7 is 4.559:1, and the next 8-bit step down the same hue,
-   * #edf2f6, is 4.519:1. Two steps down is 4.479 — under. So the ladder has
-   * **one** rung of room left at the bottom, 0.348 L\* wide, and nothing at the
-   * top, because `--bg-inner` is white.
+   * re-picking greys. **The floor is WCAG 1.4.11, on a blue, with 0.005 of
+   * margin** — and the round that first wrote this paragraph got that wrong.
    *
-   * **What that costs, on the gate, today.** The review rail has to clear
-   * `RAIL_FLOOR = 2.5` ΔL\* against the column beside it. Drop
-   * `--bg-card-soft` from the gate's `<aside>` — which takes the review
-   * screen from four nested grounds to three and improves every other figure
-   * on it (column↔document ΔL\* 1.478 → 2.171, deepest chain 4 → 3, minimum
-   * adjacent step 0.693 → 2.171) — and the rail lands on `--bg-canvas` at
-   * **ΔL\* 2.252**, under the floor, at both sizes. Spending the last rung on
-   * `--bg-subtle` buys 2.600 — 0.1 over the floor — by taking the ink's own
-   * margin from 0.059 to 0.019. That is robbing the ink to pay the rail.
+   * It said the bottom is « wherever `--text-muted` stops clearing AA », swept
+   * the greys against the text ramp, found 0.348 L\* of room, and concluded
+   * that darkening the ink would release it. The ink *was* then darkened, for
+   * the grain finding above, and no room appeared. Measured on `--bg-subtle`
+   * #eef3f7, every token held to a floor on it:
    *
-   * **The constraint is the ink, and moving the ink is the whole fix.** Swept:
+   *   --text-muted  #5d6b76   4.908 : 1   floor 4.5   margin 0.408
+   *   --accent      #d77000   3.029 : 1   floor 3.0   margin 0.029
+   *   --brand-500   #0594da   3.005 : 1   floor 3.0   margin **0.005**
    *
-   *   --text-muted   on grained --bg-canvas   darkest --bg-subtle    ΔL\* the
-   *                  (the 138-run finding)    still clearing AA      rail gets
-   *   #62707b             4.458  ✗                 #edf2f6              2.600
-   *   #5f6d78             4.659  ✓                 #e8edf2              4.320
-   *   #5d6b76             4.799  ✓                 #e5eaef              5.371
+   * One 8-bit step down the same hue, #edf2f6, puts `--brand-500` at **2.979**
+   * — under the 3:1 WCAG 1.4.11 holds a border, a focus ring or a state dot to.
+   * The sweep that missed this looked only at text, and both numbers it missed
+   * were already written down in this file, beside `--brand-500` (« the worst
+   * being 3.00:1 on `--bg-subtle` ») and beside `--accent` (« 3.03 on
+   * `--bg-subtle` »).
    *
-   * One step down the muted grey closes the grain finding **and** opens more
-   * than double the rail's floor for the gate to spend. The compressed top of
-   * this ladder is a symptom; `--text-muted` sitting 0.059 over AA on the
-   * darkest ground is the cause, and it is the same token the grain measurement
-   * arrives at from the other side.
+   * **So the gate's rail cannot be paid for out of this ladder.** The review
+   * rail has to clear `RAIL_FLOOR = 2.5` ΔL\* against the column beside it.
+   * Dropping `--bg-card-soft` from the gate's `<aside>` takes that screen from
+   * four nested grounds to three and improves every other figure on it
+   * (column↔document ΔL\* 1.478 → 2.171, deepest chain 4 → 3, minimum adjacent
+   * step 0.693 → 2.171) — and the rail then lands on `--bg-canvas` at **ΔL\*
+   * 2.252**, under the floor, at both sizes. `--bg-subtle` cannot move down to
+   * meet it. Lightening `--bg-canvas` instead reaches 2.598 at #f8fafc, by
+   * collapsing `--bg-card-soft` → `--bg-canvas` from 0.693 to 0.346 — buying a
+   * step by making two grounds indistinguishable, which is not a trade this
+   * ladder should take. That leaves `RAIL_FLOOR` itself as the thing to
+   * examine, and it lives in `shot.mjs`, not here.
    *
-   * **It is not in this commit because none of these five values live here
-   * alone.** Every one of them is in VISION.md §6's palette block and
-   * `tokens.test.ts` pins that block hex-for-hex, deliberately — the palette is
-   * the spec's, not the stylesheet's. `tokens.test.ts` holds the geometry above
-   * so it cannot drift while the decision waits.
+   * `tokens.test.ts` holds all of it: the order, the 4.42 span, the rail's
+   * 2.252, and the floor tested on the token that actually binds it — including
+   * the assertion that *something* breaks one step down, so the day the ladder
+   * really does gain room, this paragraph fails instead of quietly ageing.
    */
   --bg-canvas: #f7f9fb;
   --bg-card: #fdfefe;
@@ -112,10 +114,31 @@
    * The second is the one that decides whether a token is usable, and it is the
    * reason `--text-muted` is not the #7d8c98 the first draft of the palette
    * carried: at 3.09:1 on `--bg-subtle` it failed AA at every size it is used.
+   *
+   * **And `--bg-subtle` is not the darkest surface any of them lands on. The
+   * grain is.** `.grain` paints a tile of black at up to 9/255 over whatever
+   * ground it sits on, so a grained `--bg-canvas` bottoms out at rgb(238,240,242)
+   * — below `--bg-subtle`. Every ratio in this block was measured against the
+   * flat colour, and `--text-muted` was #62707b: 4.83:1 on flat canvas and
+   * **4.458:1 under the tile**, against a 4.5 floor, on **138 text runs**
+   * measured with `shot.mjs --contrast` over all 85 stages at both sizes — eight
+   * onboarding stages and `reglages-presentation`, where `.grain` is on a root
+   * wrapper with every sentence of the screen inside it. A shipped AA failure,
+   * 0.042 wide, that stood for several rounds because nothing asked the
+   * question.
+   *
+   * #5d6b76 is one step down the same grey and it answers it: **4.799:1 under
+   * the tile**, 4.886 on a grained `--bg-card-soft`, and better on every flat
+   * ground in the file than the value it replaces. The alternative was to quiet
+   * the tile, which costs a third of the texture — peak-to-peak luminance 9.0 →
+   * 6.0, σ 2.152 → 1.434, measured on the splash's own grain field in the
+   * shipped screenshot — for a legibility problem the ink can solve for free.
+   * #5f6d78 also clears, at 4.659; #5d6b76 is taken because the grain is a
+   * *distribution* and the darkest-pixel figure is one sample of it.
    */
   --text-strong: #14202a; /* 16.54:1 on #ffffff · 14.80:1 on #eef3f7 */
   --text-body: #4a5a67; /*  7.12:1 on #ffffff ·  6.37:1 on #eef3f7 */
-  --text-muted: #62707b; /*  5.09:1 on #ffffff ·  4.56:1 on #eef3f7 */
+  --text-muted: #5d6b76; /*  5.48:1 on #ffffff ·  4.91:1 on #eef3f7 */
 
   /*
    * Semantic. Two accents, two jobs, and they must not be confused: orange means

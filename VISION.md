@@ -639,11 +639,20 @@ same hue (200°), darkened, ratios measured against white.
 --border-subtle:  #e2e9ef;
 --border-card:    #d3dee6;
 
-/* text — measured against #ffffff, then against #eef3f7, the darkest surface
-   any of them lands on. The second ratio is the one that decides. */
+/* text — measured against #ffffff, then against #eef3f7, the darkest FLAT
+   surface any of them lands on. The second ratio is the one that used to
+   decide, and it is not the worst case: `.grain` lays a tile of black at up to
+   9/255 over a ground, so a grained --bg-canvas bottoms out at rgb(238,240,242),
+   darker than --bg-subtle. --text-muted was #62707b and measured 4.458:1 there
+   against a 4.5 floor — a shipped AA failure on 138 text runs across eight
+   onboarding stages and reglages-presentation, counted with `shot.mjs
+   --contrast` on all 85 stages at both sizes. #5d6b76 is one step down the same
+   grey: 4.799:1 under the tile, and better than the value it replaces on every
+   flat ground here. The alternative, quieting the tile, costs a third of the
+   texture (peak-to-peak luminance 9.0 → 6.0) for a problem the ink solves free. */
 --text-strong:    #14202a;   /* 16.54:1 on #ffffff · 14.80:1 on #eef3f7 */
 --text-body:      #4a5a67;   /*  7.12:1 on #ffffff ·  6.37:1 on #eef3f7 */
---text-muted:     #62707b;   /*  5.09:1 on #ffffff ·  4.56:1 on #eef3f7 */
+--text-muted:     #5d6b76;   /*  5.48:1 on #ffffff ·  4.91:1 on #eef3f7 */
 
 /* semantic */
 --accent:         #d77000;   /*  3.38:1 on #ffffff — ONE meaning: armed / recording.

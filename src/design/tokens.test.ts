@@ -727,16 +727,34 @@ describe("the palette clears WCAG AA where it has to", () => {
     }
   }
 
-  test("--brand-500 clears 3:1 — borders, focus rings, state dots", () => {
-    // VISION.md §6 measures the ramp against white, and `--brand-500` is the
-    // step chosen to sit just over the 3:1 non-text bar there (3.05:1).
-    //
-    // Known and deliberate gap, worth stating rather than hiding: on the two
-    // tinted surfaces it lands at 2.89:1 (`--bg-canvas`) and 2.73:1
-    // (`--bg-subtle`). A 1px border at that ratio is fine; a focus ring drawn
-    // in it on the canvas is not, and should use `--brand-700`.
-    for (const bg of ["--bg-inner", "--bg-card"]) {
-      expect(contrast(hex("--brand-500"), hex(bg)), bg).toBeGreaterThanOrEqual(3);
+  test("--brand-500 and --accent clear 3:1 on every ground — WCAG 1.4.11", () => {
+    /*
+     * **This checked two grounds of five, under a comment that had expired.**
+     *
+     * It read: « known and deliberate gap — on the two tinted surfaces it lands
+     * at 2.89:1 (`--bg-canvas`) and 2.73:1 (`--bg-subtle`) », and looped over
+     * `--bg-inner` and `--bg-card` only. Both numbers are from `#059ce5`, the
+     * value `--brand-500` carried before it moved; `tokens.css` records the move
+     * and says the token « clears 3:1 on every ground in the file — the worst
+     * being 3.00:1 on --bg-subtle ». Measured on what ships: 3.357 / 3.323 /
+     * 3.237 / 3.181 / **3.005**. The gap closed and the check kept excusing it.
+     *
+     * Widened to every ground, and to `--accent` beside it, because the
+     * consequence is not cosmetic: 3.005 is **0.005** over the floor, which
+     * makes `--bg-subtle` the bottom of the ground ladder — see « the ground
+     * ladder is a ladder » below, where a sweep of the *text* ramp alone
+     * concluded there was 0.348 L\\* of room down there and there is none.
+     * A ground darkened by one 8-bit step puts this at 2.979.
+     *
+     * `--brand-50` is in the list because a selected row is a ground a focus
+     * ring lands on, and it is the one surface here that is not in the grey
+     * ladder.
+     */
+    const GROUNDS = ["--bg-inner", "--bg-card", "--bg-card-soft", "--bg-canvas", "--bg-subtle", "--brand-50"];
+    for (const token of ["--brand-500", "--accent"]) {
+      for (const bg of GROUNDS) {
+        expect(contrast(hex(token), hex(bg)), `${token} on ${bg}`).toBeGreaterThanOrEqual(3);
+      }
     }
   });
 
@@ -755,41 +773,59 @@ describe("the palette clears WCAG AA where it has to", () => {
 });
 
 /**
- * **The ground ladder is five surfaces inside 4.42 L\*, and the number that
- * pins it is not a grey — it is `--text-muted`.**
+ * **The ground ladder is five surfaces inside 4.42 L\*, and the token that pins
+ * its floor is a blue nobody was looking at.**
  *
  * A reviewer reached this file from the review gate: dropping `--bg-card-soft`
  * from the gate's `<aside>` improves every ground figure on that screen and
  * then fails `RAIL_FLOOR = 2.5` ΔL\* because the rail lands on `--bg-canvas` at
  * 2.252. The diagnosis sent over was « the top of the ladder is three tokens
- * inside 1.75 L\*, spread them ». Recomputed here from the tokens — which is
- * the point, since another agent's prose is not evidence — the three values are
- * exactly right: 97.829 / 98.522 / 99.582.
+ * inside 1.75 L\*, spread them ». Recomputed here from the tokens — since
+ * another agent's prose is not evidence — the three values are exactly right:
+ * 97.829 / 98.522 / 99.582.
  *
- * The prescription is not. There is nowhere to spread *to*. `--bg-inner` is
- * white, so the top is a wall, and the bottom is wherever `--text-muted` stops
- * clearing 4.5:1 — which is one 8-bit step below where `--bg-subtle` already
- * sits. Swept over the hue: #eef3f7 → 4.559, #edf2f6 → 4.519, #ecf1f5 → 4.479,
- * under AA. **0.348 L\* of slack in the whole ladder**, and spending it on the
- * rail leaves the ink 0.019 over AA.
+ * The prescription is not. There is nowhere to spread *to*, and the round
+ * before this one got the reason **wrong**, in this docblock, with a
+ * measurement behind it. It said the bottom is « wherever `--text-muted` stops
+ * clearing 4.5:1 », swept the greys, found 0.348 L\* of slack, and concluded
+ * that darkening the ink would release it to the rail. The ink then *was*
+ * darkened, for the grain finding below — and the slack did not appear,
+ * because `--text-muted` was never what was holding `--bg-subtle` up:
  *
- * So the ladder is a symptom. Darken the muted grey one step and the rail gets
- * 4.32 L\* instead of 2.60 — and the same edit closes the grain finding below,
- * which arrives at the same token from the other direction. Both are held out
- * of this lane by the same file: all five grounds and `--text-muted` are in
- * VISION.md §6's palette block, pinned hex-for-hex above.
+ *   on --bg-subtle #eef3f7       ratio    floor   margin
+ *   --text-muted  #5d6b76        4.908    4.5     0.408   (was 4.559 / 0.059)
+ *   --accent      #d77000        3.029    3.0     0.029
+ *   --brand-500   #0594da        3.005    3.0     **0.005**
  *
- * Three assertions, and the third is the one that carries the argument:
+ * One 8-bit step down the same hue, #edf2f6, puts `--brand-500` at **2.979** —
+ * under WCAG 1.4.11's 3:1 for a border, a focus ring or a state dot. So the
+ * floor is set by a *non-text* criterion on a token the previous sweep never
+ * included, with **0.005** of margin rather than 0.059, and it did not move
+ * when the ink did. Both figures agree with what `tokens.css` already recorded
+ * for those two tokens — 3.00 and 3.03 — which is the sentence a wider sweep
+ * would have read.
+ *
+ * Consequence, stated because it is the thing someone will come back for:
+ * **darkening `--text-muted` does not unblock the gate's rail.** That column of
+ * the earlier table was « darkest `--bg-subtle` still clearing *AA* », and AA is
+ * about text; it was read as available headroom and it is not. The rail's
+ * ΔL\* stays at 2.252 and the palette has no legal way to give it 2.5 —
+ * lightening `--bg-canvas` instead buys 2.598 by collapsing
+ * `--bg-card-soft` → `--bg-canvas` from 0.693 to 0.346, i.e. by making two
+ * grounds indistinguishable to buy a step. That is a `RAIL_FLOOR` conversation,
+ * not a palette one.
+ *
+ * Four assertions, and the third is the one that carries the argument:
  *
  *  · the grounds are a **ladder** — strictly ordered, no two the same;
- *  · `--bg-subtle` is its floor and the floor is **stated**, not discovered by
- *    the next person to measure a screen;
- *  · and the floor is **binding**: one step darker in the same hue puts
- *    `--text-muted` under AA, so « just spread the grounds » is arithmetic that
- *    does not close. Darken the ink and this fails — correctly, because the
- *    room has opened and the numbers written in `tokens.css` are stale.
+ *  · the span is 4.42 L\* and `tokens.css` says so;
+ *  · the floor is **binding**, tested on the token that actually binds it: one
+ *    step darker puts `--brand-500` under 3:1, so « just spread the grounds »
+ *    is arithmetic that does not close;
+ *  · and the rail's own step is pinned at 2.252, so the gate's constraint is a
+ *    number in the repo rather than a rediscovery.
  */
-describe("the ground ladder is a ladder, and the ink sets its floor", () => {
+describe("the ground ladder is a ladder, and a non-text mark sets its floor", () => {
   const tokens = declarations(read("./tokens.css"));
   const hex = (name: string): string => {
     const value = tokens.get(name);
@@ -824,32 +860,59 @@ describe("the ground ladder is a ladder, and the ink sets its floor", () => {
     expect(Number(span.toFixed(2))).toBe(4.42);
   });
 
-  test("--bg-subtle is the floor, and --text-muted is what puts it there", () => {
-    const muted = hex("--text-muted");
+  test("--bg-subtle is the floor, and --brand-500 is what puts it there", () => {
     const subtle = hex("--bg-subtle");
-    expect(contrast(muted, subtle), "the floor must clear AA").toBeGreaterThanOrEqual(4.5);
 
     /*
-     * One 8-bit step down the same hue. `--bg-subtle` is #eef3f7 and the grey
-     * one step darker in each channel is what a designer reaching for « a
-     * slightly deeper well » would type — so this is the real next value, not
-     * a synthetic one.
+     * One 8-bit step down the same hue — the grey a designer reaching for « a
+     * slightly deeper well » would actually type, not a synthetic value.
      */
     const darker = `#${[1, 3, 5]
       .map((i) => (Number.parseInt(subtle.slice(i, i + 2), 16) - 1).toString(16).padStart(2, "0"))
       .join("")}`;
-    const slack = lightness(subtle) - lightness(darker);
-
-    expect(
-      contrast(muted, darker),
-      "there is room below --bg-subtle after all — the ladder can be spread, and the " +
-        "numbers written beside it in tokens.css are now stale",
-    ).toBeLessThan(4.5 + slack);
 
     /*
-     * And the figure the review gate has to live inside, stated rather than
+     * Every token held to a floor on this ground, with the floor it is held to.
+     * The text ramp is AA at 4.5; `--brand-500` and `--accent` are non-text
+     * marks — a border, a focus ring, a state dot — held to WCAG 1.4.11's 3:1.
+     * Swept together, because sweeping only the text ramp is exactly the error
+     * this assertion replaces.
+     */
+    const HELD: [string, number][] = [
+      ["--text-strong", 4.5],
+      ["--text-body", 4.5],
+      ["--text-muted", 4.5],
+      ["--brand-700", 4.5],
+      ["--brand-900", 4.5],
+      ["--brand-500", 3],
+      ["--accent", 3],
+    ];
+
+    for (const [token, floor] of HELD) {
+      expect(contrast(hex(token), subtle), `${token} on --bg-subtle`).toBeGreaterThanOrEqual(floor);
+    }
+
+    // And the floor is binding: something breaks one step down, so there is no
+    // slack at the bottom of the ladder to spend on anything.
+    const breaks = HELD.filter(([token, floor]) => contrast(hex(token), darker) < floor);
+    expect(
+      breaks.map(([token]) => token),
+      "nothing breaks one step below --bg-subtle — there is room after all, the ladder can " +
+        "be spread, and the numbers written beside it in tokens.css are now stale",
+    ).not.toEqual([]);
+
+    // Named, not merely counted: `--brand-500` at 3.005 is the one with 0.005
+    // of margin, and a round already lost this by measuring the text ramp alone.
+    expect(breaks.map(([token]) => token)).toContain("--brand-500");
+  });
+
+  test("the rail's step is 2.25 L*, which is under RAIL_FLOOR and stays there", () => {
+    /*
+     * The figure the review gate has to live inside, stated rather than
      * rediscovered: the rail's ground against the column's, with the gate's
-     * `<aside>` nesting removed. `RAIL_FLOOR` is 2.5 in `shot.mjs`.
+     * `<aside>` nesting removed. `RAIL_FLOOR` is 2.5 in `shot.mjs`. Darkening
+     * `--text-muted` did not move this and could not have — it is a
+     * ground-against-ground distance.
      */
     const rail = lightness(hex("--bg-canvas")) - lightness(hex("--bg-subtle"));
     expect(Number(rail.toFixed(2)), "--bg-canvas → --bg-subtle, the gate's rail step").toBe(2.25);
@@ -868,11 +931,26 @@ describe("the ground ladder is a ladder, and the ink sets its floor", () => {
  * the tile's deepest alpha.
  *
  * Measured on the running renderer, all 85 stages at both sizes: **138 text
- * runs** clear AA against their own design colour and do not clear it against
- * the darkest pixel of the tile they sit on. Every one of the 138 is the same
- * pair — `--text-muted` at 11–12px on a grained `--bg-canvas`, **4.83:1 flat
- * and 4.46:1 under the tile**, against a 4.5 floor. 0.04 short, on 138 runs,
- * over eight onboarding stages and `reglages-presentation`.
+ * runs** cleared AA against their own design colour and did not clear it
+ * against the darkest pixel of the tile they sit on. Every one of the 138 was
+ * the same pair — `--text-muted` at 11–12px on a grained `--bg-canvas`, 4.83:1
+ * flat and **4.458:1 under the tile**, against a 4.5 floor, over eight
+ * onboarding stages and `reglages-presentation`.
+ *
+ * Fixed by moving the ink: `--text-muted` #62707b → **#5d6b76**, which is
+ * 4.799:1 under the tile and better on every flat ground in the palette than
+ * the value it replaces. The alternative was to quiet the tile to alphas
+ * 0/2/4/6 — that clears at 4.58:1 and costs a third of the texture, measured on
+ * the splash's own grain field in the shipped screenshot: peak-to-peak
+ * luminance 9.0 → 6.0, σ 2.152 → 1.434. The ink change costs nothing: same
+ * screenshot, grain field identical at σ 2.152, the ink's painted luminance
+ * 109.8 → 104.8.
+ *
+ * **There is no debt list any more, and that is the point of this note.** This
+ * describe shipped with a `GRAIN_DEBT` escape holding the one pair at 4.46 and
+ * failing if it moved in either direction; the fix landed and the entry is
+ * gone, so the rule below now holds with nothing exempted from it. A declared
+ * debt that is never removed is a permanent exemption wearing a reason.
  *
  * Three things are asserted, and the first is why this describe exists at all:
  *
@@ -882,30 +960,16 @@ describe("the ground ladder is a ladder, and the ink sets its floor", () => {
  *    comment about a binary nobody can read by eye;
  *  · the grained grounds are **discovered** from the classes `src/` writes,
  *    never listed. `.grain` is on `--bg-canvas` (`Splash`, `Onboarding`) and
- *    `--bg-card-soft` (`ui/EmptyState`) today; a fourth surface grained
+ *    `--bg-card-soft` (`ui/EmptyState`) today; a third surface grained
  *    tomorrow is measured on the commit that grains it;
  *  · and every ink that carries text clears AA on every one of them, at the
- *    darkest pixel — or is on `GRAIN_DEBT` with the ratio it actually has.
+ *    darkest pixel, with no exemption available.
  *
- * **Why the debt list rather than a fix.** Both fixes the measurement allows
- * are one file outside this lane, and both were built and photographed before
- * that was known:
- *
- *  · bring the tile down to alphas 0/2/4/6 and the darkest pixel clears at
- *    4.58:1 — but it costs a third of the texture, measured on the splash's
- *    own grain field in the shipped screenshot: peak-to-peak luminance 9.0 →
- *    6.0, σ 2.152 → 1.434. And `shot.mjs --contrast` hard-codes `9 / 255` as
- *    the tile's darkest alpha *and* pins `.grain`'s `background-image` by
- *    string equality to `var(--grain)`, so a quieter tile leaves that check
- *    printing « 138 passage(s) … 4.46:1 » about a pixel that no longer exists;
- *  · or darken `--text-muted` one step to `#5d6b76`, which clears at 4.80:1,
- *    costs **nothing** — same screenshot, grain field identical at σ 2.152,
- *    the ink's painted luminance 109.8 → 104.8 — and improves every ground in
- *    the palette. That one needs VISION.md §6's palette block, which this file
- *    pins hex-for-hex.
- *
- * So the number is pinned here instead, from both sides: it may not get worse,
- * and an entry that has stopped being true fails rather than lingering.
+ * What this cannot do is notice the *placement*. `.grain`'s own rule in
+ * `index.css` says the tile must not go under dense body text, and
+ * `Onboarding.tsx` and `Splash.tsx` put it on a root wrapper with every
+ * sentence of the screen inside it. That is still true and it is still where
+ * the 138 came from; the ink now clears the floor anyway.
  */
 describe("the grain is a surface, and the ink on it is measured", () => {
   const tokens = declarations(read("./tokens.css"));
@@ -987,25 +1051,6 @@ describe("the grain is a surface, and the ink on it is measured", () => {
     return [...found].sort();
   };
 
-  /**
-   * Ink × grained ground pairs that do NOT clear AA at the tile's darkest
-   * pixel, each with the ratio it has and why it is still here.
-   *
-   * `at` is asserted to two decimals: a widening gap fails, and so does one
-   * that has been closed and left listed.
-   */
-  const GRAIN_DEBT: { ink: string; ground: string; at: number; why: string }[] = [
-    {
-      ink: "--text-muted",
-      ground: "--bg-canvas",
-      at: 4.46,
-      why:
-        "138 text runs on the running renderer, all of them this pair at 11–12px. " +
-        "Both fixes are one file outside src/design: a quieter tile needs " +
-        "shot.mjs --contrast to stop hard-coding 9/255, and a darker --text-muted needs VISION.md §6.",
-    },
-  ];
-
   const hex = (name: string): string => {
     const value = tokens.get(name);
     expect(value, `${name} must be a hex in tokens.css`).toMatch(/^#[0-9a-f]{6}$/i);
@@ -1031,33 +1076,30 @@ describe("the grain is a surface, and the ink on it is measured", () => {
 
   test("every ink clears AA on every grained ground, at the tile's darkest pixel", () => {
     const alpha = tileDarkestAlpha();
-    const owed = new Set(GRAIN_DEBT.map((d) => `${d.ink} on ${d.ground}`));
     const short: string[] = [];
 
     for (const ground of grainedGrounds()) {
       for (const ink of CARRIES_TEXT) {
         const ratio = contrast(hex(ink), underTile(ground, alpha));
-        if (ratio >= 4.5) continue;
-        const key = `${ink} on ${ground}`;
-        if (!owed.has(key)) short.push(`${key} — ${ratio.toFixed(2)}:1 under the tile`);
+        if (ratio < 4.5) short.push(`${ink} on ${ground} — ${ratio.toFixed(3)}:1 under the tile`);
       }
     }
 
-    expect(short, "ink below AA on a grained ground and not on GRAIN_DEBT").toEqual([]);
+    expect(short, "ink below AA on a grained ground").toEqual([]);
   });
 
-  test.each(GRAIN_DEBT)("$ink on $ground is still exactly $at:1 under the tile", (debt) => {
-    const alpha = tileDarkestAlpha();
-    expect(
-      grainedGrounds(),
-      `${debt.ground} is no longer a ground anything grains — delete this entry`,
-    ).toContain(debt.ground);
-
-    const ratio = contrast(hex(debt.ink), underTile(debt.ground, alpha));
-    // Both directions. Worse fails; better fails too, because a debt that has
-    // been paid and left on the list is the check lying about the product.
-    expect(Number(ratio.toFixed(2)), debt.why).toBe(debt.at);
-    expect(ratio, "a debt entry that clears AA is a debt that has been paid").toBeLessThan(4.5);
+  /*
+   * **The pair the whole finding was, kept as its own assertion.**
+   *
+   * The rule above would go green on a palette that had simply stopped graining
+   * `--bg-canvas`, or on one where `--text-muted` had been retired. This names
+   * the two tokens and the number, so the fix is pinned rather than merely
+   * satisfied: 4.799:1, where it was 4.458 and the floor is 4.5.
+   */
+  test("--text-muted on a grained --bg-canvas is 4.799:1, where it was 4.458", () => {
+    expect(grainedGrounds(), "--bg-canvas is no longer grained").toContain("--bg-canvas");
+    const ratio = contrast(hex("--text-muted"), underTile("--bg-canvas", tileDarkestAlpha()));
+    expect(Number(ratio.toFixed(3))).toBe(4.799);
   });
 });
 

@@ -1283,25 +1283,33 @@
    * anything that repaints during a call. The transcript scrolls, and a noise
    * layer re-rasterising on scroll is GPU work on the capture path (DEC-26).
    *
-   * **The first of those three is being broken, by this product, and here is
-   * what it costs.** `Onboarding.tsx` and `Splash.tsx` put `.grain` on a root
-   * wrapper with every sentence of the screen inside it, which is « under dense
-   * body text » exactly. Counted with `shot.mjs --contrast` over all 85 stages
-   * at both sizes: **138 text runs** clear AA against their own design colour
-   * and do not clear it against the darkest pixel of the tile they sit on — all
-   * 138 the same pair, `--text-muted` at 11–12px on a grained `--bg-canvas`,
-   * **4.83:1 flat and 4.46:1 under the tile** against a 4.5 floor. The rule
-   * above was written from the arithmetic and the arithmetic was right; nothing
-   * had measured whether the product obeyed it.
+   * **The first of those three is still being broken, by this product, and
+   * here is what it cost.** `Onboarding.tsx` and `Splash.tsx` put `.grain` on a
+   * root wrapper with every sentence of the screen inside it, which is « under
+   * dense body text » exactly. Counted with `shot.mjs --contrast` over all 85
+   * stages at both sizes: **138 text runs** cleared AA against their own design
+   * colour and did **not** clear it against the darkest pixel of the tile they
+   * sit on — all 138 the same pair, `--text-muted` at 11–12px on a grained
+   * `--bg-canvas`, 4.83:1 flat and **4.458:1 under the tile** against a 4.5
+   * floor. The rule above was written from the arithmetic and the arithmetic
+   * was right; nothing had measured whether the product obeyed it.
    *
-   * It is 0.04 short, which is the reason it has stood for several rounds and
-   * not a reason to leave it standing. `design/tokens.test.ts` pins the number
-   * from both sides now — it decodes the tile's own alpha table out of the
-   * shipped PNG, discovers which grounds `.grain` is painted over from the
-   * classes `src/` writes, and fails if the gap widens *or* if it closes and
-   * the debt entry is left behind. That entry names the two fixes and why
-   * neither is in `src/design/`: a quieter tile needs `shot.mjs --contrast` to
-   * stop hard-coding `9 / 255`, and a darker `--text-muted` needs VISION.md §6.
+   * Fixed in the palette, not here: `--text-muted` #62707b → #5d6b76, which is
+   * **4.799:1** under the tile and better on every flat ground than the value it
+   * replaced. `--contrast` reports 0 now, where it reported 138. The
+   * alternative was to quiet the tile to alphas 0/2/4/6 — that clears at 4.58
+   * and costs a third of the texture, peak-to-peak luminance 9.0 → 6.0 and
+   * σ 2.152 → 1.434 measured on the splash's own grain field in the shipped
+   * screenshot, for a legibility problem the ink solves for free.
+   *
+   * **The placement is still wrong and the ink is now covering for it.**
+   * `design/tokens.test.ts` decodes the tile's alpha table out of the shipped
+   * PNG, discovers which grounds `.grain` is painted over from the classes
+   * `src/` writes, and asserts every text ink clears AA at the darkest pixel on
+   * each of them, with nothing exempted. That check holds whatever the grain is
+   * put on next — but it cannot say « this tile should not be under eleven
+   * screens of prose », which is what the paragraph above says and what
+   * `Onboarding.tsx:214` and `Splash.tsx:81` still do.
    */
   .grain {
     background-image: var(--grain);
