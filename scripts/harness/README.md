@@ -269,6 +269,7 @@ what `serve.mjs` drops the meta for.
 | `reglages` | *Connecteurs*, opened where the header control lands: **Requis** with one *à vérifier*, **Facultatifs** with VerySwing down and Outlook to check, two *Réessayer*, and the VSA tenant probe |
 | `agenda-sans-entra` | the same calendar with **no Entra app registration** — see below |
 | `agenda-appel-imprevu` | an **unscheduled call** detected by a conferencing app holding a microphone, offered with no calendar entry behind it. Staged with no Entra registration on purpose: that is the build where it is the only offer there is |
+| `agenda-ligne-sortie` | **a row of the day leaving** — the clock moves past a meeting's end and the `agenda:changed` that follows rebuilds it. The one exit in the product that no stage watched, and the one `useLeaving` exists for. Judged by `heldDepartureOf`, which follows whichever `<li>` the renderer marks out of the ones standing *before* the trigger: a leaver that is a **new** element is the finding, because a transition interpolates from the last value the browser painted and a node created already wearing the exit has none. That is exactly how it shipped |
 | `session-sans-entra` | a call recorded with no Microsoft account of any kind |
 | `review-sans-entra` | the gate with the Outlook intent greyed and the two VerySwing ones live |
 | `reglages-sans-entra` | *Facultatifs* with the Microsoft row inert and stating why |

@@ -239,6 +239,80 @@ const judgeDeparture = (what, exit) => {
 }
 
 /**
+ * **A departure nobody presses for, and the node it happened to.**
+ *
+ * `departureOf` follows an element it is handed. That is the wrong instrument
+ * for `useLeaving`, where the question is *which* element leaves: the hook
+ * splices the departed row back into the list it left, and the whole defect it
+ * shipped with was that React had already removed the original `<li>` and the
+ * splice put a **different** element back, created already wearing `.leaving`.
+ * A transition interpolates from the last value the browser painted on that
+ * element, so a node that was never painted has nothing to fade from — and
+ * every assertion that reads the CSS *rule* off it still passes, because the
+ * rule is on the class and the class is there.
+ *
+ * So this one records every candidate standing before the trigger, then follows
+ * whichever of them the renderer marks. A leaver that is not in that set is the
+ * finding, not the measurement.
+ *
+ * `trigger` is a Node-side callback rather than a selector because these
+ * departures have no control: the clock moves, a broadcast arrives, and a row
+ * stops being upcoming.
+ */
+const heldDepartureOf = async (page, selector, trigger, ms = 900) => {
+  await page.evaluate(({ selector }) => {
+    const w = /** @type {any} */ (window)
+    const standing = new Set(document.querySelectorAll(selector))
+    const started = performance.now()
+    w.__held = { samples: [], detachedAt: null, fresh: null, seen: false }
+    let going = null
+    const observer = new MutationObserver(() => {
+      if (going !== null && !going.isConnected && w.__held.detachedAt === null) {
+        w.__held.detachedAt = performance.now() - started
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    w.__heldStop = () => observer.disconnect()
+    const tick = () => {
+      if (going === null) {
+        going = document.querySelector(`${selector}.leaving`)
+        if (going === null) return requestAnimationFrame(tick)
+        w.__held.seen = true
+        w.__held.fresh = !standing.has(going)
+      }
+      if (!going.isConnected) {
+        if (w.__held.detachedAt === null) w.__held.detachedAt = performance.now() - started
+        return
+      }
+      w.__held.samples.push(Number(getComputedStyle(going).opacity))
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, { selector })
+  await trigger()
+  await page.waitForTimeout(ms)
+  return page.evaluate(() => {
+    /** @type {any} */ (window).__heldStop?.()
+    return /** @type {any} */ (window).__held
+  })
+}
+
+/**
+ * `judgeDeparture`, plus the claim only a held departure can make: the element
+ * that left is one the rep had been looking at.
+ */
+const judgeHeld = (what, exit) => {
+  if (!exit.seen) throw new Error(`${what} : rien n’a porté « leaving » — aucune sortie`)
+  if (exit.fresh) {
+    throw new Error(
+      `${what} : la ligne qui s’en va est un élément **neuf**, créé en portant la sortie — ` +
+        'une transition part de la dernière valeur peinte et un nœud jamais peint n’en a pas',
+    )
+  }
+  judgeDeparture(what, exit)
+}
+
+/**
  * **VISION §6's own ceiling, in milliseconds** — « Motion: ≤150ms ». The one carve-out
  * (DEC-50) is the widget's *arrival*, a card drawn over another application; a page turn
  * inside a document on the app's own paper is not that surface.
@@ -1959,7 +2033,46 @@ const SCREENS = {
       if (!/opacity/.test(exit.property)) {
         throw new Error(`source ▸ s’en va sans transition d’opacité : ${exit.property}`)
       }
-      // Left on camera mid-flight, the way `reglages-sortie` leaves its sheet.
+
+      /*
+       * **And the rule is not the paint.** Everything above reads
+       * `transition-property`, `transition-duration` and
+       * `transition-timing-function` off the leaving element — which is what the
+       * stylesheet *intends*. A node created already wearing `.leaving` carries
+       * every one of those and paints none of them, because a transition
+       * interpolates from the last value the browser painted and a node that
+       * was never painted has none. That is verbatim the shape `useLeaving`
+       * shipped on the agenda's row, three call sites away, and this stage's
+       * assertions would all have passed over it.
+       *
+       * So the panel is opened once more and its departure frame-sampled with
+       * the same judge the widget window has used since round 19: frames
+       * between the two ends, and the last of them at zero. `departureOf`
+       * presses the control itself, so the tracer is armed before the press —
+       * the property `reglages-sortie` states one level up.
+       */
+      await page.waitForTimeout(300)
+      await source.click()
+      await panel.waitFor({ timeout: 5_000 })
+      await page.waitForTimeout(300)
+      /*
+       * `departureOf` takes a selector for the control because it presses from
+       * inside the page, in the same task it arms the tracer in. The product
+       * gives this button no attribute of its own, so the harness marks it here
+       * rather than asking the renderer for a hook it has no other use for.
+       */
+      await source.evaluate((el) => el.setAttribute('data-harness-press', ''))
+      judgeDeparture(
+        'source ▸',
+        await departureOf(page, '[data-unmeasured].animate-rise-in', '[data-harness-press]'),
+      )
+      // Reopened and left on camera mid-flight, the way `reglages-sortie` leaves
+      // its sheet — the photograph is still of a departure in progress.
+      await source.click()
+      await panel.waitFor({ timeout: 5_000 })
+      await page.waitForTimeout(300)
+      await source.click()
+      await page.locator('[data-unmeasured].leaving').first().waitFor({ timeout: 5_000 })
     },
   },
 
@@ -2146,23 +2259,31 @@ const SCREENS = {
        */
       await page.evaluate(() => {
         const w = /** @type {any} */ (window)
-        w.__exit = { frames: [], veilZero: null, detached: false }
+        /*
+         * Shaped for `judgeDeparture` — `samples` and `detachedAt`, the same two
+         * values `departureOf` hands it — because the local rule this used to
+         * carry was the weaker of the two and certified the defect. The `when`
+         * is the clock `departureOf` uses, so the millisecond in the message
+         * means the same thing on both windows.
+         */
+        w.__exit = { samples: [], detachedAt: null, veilZero: null }
         let seen = null
-        const until = performance.now() + 5_000
+        const started = performance.now()
+        const until = started + 5_000
         const tick = () => {
           if (performance.now() > until) return
           const el = document.querySelector('[role="dialog"].leaving')
           if (el) {
             seen = el
             const opacity = Number(getComputedStyle(el).opacity)
-            w.__exit.frames.push(opacity)
+            w.__exit.samples.push(opacity)
             const veil = document.querySelector('.bg-veil')
             if (veil && w.__exit.veilZero === null) {
               const v = Number(getComputedStyle(veil).opacity)
               if (v <= 0.01 && opacity > 0.2) w.__exit.veilZero = opacity
             }
           } else if (seen !== null && !seen.isConnected) {
-            w.__exit.detached = true
+            w.__exit.detachedAt = performance.now() - started
             return
           }
           requestAnimationFrame(tick)
@@ -2256,9 +2377,31 @@ const SCREENS = {
        */
       await page.waitForTimeout(400)
       const ends = await page.evaluate(() => /** @type {any} */ (window).__exit)
-      if (ends.frames.length < 3) {
-        throw new Error(`sortie mesurée sur ${ends.frames.length} image(s) — le traceur n’a rien vu`)
-      }
+      /*
+       * **The shared judge, and not a local rule three claims short of it.**
+       *
+       * This read « at least 3 frames » and stopped. `judgeDeparture` — which
+       * has existed since round 19 and was wired to the widget window and to
+       * nothing else — asks three more things of the same samples: that the
+       * element *detached*, that at least two frames were painted **between**
+       * the two ends, and that the last one was at zero. All three are the
+       * claims « a class name is on the element » cannot make.
+       *
+       * The difference is not theoretical. `useDismiss` latched its `leaving`
+       * flag for the life of the hook, so the sheet this stage reopens was
+       * already transparent and already wearing the exit before the press; the
+       * ✕ then did nothing, the sheet never left, and every one of the four
+       * assertions here passed — « ✓ reglages-sortie 1280×800 … 2 qui s'en vont,
+       * dans le bon sens », both smoke sizes. Under the judge the same run says
+       * « l'élément ne part jamais ».
+       *
+       * The app window had **no** frame-sampled exit at all: three call sites,
+       * all three in `widget-*`, while the four surfaces that leave in the
+       * window a rep actually works in were covered by reading the CSS *rule*
+       * off the element. A rule is what the stylesheet intends; a sample is
+       * what was painted.
+       */
+      judgeDeparture('réglages', ends)
       if (ends.veilZero !== null) {
         throw new Error(
           `le voile est à zéro alors que la feuille est encore à ${ends.veilZero} — ` +
@@ -3115,6 +3258,55 @@ const SCREENS = {
    * anything. What has to be on screen is an armed row with no calendar entry
    * behind it, on a day whose grid is empty.
    */
+  /*
+   * **The one exit in the product that no stage watched.**
+   *
+   * Three rungs leave in the app window — the Réglages sheet (`useDismiss`), the
+   * `source ▸` panel and the end-of-meeting strip (`useDeparture`), and a row of
+   * the day (`useLeaving`). The first two have had a stage since they were
+   * written. The third never did, and it is the one `useLeaving` exists for: its
+   * own docblock names the agenda's offered row as the instance two reviewers
+   * kept reporting.
+   *
+   * It shipped inverted. The hook decided its departures in an effect, i.e.
+   * after the commit that had already taken the row's `<li>` out of the
+   * document, so the splice put a **new** element back wearing `.leaving` —
+   * eleven painted frames, none of them between the two ends, first opacity
+   * 0.000, last 0.000, detached at 246 / 257 ms. The row blinked out and left a
+   * hole for a quarter of a second, which is a worse frame than no exit at all.
+   * `--motion` could not see it: the census reads the resting frame, and by the
+   * time it runs the row is gone.
+   *
+   * Driven the way the world drives it — the clock moves past a meeting's end
+   * and the `agenda:changed` that follows rebuilds the day — because there is no
+   * control on this screen that removes a row. `heldDepartureOf` follows
+   * whichever `<li>` the renderer marks, out of the ones standing before the
+   * trigger, so « a new element wearing the exit » is a failure and not a
+   * measurement.
+   */
+  'agenda-ligne-sortie': {
+    scenario: 'agenda',
+    async drive(page) {
+      await openAgenda(page)
+      // One resting frame painted on the rows before anything moves: that frame
+      // is the value the exit has to interpolate away from.
+      await page.waitForTimeout(400)
+      judgeHeld(
+        'ligne du jour',
+        await heldDepartureOf(page, 'li', async () => {
+          await page.clock.setFixedTime(new Date(pinnedNow() + 12 * 3_600_000))
+          await page.evaluate(async () => {
+            const w = /** @type {any} */ (window)
+            const snapshot = await w.app.invoke('agenda:snapshot', {})
+            if (w.__harness.emit('agenda:changed', { ...snapshot }) === 0) {
+              throw new Error('personne n’écoute agenda:changed')
+            }
+          })
+        }),
+      )
+    },
+  },
+
   'agenda-appel-imprevu': {
     scenario: 'agenda-appel-imprevu',
     entra: false,
