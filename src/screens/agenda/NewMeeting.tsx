@@ -288,6 +288,19 @@ export function NewMeeting({
     )
   }
 
+  /*
+   * **The three fields below are off the spacing ladder, and no screenshot in
+   * this repo had ever painted them.**
+   *
+   * They were `px-2.5` — 10px, against rungs of 4/6/8/12/16/20/32 — and
+   * `shot.mjs --rhythm` reported **zero** occurrences of this site across all
+   * 68 stagings of the calendar, the settings and the first run at both smoke
+   * sizes, because the form only exists after a press and no stage presses it.
+   * Driven by hand through `Ajouter une réunion` on `agenda-empty`, the fields
+   * measured 10px/10px horizontal inset at 200.1×32.6, 160×32.6 and 92.2×34.6,
+   * identical at 1280×800 and 960×600. `px-snug` is the rung; the widths are
+   * `w-52`/`w-40`/`w-24` so nothing outside the fields moves.
+   */
   return (
     <form
       onSubmit={submit}
@@ -311,14 +324,14 @@ export function NewMeeting({
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Objet (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-2.5 py-tight text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-snug py-tight text-ui"
       />
       <input
         value={client}
         onChange={(event) => setClient(event.target.value)}
         placeholder="Client (facultatif)"
         maxLength={200}
-        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-2.5 py-tight text-ui"
+        className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-snug py-tight text-ui"
       />
 
       <label className="text-muted flex items-center gap-snug text-ui">
@@ -328,7 +341,7 @@ export function NewMeeting({
           value={clock}
           aria-label="Heure de la réunion"
           onChange={(event) => setClock(event.target.value)}
-          className="bg-inner border-card text-strong w-24 rounded-sm border px-2.5 py-tight text-ui tabular-nums"
+          className="bg-inner border-card text-strong w-24 rounded-sm border px-snug py-tight text-ui tabular-nums"
         />
       </label>
 

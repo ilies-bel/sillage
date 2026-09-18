@@ -193,7 +193,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                     />
                   </span>
                 </div>
-                <p className="text-muted measure mt-0.5 text-ui leading-relaxed">{line.sentence}</p>
+                <p className="text-muted measure mt-hair text-ui leading-relaxed">{line.sentence}</p>
                 {/*
                   **The remedy, on the row that just proved it is needed — and
                   only where there is one.**

@@ -109,7 +109,31 @@ export function CalendarGrid({
           {weeks.map((week) => (
             <tr key={week[0]}>
               {week.map((day) => (
-                <td key={day} className="p-0.5">
+                /*
+                  **No cell gutter, and the gate that decides it is `--targets`.**
+
+                  This was `p-0.5`: 2px a side, off a ladder whose smallest rung
+                  is 4 (`design/tokens.css`), and painted 44 times on the
+                  stagings that draw this grid — the single densest off-scale
+                  site on the calendar. The rung above it cannot be taken. The
+                  day button is `w-full`, so every pixel the cell keeps is a
+                  pixel off the target. Driven at 960×600, the minimum
+                  `app/main.ts` declares — not computed, each value shipped and
+                  measured: 26.7×36 at `p-0.5`, and **22.7×36 at `p-hair`**,
+                  which `shot.mjs --targets` answers with « 42 contrôle(s) sous
+                  24 px · 23×36 — « lundi 31 août, aucune réunion » ». The rung
+                  above 2 takes the whole month grid under WCAG 2.2's floor.
+
+                  Zero is the only value on this axis that is both on the scale
+                  and not a regression: **30.7×36 at 960×600** and 41×36 at
+                  1280×800, against the same floor. The cells abut, which is
+                  what every calendar a rep has ever used does, and `rounded-sm`
+                  plus a fill that only appears on hover, today and the
+                  selection keeps them told apart. `p-0` rather than no class at
+                  all: the UA gives a bare `td` 1px, which is smaller still and
+                  is a number nobody chose.
+                */
+                <td key={day} className="p-0">
                   <DayCell
                     day={day}
                     inMonth={monthOf(day) === current}

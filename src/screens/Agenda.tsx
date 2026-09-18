@@ -494,8 +494,15 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
         step it is 54 562, 9.5 %. Nothing in it moved and nothing in it shrank
         — the type is the type, the controls are the controls (`--targets`
         still reads « toutes ≥ 24 px »), and what gave way is the air.
+
+        **The wide step was 28 and 28 is not a step.** The ladder is
+        4/6/8/12/16/20/32 (`design/tokens.css`) and `pt-7` is a number this file
+        picked for itself, painted on 22 of my stagings. `lg:pt-gutter` is the
+        rung above the 20 the narrow step already uses, so the header still
+        steps with the window and now steps onto the scale. 960×600 is
+        untouched — the change is above the `lg` breakpoint only.
       */}
-      <header className="border-subtle flex items-baseline justify-between gap-row border-b px-row pb-inline pt-block lg:px-gutter lg:pb-row lg:pt-7">
+      <header className="border-subtle flex items-baseline justify-between gap-row border-b px-row pb-inline pt-block lg:px-gutter lg:pb-row lg:pt-gutter">
         {/*
           **The page is named by what changed, and the day is drawn once.**
 
