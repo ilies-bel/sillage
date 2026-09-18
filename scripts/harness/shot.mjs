@@ -20,6 +20,8 @@
  *   --motion         every transition through the tokens, and silent under reduced motion
  *   --fade           every fading mask against the line box it fades over
  *   --census         how many rungs of one ladder a screen stands on at once
+ *   --rhythm         every painted gap, padding and margin against the declared scale
+ *   --cells          a growing cell short of its text while its fixed siblings hold slack
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -5710,6 +5712,8 @@ function parseArgs(argv) {
     motion: false,
     fade: false,
     census: false,
+    rhythm: false,
+    cells: false,
     scrollers: false,
   }
   const positional = []
@@ -5736,6 +5740,8 @@ function parseArgs(argv) {
     else if (arg === '--motion') flags.motion = true
     else if (arg === '--fade') flags.fade = true
     else if (arg === '--census') flags.census = true
+    else if (arg === '--rhythm') flags.rhythm = true
+    else if (arg === '--cells') flags.cells = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -5759,7 +5765,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -5885,6 +5891,22 @@ async function main() {
   if (flags.census) {
     await page.evaluate(() => document.fonts.ready)
     counted = await census(page)
+  }
+  /*
+   * Both of these read *painted* geometry, so they go where the census goes:
+   * before `--expand`, on the layout the window really draws. Unclipping the
+   * scrollers changes every width `--cells` compares and every seam `--rhythm`
+   * measures — it would erase the finding rather than measure it.
+   */
+  let beat = null
+  if (flags.rhythm) {
+    await page.evaluate(() => document.fonts.ready)
+    beat = await rhythm(page)
+  }
+  let starved = null
+  if (flags.cells) {
+    await page.evaluate(() => document.fonts.ready)
+    starved = await cells(page)
   }
   if (flags.geometry) {
     await page.evaluate(() => document.fonts.ready)
@@ -6101,6 +6123,9 @@ async function main() {
   let unmeasuredRuns = 0
   let grainEaten = 0
   let grainWorst = null
+  let grainAlpha = null
+  let grainTile = null
+  let grainPainted = 0
   if (flags.contrast) {
     await page.evaluate(() => document.fonts.ready)
     const measured = await contrast(page)
@@ -6112,6 +6137,9 @@ async function main() {
     unmeasuredRuns = measured.unmeasuredRuns
     grainEaten = measured.grainEaten
     grainWorst = measured.grainWorst
+    grainAlpha = measured.grainAlpha
+    grainTile = measured.grainTile
+    grainPainted = measured.grainPainted
   }
 
   /*
@@ -6590,11 +6618,7 @@ async function main() {
         `  contraste: ${textRuns} passage(s) de texte AA, ${graphics} graphique(s) à 3:1` +
           (graphics === 0 ? ' — aucun élément ne s’est déclaré `data-graphic`' : '') +
           (undeclaredGraphics > 0 ? `, ${undeclaredGraphics} marque(s) non déclarée(s)` : '') +
-          (grainEaten > 0
-            ? `, ${grainEaten} passage(s) dont la marge AA tient dans le grain ` +
-              `(${grainWorst.clear}:1 → ${grainWorst.under}:1 sous le pixel le plus sombre, ` +
-              `« ${grainWorst.text} »)`
-            : ''),
+          (grainTile !== null ? ` · grain ${grainTile}, noir ${grainAlpha}/255` : ''),
       )
     }
     else {
@@ -6604,6 +6628,69 @@ async function main() {
       }
       process.exitCode = 8
     }
+
+    /**
+     * **The grain binds now, and for several rounds it was computed, printed and
+     * bound nothing.**
+     *
+     * The number was right and the sentence carrying it was green: « N
+     * passage(s) dont la marge AA tient dans le grain ». 138 text runs across
+     * the sweep clear AA against their design colour — `--text-muted` at 11–12px
+     * on `--bg-canvas`, **4.83:1** — and do not clear it against the ground the
+     * tile actually paints, **4.46:1** against a 4.5 floor. An instrument that
+     * sees a WCAG failure every run and files it as information is the shape
+     * this file has now produced four times.
+     *
+     * **The judgement call, settled by measuring the tile rather than by
+     * arguing about textures.** The paragraph this replaces refused to fail on
+     * the darkest pixel because « only a quarter of the tile is at the darkest
+     * level and a 12px glyph covers dozens of tile pixels » — an argument about
+     * *area*, where the question is *reachability*. The tile repeats at its
+     * intrinsic size, so one tile pixel is one CSS pixel; decoded and swept for
+     * the darkest window of each shape, on the torus the repeat makes:
+     *
+     *     1×1  9.000     1×6  8.500     2×8  7.313     6×6  6.333
+     *     1×2  9.000     1×8  7.875     3×8  6.750     8×8  5.813
+     *     1×4  9.000     2×6  7.500     4×4  7.313
+     *
+     * A **1×4 run of the darkest level exists** — one CSS pixel wide, four tall.
+     * A 12px Inter stem is about 1.2px wide, so a quarter of a lowercase letter
+     * can sit entirely on alpha 9. The darkest level is not a scatter of
+     * isolated pixels a glyph averages away; it forms runs the size of the
+     * feature a reader resolves. So the minimum is the statistic, not a
+     * percentile, and it is reachable rather than theoretical.
+     *
+     * A percentile was the alternative and it is rejected with the same table: the
+     * `1×8` mean (7.875) is what a *whole* stem sits on and would pass the shipped
+     * palette at 4.52:1, which is an answer about a letter nobody reads one stem of.
+     *
+     * It fails on the **margin**, never on the run twice: a run already reported
+     * under `dim` is below AA on its own colour and is a worse finding than this
+     * one.
+     */
+    if (grainEaten > 0) {
+      console.log(
+        `  ✗ contraste: ${grainEaten} passage(s) sous AA une fois le grain peint — ` +
+          `${grainWorst.clear}:1 sur la couleur déclarée, ${grainWorst.under}:1 sous le ` +
+          `pixel le plus sombre du grain (seuil ${grainWorst.need}), « ${grainWorst.text} »`,
+      )
+      process.exitCode = 18
+    }
+
+    /*
+     * **The grain has to be decodable.** `.grain` paints a texture over a
+     * colour, so a tile this cannot read is a ground it is measuring as if the
+     * texture were not there — the silent-widening failure the ground walk was
+     * rewritten to end. Only said where the screen actually paints one.
+     */
+    if (grainAlpha === null && grainPainted > 0) {
+      console.log(
+        `  ✗ contraste: le grain est peint sur ${grainPainted} fond(s) et n’a pas pu être ` +
+          'décodé — la mesure porte sur la couleur nue, pas sur ce qui est à l’écran',
+      )
+      process.exitCode = 18
+    }
+
     /*
      * **An abstention is a finding.** The ground walk returning `null` used to
      * be a silent `continue`, and that is how a single `background-image` on the
@@ -7052,13 +7139,24 @@ async function main() {
     )
 
     /*
-     * **The ladder has to exist.** Rename `--radius-lg` and this check would
-     * otherwise go on printing a green sentence over a ladder one rung shorter —
-     * a check people can work around is worse than none.
+     * **The ladder has to exist — and « exist » is not « be three ».**
+     *
+     * This was `< 3`, which is the same defect as the list it guarded: it froze
+     * the size of the palette into the instrument, so `--radius` could not be
+     * removed from `tokens.css` without turning twelve gates red, and the token
+     * `--census` itself reports as worn by nobody was the token `--census` made
+     * unremovable — « measured, exit 15 on `review` », in `tokens.css`'s own
+     * words, beside the line it could not delete.
+     *
+     * A ladder that has *shrunk* is a decision; a ladder that is *gone* is a
+     * check measuring nothing, and only the second is this guard's business.
+     * What catches a rung deleted while classes still wear it is the stray list
+     * below, where those corners land the moment they match no rung — driven
+     * both ways before this changed.
      */
-    if (counted.ladder.length < 3) {
+    if (counted.ladder.length === 0) {
       console.log(
-        `  ✗ recensement: ${counted.ladder.length} échelon(s) lus dans :root au lieu de 3 — ` +
+        '  ✗ recensement: aucun échelon --radius* lu dans :root — ' +
           'la mesure n’a pas d’échelle contre laquelle mesurer',
       )
       process.exitCode = 15
@@ -7102,6 +7200,134 @@ async function main() {
         console.log(`     « ${item.near} » — ${item.tall.join(' / ')}`)
       }
       process.exitCode = 15
+    }
+  }
+  if (flags.rhythm) {
+    /*
+     * **Printed whether or not it fails**, for `--census`'s reason: a run that
+     * visited no spacing at all must not be able to print the sentence a run that
+     * measured every gap on the screen prints. The share on the ladder is the
+     * evidence, and the rules that spared a value say so by name rather than
+     * silently dropping it.
+     */
+    const total = beat.measured
+    const onLadder = beat.values
+      .filter((entry) => beat.ladder.some((s) => Math.abs(s.value - Math.abs(entry.v)) <= 0.5))
+      .reduce((sum, entry) => sum + entry.n, 0)
+    const byRule = new Map()
+    for (const item of beat.spared) byRule.set(item.why, (byRule.get(item.why) ?? 0) + item.n)
+    console.log(
+      `  rythme: ${total} espacement(s) peint(s) sur ${beat.elements} élément(s), ` +
+        `${total === 0 ? 0 : Math.round((1000 * onLadder) / total) / 10}% sur les ` +
+        `${beat.ladder.length} pas déclarés` +
+        (byRule.size > 0
+          ? ` · épargnés : ${[...byRule].map(([why, n]) => `${n} ${why}`).join(', ')}`
+          : '') +
+        ` · ${beat.pairs} groupe(s) imbriqué(s), ${beat.read} titre(s) mesuré(s)`,
+    )
+
+    /*
+     * **The ladder has to exist, and « exist » is not « be seven ».**
+     *
+     * The first draft of this guard was `< 7`, which is exactly the defect
+     * `--census` was carrying: a palette whose size is frozen into the
+     * instrument cannot be tuned without turning the gates red, and `--radius`
+     * (12px, worn by 0 of 40 388 corners) spent rounds undeletable for that
+     * reason. A scale that has shrunk is a decision; a scale that is gone is a
+     * check with nothing to measure against. A value that was on a rung since
+     * removed lands in the off-ladder list below on its own.
+     */
+    if (beat.ladder.length === 0) {
+      console.log(
+        '  ✗ rythme: aucun pas --space-* lu dans :root — ' +
+          'la mesure n’a pas d’échelle contre laquelle mesurer',
+      )
+      process.exitCode = 16
+    }
+
+    /*
+     * An allowance covers a value on an element on named sides, and it has to
+     * cover **every** side the value was painted on: `-mx-px` is an argument
+     * about two hairlines, not a licence for the same number anywhere else on
+     * the same box.
+     */
+    const excused = (item) =>
+      RHYTHM_ALLOWANCES.some(
+        (a) =>
+          a.value === item.value &&
+          a.at.test(item.at) &&
+          item.sides.every((side) => a.sides.includes(side)),
+      )
+    const stray = beat.off.filter((item) => !excused(item))
+    if (stray.length > 0) {
+      const occurrences = stray.reduce((sum, item) => sum + item.n, 0)
+      console.log(
+        `  ✗ rythme: ${stray.length} endroit(s) hors de l’échelle (${occurrences} occurrence(s)) — ` +
+          `les pas déclarés sont ${beat.ladder.map((s) => s.value).join('/')}`,
+      )
+      for (const item of stray.slice(0, 10)) {
+        console.log(
+          `     ${item.value}px ${item.kind}${item.sides.length > 0 ? ' ' + item.sides.join('/') : ''} ×${item.n} — ` +
+            `${item.at.slice(0, 64)} « ${item.near} »`,
+        )
+      }
+      if (stray.length > 10) console.log(`     … et ${stray.length - 10} de plus`)
+      process.exitCode = 16
+    }
+
+    if (beat.flat.length > 0) {
+      console.log(
+        `  ✗ rythme: ${beat.flat.length} groupe(s) aussi espacé(s) dedans qu’autour — ` +
+          'un groupe qui n’est pas plus serré que ce qui l’entoure n’est pas un groupe',
+      )
+      for (const item of beat.flat.slice(0, 6)) {
+        console.log(
+          `     ${item.inner}px dedans contre ${item.outer}px autour — ` +
+            `${item.at.slice(0, 56)} « ${item.near} »`,
+        )
+      }
+      process.exitCode = 16
+    }
+
+    if (beat.headings.length > 0) {
+      console.log(
+        `  ✗ rythme: ${beat.headings.length} titre(s) plus serré(s) au-dessus qu’en dessous`,
+      )
+      for (const item of beat.headings.slice(0, 6)) {
+        console.log(
+          `     ${item.above}px au-dessus contre ${item.below}px en dessous — ` +
+            `${item.tag} « ${item.text} »`,
+        )
+      }
+      process.exitCode = 16
+    }
+  }
+  if (flags.cells) {
+    /*
+     * Printed either way, for the reason above: « aucune cellule affamée » over
+     * 5 069 growing cells and over none are two different statements and this
+     * harness has shipped the second one as the first three times.
+     */
+    console.log(
+      `  cellules: ${starved.flexible} cellule(s) extensible(s) dans ${starved.rows} rangée(s), ` +
+        `${starved.starved.length} à l’étroit`,
+    )
+    if (starved.starved.length > 0) {
+      console.log(
+        `  ✗ cellules: ${starved.starved.length} cellule(s) qui s’étendent manquent de place ` +
+          'pendant que leurs voisines fixes en gardent',
+      )
+      for (const item of starved.starved.slice(0, 6)) {
+        console.log(
+          `     ${item.got}px pour ${item.want}px de texte (${item.short}px, ~${item.characters} ` +
+            `caractère(s)) alors que les fixes gardent ${item.slack}px` +
+            (item.ellipsis ? ' — coupé avec une ellipse' : ' — coupé sans rien le dire') +
+            (item.clamp ? `, clamp ${item.clamp}` : ''),
+        )
+        console.log(`       ${item.at.slice(0, 64)} « ${item.near} »`)
+        console.log(`       rangée ${item.row.slice(0, 50)} : ${item.widths}`)
+      }
+      process.exitCode = 17
     }
   }
   if (unanswered.length) console.log(`  canaux sans réponse: ${[...new Set(unanswered)].join(', ')}`)
@@ -7151,7 +7377,9 @@ async function contrast(page) {
     content: '*, *::before, *::after { transition: none !important; animation: none !important; }',
   })
   await page.waitForTimeout(50)
-  const findings = await page.evaluate(() => {
+  // `async`, because the grain tile is decoded here rather than assumed — see
+  // `grainAlpha` below.
+  const findings = await page.evaluate(async () => {
     const channel = (v) => {
       const s = v / 255
       return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
@@ -7208,9 +7436,47 @@ async function contrast(page) {
      * worst is named, on the green line, every run.
      */
     const GRAIN = getComputedStyle(document.documentElement).getPropertyValue('--grain').trim()
+    /*
+     * **The tile's darkest level is decoded, and it was the number `9 / 255`
+     * typed here.**
+     *
+     * `index.css` names the consequence in its own words — « a quieter tile
+     * needs `shot.mjs --contrast` to stop hard-coding `9 / 255` » — so the one
+     * remedy the design lane can reach for was a remedy this instrument could
+     * not see: repaint the grain at half the alpha and the reported margin would
+     * not move by a thousandth. Same shape as `--census` reading its radius
+     * ladder from a hand-written list while its docblock said it read `:root`.
+     *
+     * The PNG is a `data:` URL, so the canvas is same-origin and readable.
+     * Measured on the shipped tile: **64×64, four levels — 0 (26.2 %), 3
+     * (23.9 %), 6 (24.7 %), 9 (25.2 %), mean 4.47**. The prose in `tokens.css`
+     * was right about the levels; nothing had ever read them.
+     */
+    let grainAlpha = null
+    let grainTile = null
+    const url = GRAIN.match(/url\("?([^"')]+)"?\)/)
+    if (url !== null) {
+      try {
+        const tile = new Image()
+        tile.src = url[1]
+        await tile.decode()
+        const board = document.createElement('canvas')
+        board.width = tile.width
+        board.height = tile.height
+        const brush = board.getContext('2d')
+        brush.drawImage(tile, 0, 0)
+        const pixels = brush.getImageData(0, 0, board.width, board.height).data
+        let peak = 0
+        for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > peak) peak = pixels[i]
+        grainAlpha = peak
+        grainTile = `${board.width}×${board.height}`
+      } catch {
+        grainAlpha = null
+      }
+    }
     const grained = (value) => {
       const [r, g, b] = parse(value)
-      const a = 9 / 255
+      const a = (grainAlpha ?? 0) / 255
       return `rgb(${Math.round(r * (1 - a))}, ${Math.round(g * (1 - a))}, ${Math.round(b * (1 - a))})`
     }
     /*
@@ -7236,6 +7502,8 @@ async function contrast(page) {
     /* Runs that clear AA on the colour and would not clear it under the tile. */
     let grainEaten = 0
     let grainWorst = null
+    /* How many grounds actually paint the tile — see the decode check. */
+    let grainPainted = 0
 
     const unmeasured = []
     const groundOf = (el) => {
@@ -7253,7 +7521,11 @@ async function contrast(page) {
           return null
         }
         if (opaque(style.backgroundColor)) {
-          return image === GRAIN ? [style.backgroundColor, grained(style.backgroundColor)] : style.backgroundColor
+          if (image === GRAIN) {
+            grainPainted += 1
+            return [style.backgroundColor, grained(style.backgroundColor)]
+          }
+          return style.backgroundColor
         }
       }
       return 'rgb(255, 255, 255)'
@@ -7496,6 +7768,9 @@ async function contrast(page) {
       runs,
       grainEaten,
       grainWorst,
+      grainAlpha,
+      grainTile,
+      grainPainted,
       unmeasured: [...new Map(unmeasured.map((item) => [key(item), item])).values()],
       unmeasuredRuns: unmeasured.length,
     }
@@ -9419,10 +9694,17 @@ async function geometry(page) {
  *
  * ## Three ladders, one shape
  *
- * **Corner radius.** The rungs are read out of `:root` at runtime
- * (`--radius-sm`, `--radius`, `--radius-lg`) the way `--motion` builds its
- * allowed curve set, so renaming a token turns this red instead of quietly
- * shrinking what it checks. The two rungs that are *not* in `:root` —
+ * **Corner radius.** The rungs are read out of `:root` at runtime — **every**
+ * custom property whose name begins `--radius`, the way `--motion` builds its
+ * allowed curve set by prefix. This paragraph said exactly that for two rounds
+ * while the line under it iterated a hand-written
+ * `['--radius-sm', '--radius', '--radius-lg']`, and the difference had a price:
+ * `--radius` (12px) is worn by 0 of 40 388 corners over 170 stagings and could
+ * not be deleted, because the guard was `< 3` and every stage then failed « 2
+ * échelon(s) lus dans :root au lieu de 3 ». The instrument that proved a token
+ * dead was the reason it could not be removed. A rung added is honoured on
+ * declaration; a rung removed shrinks the ladder, and any corner still wearing
+ * it is reported as stray. The two rungs that are *not* in `:root` —
  * `rounded-bar` (1px, declared in `tailwind.config.js` for the input meter's
  * caps) and `rounded-full` — are not named here either: they are recognised by
  * **shape**, because naming them would be a second copy of the ladder that can
@@ -9503,20 +9785,31 @@ async function census(page) {
     const round = (n) => Math.round(n * 100) / 100
 
     /*
-     * **The ladder is read, not written.** If `:root` stops answering, this
-     * check has no ladder to measure against and must say so — a census over an
-     * empty ladder is the « green because it looked at nothing » failure this
-     * harness has now shipped three times.
+     * **The ladder is discovered, and for two rounds this said so over a list.**
+     *
+     * It read `['--radius-sm', '--radius', '--radius-lg']` — three names typed
+     * here — under a docblock claiming the rungs came « out of `:root` at
+     * runtime the way `--motion` builds its allowed curve set ». The cost was
+     * not theoretical: `--radius` (12px) is worn by 0 of 40 388 corners across
+     * 170 stagings, `tokens.css` says so at length, and the token could not be
+     * deleted because the guard below was `< 3` and every stage then failed « 2
+     * échelon(s) lus dans :root au lieu de 3 », exit 15. The instrument that
+     * proved a token dead was the reason it could not be removed.
+     *
+     * Every custom property whose name begins `--radius` now, the way `motion()`
+     * takes `--motion` and `--ease`.
      */
     const root = getComputedStyle(document.documentElement)
     const rungs = []
-    for (const name of ['--radius-sm', '--radius', '--radius-lg']) {
+    for (const name of root) {
+      if (!name.startsWith('--radius')) continue
       const raw = root.getPropertyValue(name).trim()
       const value = Number.parseFloat(raw)
       if (raw !== '' && Number.isFinite(value)) rungs.push({ name, value: round(value) })
     }
+    rungs.sort((a, b) => a.value - b.value)
     const ladder = rungs.map((r) => r.value)
-    const smallest = Math.min(...ladder)
+    const smallest = ladder.length > 0 ? Math.min(...ladder) : 0
 
     const CORNERS = [
       'borderTopLeftRadius',
@@ -9689,6 +9982,563 @@ async function census(page) {
         .sort((a, b) => b[1].count - a[1].count)
         .map(([width, seen]) => ({ width, count: seen.count, near: seen.near })),
     }
+  })
+}
+
+/**
+ * **The declared deviations from the spacing ladder, and why each is not a step.**
+ *
+ * Keyed by the painted value, the element signature and the side, the way
+ * `check-platform.mjs` keys its allowances. `scripts/__tests__/rhythmAllowances.test.mjs`
+ * holds every entry to a live site in `src/`, so an allowance cannot outlive the
+ * code it excuses — that direction is a source grep and belongs in a test, not in
+ * a pass that only ever sees one screen.
+ *
+ * There are two, and both were argued in the tree before this pass existed.
+ * Everything else the sweep found is a finding, not an allowance: an allowance
+ * is a reason, and « nobody has changed it yet » is not one.
+ */
+const RHYTHM_ALLOWANCES = [
+  {
+    value: 1,
+    at: /^span\.text-muted\.flex\.w-12/,
+    sides: ['Top'],
+    why:
+      'One pixel, and it is not a gap between two things: the widget’s mark rows ' +
+      'nudge their timestamp column onto the first line of the prose beside it, ' +
+      'which is set at a different size. An optical alignment inside one row — ' +
+      'the reason is `src/widget/__tests__/spacing.test.tsx`’s own, shipped with ' +
+      'the `pt-px` it covers.',
+  },
+  {
+    value: -1,
+    at: /^li\.scroll-mt-snug/,
+    sides: ['Left', 'Right'],
+    why:
+      'The open record’s stroke, pulled over the list’s hairlines rather than ' +
+      'beside them (`-mx-px`, `src/screens/Historique.tsx`). It is the width of a ' +
+      'border and it exists so the row does not step sideways as it opens — ' +
+      'border geometry, not a rung of a ladder whose smallest step is four.',
+  },
+]
+
+/**
+ * **Spacing rhythm, computed — rubric axis 3, which nothing measured.**
+ *
+ * The axis makes three claims: « One scale, visible at a glance. Tight groups,
+ * generous separation, more space above a heading than below. » Ten passes ran
+ * over every stage and **none of them read a gap**. `--census` counts radii,
+ * pips, bar caps, authored control heights and icon strokes, and prints
+ * byte-identical output on either side of a change that regroups a whole
+ * surface — which is how lane e found this: the widget's pill had six children
+ * at five identical intervals, and the pass whose job is « one screen, one
+ * ladder » had nothing to say about it.
+ *
+ * A renderer unit test can read what a component *declares*
+ * (`src/widget/__tests__/spacing.test.tsx` does, over `src/widget/**`), and that
+ * is the right tool for a declaration. It cannot read a **seam that nothing
+ * declares** — two bands each padding themselves produce a separation that is
+ * the sum of two paddings and is on no element in the tree — and jsdom answers
+ * zero for every box, so nothing in `npm test` can measure a painted interval at
+ * all. This runs in the browser, on all 85 stages at both sizes.
+ *
+ * ## What it reads, and what it refuses to read
+ *
+ * Every painted `gap`, `padding` and `margin`, through the **Typed OM**
+ * (`computedStyleMap`) rather than `getComputedStyle`: margins resolve to their
+ * *used* value, so the rail's `mt-auto` reads back as `511.03px` — a number no
+ * author wrote, about a box nobody spaced. Typed OM answers `auto`, and a
+ * keyword is not a length this can compare.
+ *
+ * Four rules decide what is not rhythm, and each is a rule rather than a list
+ * because a list of sites is a list that goes stale:
+ *
+ *   1. **A drawing is not a layout.** A container none of whose children holds
+ *      text, carries an accessible name, or can be operated is a drawn object
+ *      with its own geometry — `LevelMeter`'s bars, the onboarding's pips.
+ *      Measured over the sweep: **820 gaps** of 1px and 2px, every one of them a
+ *      meter. `tailwind.config.js` already argues the same exemption for
+ *      `rounded-bar`, and `--census` honours it by shape.
+ *   2. **The bare tag's own spacing is not authored.** A probe element of the
+ *      same tag, with no class, is built in the page and measured; anything
+ *      equal to it is the baseline. Preflight resets almost everything, so this
+ *      finds exactly one thing — `th`/`td` at 1px — and it finds it by
+ *      measuring rather than by being told.
+ *   3. **A length that is not a whole pixel came from the type, not the
+ *      ladder.** The seven steps are integers; an `em`-relative margin at a
+ *      12–28px size is not. It exempts **three sites, 60 occurrences**, all of
+ *      them `CompteRenduDocument`'s heading margins (26.4, 9.6, 20.9) — a
+ *      typeset document has its own measure, and claim 3 below still reads it.
+ *   4. **A one-sided indent past the top of the ladder is a gutter.** Padding on
+ *      one horizontal side with nothing on the other, greater than the widest
+ *      step: `pl-10` on the compte-rendu's marker gutter and `pl-16` under a
+ *      search result. « A gutter is owned by what hangs in it, and geometry is
+ *      measured, not read » — `--geometry` is the pass that owns them.
+ *      **Two sites, 80 occurrences.** Symmetric padding of 40 or 48 is *not*
+ *      exempt: a card padded past the ladder is exactly what claim 1 is about.
+ *
+ * ## The three rules that fail
+ *
+ * **Claim 1 — one scale.** The seven steps are read out of `:root` at runtime,
+ * never restated here, for `--census`'s reason: a renamed token has to turn this
+ * red rather than quietly shrink what it checks. Tolerance is ±0.5px, because a
+ * `rem` step lands on 8.25 and 7.6 at the sizes this product draws and sub-pixel
+ * is not a second rung.
+ *
+ * **Claim 2 — tight groups, generous separation.** A flex or grid container with
+ * its own gap, holding a child that is itself a container with its own gap: the
+ * inner one must be *smaller*. Swept before this existed, **254 such pairs over
+ * 16 sites**, and the ratio histogram is
+ * `0.33×5 0.67×12 0.75×10 1.00×76 1.33×2 1.5×40 2.00×96 4×8 6×5` — so a third of
+ * them are flat or inverted, which is lane e's pill defect generalised. The floor
+ * is « strictly smaller » rather than lane e's 2.0, and the floor comes from the
+ * ladder: its adjacent steps are 4→6, 6→8, 8→12, 12→16, 16→20, 20→32, so the
+ * smallest real step-down is 1.25 and anything at or under 1.00 is not a group
+ * at all. Requiring 2.0 would refuse 8 inside 12, which is two rungs and legible.
+ *
+ * **Claim 3 — more space above a heading than below.** Measured **geometrically,
+ * not through the DOM**, and the first draft measured it through the DOM and was
+ * wrong: it compared a heading against its previous *sibling*, so every heading
+ * that is the first child of its box reported `0 above` and the check reported
+ * 121 violations over 7 sites, almost all of them that artefact. The space a
+ * reader sees is the distance to the nearest painted box above that overlaps the
+ * heading horizontally, whatever the nesting — 484 headings measured that way
+ * across the sweep against 171 the sibling way. The tolerance is the ladder's
+ * smallest step: `below` must exceed `above` by a whole rung before it is a
+ * difference anybody can see. At 4px the sweep reports **42 occurrences over 16
+ * sites on 32 stagings**; at 0.5px it reports 88 over 30, and the extra ones are
+ * pairs like 20/21.59.
+ *
+ * ## What it cannot see, stated so the next round does not rediscover it
+ *
+ * Claim 2 compares a group against what surrounds it, so **a row with no groups
+ * in it at all is invisible to it**. Lane e's pill before the fix was six flat
+ * children at one interval: nothing nested, nothing to compare, and this would
+ * have printed « 0 groupe(s) imbriqué(s) » and passed. Falsified rather than
+ * assumed — `src/widget/Widget.tsx` put back to its pre-`bee480d` form, `widget`
+ * at both sizes: claim 2 stays silent and claim 1 turns red on
+ * `10px pad Left — div.drag-region…`, which is lane e's own
+ * « px-snug → pl-2.5 pr-tight » finding arrived at from the painted pixels
+ * instead of from the class list. So the declaration-reading test and this pass
+ * are complementary and neither replaces the other.
+ *
+ * The scale is read by **prefix** — every `--space-*` in `:root` — and the first
+ * draft read a list of seven names instead, in the same file where `--census`
+ * was reading a list of three radius rungs under a docblock claiming it
+ * discovered them. Falsified on `agenda` at 1280×800 by renaming `--space-block`
+ * in `tokens.css`: the line goes from « 340 espacements … sur les 7 pas déclarés
+ * » to « 337 … sur les 6 », and the printed ladder from `4/6/8/12/16/20/32` to
+ * `4/6/8/12/16/32`. So the scale is the one it read and not one it remembers.
+ *
+ * Note *which* way that failed, because it is the same thing `--census` taught
+ * this round: the three 20px paddings did **not** become off-ladder findings,
+ * they disappeared — `pt-block` resolves `var(--space-block)`, and a `var()` with
+ * no token is an invalid declaration the browser drops, so the spacing is simply
+ * not painted. A painted-geometry pass cannot see a rung deleted out from under
+ * the classes that wear it; `src/design/tokens.test.ts` is the instrument that
+ * can, and it does. The guard here only refuses an *empty* ladder: freezing the
+ * count at seven would have made the palette untunable, which is the cost
+ * `--radius` paid for rounds.
+ *
+ * ## What it found on `main`, and it is the axis's own answer
+ *
+ * Swept over all 85 stages at both sizes: **59 553 painted spacings over 54 886
+ * elements, 79.6 % of them on the ladder**; 820 gaps spared as graphics, 80 as
+ * indents, 60 as typography; 254 nested group pairs and 484 headings measured.
+ * **156 of the 170 stagings are red**, over **63 distinct sites** — 39 off the
+ * ladder, 8 groups no tighter than their surroundings, 16 headings with more room
+ * below than above.
+ *
+ * The off-ladder mass is one number: **2px, painted 9 716 times** — `p-0.5`,
+ * `py-0.5`, `mt-0.5` — which outnumbers `--space-row` (16px, 3 483) by three to
+ * one. Then 14px ×846, 10px ×472, 24px ×124, 28px ×49. `tokens.css` says the
+ * scale was « derived from what the screens already repeat » and records having
+ * been extended twice for exactly that reason; whether 2px is a rung this product
+ * owes a name, or 39 sites that owe a rung, is a decision for the token lane, and
+ * this pass's job is that nobody can take it without the count.
+ *
+ * **The fourteen green stagings are every `widget-*` stage that does not open the
+ * panel** — the surface lane e regrouped this round, and the only one in the
+ * product that stands on one ladder. The rule is reachable; it is one surface
+ * away from being reached everywhere.
+ */
+async function rhythm(page) {
+  return page.evaluate(() => {
+    const round = (n) => Math.round(n * 100) / 100
+    const root = getComputedStyle(document.documentElement)
+
+    /*
+     * **By prefix, not by a list of seven names** — `--census`'s rule, and the
+     * first draft of this was the list `--census` had just been caught holding.
+     * Every `--space-*` in `:root`, so a rung added is honoured on declaration.
+     */
+    const steps = []
+    for (const name of root) {
+      if (!name.startsWith('--space-')) continue
+      const raw = root.getPropertyValue(name).trim()
+      const value = Number.parseFloat(raw)
+      if (raw !== '' && Number.isFinite(value)) {
+        steps.push({ name: name.replace('--space-', ''), value: round(value) })
+      }
+    }
+    steps.sort((a, b) => a.value - b.value)
+    const ladder = steps.map((s) => s.value)
+    const onScale = (v) => ladder.some((s) => Math.abs(s - Math.abs(v)) <= 0.5)
+    const widest = ladder.length > 0 ? Math.max(...ladder) : 0
+    const finest = ladder.length > 0 ? Math.min(...ladder) : 0
+
+    /*
+     * A probe of the same tag with no class, built in this document so the app's
+     * own baseline sheet applies to it. `th` inside a `<tr>` inside a `<table>`
+     * or the UA gives it nothing — the ancestry is structural, not a table of
+     * values.
+     */
+    const HOST = {
+      th: 'table>thead>tr', td: 'table>tbody>tr', tr: 'table>tbody',
+      li: 'ul', option: 'select', figcaption: 'figure', dd: 'dl', dt: 'dl',
+    }
+    const host = document.createElement('div')
+    host.setAttribute('style', 'position:absolute;left:-9999px;top:0;visibility:hidden')
+    document.body.appendChild(host)
+    const known = new Map()
+    const baseline = (tag) => {
+      if (known.has(tag)) return known.get(tag)
+      host.innerHTML = ''
+      let holder = host
+      for (const part of (HOST[tag] || '').split('>').filter(Boolean)) {
+        const node = document.createElement(part)
+        holder.appendChild(node)
+        holder = node
+      }
+      const out = {}
+      try {
+        const probe = document.createElement(tag)
+        holder.appendChild(probe)
+        const style = getComputedStyle(probe)
+        for (const prop of [
+          'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+          'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+          'columnGap', 'rowGap',
+        ]) out[prop] = Number.parseFloat(style[prop]) || 0
+      } catch {
+        // Not a tag this document can make; it has no baseline either.
+      }
+      known.set(tag, out)
+      return out
+    }
+
+    const near = (el) =>
+      ((el.getAttribute('aria-label') || el.textContent || '').trim() || el.tagName)
+        .replace(/\s+/g, ' ')
+        .slice(0, 30)
+    const where = (el) => {
+      const cls = typeof el.className === 'string' ? el.className.split(/\s+/).filter(Boolean) : []
+      return el.tagName.toLowerCase() + (cls.length > 0 ? '.' + cls.slice(0, 4).join('.') : '')
+    }
+    const shown = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      // A visually-hidden announcement is 1×1 with `margin: -1px`, and neither
+      // the box nor the margin is a thing a rep sees.
+      if (style.clipPath === 'inset(50%)' || (style.clip && style.clip !== 'auto')) return false
+      const box = el.getBoundingClientRect()
+      if (box.width <= 1 && box.height <= 1) return false
+      return box.width > 0 && box.height > 0
+    }
+    /** The computed value. `auto` and a percentage are not lengths to compare. */
+    const typed = (el, prop, fallback) => {
+      try {
+        const value = el.computedStyleMap().get(prop)
+        if (value === null || value === undefined) return null
+        if (typeof value.value !== 'number' || value.unit !== 'px') return null
+        return round(value.value)
+      } catch {
+        return Number.isFinite(fallback) ? round(fallback) : null
+      }
+    }
+    const drawing = (el) => {
+      const kids = [...el.children]
+      if (kids.length < 2) return false
+      for (const kid of kids) {
+        if (kid.matches('button, a[href], input, select, textarea, [role="button"], [tabindex]')) return false
+        if (kid.getAttribute('aria-label')) return false
+        if ((kid.textContent ?? '').trim() !== '') return false
+      }
+      return true
+    }
+    const laid = (style) => style.display.includes('flex') || style.display.includes('grid')
+
+    const OPPOSITE = { Top: 'Bottom', Bottom: 'Top', Left: 'Right', Right: 'Left' }
+    const off = new Map()
+    const spared = new Map()
+    const values = new Map()
+    let measured = 0
+    let drawings = 0
+
+    const painted = [...document.querySelectorAll('body *')].filter(shown)
+    for (const el of painted) {
+      const style = getComputedStyle(el)
+      const base = baseline(el.tagName.toLowerCase())
+      const kids = [...el.children].filter(shown)
+      const drawn = drawing(el)
+      if (drawn) drawings += 1
+
+      /*
+       * **One finding per value per element, not one per side.** `p-0.5` on a
+       * day cell is one decision an author made once; reporting it four times
+       * turned thirteen sites into fifty-two lines and buried the rest.
+       */
+      const file = (bucket, value, kind, side, why) => {
+        const key = `${value}|${kind}|${where(el)}`
+        const seen = bucket.get(key) ?? { value, kind, sides: [], at: where(el), near: near(el), why, n: 0 }
+        seen.n += 1
+        if (side !== '' && !seen.sides.includes(side)) seen.sides.push(side)
+        bucket.set(key, seen)
+      }
+      const take = (kind, prop, value, side) => {
+        if (value === null || value === 0) return
+        if (Math.abs(value - (base[prop] || 0)) < 0.01) return
+        measured += 1
+        values.set(value, (values.get(value) ?? 0) + 1)
+        if (onScale(value)) return
+        if (drawn && kind === 'gap') return file(spared, value, kind, side, 'graphique')
+        if (Math.abs(value % 1) > 0.01) return file(spared, value, kind, side, 'typographie')
+        if (kind === 'pad' && (side === 'Left' || side === 'Right') && Math.abs(value) > widest) {
+          const other = typed(el, 'padding-' + OPPOSITE[side].toLowerCase(), 0) ?? 0
+          if (other === 0) return file(spared, value, kind, side, 'retrait')
+        }
+        file(off, value, kind, side, null)
+      }
+
+      if (laid(style) && kids.length > 1) {
+        take('gap', 'columnGap', typed(el, 'column-gap', Number.parseFloat(style.columnGap)), '')
+        take('gap', 'rowGap', typed(el, 'row-gap', Number.parseFloat(style.rowGap)), '')
+      }
+      for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+        const low = side.toLowerCase()
+        take('pad', 'padding' + side, typed(el, 'padding-' + low, Number.parseFloat(style['padding' + side])), side)
+        take('mar', 'margin' + side, typed(el, 'margin-' + low, Number.parseFloat(style['margin' + side])), side)
+      }
+    }
+    host.remove()
+
+    // ── claim 2 ────────────────────────────────────────────────────────────
+    const flat = []
+    let pairs = 0
+    for (const el of painted) {
+      const style = getComputedStyle(el)
+      if (!laid(style) || drawing(el)) continue
+      const kids = [...el.children].filter(shown)
+      if (kids.length < 2) continue
+      const outer = Math.max(typed(el, 'column-gap', 0) ?? 0, typed(el, 'row-gap', 0) ?? 0)
+      if (outer <= 0) continue
+      for (const kid of kids) {
+        const inside = getComputedStyle(kid)
+        if (!laid(inside) || drawing(kid)) continue
+        if ([...kid.children].filter(shown).length < 2) continue
+        const inner = Math.max(typed(kid, 'column-gap', 0) ?? 0, typed(kid, 'row-gap', 0) ?? 0)
+        if (inner <= 0) continue
+        pairs += 1
+        if (inner >= outer - 0.01) {
+          flat.push({ inner, outer, at: where(kid), near: near(kid), in: where(el) })
+        }
+      }
+    }
+
+    // ── claim 3 ────────────────────────────────────────────────────────────
+    const boxes = painted.map((el) => ({ el, box: el.getBoundingClientRect() }))
+    const headings = []
+    let read = 0
+    for (const head of document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')) {
+      if (!shown(head)) continue
+      const box = head.getBoundingClientRect()
+      let above = null
+      let below = null
+      for (const { el, box: other } of boxes) {
+        if (el === head || head.contains(el) || el.contains(head)) continue
+        /*
+         * Horizontally over the heading, by at least half the narrower of the
+         * two: a box in the next column is not the space above this title.
+         */
+        const overlap = Math.min(other.right, box.right) - Math.max(other.left, box.left)
+        if (overlap < Math.min(other.width, box.width) * 0.5) continue
+        if (other.bottom <= box.top + 0.5) {
+          const gap = box.top - other.bottom
+          if (above === null || gap < above) above = gap
+        }
+        if (other.top >= box.bottom - 0.5) {
+          const gap = other.top - box.bottom
+          if (below === null || gap < below) below = gap
+        }
+      }
+      if (above === null || below === null) continue
+      read += 1
+      if (below - above > finest) {
+        headings.push({
+          tag: head.tagName.toLowerCase(), above: round(above), below: round(below),
+          text: near(head), at: where(head),
+        })
+      }
+    }
+
+    return {
+      ladder: steps,
+      measured,
+      elements: painted.length,
+      drawings,
+      values: [...values].sort((a, b) => b[1] - a[1]).map(([v, n]) => ({ v, n })),
+      off: [...off.values()].sort((a, b) => b.n - a.n),
+      spared: [...spared.values()].sort((a, b) => b.n - a.n),
+      pairs,
+      flat,
+      read,
+      headings,
+    }
+  })
+}
+
+/**
+ * **A growing cell starved by its fixed siblings — a whole class of defect that
+ * all ten passes are blind to by construction.**
+ *
+ * Found by lane f on a search result at 960×600: the cell holding the client's
+ * name had to break its own text while four fixed-width siblings kept room they
+ * did not use, and `line-clamp-2` then cut the word itself, so three results read
+ * « Sodex / comi… », « Group Maréc / quali… », « Banqu Delcou / prem… ». A rep at
+ * the window's declared minimum could not tell three accounts apart.
+ *
+ * Every pass was green over it, and `--scrollers`' blindness is **structural**: a
+ * `-webkit-box` clamp overflows in the *block* direction, so `scrollWidth ===
+ * clientWidth` and the metric it is built on reports nothing. `--prose` counts
+ * characters a line, not cells. So this measures the one thing neither can: the
+ * width the cell's own contents **want**, through a `Range` over its contents
+ * rather than through `scrollWidth`. Verified rather than assumed — driven on the
+ * defect with `src/screens/search/Results.tsx` reverted to its pre-`87511ac`
+ * form, the Range reports the unclamped 187.1px inside an 88.3px box.
+ *
+ * ## The rule, and why it is not the one that was proposed
+ *
+ * Proposed: « report when the one growing cell is the smallest cell in the row ».
+ * Measured on the defect itself, that rule **does not fire**: the row is
+ * `64 / 88.3↔ / 80 / 112 / 61.7`, and the growing cell at 88.3 is not the
+ * smallest — the 61.7px button is. A rule written from a recollection of the
+ * screen would have shipped green over the screen it was written for.
+ *
+ * What the row actually says, and what a rep loses, is an **arithmetic**: the
+ * growing cell is 98.8px short of its own text while its fixed siblings hold
+ * 164.7px they are not using (`Validée` keeps 80 and wants 41.6; the date keeps
+ * 64 and wants 35.5). So the rule is
+ *
+ *     a cell that grows is short of its text, *and* the cells that do not grow
+ *     are holding slack
+ *
+ * — which is « starved by its fixed siblings » stated as a measurement. Both
+ * halves are required: a growing cell short of its text in a row with no slack
+ * anywhere is a window too narrow, which is a different finding and not this one.
+ *
+ * **The floor is one character of the cell's own resolved font**, measured
+ * through a canvas the way `--prose` measures its advance, rather than a pixel
+ * count chosen after the fact. Swept over all 85 stages at both sizes, the rule
+ * with no floor reports exactly one site on `main` — a Réglages row 1.5px short,
+ * a quarter of one character, which is nothing a reader can name — against
+ * lane f's 98.8px, sixteen characters. The floor separates those two and nothing
+ * else in the sweep sits between them.
+ *
+ * **A cell that can scroll is exempt**, because that is `--scrollers`' subject
+ * and it can see it.
+ *
+ * **An ellipsis is reported, not required.** It is the difference between a cut
+ * that says so and a cut mid-word, and it is the half that hurt the rep — but on
+ * the very row this exists for the starved cell itself resolves to
+ * `text-overflow: clip`, with the ellipsis on one child and the clamp on another,
+ * so a rule gated on it would have been asking the wrong box. The state is in the
+ * finding so a reader can tell the two apart.
+ */
+async function cells(page) {
+  return page.evaluate(() => {
+    const round = (n) => Math.round(n * 10) / 10
+    const shown = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (style.clipPath === 'inset(50%)' || (style.clip && style.clip !== 'auto')) return false
+      const box = el.getBoundingClientRect()
+      return box.width > 1 && box.height > 0
+    }
+    /**
+     * The widest line box this element's contents produce — a `Range`, never
+     * `scrollWidth`, which a block-direction clamp defeats by construction.
+     */
+    const wants = (el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rects = [...range.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5)
+      return rects.length === 0 ? 0 : round(Math.max(...rects.map((r) => r.width)))
+    }
+    const near = (el) =>
+      ((el.getAttribute('aria-label') || el.textContent || '').trim() || el.tagName)
+        .replace(/\s+/g, ' ')
+        .slice(0, 34)
+    const where = (el) => {
+      const cls = typeof el.className === 'string' ? el.className.split(/\s+/).filter(Boolean) : []
+      return el.tagName.toLowerCase() + (cls.length > 0 ? '.' + cls.slice(0, 5).join('.') : '')
+    }
+    const scrolls = (el) => {
+      const style = getComputedStyle(el)
+      return /(auto|scroll)/.test(style.overflowX) || /(auto|scroll)/.test(style.overflowY)
+    }
+    /*
+     * One character of this element's own font, the way `--prose` measures an
+     * advance: a sample weighted the way French text is, through a canvas.
+     */
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    const SAMPLE = 'abcdefghijklmnopqrstuvwxyz eeeaisnrtoluu'
+    const advance = (el) => {
+      const style = getComputedStyle(el)
+      ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      return ctx.measureText(SAMPLE).width / SAMPLE.length
+    }
+
+    const starved = []
+    let rows = 0
+    let flexible = 0
+    for (const row of document.querySelectorAll('body *')) {
+      const style = getComputedStyle(row)
+      if (!style.display.includes('flex') || style.flexDirection.startsWith('column')) continue
+      const kids = [...row.children].filter(shown)
+      if (kids.length < 2) continue
+      rows += 1
+      const cells = kids.map((el) => ({
+        el,
+        grow: Number.parseFloat(getComputedStyle(el).flexGrow) || 0,
+        got: round(el.getBoundingClientRect().width),
+        want: wants(el),
+      }))
+      // What the cells that cannot grow are holding and not using. A fixed cell
+      // that itself overflows contributes nothing — it is not hoarding.
+      const slack = round(
+        cells.filter((c) => c.grow === 0).reduce((total, c) => total + Math.max(0, c.got - c.want), 0),
+      )
+      for (const cell of cells.filter((c) => c.grow > 0)) {
+        if ((cell.el.textContent ?? '').trim() === '') continue
+        flexible += 1
+        if (scrolls(cell.el)) continue
+        const short = round(cell.want - cell.got)
+        if (short <= advance(cell.el)) continue
+        if (slack <= 0) continue
+        const own = getComputedStyle(cell.el)
+        starved.push({
+          at: where(cell.el), near: near(cell.el),
+          got: cell.got, want: cell.want, short, slack,
+          characters: Math.round(short / advance(cell.el)),
+          ellipsis: own.textOverflow === 'ellipsis',
+          clamp: own.webkitLineClamp !== 'none' ? Number(own.webkitLineClamp) : null,
+          row: where(row),
+          widths: cells.map((c) => `${c.got}${c.grow > 0 ? '↔' : ''}/${c.want}`).join(' '),
+        })
+      }
+    }
+    return { rows, flexible, starved }
   })
 }
 
