@@ -70,9 +70,31 @@ export interface AgendaEntry {
   past: boolean
 }
 
-/** French, and never the machine's own vocabulary. */
+/**
+ * French, and never the machine's own vocabulary.
+ *
+ * **`idle` was « En attente », which is the opening of the second section's own
+ * heading.** « En attente de validation » names the calls that reached the gate
+ * and were never confirmed — the product's quietest failure (DEC-4) — and « En
+ * attente » named a call that has not started. Measured on
+ * `agenda-appel-imprevu` at 1280×800 both were on screen together, 471 px
+ * apart: the state word on the 14:30 Néovia row and the heading over the
+ * backlog. A rep reading the shorter as an abbreviation of the longer believes a
+ * call they have not held is already owed a gesture.
+ *
+ * `--echo` compares whole casefolded strings and the two are not equal, so it
+ * passed on every stage; a prefix is the one overlap nothing measured.
+ * `agenda/__tests__/labels.test.ts` is that check now, over every label this
+ * screen draws rather than over the pair that happened to be found.
+ *
+ * « Non enregistrée » is what the state actually says — no capture has ever
+ * started — and it is true on both sides of `isPast`, which « À venir » would
+ * not be: an `idle` meeting the rep never recorded goes under *Passées*.
+ * Feminine, like `Terminée`, `Validée` and `Abandonnée`, because the noun is
+ * « réunion ».
+ */
 export const STATE_LABEL: Record<MeetingState, string> = {
-  idle: 'En attente',
+  idle: 'Non enregistrée',
   armed: 'Prêt',
   recording: 'En cours',
   ended: 'Terminée',

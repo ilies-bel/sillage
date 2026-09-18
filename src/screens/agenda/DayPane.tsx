@@ -134,6 +134,14 @@ interface DayPaneProps {
 /** Declared once: a new lambda each render would re-fire `useLeaving`'s effect. */
 const entryKey = (entry: AgendaEntry): string => entry.key
 
+/**
+ * The divider DEC-31 draws, exported for the same reason `PENDING_HEADING` is:
+ * `agenda/__tests__/labels.test.ts` compares every heading on this screen
+ * against every state word the rows can print, and it has to read the strings
+ * the product draws rather than copies of them.
+ */
+export const PAST_HEADING = 'Passées'
+
 export function DayPane({
   entries,
   reason,
@@ -246,7 +254,7 @@ export function DayPane({
 
       {past.length > 0 ? (
         <section className="mt-block">
-          <SectionHeader>Passées</SectionHeader>
+          <SectionHeader>{PAST_HEADING}</SectionHeader>
           {/*
             **A past call and a call still ahead are the same object, and the
             screen used to draw them in two chrome languages 200 pixels apart.**

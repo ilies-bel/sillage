@@ -41,6 +41,17 @@ import { Button, List, Row, RowLead, RowTitle, SectionHeader } from '../../ui/in
 export const PENDING_SHOWN = 4
 
 /**
+ * The section's name, exported because two things now read it.
+ *
+ * It is drawn below, and it is compared against every state word the day list
+ * can print (`agenda/__tests__/labels.test.ts`) — `STATE_LABEL.idle` was « En
+ * attente », which is this heading's opening, and both were on screen at once.
+ * A check that restated the string instead of importing it would go green the
+ * moment either side was renamed.
+ */
+export const PENDING_HEADING = 'En attente de validation'
+
+/**
  * How many the screen asks for. Far more than it draws, because the *count* is
  * the point: a backlog has a size, and « les 4 › » under four rows is not a
  * size. An empty query costs no transcript folding, so this is one indexed scan
@@ -133,7 +144,7 @@ export function PendingGates({
   return (
     <section className="mt-block">
       <div className="mb-inline flex items-baseline gap-inline">
-        <SectionHeader className="mb-0 shrink-0">En attente de validation</SectionHeader>
+        <SectionHeader className="mb-0 shrink-0">{PENDING_HEADING}</SectionHeader>
         {/*
           The size, beside the name. Without it the section is a sample with no
           scale: four rows look identical whether the rep owes four gestures or
