@@ -264,6 +264,42 @@ a letter nobody reads one stem of. Falsified both ways: `--text-muted` at
 shipped pair → **138 passages across 18 stagings, 4.83:1 declared against 4.46:1
 under the grain, floor 4.5**.
 
+**What is on the screen, and what is only in the tree — the audit every pass
+needed.** No pass had ever asked whether an ancestor's `overflow` had scrolled an
+element out of view: `display`, `visibility` and `clip` are the element's *own*
+properties, and a box at y −596 inside a pane whose visible band starts at 196.9
+has all three in perfect order. Measured over all 170 stagings, the share of each
+pass's population that is clipped away by an ancestor:
+
+| population | measured | off screen | pass(es) reading it | does it change the verdict |
+|---|---|---|---|---|
+| `[data-hangs]` markers | 1 116 | **89.9 %** | `--geometry` | no — a marker's overhang is against the box that clips it, and that is the same when scrolled in |
+| prose surfaces | 4 870 | 85.6 % | `--prose` | no — characters a line is intrinsic to the element at its width |
+| text runs | 26 522 | 67.2 % | `--contrast`, `--echo` | no for `--contrast` (a colour ratio does not move); **in principle yes for `--echo`**, whose question is « does *this screen* draw the string twice » — no live finding depends on it |
+| flex rows | 6 599 | 66.4 % | `--cells` | no — a row is clipped whole, so the starved cell and its siblings move together |
+| every painted element | 54 808 | 53.5 % | `--rhythm` | claims 1 and 2 no (both answered inside one container); **claim 3 yes, fixed here** |
+| rounded corners | 10 073 | 47.0 % | `--census` | **in principle yes** — « au plus deux échelons sur un même écran » is a claim about a screen and its population is the DOM. Today that makes it stricter than its wording, which is the safe direction, and nothing it reports depends on it |
+| controls | 6 434 | 30.6 % | `--targets`, `--census` heights | no for 24×24 (intrinsic); same note as above for the two-heights rule |
+| headings | 527 | 25.2 % | `--a11y`, `--rhythm` claim 3 | no for the ladder (a size is a size); **yes for claim 3** |
+| icons | 513 | 13.1 % | `--census` strokes | no — a stroke width is intrinsic |
+
+`--scrollers`, `--fades` and `--motion` are not in the table because their
+populations were not swept: all three read a property of one element against
+itself — content against its own box, a mask against its own line box, a
+declaration against `:root` — so a clipped element answers the same question the
+same way. That is reasoning, not measurement, and it is marked as such.
+
+The one that was wrong is `--rhythm`'s claim 3, and it was wrong by a lot: it
+picks the nearest painted box above and below a heading, and **15 of its 42
+violations across the sweep were measured against a box outside its scroller**.
+The gate's h1 reported `-0.47 above` against a `circle` at y 32.47–48.47 inside
+`main.fade-below…`; *Historique*'s h1 `0.22 above` against a `span.min-w-0` at
+y 19.50–59.78 inside `main…overflow-y-auto`. Corrected, they are **12 px** and
+**32 px** — the header padding a rep actually sees — and the claim goes from 42
+violations to 27. `historique@960` had flipped red only because a 4 px move put
+the h1 beside a *different* clipped row, so the verdict was a function of scroll
+position.
+
 **`--no-expand` is the flag a design pass wants.** Three screens ask for
 `expand` in their own plan because what matters on them sits below an inner
 fold — but the same unclipping deletes whatever is *pinned* to the bottom of a

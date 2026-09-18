@@ -10245,6 +10245,65 @@ async function rhythm(page) {
       if (box.width <= 1 && box.height <= 1) return false
       return box.width > 0 && box.height > 0
     }
+
+    /**
+     * **Scrolled out of its scroller, which `shown` cannot see and never could.**
+     *
+     * `display`, `visibility` and `clip` are the element's *own* properties. An
+     * element sitting at y −596 inside a pane whose box is 196.9–800 has all
+     * three in perfect order and is not on the screen at all. Measured on
+     * `historique` at 1280×800: **1 621 of 1 750 painted elements** are outside
+     * their scroller, 1 454 of them behind one `div.fade-below`, because the
+     * stage opens a record and scrolls it to the top.
+     *
+     * It changes a verdict wherever a measurement is *relational* — where the
+     * answer is about a neighbour rather than about the element. Claim 3 is
+     * exactly that, and it was wrong twice: the gate's h1 reported
+     * `-0.47 above / 13 below` against a `circle` at y 32.47–48.47 inside
+     * `main.fade-below…`, and *Historique*'s h1 `4.22 / 8.83` against a
+     * `span.min-w-0.flex-1` at y 19.50–59.78 inside `main…overflow-y-auto`. Both
+     * neighbours are entirely outside their scroller; the rep sees 12 px and
+     * 32 px of header padding. `historique@960` turned red only because a 4 px
+     * move put the h1 next to a *different* clipped row — the verdict was a
+     * function of scroll position.
+     *
+     * The viewport's own fold is deliberately **not** clipping: a reading column
+     * runs past the bottom of the window by design, `--scrollers` owns that
+     * question, and treating the fold as invisibility would delete most of what
+     * this measures on every long screen. Only an ancestor that actually clips.
+     *
+     * Swept over all 170 stagings, claim 3 goes from **42 violations to 27** —
+     * fifteen of them were a heading measured against a box outside its pane.
+     * Claims 1 and 2 are untouched by it (566 off-ladder occurrences either
+     * way), because both are answered inside one container, and a container's
+     * children are clipped or not together.
+     *
+     * **Which passes this reaches is in `scripts/harness/README.md`**, with the
+     * share of each one's population that is off screen. The short answer is
+     * that only a *relational* measurement is affected: a line length, a colour
+     * ratio, a 24×24 target and a ladder rung are the same when scrolled into
+     * view, and a neighbour is not.
+     */
+    const clipped = (el) => {
+      const box = el.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0) return false
+      for (let host = el.parentElement; host; host = host.parentElement) {
+        const style = getComputedStyle(host)
+        const cutsX = style.overflowX !== 'visible'
+        const cutsY = style.overflowY !== 'visible'
+        if (!cutsX && !cutsY) continue
+        // The padding box, not the border box: a border does not show content.
+        const rect = host.getBoundingClientRect()
+        const top = rect.top + Number.parseFloat(style.borderTopWidth)
+        const bottom = rect.bottom - Number.parseFloat(style.borderBottomWidth)
+        const left = rect.left + Number.parseFloat(style.borderLeftWidth)
+        const right = rect.right - Number.parseFloat(style.borderRightWidth)
+        if (cutsY && (box.bottom <= top + 0.5 || box.top >= bottom - 0.5)) return true
+        if (cutsX && (box.right <= left + 0.5 || box.left >= right - 0.5)) return true
+      }
+      return false
+    }
+    const onScreen = (el) => shown(el) && !clipped(el)
     /** The computed value. `auto` and a percentage are not lengths to compare. */
     const typed = (el, prop, fallback) => {
       try {
@@ -10325,32 +10384,136 @@ async function rhythm(page) {
     // ── claim 2 ────────────────────────────────────────────────────────────
     const flat = []
     let pairs = 0
+    /**
+     * **A separator is not a sibling: it is part of the separation.**
+     *
+     * Claim 2 compared a container's *declared* `column-gap` against its child's,
+     * which cannot see what stands between two groups. Painted on `agenda-search`
+     * at both sizes, a filter row separated by a `Rule`: **6 px between two chips
+     * of one axis against 21 px between two axes** — the row's own 6, plus the
+     * rule's two `mx-hair`, plus its stroke — **3.5 : 1**, and the pass called it
+     * flat. Ditto the session header, whose outer distances all read 12 because
+     * the hairlines between its groups were counted as things rather than as
+     * space.
+     *
+     * So the distances are painted, edge to edge, and a separator is dropped from
+     * the child list rather than treated as a neighbour — which makes its
+     * margins and its stroke fall *inside* the distance, where a reader's eye
+     * puts them.
+     *
+     * **What a separator contributes, and why that does not put a stroke on the
+     * ladder.** The two claims ask different questions of the same pixels. Claim 1
+     * asks *membership*: is this declared length one of the seven rungs — and it
+     * never sees a separator, because a border is not a `gap`, a `padding` or a
+     * `margin`. Claim 2 asks a *ratio* between two painted distances, and a ratio
+     * has no rung to be on. So a 1 px rule is counted as separation and is never
+     * compared to a step, which is the only reading under which « the ladder does
+     * not describe strokes » and « the rep sees 21 px » are both true.
+     *
+     * A separator is recognised the way `drawing` recognises a meter: by having
+     * nothing to read and nothing to press, plus a thickness at or under the
+     * product's own `--border-width` doubled. The token is read from `:root`, so
+     * a product that thickened its rules would be measured against its own
+     * number and not against one written here.
+     *
+     * **It finds more, not less, and that is the point.** Swept over all 170
+     * stagings: 9 sites before, **13 after** — two gone (the widget footer's
+     * `Ouvrir Sillage | Pause`, whose groups are parted by a rule) and six new,
+     * every one of them a separation made of *margins* rather than of a `gap`,
+     * which the declared comparison could not see at all. The widget is the
+     * sharpest of them: its root parts the pill from its notice card with
+     * `mt-tight`, 6 px, while the pill's own groups stand 12 px apart — so
+     * separation *shrinks* as you go up the hierarchy, on the one surface a lane
+     * tuned by hand this round. The declared measure skipped that container
+     * outright, because a root with no `gap` had nothing to compare.
+     *
+     * `Math.min` over the outer distances and `Math.max` over the inner ones,
+     * and neither is arbitrary: a `justify-between` row has one enormous
+     * distance that is filler rather than rhythm, so the *tightest* separation is
+     * the honest one to be tighter than; and a group is only tight if its
+     * loosest interval is.
+     *
+     * **Flex only.** A grid's children are placed by track and by span, so « the
+     * next box to the right » is not adjacency in any sense a distance can use.
+     * Those containers keep the declared comparison, and the count of each is
+     * reported so the split is visible rather than assumed.
+     */
+    const stroke = Number.parseFloat(root.getPropertyValue('--border-width')) || 1
+    const separator = (el) => {
+      if ((el.textContent ?? '').trim() !== '') return false
+      if (el.getAttribute('aria-label')) return false
+      if (el.matches('button, a[href], input, select, textarea, [role="button"], [tabindex]')) return false
+      const box = el.getBoundingClientRect()
+      return Math.min(box.width, box.height) <= stroke * 2 + 0.01
+    }
+    /** Edge-to-edge distances between a container's groups, on its own axis. */
+    const distances = (container) => {
+      const style = getComputedStyle(container)
+      if (!style.display.includes('flex')) return null
+      const column = style.flexDirection.startsWith('column')
+      const boxes = [...container.children]
+        .filter(shown)
+        .filter((kid) => !separator(kid))
+        .map((kid) => kid.getBoundingClientRect())
+      const out = []
+      for (let i = 1; i < boxes.length; i += 1) {
+        const before = boxes[i - 1]
+        const after = boxes[i]
+        // On a wrapping row, two boxes on different lines are not a gap.
+        if (!column && Math.min(before.bottom, after.bottom) - Math.max(before.top, after.top) <= 0) continue
+        const span = column ? after.top - before.bottom : after.left - before.right
+        if (span >= -0.5) out.push(round(span))
+      }
+      return out.length > 0 ? out : null
+    }
+
+    let declaredPairs = 0
     for (const el of painted) {
       const style = getComputedStyle(el)
       if (!laid(style) || drawing(el)) continue
       const kids = [...el.children].filter(shown)
       if (kids.length < 2) continue
-      const outer = Math.max(typed(el, 'column-gap', 0) ?? 0, typed(el, 'row-gap', 0) ?? 0)
+      const around = distances(el)
+      const declaredOuter = Math.max(typed(el, 'column-gap', 0) ?? 0, typed(el, 'row-gap', 0) ?? 0)
+      // The tightest separation between this container's groups: a
+      // `justify-between` row has one enormous distance that is filler, not
+      // rhythm, and comparing against it would clear anything.
+      const outer = around === null ? declaredOuter : Math.min(...around)
       if (outer <= 0) continue
       for (const kid of kids) {
         const inside = getComputedStyle(kid)
-        if (!laid(inside) || drawing(kid)) continue
+        if (!laid(inside) || drawing(kid) || separator(kid)) continue
         if ([...kid.children].filter(shown).length < 2) continue
-        const inner = Math.max(typed(kid, 'column-gap', 0) ?? 0, typed(kid, 'row-gap', 0) ?? 0)
+        const within = distances(kid)
+        const declaredInner = Math.max(typed(kid, 'column-gap', 0) ?? 0, typed(kid, 'row-gap', 0) ?? 0)
+        // The loosest distance *inside* the group, against the tightest
+        // *between* groups: « tight groups, generous separation » stated exactly.
+        const inner = within === null ? declaredInner : Math.max(...within)
         if (inner <= 0) continue
         pairs += 1
-        if (inner >= outer - 0.01) {
-          flat.push({ inner, outer, at: where(kid), near: near(kid), in: where(el) })
+        if (around === null || within === null) declaredPairs += 1
+        if (inner >= outer - 0.5) {
+          flat.push({
+            inner, outer, at: where(kid), near: near(kid), in: where(el),
+            painted: around !== null && within !== null,
+          })
         }
       }
     }
 
     // ── claim 3 ────────────────────────────────────────────────────────────
-    const boxes = painted.map((el) => ({ el, box: el.getBoundingClientRect() }))
+    /*
+     * **The candidates are what is on the screen, not what is in the tree.**
+     * `painted` is every element `shown` allows; a neighbour has to survive
+     * `clipped` as well — see the docblock on it for the two headings this was
+     * wrong about and by how much.
+     */
+    const visible = painted.filter((el) => !clipped(el))
+    const boxes = visible.map((el) => ({ el, box: el.getBoundingClientRect() }))
     const headings = []
     let read = 0
     for (const head of document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')) {
-      if (!shown(head)) continue
+      if (!onScreen(head)) continue
       const box = head.getBoundingClientRect()
       let above = null
       let below = null
@@ -10390,6 +10553,7 @@ async function rhythm(page) {
       off: [...off.values()].sort((a, b) => b.n - a.n),
       spared: [...spared.values()].sort((a, b) => b.n - a.n),
       pairs,
+      declaredPairs,
       flat,
       read,
       headings,
