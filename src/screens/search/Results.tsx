@@ -65,21 +65,67 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
               {formatDayShort(meetingAnchor(row.meeting))}
             </span>
 
-            <RowTitle {...meetingHeading(row.meeting)} />
+            {/*
+              **The one cell that is not a fixed width was the one that gave.**
+
+              Measured on the shipped renderer, `agenda-search` at 960×600 — the
+              minimum `app/main.ts` declares — this row is 462px wide and spends
+              64 on the date, 80 on the status, 112 on the intent summary, 62 on
+              *Ouvrir* and 64 on four `gap-row`s. That is 382 of the 430px inside
+              the padding, and what was left for the client's name and the call's
+              objet was **40.3px**. `line-clamp-2` then cut the word itself, with
+              no ellipsis and nothing on screen saying so: the three results read
+              « Sodex / comi… », « Group Maréc / quali… », « Banqu Delcou /
+              prem… ». A search result a rep cannot identify is not a result.
+
+              The row already wraps; it simply never had a reason to. A floor on
+              the identity cell gives it one, and flexbox breaks the line after
+              it instead of crushing it — the line-break decision reads an item's
+              flex base size *clamped by its own min-width*. At 960 the title
+              then gets 350px, which is above the widest heading these rows draw
+              (187.1px, « comité de staffing hebdomadaire »), so name and objet
+              land on one line each and the status, the ledger and *Ouvrir* go
+              together on the next.
+
+              **`lg:min-w-0` because 1280 must not move.** At 1280×800 the same
+              arithmetic leaves 637.7px of hypothetical width against 638
+              available — three tenths of a pixel of slack — so an unconditional
+              floor would wrap the comfortable size too, on a rounding error. The
+              breakpoint is the viewport and the real variable is this column's
+              width; they agree here because the pane's width is a fixed share of
+              the window, and `Rail` and the search field next door already step
+              on the same `lg`.
+
+              Windows (HR-2) is the tighter case and still clears it: a classic
+              scrollbar takes 17px off this column, leaving 413px inside the
+              padding, and the second line needs 286.
+            */}
+            <RowTitle {...meetingHeading(row.meeting)} className="min-w-[16rem] lg:min-w-0" />
 
             <span className="text-muted w-20 shrink-0 text-right text-ui">{row.status}</span>
             {/*
-              **`truncate`, because `w-28` was a box and not a width.**
+              **`truncate`, because `w-28` was a box and not a width — and only
+              where the box is the reason.**
 
               The compact summary is `whitespace-nowrap` in a 112px cell, and
-              « 1 envoi en échec · 2 effectués » measures 169 — 57px of it drawn
-              outside the cell and clipped by `List`'s own `overflow-hidden`,
-              with nothing on screen saying so. It was invisible while the
-              window had slack; the rail (V2) took 224px of it and
-              `--scrollers` found it at 960×600. The ellipsis is the cue the
-              check is about, and the ledger is in the expanded record.
+              « 1 envoi en échec · 2 effectués » measures 168.6 — 57px of it
+              drawn outside the cell and clipped by `List`'s own
+              `overflow-hidden`, with nothing on screen saying so. It was
+              invisible while the window had slack; the rail (V2) took 224px of
+              it and `--scrollers` found it at 960×600. The ellipsis is the cue
+              the check is about, and the ledger is in the expanded record.
+
+              That is still the answer at 1280×800, where this row is one line
+              of 638px with 0.3px to spare. It stopped being the answer below
+              `lg`: the row breaks after the title now, and the status, this
+              summary and *Ouvrir* share a line of 430px that they use 286 of.
+              Clipping 57px of a rep's own ledger beside 144px of nothing is the
+              next round's finding, so the cell is sized to its text there. It
+              is bounded text, not data — `counted()` above emits at most three
+              counted phrases, 173.1px measured and ~240px at three-digit
+              counts, which still leaves the line inside 430.
             */}
-            <IntentSummary intents={row.intents} variant="compact" className="w-28 truncate" />
+            <IntentSummary intents={row.intents} variant="compact" className="lg:w-28 lg:truncate" />
 
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 

@@ -608,6 +608,47 @@ describe('every list row starts on one leading edge', () => {
     expect(lead?.className).toContain('tabular-nums')
   })
 
+  test('RowTitle’s caller can give the identity cell a floor, and keep it', () => {
+    /*
+     * **Measured, and the reason this assertion is about a string.**
+     *
+     * `Results` is five cells wide: a 64px date, this one, an 80px status, a
+     * 112px ledger and a 62px button. Four of the five are fixed, so the only
+     * one that can give is the one carrying the client's name — and at 960×600,
+     * the minimum `app/main.ts` declares, it gave down to **40.3px** against a
+     * natural 187.1, with `line-clamp-2` cutting « Sodexial » to « Sodex » and
+     * no ellipsis anywhere. The fix is a `min-w` on that cell below `lg`, which
+     * makes flexbox break the line after it instead of crushing it.
+     *
+     * That fix is one `className` passing through `cn`, and `cn` is
+     * `tailwind-merge`: it exists precisely to drop the earlier of two
+     * conflicting classes. `min-w-0` and `min-w-[16rem]` conflict, so the base
+     * has to lose and the `lg:` variant has to survive. If either half of that
+     * stopped being true the override would go silently inert and the cell
+     * would be back at 40px with every one of the ten harness checks still
+     * green — measured on the reverted fix: `--scrollers` reports « rien de
+     * caché dans une boîte interne », because a `-webkit-box` clamp overflows
+     * in the block direction and leaves `scrollWidth === clientWidth`.
+     *
+     * jsdom measures every box as zero, so this cannot assert the 342px the
+     * browser draws. It asserts the one thing that is not layout: that the
+     * floor reaches the element.
+     */
+    const { container } = render(
+      <List bare>
+        <Row>
+          <RowTitle title="Sodexial" subtitle="comité de staffing hebdomadaire" className="min-w-[16rem] lg:min-w-0" />
+        </Row>
+      </List>,
+    )
+    const cell = container.querySelector('span.flex-1')
+    expect(cell?.className).toContain('min-w-[16rem]')
+    expect(cell?.className).toContain('lg:min-w-0')
+    // The base `min-w-0` must be gone, or it wins at every width and the floor
+    // is decorative.
+    expect(cell?.className.split(' ')).not.toContain('min-w-0')
+  })
+
   test('a bare list drops the box and keeps the hairlines', () => {
     const { container } = render(
       <List bare>
