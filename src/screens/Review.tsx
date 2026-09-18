@@ -2512,6 +2512,42 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           scrolled inside the page's other scroller. The document keeps its
           measure and gives the rest back.
         */}
+        {/*
+          **This column's fill is 0.69 ΔL* from the canvas under it, and it
+          cannot come off from here. Measured, and refused.**
+
+          `--bg-card-soft` `rgb(249,251,253)` on `--bg-canvas` `rgb(247,249,251)`
+          is ΔL* **0.693** — a just-noticeable difference is about 1, so this is
+          a ground step no display resolves, and it is the smallest of the four
+          on the gate. Two of its neighbours were retired for exactly that: the
+          decision band's `--bg-card` at 1.06, forty lines below, and the field
+          rail's white-on-white at 0.42, forty lines above.
+
+          Taking the fill off was tried and measured at both smoke sizes. It is
+          an improvement everywhere a rep looks:
+
+          | pair | with the fill | without |
+          |---|---|---|
+          | this column ↔ the document beside it | ΔL* 1.478 | ΔL* 2.171 |
+          | painted grounds on the gate | 4 | 3 |
+          | this column's chain of nested grounds | 4 deep | 3 deep |
+          | smallest adjacent step on the screen | 0.693 | 2.171 |
+
+          And it breaks the floor the rail is held to. `measureRail` in
+          `scripts/harness/shot.mjs` asserts `RAIL_FLOOR = 2.5` between the
+          field container and the column it sits on, sampled out of a
+          screenshot; on the canvas that step is **2.25**, and `review-rail`
+          and `review-rail-inerte` both fail at both sizes with « le rail ne se
+          détache pas de la colonne : ΔL* 2.25, plancher 2.5 ».
+
+          So the 0.693 is load-bearing: `--bg-subtle` is the darkest ground the
+          palette owns, and the container only clears 2.5 because this column
+          is 0.69 lighter than the canvas. The gate cannot have both a rail that
+          detaches and a column that is the app's own ground until the ladder is
+          spread — which is `tokens.css`, and the same commit the rail's own
+          note says is owed for `--brand-500` at 3.005:1. Not a line in this
+          file.
+        */}
         <aside className="border-subtle bg-card-soft flex w-[42%] min-w-[380px] max-w-[560px] shrink-0 flex-col border-l">
           {/*
             The rail scrolls; the gate does not.

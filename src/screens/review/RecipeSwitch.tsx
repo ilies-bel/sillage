@@ -100,7 +100,23 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
       ) : null}
 
       {open ? (
-        <div className="border-subtle bg-card-soft mt-tight rounded-sm border p-snug">
+        /*
+          **A fill, not a fill and a stroke.**
+
+          This sat on `--bg-card-soft` inside a `--border-subtle` box, on the
+          document column, which is white. Measured in the page at both smoke
+          sizes: the fill was ΔL* **1.478** from the white under it — about a
+          just-noticeable difference — so the hairline was doing all of the
+          bounding and the ground was a step nobody could see.
+
+          `--bg-subtle` is the ground the gate already uses for « material you
+          read rather than type into », four lines from here in the field rail,
+          and on white it is ΔL* **4.422**. At three times the step the filled
+          area *is* the region, which is the argument the rail's own note makes
+          at length, so the stroke comes off with it: one grammar on this
+          screen — a panel is a fill, a hairline is a rule between things.
+        */
+        <div className="bg-subtle mt-tight rounded-sm p-snug">
           {/* What the document on screen was shaped by, in the recipe's own words. */}
           <p className="text-muted measure text-meta">{recipe.description}</p>
 
