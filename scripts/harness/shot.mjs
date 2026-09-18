@@ -128,6 +128,25 @@ async function servingThisRepo(base) {
  * measured and reported on, because a harness that refuses to look is the false
  * green this repo has shipped five times.
  */
+/**
+ * A frame nothing is moving on — **including a departure the renderer is holding.**
+ *
+ * `getAnimations()` answers for what the compositor is running. A departure is
+ * not only that: the element stays mounted on a JS timer for one `--motion`
+ * after its exit finishes, so there is a window where every animation has
+ * settled and a surface is still on screen wearing `scale(0.92)`.
+ *
+ * That window is not a frame to measure. `widget-pause-refus` found it the hour
+ * the panel learnt to leave when the meeting ends: eleven controls reported at
+ * **22 px** against the 24 px floor, and 22 is 24 × 0.92 — the exit's own scale,
+ * measured on a panel that was on its way out. Nothing was under-sized; the
+ * instrument was reading a frame the rep cannot press on.
+ *
+ * So a class ending `-leaving` counts as motion. It is the renderer's own name
+ * for the state (`widget-panel-leaving`, `widget-card-leaving`, `.leaving`), and
+ * `useDeparture` removes the element rather than the class, so waiting for it to
+ * go is waiting for the hold to end.
+ */
 const settled = (page) =>
   page
     .waitForFunction(
@@ -135,7 +154,8 @@ const settled = (page) =>
         document
           .getAnimations()
           .filter((a) => a.effect?.getComputedTiming?.().iterations !== Infinity)
-          .every((a) => a.playState !== 'running'),
+          .every((a) => a.playState !== 'running') &&
+        document.querySelector('[class*="-leaving"], .leaving') === null,
       undefined,
       { timeout: 2_000 },
     )
