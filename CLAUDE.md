@@ -166,7 +166,25 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code twenty-six times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence.
+- A comment is not a check. Prose in this repo has been wrong about the code twenty-six times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+in this commit » about code that had shipped it, which then generated a false brief for a
+whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
+claiming its check discovered rungs by prefix while the code read a hand-written array of
+three; a docblock calling a column « wide enough for the longest thing any list puts here »
+when it was 31px generous; and the pass count four lines above this file's own command
+block, wrong for the third time in the same direction.
+- **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
+  what a rep sees and asked something narrower: `--contrast` tested `background-image`
+  before `background-color` and skipped 290 text runs; `--contrast` again computed the
+  darkest pixel under the grain, printed 4.458:1 against a 4.5 floor on 138 runs, and bound
+  nothing; `--census` read its radius ladder from a hand-written array; `--a11y` computes a
+  heading-to-prose ratio and prints it on the *green* line; and every one of the eight
+  visibility predicates across the twelve passes ignored whether an ancestor's overflow had
+  scrolled the element away — on `historique` at 1280×800, 1 621 of 1 750 painted elements
+  are outside their scroller. What decides whether that last one matters is not which helper
+  a pass uses but whether its question is **relational**: a pass asking something intrinsic
+  about one element is unaffected; a pass asking about the distance between two is corrupted.
+  A number that is computed, printed and binds nothing is not a check.
 - A test is not a caller. A fixture that calls a private method no production path reaches asserts that the method behaves, never that the product is protected — that shape hid a `recording` state with no capture, no health and no diagnostic, for the life of the process.
 
 ## Commands
@@ -186,16 +204,19 @@ npm run dist              # package (scripts/package-app.mjs), either host
 ```
 npm run dev -- --port 5180 --strictPort        # first, in another shell
 node scripts/harness/shot.mjs review scratch/review.png --scan
-node scripts/harness/smoke.mjs                 # every stage × two sizes, all ten checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all twelve checks
 ```
 
 `--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--scrollers`,
-`--motion`, `--fade` and `--census` are the ten `smoke.mjs` passes (`smoke.mjs:185`);
-`--scan` is an eleventh it does not. This said « six » and named the first list for three
-rounds, then « nine » for one round after `--census` landed, each time omitting exactly the
-passes added most recently — which are the ones a reviewer is likeliest to assume unrun and
-re-run by hand. **Count them in `smoke.mjs` before repeating this sentence**; it has now
-been wrong twice, in the same direction, about a list it sits four lines above. Each exists because something shipped past a screenshot. **Both sizes,
+`--motion`, `--fade`, `--census`, `--rhythm` and `--cells` are the twelve `smoke.mjs`
+passes (`PASSES`, `smoke.mjs:189`); `--scan` is a thirteenth it does not pass. This said
+« six » and named the first list for three rounds, then « nine » for one round after
+`--census` landed, then « ten » for one round after `--rhythm` and `--cells` landed — each
+time omitting exactly the passes added most recently, which are the ones a reviewer is
+likeliest to assume unrun and re-run by hand. **Count them in `smoke.mjs` before repeating
+this sentence**; it has now been wrong three times, in the same direction, about a list it
+sits four lines above, and each time the sentence was written by whoever had just added the
+pass it omitted. Each exists because something shipped past a screenshot. **Both sizes,
 always** — 1280×800 and 960×600, the minimum `main.ts` declares. A design pass that only
 reads `src/` has not looked at the product. Stages are held together by the product's own
 French strings, so a copy change breaks one silently.
