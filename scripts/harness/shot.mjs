@@ -5959,12 +5959,22 @@ async function main() {
   let dim = []
   let graphics = 0
   let undeclaredGraphics = 0
+  let textRuns = 0
+  let unmeasuredGrounds = []
+  let unmeasuredRuns = 0
+  let grainEaten = 0
+  let grainWorst = null
   if (flags.contrast) {
     await page.evaluate(() => document.fonts.ready)
     const measured = await contrast(page)
     dim = measured.dim
     graphics = measured.graphics
     undeclaredGraphics = measured.undeclared
+    textRuns = measured.runs
+    unmeasuredGrounds = measured.unmeasured
+    unmeasuredRuns = measured.unmeasuredRuns
+    grainEaten = measured.grainEaten
+    grainWorst = measured.grainWorst
   }
 
   /*
@@ -6430,16 +6440,47 @@ async function main() {
   }
   if (flags.contrast) {
     if (dim.length === 0) {
+      /*
+       * **The count is in the sentence, and this is not decoration.**
+       *
+       * « contraste: texte AA » was printed over *one* measured element on the
+       * onboarding screen and over twelve on the same screen after the ground
+       * walk learned the grain — the same eleven words either way. A check that
+       * visited almost nothing must not be able to say what a check that
+       * visited everything says.
+       */
       console.log(
-        `  contraste: texte AA, ${graphics} graphique(s) à 3:1` +
+        `  contraste: ${textRuns} passage(s) de texte AA, ${graphics} graphique(s) à 3:1` +
           (graphics === 0 ? ' — aucun élément ne s’est déclaré `data-graphic`' : '') +
-          (undeclaredGraphics > 0 ? `, ${undeclaredGraphics} marque(s) non déclarée(s)` : ''),
+          (undeclaredGraphics > 0 ? `, ${undeclaredGraphics} marque(s) non déclarée(s)` : '') +
+          (grainEaten > 0
+            ? `, ${grainEaten} passage(s) dont la marge AA tient dans le grain ` +
+              `(${grainWorst.clear}:1 → ${grainWorst.under}:1 sous le pixel le plus sombre, ` +
+              `« ${grainWorst.text} »)`
+            : ''),
       )
     }
     else {
-      console.log(`  ✗ contraste: ${dim.length} élément(s) sous le seuil`)
+      console.log(`  ✗ contraste: ${dim.length} élément(s) sous le seuil sur ${textRuns} mesuré(s)`)
       for (const item of dim.slice(0, 8)) {
         console.log(`   ✗ ${item.ratio}:1 (min ${item.need}) — « ${item.text} » ${item.fg} sur ${item.bg}`)
+      }
+      process.exitCode = 8
+    }
+    /*
+     * **An abstention is a finding.** The ground walk returning `null` used to
+     * be a silent `continue`, and that is how a single `background-image` on the
+     * app root took 92% of the onboarding's text out of the check while the line
+     * above stayed green. Whatever cannot be computed has to be declared with
+     * `data-ground`, naming the colour the ink was designed against.
+     */
+    if (unmeasuredGrounds.length > 0) {
+      console.log(
+        `  ✗ contraste: ${unmeasuredRuns} passage(s) de texte sur un fond non calculable, ` +
+          `${unmeasuredGrounds.length} élément(s) en cause — déclarez-le avec \`data-ground\``,
+      )
+      for (const item of unmeasuredGrounds.slice(0, 6)) {
+        console.log(`     ${item.what} — ${item.image} — près de « ${item.text} »`)
       }
       process.exitCode = 8
     }
@@ -6982,13 +7023,101 @@ async function contrast(page) {
     const parse = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number)
     const opaque = (value) => value && !/rgba\([^)]*,\s*0\s*\)|transparent/.test(value)
 
+    /*
+     * **The grain is a declared texture, not an unknown ground — and treating
+     * it as unknown was hiding 92% of the first screen a rep ever sees.**
+     *
+     * The walk abstains on a `background-image` because a gradient or a photo
+     * is a ground nothing here can compute, and guessing white under one is how
+     * a check invents a finding. That is right. What it did not account for is
+     * that `.grain` (`design/index.css`) sets **only** `background-image`, over
+     * whatever `bg-*` the same element already carries — so the app root is
+     * `div.bg-canvas grain`, which paints a colour *and* an image, and the test
+     * fired on the image before it ever looked at the colour.
+     *
+     * Every text run whose own ancestors paint nothing therefore walked up to
+     * that root and was skipped. Measured over all 164 stagings: 22 944 text
+     * runs, **290 skipped, every single one of them blocked by the declared
+     * `--grain`** — 282 at the app root and 8 on an empty-state panel. Spread
+     * thin overall, and not spread at all in fact: 85–94% of the text on every
+     * one of the eleven onboarding stages and on `reglages-presentation`, where
+     * the line « contraste: texte AA » was printed over **one** measured element
+     * out of twelve. That is the failure `--fade` was rewritten to end and the
+     * one `--census` exists for, in the check that guards legibility.
+     *
+     * The token is read out of `:root` rather than matched by class name, the
+     * way `--census` reads the radius ladder and `--motion` reads its curve set:
+     * rename `--grain` and this goes back to abstaining — loudly, see below —
+     * instead of quietly widening to every image on the page.
+     *
+     * **The verdict is against the declared colour, and the grain is reported
+     * beside it rather than failed on.** `tokens.css` states the tile as four
+     * alpha levels of black — 0, 3, 6 and 9 of 255 — so the darkest pixel of a
+     * grained ground is the colour composited with 9/255. Failing on that pixel
+     * was written first and thrown away: it turns `--text-muted` at 12px on
+     * `--bg-canvas` from **4.83:1** into **4.46:1** and would have reported five
+     * failures on every onboarding stage, on text that is legible, because only
+     * a quarter of the tile is at the darkest level and a 12px glyph covers
+     * dozens of tile pixels. « A check that cries wolf is a check whose findings
+     * get waved through » is the first paragraph of this function.
+     *
+     * What is *not* thrown away is the number. `index.css`'s own `.grain` rule
+     * says where the texture must not go: « under dense body text, where it
+     * costs real legibility at the 11–12px muted sizes the palette is only just
+     * clearing AA at ». `Onboarding.tsx:208` is `div.bg-canvas grain` with the
+     * whole onboarding inside it, and the measurement is the rule's own
+     * sentence in numbers: five runs per stage clear AA on the colour and would
+     * not clear it on the tile's darkest pixel. So they are counted and the
+     * worst is named, on the green line, every run.
+     */
+    const GRAIN = getComputedStyle(document.documentElement).getPropertyValue('--grain').trim()
+    const grained = (value) => {
+      const [r, g, b] = parse(value)
+      const a = 9 / 255
+      return `rgb(${Math.round(r * (1 - a))}, ${Math.round(g * (1 - a))}, ${Math.round(b * (1 - a))})`
+    }
+    /*
+     * **An abstention is declared, never silent.** `data-ground` is the escape
+     * for a real gradient or photo: the author states the colour they designed
+     * the ink against and the check measures it. Nothing in `src/` carries one
+     * today, which is the point — the attribute exists so that the next surface
+     * that needs a gradient has to say what its ground is rather than switching
+     * this check off by accident.
+     */
+    /*
+     * `groundOf` answers either one colour or the pair a grained ground is —
+     * the colour as declared, and the colour under the tile's darkest pixel.
+     * The first is the verdict; the second is the margin, reported never
+     * failed. See `groundOf`.
+     */
+    const ratioOf = (ink, ground) => {
+      const a = luminance(parse(ink))
+      const b = luminance(parse(ground))
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    }
+    const declaredGround = (ground) => (Array.isArray(ground) ? ground[0] : ground)
+    /* Runs that clear AA on the colour and would not clear it under the tile. */
+    let grainEaten = 0
+    let grainWorst = null
+
+    const unmeasured = []
     const groundOf = (el) => {
       for (let node = el; node; node = node.parentElement) {
         const style = getComputedStyle(node)
-        // A gradient or an image is a ground this cannot compute against, and
-        // guessing white under it is how a check invents a finding.
-        if (style.backgroundImage !== 'none') return null
-        if (opaque(style.backgroundColor)) return style.backgroundColor
+        const declared = node.getAttribute('data-ground')
+        if (declared !== null && opaque(declared)) return declared
+        const image = style.backgroundImage
+        if (image !== 'none' && image !== GRAIN) {
+          unmeasured.push({
+            what: `${node.tagName.toLowerCase()}${node.classList.length > 0 ? '.' + [...node.classList].slice(0, 3).join('.') : ''}`,
+            image: image.slice(0, 48),
+            text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 28),
+          })
+          return null
+        }
+        if (opaque(style.backgroundColor)) {
+          return image === GRAIN ? [style.backgroundColor, grained(style.backgroundColor)] : style.backgroundColor
+        }
       }
       return 'rgb(255, 255, 255)'
     }
@@ -7003,6 +7132,12 @@ async function contrast(page) {
 
     const out = []
     const seen = new Set()
+    /*
+     * **How many text runs this half actually measured.** Same rule as the
+     * graphics count below and as `--fade`'s: a run that measured one element
+     * must not be able to print the sentence a run that measured twelve prints.
+     */
+    let runs = 0
     for (const el of document.querySelectorAll('body *')) {
       // Only the element that *owns* the text, so a wrapper is not measured for
       // its children's ink.
@@ -7014,22 +7149,36 @@ async function contrast(page) {
       const style = getComputedStyle(el)
       const ground = groundOf(el)
       if (!ground) continue
+      runs += 1
 
       const size = parseFloat(style.fontSize)
       const bold = Number(style.fontWeight) >= 700
       // WCAG's own exemption, not one invented here.
       const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5
 
-      const a = luminance(parse(style.color))
-      const b = luminance(parse(ground))
-      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      const worst = declaredGround(ground)
+      const ratio = ratioOf(style.color, worst)
+      if (Array.isArray(ground) && ratio >= need) {
+        const under = ratioOf(style.color, ground[1])
+        if (under < need) {
+          grainEaten += 1
+          if (grainWorst === null || under < grainWorst.under) {
+            grainWorst = {
+              under: Math.round(under * 100) / 100,
+              clear: Math.round(ratio * 100) / 100,
+              need,
+              text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 28),
+            }
+          }
+        }
+      }
       if (ratio >= need) continue
 
       const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 32)
-      const key = `${style.color}|${ground}|${text}`
+      const key = `${style.color}|${worst}|${text}`
       if (seen.has(key)) continue
       seen.add(key)
-      out.push({ text, fg: style.color, bg: ground, ratio: Math.round(ratio * 100) / 100, need })
+      out.push({ text, fg: style.color, bg: worst, ratio: Math.round(ratio * 100) / 100, need })
     }
 
     /*
@@ -7174,20 +7323,19 @@ async function contrast(page) {
         out.push({
           text: el.dataset.graphic || 'graphique',
           fg: 'rien',
-          bg: ground,
+          bg: declaredGround(ground),
           ratio: 0,
           need: 3,
         })
         continue
       }
-      const a = luminance(parse(ink))
-      const b = luminance(parse(ground))
-      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      const worst = declaredGround(ground)
+      const ratio = ratioOf(ink, worst)
       if (ratio >= 3) continue
       out.push({
         text: el.dataset.graphic || 'graphique',
         fg: ink,
-        bg: ground,
+        bg: worst,
         ratio: Math.round(ratio * 100) / 100,
         need: 3,
       })
@@ -7203,7 +7351,17 @@ async function contrast(page) {
       const bordered = opaque(style.borderTopColor) && parseFloat(style.borderTopWidth) > 0
       if (opaque(style.backgroundColor) || rings.some(opaque) || bordered) undeclared += 1
     }
-    return { dim: out, graphics, undeclared }
+    const key = (item) => `${item.what}|${item.image}`
+    return {
+      dim: out,
+      graphics,
+      undeclared,
+      runs,
+      grainEaten,
+      grainWorst,
+      unmeasured: [...new Map(unmeasured.map((item) => [key(item), item])).values()],
+      unmeasuredRuns: unmeasured.length,
+    }
   })
   await stylesheet.evaluate((node) => node.remove())
   return findings
