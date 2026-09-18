@@ -1699,7 +1699,7 @@ function Refus({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1786,7 +1786,7 @@ function Mention({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-2.5 py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay mt-tight flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>
@@ -1902,7 +1902,22 @@ function Pill({
         already right, and restating it would be a declaration that changes
         nothing. The *panel* is the one that has to follow `above`.
       */
-      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-snug self-center rounded-lg border py-tight pl-2.5 pr-tight ${
+      /*
+        **Two groups at one interval, which is to say no groups at all.**
+        Measured on the shipped pill: six children, five gaps, `[8, 8, 8, 8, 8]`
+        — the dot sat as far from the meter as the mark button sat from the
+        chevron, so three *readings* and three *controls* read as one
+        undifferentiated row of six. Grouped now: `gap-tight` inside each half,
+        `gap-inline` between them, so the seam a rep's eye needs is twice the
+        one it must ignore.
+
+        And `px-snug` rather than `pl-2.5 pr-tight`: the inset was **10 left, 6
+        right** — measured ink 11 px from the left edge against 7 from the
+        right, undocumented, on the one card that is always up. 8 and 8 is the
+        same sixteen pixels of horizontal padding, so the pill's width is
+        unchanged by the symmetry.
+      */
+      className={`drag-region bg-card border-card shadow-overlay flex shrink-0 items-center gap-inline self-center rounded-lg border px-snug py-tight ${
         placed ? 'widget-arrived' : 'widget-arriving'
       }`}
     >
@@ -1925,6 +1940,13 @@ function Pill({
         empty », which is exactly the state and commits to no semantic colour.
         Not a second fill: a grey dot would be a third thing to tell apart at a
         glance, and the whole point is that there are two.
+      */}
+      {/*
+        **The readings, as one group.** The dot, the meter and the clock all
+        answer « what is this window doing right now »; the three controls after
+        them answer « what can I do about it ». This span is the first half, and
+        it already existed to hold the dot beside its spoken twin — the meter
+        and the clock moved into it rather than a third wrapper being added.
       */}
       <span className="flex shrink-0 items-center gap-tight">
         <span
@@ -1996,25 +2018,33 @@ function Pill({
             {paused ? 'Enregistrement en pause' : 'Enregistrement en cours'}
           </span>
         )}
+
+        {meetingId === null ? (
+          <span className="text-muted px-hair text-ui">Aucun enregistrement</span>
+        ) : (
+          <LevelMeter meetingId={meetingId} variant="pill" paused={paused} />
+        )}
+
+        {/*
+          The clock, or the word. A pause is the one state in which elapsed time
+          stops meaning « how long this call has been written down », so the word
+          takes its rectangle rather than sitting beside a counter that lies.
+        */}
+        {paused ? (
+          <span className="text-muted shrink-0 text-ui">En pause</span>
+        ) : (
+          <Elapsed since={startedAt} />
+        )}
       </span>
 
-      {meetingId === null ? (
-        <span className="text-muted px-hair text-ui">Aucun enregistrement</span>
-      ) : (
-        <LevelMeter meetingId={meetingId} variant="pill" paused={paused} />
-      )}
-
       {/*
-        The clock, or the word. A pause is the one state in which elapsed time
-        stops meaning « how long this call has been written down », so the word
-        takes its rectangle rather than sitting beside a counter that lies.
+        **The controls, as the other group.** Three presses — tell the client,
+        mark the moment, open the panel — at `gap-tight` inside, `gap-inline`
+        away from the readings. The wrapper is unconditional and its contents
+        are not: before `widget:state` answers there is only the chevron in it,
+        which is the placeholder the window is held off screen for.
       */}
-      {paused ? (
-        <span className="text-muted shrink-0 text-ui">En pause</span>
-      ) : (
-        <Elapsed since={startedAt} />
-      )}
-
+      <span className="flex shrink-0 items-center gap-tight">
       {/*
         **Telling the client, in one press** (US-11, `mention.ts`).
 
@@ -2024,8 +2054,10 @@ function Pill({
         behind a 340-pixel card over the client's face is a control that gets
         pressed after the interesting part of the conversation, or not at all.
 
-        It costs 32 px of pill — 24 of button and the row's own 8 of gap, measured,
-        240 → 272 — and every one of them is a pixel of Teams the rep cannot click.
+        It costs 30 px of pill — 24 of button, measured on the shipped stage, and
+        the control group's own 6 of gap. It was 32 while that gap was the row's
+        flat 8; grouping the pill gave the 2 back. Every one of them is a pixel of
+        Teams the rep cannot click.
         That is the price of the one thing on this list with a procurement
         consequence, and it is paid in the state that is always up rather than in a
         surface that only exists while the rep is looking at it.
@@ -2111,6 +2143,7 @@ function Pill({
           {open === above ? '▾' : '▴'}
         </span>
       </button>
+      </span>
     </div>
   )
 }
@@ -2350,7 +2383,15 @@ function Panel({
             {heading.trim() === '' ? 'Réunion en cours' : heading}
           </h1>
         </div>
-        <p className="text-muted mt-0.5 flex items-center gap-tight text-meta leading-tight">
+        {/*
+          `mt-hair` and not `mt-0.5`: 2 px is not a step of this product's scale
+          and `--space-hair` is declared for exactly this case — « a caption
+          under its line » (`tokens.css`). Measured glyph to glyph it takes the
+          gap under the title from 3.8 px to 5.8 px, against the 12 px that
+          separates this pair from the next band, so the group still reads as
+          one at better than 2:1.
+        */}
+        <p className="text-muted mt-hair flex items-center gap-tight text-meta leading-tight">
           <EyeOff aria-hidden size={11} strokeWidth={2} className="shrink-0" />
           Invisible en partage d’écran
         </p>
@@ -2409,7 +2450,22 @@ function Panel({
           the « clipped and looks short » failure `--scrollers` is about.
         */
         data-scrolls
-        className="max-h-[220px] overflow-y-auto px-inline py-snug"
+        /*
+          **`py-tight` and not `py-snug`, because a band seam is a sum.**
+          Nothing on this card declares the distance between two bands: each
+          band pads itself and the seam a rep sees is the two paddings added.
+          Measured on the shipped panel those sums were **12, 14.2 and 13.7 px**
+          — three separations within 2.2 px of one another, produced by three
+          different pairs, none of them a step of the scale but the first. With
+          every band on `py-tight` they are 12, 12 and 11.75, against the 6 px
+          `space-y-tight` puts between two turns *inside* this log: one
+          separation between groups, half of it inside one.
+
+          The box does not move. `max-h-[220px]` is the log's height in every
+          state a rep reaches with a call running, so the four pixels come off
+          the padding and go to the transcript, not to the window.
+        */
+        className="max-h-[220px] overflow-y-auto px-inline py-tight"
       >
         {rows.length === 0 ? (
           <p className="text-muted text-ui">{NOTHING_YET}</p>
