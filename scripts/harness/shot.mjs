@@ -1864,6 +1864,85 @@ const SCREENS = {
    * still takes it away. That second one is DEC-4 and is the reason the guard
    * exists.
    */
+/**
+   * **`source ▸` arriving and leaving — the one departure `index.css` names as
+   * open.**
+   *
+   * That file's `.leaving` note ends « Measured: eleven panels on the review
+   * gate, 438px of DEC-21 evidence between them, `transition: all 0s`, gone one
+   * frame after the press. It is **open**, not declined. » This is that panel,
+   * and neither half of it existed: it appeared between two frames as well.
+   *
+   * It has to be a stage for the reason `reglages-sortie` and `widget-sortie`
+   * are stages: `.leaving` is on nothing at rest, so `--motion` run against a
+   * settled screen measures a panel that never moves and passes. The class
+   * arrives through a React state update inside `useDeparture`, so it is waited
+   * for rather than assumed.
+   *
+   * Both halves are asserted, and by their **curves**, because the failure this
+   * repo has already shipped once on an exit is a departure wearing the arrival's
+   * ease — an expo-out spending 73% of its change in the first 35ms, which is a
+   * blink. Ease-out on the way in, ease-in on the way out (VISION §6).
+   */
+  'review-source-sortie': {
+    scenario: 'review',
+    async drive(page) {
+      await SCREENS.review.drive(page)
+      const source = page.getByRole('button', { name: /^source/ }).first()
+      await source.click()
+
+      const panel = page.locator('[data-unmeasured].animate-rise-in').first()
+      await panel.waitFor({ timeout: 5_000 }).catch(() => {
+        throw new Error(
+          'source ▸ ouvre sans arrivée — le panneau de provenance apparaît entre deux ' +
+            'images, sur le geste que DEC-21 existe pour inviter',
+        )
+      })
+      const arrival = await panel.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return {
+          name: style.animationName,
+          duration: style.animationDuration,
+          ease: style.animationTimingFunction,
+        }
+      })
+      if (arrival.name !== 'riseIn' || !arrival.ease.startsWith('cubic-bezier(0.22, 1,')) {
+        throw new Error(
+          `source ▸ arrive sans la courbe d’entrée du produit : ${JSON.stringify(arrival)}`,
+        )
+      }
+
+      await page.waitForTimeout(300)
+      await source.click()
+      const going = page.locator('[data-unmeasured].leaving').first()
+      await going.waitFor({ timeout: 5_000 }).catch(() => {
+        throw new Error(
+          'source ▸ se ferme sans départ — le panneau disparaît une image après la ' +
+            'pression, ce que src/design/index.css nomme comme ouvert',
+        )
+      })
+      const exit = await going.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return {
+          property: style.transitionProperty,
+          duration: style.transitionDuration,
+          ease: style.transitionTimingFunction,
+          opacity: Number(style.opacity),
+        }
+      })
+      if (!exit.ease.includes('cubic-bezier(0.64, 0, 0.78, 0)')) {
+        throw new Error(
+          `source ▸ s’en va sans --ease-in : ${JSON.stringify(exit)} — une sortie qui porte ` +
+            'la courbe d’arrivée est un clignotement (VISION §6)',
+        )
+      }
+      if (!/opacity/.test(exit.property)) {
+        throw new Error(`source ▸ s’en va sans transition d’opacité : ${exit.property}`)
+      }
+      // Left on camera mid-flight, the way `reglages-sortie` leaves its sheet.
+    },
+  },
+
   'review-decocher': {
     scenario: 'review',
     async drive(page) {
@@ -6943,6 +7022,7 @@ const ECHO_DECLARED = [
       'review-modele',
       'review-modele-differe',
       'review-decocher',
+      'review-source-sortie',
     ],
     text: 'néovia santé — cadrage renfort data',
     pair: 'p.text-muted (l’en-tête de Review.tsx) · span (session/CompteRenduDocument.tsx, la ligne « # <objet> »)',
@@ -6986,6 +7066,7 @@ const ECHO_DECLARED = [
       'review-modele',
       'review-modele-differe',
       'review-decocher',
+      'review-source-sortie',
     ],
     text: 'prochaines étapes',
     pair: 'chapitre « ## » · sous-section « ### » du récapitulatif (CompteRenduDocument) · label.text-muted (le champ)',

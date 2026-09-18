@@ -56,6 +56,7 @@ import {
 import { copyText } from '../lib/clipboard.ts'
 import { scrollToCenter, scrollToTop } from '../lib/scroll.ts'
 import { useShortcuts } from '../app/shortcuts.ts'
+import { useDeparture } from '../app/useDismiss.ts'
 import { cn } from '../lib/utils.ts'
 import {
   CompteRenduDocument,
@@ -2988,6 +2989,7 @@ const INTERPRETIVE: ReadonlySet<ReviewField['key']> = new Set([
  */
 function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowProps) {
   const [open, setOpen] = useState(false)
+  const { shown: shownSource, leaving: sourceLeaving } = useDeparture(open)
   const multiline = MULTILINE.has(field.key)
 
   return (
@@ -3123,7 +3125,35 @@ function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowP
         />
       )}
 
-      {open ? (
+      {/*
+        **The one departure `src/design/index.css` names as open, and it is on
+        this row.**
+
+        That file's `.leaving` note ends: « Measured: eleven panels on the review
+        gate, 438px of DEC-21 evidence between them, `transition: all 0s`, gone
+        one frame after the press. It is **open**, not declined. » This is that
+        panel. It is the gesture DEC-21 exists to invite — « où est-ce que ça a
+        été dit ? » — and both halves of it were between two frames: nothing on
+        the way in either.
+
+        `useDeparture` and not `useDismiss`, which is the hook the note nominates.
+        The distinction on that ladder is *who owns the unmount*: `useDismiss`
+        exists because the Réglages sheet is unmounted by a route change one
+        component up and « a surface cannot transition after its parent has
+        stopped rendering it ». Here `open` is this component's own state, so the
+        row can render past the flip on its own, which is `useDeparture`'s case
+        exactly. It also survives the gesture this panel actually gets: a rep who
+        presses `source ▸` again 80 ms into the fade re-opens a panel that never
+        left, where a delayed `onClose` would have closed it underneath them.
+
+        `animate-rise-in` on the way in and `.leaving` on the way out — the
+        product's two rungs, ease-out then ease-in (VISION §6). Both collapse to
+        nothing under `prefers-reduced-motion`, because both read `--motion`.
+
+        Inside `data-unmeasured` with the panel: the arming guard does not charge
+        the rep for provenance, and it must not charge them for its fade either.
+      */}
+      {shownSource ? (
         /*
           `data-unmeasured`: this is provenance, and provenance does not ship.
 
@@ -3139,7 +3169,10 @@ function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowP
           The same mark *Demander* carries, for the same reason, in the other
           column.
         */
-        <div data-unmeasured className="mt-hair">
+        <div
+          data-unmeasured
+          className={cn('mt-hair', sourceLeaving ? 'leaving' : 'animate-rise-in')}
+        >
           {/*
             `.measure` on the paragraph: it holds the quote itself, which is the longest
             prose on the row — 88 characters a line at `--type-meta`, measured on
