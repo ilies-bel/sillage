@@ -1294,3 +1294,131 @@ describe('the sentence the client hears (US-19)', () => {
     expect(field().className).toContain('resize-none')
   })
 })
+
+/**
+ * **When this screen refuses, the rep has to be able to read the refusal.**
+ *
+ * `write()` is the funnel every gesture here goes through — save a key, forget
+ * one, pick a provider, set a field, toggle « cette machine uniquement »,
+ * download a model, cancel one — and when the main process refuses it catches
+ * the sentence and draws it. It drew it as the first child of the pane's
+ * content, *inside* the scroller, with no role on it.
+ *
+ * Driven on the real screen (`scratch/reglages-refus.mjs`), staging the refusal
+ * `ipc/register.ts:1590` throws when a rep presses *Télécharger* during a call
+ * (DEC-35 — « le téléchargement attendra la fin de l’appel ») :
+ *
+ *     1280×800   bouton à y=1197   phrase à top=-638   visible sans défiler: false
+ *     960×600    bouton à y=1169   phrase à top=-810   visible sans défiler: false
+ *     role: (aucun)   aria-live: (aucun)   dans une région vivante: false
+ *
+ * Six hundred and thirty-eight pixels above the top of the window at the larger
+ * size, eight hundred and ten at the smaller — the models table is at the
+ * bottom of the longest pane in the product. The rep presses the button, the
+ * app refuses correctly, and *nothing whatever happens on their screen*: the
+ * row does not change, the button stays pressable, and the sentence explaining
+ * why is a screenful above the fold. A reader is told nothing either. So the
+ * one control DEC-35 exists to hold back was, from the rep's seat, a control
+ * that does nothing — which is what DEC-26 forbids, on the screen the product
+ * opens when something is already wrong.
+ *
+ * **Nothing was green over it by accident.** The test forty lines above presses
+ * *Télécharger* and asserts the channel was called with the right payload; it
+ * never makes the channel refuse, so `write`'s failure branch had no caller at
+ * all. jsdom has no layout, so every rect is zero and no renderer test could
+ * have seen the offset. `--a11y` asks whether a control has a name, not whether
+ * a message is announced; `--scrollers` asks what a measured column hides, not
+ * where a message landed; and the harness stub never refuses this channel, so
+ * no stage has photographed the state.
+ *
+ * **The subject is `write`, not the download**, so two different gestures are
+ * pressed and held to one answer. The placement assertion is « not inside the
+ * scroller » rather than a pixel count, because that is the property jsdom can
+ * hold, and it is the one that was false.
+ */
+describe('a refusal on this screen reaches the rep', () => {
+  /** Word for word what `ipc/register.ts` throws on a download during a call. */
+  const REFUS =
+    'Une réunion est en cours — le téléchargement attendra la fin de l’appel pour ne pas lui prendre de mémoire.'
+  /** And one from a different caller of the same funnel. */
+  const REFUS_COFFRE = 'le coffre-fort n’est pas disponible sur cette machine'
+
+  test('the refused download is said, announced, and not inside the scroller', async () => {
+    bridge.when('models:download', () => {
+      throw new Error(REFUS)
+    })
+    mount()
+    await open('Transcription')
+    await act(async () => {
+      const row = pane().getByText('Whisper Medium').closest('div')!
+      within(row).getByRole('button', { name: 'Télécharger' }).click()
+    })
+
+    const said = await screen.findByText(REFUS)
+
+    /*
+      Announced. A refusal answers a gesture the rep just made and nothing else
+      on the screen moves, so a reader told nothing is a reader told it worked.
+      `alert` and not `status`, for the reason `OutcomeNotice` gives next door:
+      `status` is a wait the rep chose to start.
+    */
+    const live = said.closest('[role="alert"],[role="status"],[aria-live]')
+    expect(live, 'la phrase n’est dans aucune région vivante — rien n’est annoncé').not.toBeNull()
+    expect(live?.getAttribute('role')).toBe('alert')
+
+    /*
+      And in front of them. `.fade-below` is `ReadingColumn`'s scroller and it
+      holds the whole pane, its title included; a sentence inside it is a
+      sentence at whatever scroll position the pane was left at, and the control
+      that produces this one is at the very bottom of it.
+    */
+    expect(
+      said.closest('.fade-below'),
+      'la phrase est dans le défilement du volet — invisible depuis le contrôle qui vient d’être pressé',
+    ).toBeNull()
+  })
+
+  test('a second caller of the same funnel lands in the same place', async () => {
+    bridge.when('settings:setOfflineOnly', () => {
+      throw new Error(REFUS_COFFRE)
+    })
+    mount()
+    await open('Transcription')
+    await act(async () => {
+      fireEvent.click(pane().getByRole('checkbox'))
+    })
+
+    const said = await screen.findByText(REFUS_COFFRE)
+    expect(said.closest('[role="alert"]')).not.toBeNull()
+    expect(said.closest('.fade-below')).toBeNull()
+  })
+
+  /*
+   * And it is taken back by the next gesture that works. `write` already clears
+   * it; the point of asserting it here is that a strip lifted out of the
+   * scroller is a strip that would otherwise sit over the pane for ever.
+   */
+  test('a refusal followed by a success is taken back', async () => {
+    let refusing = true
+    bridge.when('models:download', () => {
+      if (refusing) throw new Error(REFUS)
+      // The section the shipped handler answers with, not `{}` — the fake
+      // bridge is typed against the contract, which is what caught it.
+      return snapshot().models
+    })
+    mount()
+    await open('Transcription')
+    const press = async () => {
+      await act(async () => {
+        const row = pane().getByText('Whisper Medium').closest('div')!
+        within(row).getByRole('button', { name: 'Télécharger' }).click()
+      })
+    }
+    await press()
+    await screen.findByText(REFUS)
+
+    refusing = false
+    await press()
+    await waitFor(() => expect(screen.queryByText(REFUS)).toBeNull())
+  })
+})

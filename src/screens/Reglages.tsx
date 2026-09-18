@@ -315,6 +315,32 @@ export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = fal
         headed by the section, once.
       */
       title={SECTIONS.find((item) => item.id === section)?.label ?? 'Réglages'}
+      /*
+        **What the main process refused, where the rep is standing.**
+
+        This was a `<p className="text-danger">` at the top of the pane's
+        content, which is *inside* `ReadingColumn`'s scroller. Measured on the
+        real screen with `models:download` refusing the way `ipc/register.ts`
+        refuses it during a call (DEC-35): the rep presses *Télécharger* at the
+        bottom of the models table and the sentence is drawn **638px above the
+        top of the window** at 1280×800 and **810px above** at 960×600. Nothing
+        else on the screen moves — the row is unchanged and the button is still
+        pressable — so the gesture read as a control that does nothing, which is
+        the one thing DEC-26 forbids, on the screen a rep opens when something
+        is already wrong.
+
+        So it is lifted out of the scroller: `Sheet` draws it in the pane's own
+        frame, where a scroll position cannot carry it away. `role="alert"`
+        because a reader was told nothing at all, and because a refusal answers
+        a gesture the rep just made — `OutcomeNotice`'s distinction: `status` is
+        a wait the rep chose to start, this is the app saying no to them.
+
+        One strip for every caller of `write`, deliberately. The subject is the
+        funnel, not the download: a vault that is unavailable, an unknown
+        provider and a key the provider rejects all arrive here, and a per-row
+        message would be seven places to get this wrong instead of one.
+      */
+      notice={failure}
       nav={
         <SectionNav
           label="Sections des réglages"
@@ -372,8 +398,6 @@ export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = fal
             rail and the content, as everywhere else in the product.
           */}
           <div className="measure">
-          {failure ? <p className="text-danger mb-inline text-ui">{failure}</p> : null}
-
           {section === 'transcription' ? (
             <>
               <OfflineOnly
@@ -530,6 +554,7 @@ export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = fal
 function Sheet({
   title,
   nav,
+  notice,
   onClose,
   leaving,
   children,
@@ -537,6 +562,12 @@ function Sheet({
   title: string
   /** The sections column. Absent on the two unsettled states — there is nothing to switch. */
   nav?: ReactNode
+  /**
+   * What the main process refused, drawn in the frame rather than in the
+   * scroller. See the call site: inside `ReadingColumn` it landed up to 810px
+   * above the fold, on a press the rep made at the bottom of the pane.
+   */
+  notice?: string | null
   onClose: () => void
   /*
    * **The sheet leaves, and until this it did not.** It rose in over 150ms on
@@ -632,6 +663,20 @@ function Sheet({
           length and looked fixed.
         */}
         <main className="bg-card flex min-h-0 flex-1 flex-col">
+          {/*
+            Above the column and outside it, so the pane can be scrolled
+            anywhere and the sentence is still on screen. `shrink-0` for the
+            same reason every other strip in the product carries it: the column
+            below is the thing that gives.
+          */}
+          {notice ? (
+            <div
+              role="alert"
+              className="border-subtle bg-card-soft shrink-0 border-b px-gutter py-snug"
+            >
+              <p className="text-danger measure text-ui">{notice}</p>
+            </div>
+          ) : null}
           <ReadingColumn
             subject={{ determiner: 'la', noun: 'section' }}
             className="px-gutter pb-10 pt-row"
