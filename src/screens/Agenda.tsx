@@ -633,6 +633,28 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           floor; at 224 the same measurement gives **22.0** and the grid fails
           `--targets` on the platform this ships to while passing on the one
           it is written on.
+
+          **And this width is what makes the search row wrap at 960 — measured,
+          it is still the right answer.** `SearchBar` needs 608.1px to hold its
+          field, « Tout l'historique › » and the four-way view switch on one
+          line; at 960 the day column offers 512, so the switch drops to a
+          second line and the row is 75px tall instead of 33. That 42px is real
+          — isolated by forcing the row to one line on the shipped screen, it is
+          **21 600 px², 3.8 % of the window, and a fourth whole meeting row**.
+          It cannot be bought here. Swept through `shot.mjs` at 960×600, the row
+          holds one line only once this pane reaches **144px**, and there the
+          day cells are **13×36**: `--targets` exits 5 with « 42 contrôle(s)
+          sous 24 px », every cell of a grid DEC-31 says is always drawn and
+          that the rep presses to change the day.
+
+              calendrier  barre  cellule    lignes visibles  entières
+                     240     75     26.7    177 240  30.8 %         3
+                     208     75    22.14    188 318  32.7 %         4
+                     176     75    17.56    199 395  34.6 %         4
+                     144     33     13.0    209 399  36.4 %         5
+
+          Half the target floor for 3.8 % of the window is not a trade this
+          screen should take. The wrap stays.
         */}
         <aside className="bg-card-soft border-subtle w-60 shrink-0 overflow-y-auto border-r px-inline py-row lg:w-72 lg:px-row xl:w-80">
           <CalendarGrid
