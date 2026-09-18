@@ -306,12 +306,27 @@ describe('the dry run', () => {
   })
 
   /*
-   * The one that was missing. The card offered *Recommencer* and nothing else,
-   * so the one screen in the product that has just *established* the far end is
-   * dead was the one screen with nothing to press — and running it again would
-   * fail identically.
+   * **This test used to assert the mechanism and never the remedy, and that is
+   * how the dead button survived a round.**
+   *
+   * It read: press *Autoriser*, expect `health:retry({ connector: 'capture' })`,
+   * expect the trial to run a second time. Both of those stayed true on a
+   * machine whose permissions are granted — which is every Windows machine, the
+   * primary platform (HR-2), where there is no screen-recording permission to
+   * hold back at all. There `health:retry` probes the native module, finds
+   * `actionFor('granted') === 'nothing'` for both channels, calls no OS API
+   * whatever and republishes `ok`; the trial then re-runs against an unchanged
+   * machine and fails identically, for ever. The assertion could not fail,
+   * because it never asked what the press achieved.
+   *
+   * What it asks now is what `contracts/permissions.ts` states: the pane is the
+   * remedy, it is offered only where consent is actually being withheld, and
+   * pressing it re-measures. `capture/__tests__/EssaiAudio.test.tsx` walks the
+   * whole consent matrix; this keeps the one path first run actually takes.
    */
-  test('a channel that heard nothing gets the control that fixes it', async () => {
+  test('a channel that heard nothing gets the pane, and the pane re-measures', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'denied', channel: 'screen' }))
+    bridge.when('capture:permission:open', () => ({ opened: true }))
     bridge.when('capture:essai', () => ({
       rep: { heard: true, peak: 0.42 },
       far: { heard: false, peak: 0.003 },
@@ -326,16 +341,43 @@ describe('the dry run', () => {
     await screen.findByText(/le client non/)
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir les réglages' })[0]!)
     })
 
-    // The same call step 2's row makes — never a second path that could one day
-    // disagree about what « autoriser » means.
-    const retry = bridge.calls.find((call) => call.channel === 'health:retry')
-    expect(retry?.payload).toEqual({ connector: 'capture' })
+    expect(bridge.calls.some((call) => call.channel === 'capture:permission:open')).toBe(true)
     // And it listens again, because a grant that changed nothing and a grant
     // that fixed it look identical until something listens.
     expect(bridge.calls.filter((call) => call.channel === 'capture:essai')).toHaveLength(2)
+    // Never the prompt. The OS silently returns the old answer to a second ask.
+    expect(bridge.calls.some((call) => call.channel === 'health:retry')).toBe(false)
+  })
+
+  /*
+   * The same twenty seconds on a machine that is holding nothing back: the
+   * silence is a mute switch or an audio route, and no button on this card
+   * touches either. *Recommencer* is the honest re-run, after the rep has
+   * changed something.
+   */
+  test('a machine with nothing to grant is offered no permission control', async () => {
+    bridge.when('capture:permission', () =>
+      consent({ state: 'ready', channel: null, reason: null, canOpenSettings: false }),
+    )
+    bridge.when('capture:essai', () => ({
+      rep: { heard: true, peak: 0.42 },
+      far: { heard: false, peak: 0.003 },
+      floor: 0.008,
+      seconds: 20,
+    }))
+    open()
+    await toEssai()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+    await screen.findByText(/le client non/)
+
+    expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Recommencer' })).toBeTruthy()
   })
 
   test('silence is not called a fault', async () => {

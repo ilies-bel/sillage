@@ -2504,6 +2504,28 @@ let RECORDING_STOPPED = false
         'l’audio système n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.',
       canOpenSettings: true,
     },
+    /*
+      **Réglages is a machine that is already set up, and this fell through to
+      the onboarding row.**
+
+      `CAPTURE_PERMISSION[scenario] ?? CAPTURE_PERMISSION.onboarding` gave every
+      *Réglages* stage a screen permission that had never been granted — which is
+      a first-run fact, not the fact about a rep who has been using the product
+      for a fortnight and has come back because their headset changed. It is also
+      the one arrangement in which the dry run's dead *Autoriser* could not be
+      seen: with a grant genuinely outstanding the button was the right control
+      for the wrong reason, so `reglages-essai` photographed a working remedy
+      over a card that had none on any real machine.
+
+      `ready` with no pane is the ordinary case and the primary platform's (HR-2)
+      only case: Windows has no screen-recording permission to hold back at all.
+    */
+    reglages: {
+      state: 'ready',
+      channel: null,
+      reason: null,
+      canOpenSettings: false,
+    },
   }
 
   const responders = {
