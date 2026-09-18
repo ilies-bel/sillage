@@ -44,7 +44,7 @@
  *
  *     npm run build && npm run build:electron && node scripts/e2e.mjs
  */
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
@@ -57,6 +57,12 @@ import {
   sampleSegment,
   sampleVerification,
 } from '../electron/core/contracts/fixtures.ts'
+import { binaryName } from '../electron/modules/capture/nativeModule.ts'
+import {
+  DEFAULT_MODEL_ID,
+  isModelCached,
+} from '../electron/modules/transcribe/whisper/catalog.ts'
+import { resolveInferenceConfig } from '../electron/modules/transcribe/whisper/inference.ts'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(path.join(REPO, 'package.json'))
@@ -162,18 +168,81 @@ const dbUnder = (dir) => {
  * answering on that port is the developer's business. What it refuses is
  * silence.
  */
-const requireDevServer = async () => {
+/*
+ * **And it needed three, and stated one.**
+ *
+ * The profile is thrown away on every run, which is what the file's own header
+ * means by « isolated ». It is not what « comparable » means: two of the three
+ * things this run depends on live in the **repository**, both are gitignored
+ * build products, and neither is created by `npm install`.
+ *
+ *   · `native-module/index.<platform>-<arch>.node`, built by `npm run
+ *     build:native`. Without it capture health is `down`, *Démarrer une réunion*
+ *     lands on a session screen with no controls, and **20 of 38 steps fail.**
+ *   · `resources/whisper-models/`, fetched by `npm run whisper:fetch`. Without
+ *     it `usableSttProviders` finds nothing, `#openDevices` aborts the meeting
+ *     with « aucun fournisseur de transcription » — correctly: a session that
+ *     says `recording` with no transcriber is the one state this app may never
+ *     be in — and the same **20 of 38** fail. An unpackaged run has nowhere else
+ *     to look for the weights: the packaged build ships them as an extra
+ *     resource, and `userData` is the empty directory below.
+ *
+ * Measured at this commit, same tree, same afternoon: 20 failures with neither,
+ * 3 with both. A run whose score is a function of two untracked directories and
+ * says so for neither is not a measurement anybody can quote, and « 20 of 38 »
+ * reads as « my change broke the app » — which is the exact afternoon the dev
+ * server check was written to stop two lanes losing, and which this file then
+ * let a third lane lose twice over.
+ *
+ * All three are reported together rather than one at a time: a developer who
+ * has none of them should be told once.
+ */
+const requirePrerequisites = async () => {
+  const missing = []
+
   const url = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5180'
   try {
     await fetch(url, { signal: AbortSignal.timeout(4000) })
   } catch (error) {
-    console.error(
-      `\n✗ aucun serveur de développement sur ${url}\n` +
+    missing.push(
+      `✗ aucun serveur de développement sur ${url}\n` +
         `  Ce run charge le renderer depuis Vite : sans lui les 38 étapes échouent sur un #root vide.\n` +
         `  Lancez « npm run dev -- --port 5180 --strictPort » dans un autre shell,\n` +
         `  ou donnez le port du vôtre : VITE_DEV_SERVER_URL=http://localhost:<port> npm run test:e2e\n` +
-        `  (${error instanceof Error ? error.message : String(error)})\n`,
+        `  (${error instanceof Error ? error.message : String(error)})`,
     )
+  }
+
+  // The product's own name map, not a copy of it: a binary this file looks for
+  // under a name `loadFrom` does not try is a check that measures nothing.
+  const binary = path.join(REPO, 'native-module', binaryName())
+  if (!existsSync(binary)) {
+    missing.push(
+      `✗ module natif absent : ${path.relative(REPO, binary)}\n` +
+        `  Sans lui l'audio système et le micro sont indisponibles, la réunion est abandonnée\n` +
+        `  au démarrage et 20 étapes sur 38 échouent.\n` +
+        `  Lancez « npm run build:native ».`,
+    )
+  }
+
+  /*
+   * The same predicate `recordingOptionsFor` asks, against the only directory
+   * an unpackaged run can read: `--user-data-dir` is a fresh temporary
+   * directory two dozen lines below, so a model downloaded through Réglages on
+   * this machine is not in it and never will be.
+   */
+  const weights = path.join(REPO, 'resources', 'whisper-models')
+  if (!isModelCached(weights, DEFAULT_MODEL_ID, resolveInferenceConfig().dtype)) {
+    missing.push(
+      `✗ modèle local absent : ${path.relative(REPO, weights)}/${DEFAULT_MODEL_ID}\n` +
+        `  Aucun fournisseur de transcription n'est alors configurable, la réunion est abandonnée\n` +
+        `  avec « aucun fournisseur de transcription » et 20 étapes sur 38 échouent.\n` +
+        `  Lancez « npm run whisper:fetch ».`,
+    )
+  }
+
+  if (missing.length > 0) {
+    console.error(`\n${missing.join('\n\n')}\n`)
     process.exit(2)
   }
 }
@@ -204,7 +273,7 @@ const launch = async () => {
   page.on('pageerror', (error) => noise.push(String(error)))
 }
 
-await requireDevServer()
+await requirePrerequisites()
 
 try {
   await launch()
