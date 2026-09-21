@@ -84,6 +84,7 @@ modules/crm/vsa/          the only place VSA exists
 - The page turn must move a scroller, and lands on the covered band's edge, not a page away.
 - The one control that ships is never the rectangle the rep just pressed.
 - Never draw an inert primary: while *Valider* is withheld the slot holds the control that shows the rest.
+- **The one control is on screen exactly when the press creates something, and the accelerator reads the same expression.** One button used to paint identically for « writes three records », « writes two » and « writes none » — same box, same cursor, same fill, and at one tick state the same label too — while `Ctrl/⌘ Entrée` called `review:confirm` with `intentIds: []`. That is a second path confirming what the button refuses, which DEC-4 forbids, reachable by keyboard on the screen whose POST has no idempotency key and whose port has no delete verb.
 - The measurement reaches the button: « Valider malgré N champ(s) non vérifié(s) ».
 - The gate opens on the first `⚠ faible` field.
 - Leaving the gate never discards a correction (`PENDING_EDITS`, in memory, cleared by a confirmation).
