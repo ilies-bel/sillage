@@ -214,22 +214,30 @@ npm run dist              # package (scripts/package-app.mjs), either host
 ```
 npm run dev -- --port 5180 --strictPort        # first, in another shell
 node scripts/harness/shot.mjs review scratch/review.png --scan
-node scripts/harness/smoke.mjs                 # every stage × two sizes, all thirteen checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all fourteen checks
 ```
 
 `--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--marks`,
-`--scrollers`, `--motion`, `--fade`, `--census`, `--rhythm` and `--cells` are the thirteen
-`smoke.mjs` passes (`PASSES`, `smoke.mjs:193`); `--scan` is a fourteenth it does not pass.
-This said « six » and named the first list for three rounds, then « nine » for one round
-after `--census` landed, then « ten » for one round after `--rhythm` and `--cells` landed,
-then « twelve » while `--marks` was being added — each time omitting exactly the passes
-added most recently, which are the ones a reviewer is likeliest to assume unrun and re-run
-by hand. **Count them in `smoke.mjs` before repeating this sentence**; it has now been
-wrong three times, in the same direction, about a list it sits four lines above, and each
-time the sentence was written by whoever had just added the pass it omitted. `--marks` is
-the only **relational** one: it compares two marks of a key to each other rather than each
-to its ground, and the other twelve were green over a calendar that said « recorded » and
-« recording now » in two colours 1.0077:1 apart. Each exists because something shipped past a screenshot. **Both sizes,
+`--scrollers`, `--motion`, `--fade`, `--census`, `--rhythm`, `--cells` and `--press` are the
+fourteen `smoke.mjs` passes (`PASSES`, `smoke.mjs:193`); `--scan` is a fifteenth it does not
+pass. This said « six » and named the first list for three rounds, then « nine » for one
+round after `--census` landed, then « ten » for one round after `--rhythm` and `--cells`
+landed, then « twelve » while `--marks` was being added, then « thirteen » while `--press`
+was being added — each time omitting exactly the passes added most recently, which are the
+ones a reviewer is likeliest to assume unrun and re-run by hand. **Count them in
+`smoke.mjs` before repeating this sentence**; it has now been wrong **four** times, in the
+same direction, about a list it sits four lines above. The first four times it was written
+by whoever had just added the pass it omitted; the fifth time the lane that added `--press`
+declined to edit it — correctly, it is coordinator-owned — and named it as stale, so the
+count was wrong for the length of one merge instead of one round.
+
+Two of the fourteen are **relational**, and both exist because twelve intrinsic passes were
+green over a defect. `--marks` compares two marks of a key to each other rather than each to
+its ground: the calendar said « recorded » and « recording now » in two colours **1.0077:1**
+apart. `--press` compares the layout *before* a pointer press to the layout *after* it —
+the only pass that does not measure a single settled frame: pressing *Préparer* dropped the
+list 71.2 px and lit « Ouvrir » on the live recording under an unmoved cursor, and with the
+column scrolled it painted the refusal at **y −191**, off screen entirely. Each exists because something shipped past a screenshot. **Both sizes,
 always** — 1280×800 and 960×600, the minimum `main.ts` declares. A design pass that only
 reads `src/` has not looked at the product. Stages are held together by the product's own
 French strings, so a copy change breaks one silently.
