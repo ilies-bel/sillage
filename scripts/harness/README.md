@@ -316,7 +316,7 @@ the axis `MARK_CLASS` and `Widget.tsx` both spend), and a 6 px square against a
 **What it does not reach**, stated rather than implied: a code spread across
 *states* — the widget's idle, paused and recording glyphs are three stages and
 never two elements at once, so it prints « aucune paire à comparer » on all
-fifteen widget stages — and two marks on two *screens*. Swept over the whole
+sixteen widget stages — and two marks on two *screens*. Swept over the whole
 list: **39 of the 85 stages draw no declared mark at all, 14 draw exactly one,
 and 32 compare a pair** — which is why the census line names how many marks were
 painted and how many pairs were compared. A screen with one mark must not be
@@ -606,18 +606,23 @@ what `serve.mjs` drops the meta for.
 | `widget-ennui` | a long quiet call — the surface a rep watches for fifty minutes with nothing arriving |
 | `widget-deux-pannes` | **two** health edges: the local engine dies while the audio route is already wrong, then the capture recovers and the transcription must still be reported |
 | `widget-survol` | the panel under the cursor, so every hover step is painted rather than declared |
+| `widget-dessous` | **the pill in the top half of the display, so the panel opens downward** — the other of the window's two layouts, drawn by no stage until this one. `opensAbove` decides it on the pill's own half of the screen and the stub answered `true` unconditionally, which is right for where the widget starts and silent about every rep who drags it up; `placeBelow()` is the reversible switch. It holds the chevron pointing where the panel will go (read off `data-arrow`, not off a character an OS substitutes) and `pile(page, 'panneau')` in this direction: the seam between the pill and the panel is the same computed step both ways up, which is the half that cannot come out right by accident — the margin lives on one edge and only one of the two cases reverses the paint |
 | `widget-pause-refus` | *Pause* refused: the control stays, and the sentence names the cause instead of a *Réessayer* |
 | `widget-carte-sortie` | the card leaving, read off whatever the alert or status element is actually saying |
 | `widget-panneau-sortie` | the panel leaving while the pill stays — the departure that must not tear the panel off its anchor |
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
-told which renderer it is by `?window=widget` (`src/main.tsx`). The fifteen widget stages are
-photographed over the app’s own canvas rather than over a video call — the twelve passes
+told which renderer it is by `?window=widget` (`src/main.tsx`). The sixteen widget stages are
+photographed over the app’s own canvas rather than over a video call — the thirteen passes
 measure the pill against paper, and the contrast a rep actually sees is against whatever Teams
-is painting. (Both numbers said something else until they were counted: « fourteen » was
-right for one round and « nine » for three, and `CLAUDE.md` records the same drift one level
-up about the same list. Count `SCREENS` and `PASSES` before repeating either.) The shadow is what carries that separation, and a screenshot here cannot verify it:
+is painting. (Both numbers have said something else than the thing they count: « fourteen »
+was right for one round and « nine » for three, and « twelve » stood here through the round
+that made `PASSES` thirteen — `--marks` was added and this sentence was not. « Fifteen » was
+right until this round added `widget-dessous`. `CLAUDE.md` records the same drift one level
+up about the same list. Count `SCREENS` and `PASSES` before repeating either: every time
+this line has been wrong it has been low, and it was last edited by whoever had just added
+the thing it omitted.) The shadow is what carries that separation, and a screenshot here cannot verify it:
 the harness page has five hundred pixels of paper around the pill, so the shadow lands
 beautifully whether or not the *window* has room for it. It did not, for a round — the window
 was sized to the card and `getBoundingClientRect` excludes a `box-shadow` — and the same blind

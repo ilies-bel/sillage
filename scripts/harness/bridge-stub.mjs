@@ -804,6 +804,12 @@ export function installAppBridge(config) {
   let REFUSE_MARKS = null
   /** The press did not take — see `refusePause`. */
   let REFUSE_PAUSE = false
+  /**
+   * Which way `widget:resize` answers the panel opens — see `placeBelow`, and
+   * `opensAbove` in `electron/app/windows/overlayPlacement.ts`, which is what
+   * decides it in the product.
+   */
+  let OPENS_ABOVE = true
 /** The call stopped while the pill was up — see `refuseMarks`. */
 let RECORDING_STOPPED = false
 
@@ -3508,9 +3514,13 @@ let RECORDING_STOPPED = false
 
       The page is not a display, so this is `true` by the same rule for the same
       reason: a pill drawn near the bottom of a 1280×800 viewport is in its
-      bottom half.
+      bottom half. It was the constant expression `window.innerHeight > 0`,
+      which said that and could say nothing else — so the **other** direction,
+      the one `opensAbove` returns for a pill in the top half of the display,
+      was drawn by no stage and measured by nothing. `placeBelow()` is the
+      reversible switch that stands it there; the default is unchanged.
     */
-    'widget:resize': () => ({ ok: true, above: window.innerHeight > 0 }),
+    'widget:resize': () => ({ ok: true, above: OPENS_ABOVE }),
     'widget:passThrough': () => ({ ok: true }),
     /*
       The exit handshake's reply. No stage emits `widget:leave` — the pill's exit
@@ -3628,6 +3638,28 @@ let RECORDING_STOPPED = false
         and widget:state answer the same meeting while the devices open ».
       */
       RECORDING_STOPPED = REFUSE_PAUSE
+    },
+    /**
+     * **The pill in the top half of the display, so the panel opens downward.**
+     *
+     * `opensAbove` answers on the pill's own half of the screen, and the stub
+     * answered `true` unconditionally — defensibly, since the widget's default
+     * position is the bottom of the display. What that left is a direction the
+     * product draws whenever a rep drags the pill up, reached by no stage: the
+     * panel's seam against the pill was measured in one direction only, and the
+     * cards' seam spent a whole round on the wrong edge for exactly that reason.
+     *
+     * Both halves, because the product sends both: `widget:resize` answers the
+     * new direction to the next measurement, and `widget:placed` is the
+     * broadcast `Overlay` sends when the renderer did not ask — `main.ts:1175`.
+     * Without the first, the next `ResizeObserver` reading flips it straight
+     * back; without the second, nothing moves until something resizes.
+     *
+     * Reversible with `placeBelow(false)`, for the reason `refusePause` is.
+     */
+    placeBelow(on) {
+      OPENS_ABOVE = on === false
+      harness.emit('widget:placed', { above: OPENS_ABOVE })
     },
     refuseMarks(reason) {
       REFUSE_MARKS =

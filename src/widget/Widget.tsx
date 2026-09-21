@@ -282,6 +282,33 @@ const CARD_MOTION = (leaving: boolean): string =>
  * `data-above`, and it is `above && open` — the same expression the frame's
  * `flex-col-reverse` reads — so the margin can never land on the edge the paint
  * did not reverse.
+ *
+ * **And the panel hangs off the same pill, so it wears the same seam.** That
+ * was left standing for a round and the round that left it wrote the finding
+ * down: the panel carried `my-tight`, symmetric, so it needed no direction and
+ * got no attention. Driven on the shipped renderer through a Playwright probe,
+ * pill border box to panel border box, on `widget-ouvert`, `widget-survol`,
+ * `widget-pause` and `widget-sombre` at 1280×800 and at 960×600 — **6.00 px on
+ * all eight**, the panel painted above the pill in every one. One window, one
+ * relationship, three values, and the smallest of the three parted the two
+ * largest objects: 16 between the pill and a two-line notice, 12 between the
+ * pill's own halves, 6 between the pill and a 340×354.55 panel.
+ *
+ * The step is not chosen here either — it is the same resolution the cards get,
+ * read off the painted layout: the ladder is `4/6/8/12/16/20/32`, the pill's
+ * loosest inside interval is `gap-inline` at 12, and the first rung above 12 is
+ * **16**. Verified on the real `:root` rather than taken from the sentence that
+ * proposed it.
+ *
+ * **It costs four pixels of window, and that is the honest price.** The frame is
+ * the size of its own content (DEC-49), and unlike the cards' fix this one does
+ * not merely move pixels: `my-tight` spent 6 px on the seam and 6 px on the
+ * *outside* of the stack, where `HALO` — 20 px, declared, and handed back with
+ * `widget:passThrough` — already reserves the shadow's extent. So the outer six
+ * were a second, undeclared halo on one edge only. Measured through the same
+ * probe, panel open above the pill, identical at both smoke sizes:
+ * **444.55 → 448.55 px**, `380` wide unchanged. Ten pixels into the seam, six
+ * back off the outside, four published through `widget:resize`.
  */
 const CARD_SEAM = (above: boolean): string => (above ? 'mb-row' : 'mt-row')
 
@@ -2427,7 +2454,12 @@ function Panel({
         stylesheet with the reasoning, not spread over two files as a string.
       */
       data-above={above ? 'true' : 'false'}
-      className={`bg-card border-card shadow-overlay my-tight w-[340px] rounded-lg border ${
+      /*
+        The seam, on the side the pill is on — `CARD_SEAM`, which is where the
+        measurement and the arithmetic live. This was `my-tight`: 6 px towards
+        the pill and 6 px into the halo, on the largest box this window draws.
+      */
+      className={`bg-card border-card shadow-overlay ${CARD_SEAM(above)} w-[340px] rounded-lg border ${
         leaving ? 'widget-panel-leaving' : 'widget-panel-arrive'
       }`}
     >
