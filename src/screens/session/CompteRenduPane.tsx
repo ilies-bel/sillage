@@ -101,7 +101,41 @@ export function CompteRenduPane({
         instruments, on the surface where the rep meets the compte-rendu first.
       */}
       <ReadingColumn subject={{ determiner: 'le', noun: 'compte-rendu' }}>
-        <CompteRenduDocument text={compteRendu} />
+        {/*
+          **The one reading measure, on the element holding the prose.**
+
+          This pane had none: the document took whatever the column gave it, so
+          its measure was the column's width minus the gutter and nothing
+          bounded it at either end. That was invisible while the column was
+          pinned between 440 and 560px — 42 to 51 characters a line — and it
+          stops being invisible the moment the column is allowed to be the
+          width of the window, which is what `Session.tsx` does below
+          `SIDE_BY_SIDE_PX`. `.measure` is `58ch` and is a *maximum*: a pane
+          narrower than that keeps its own width, so nothing about the
+          three-column layout moves.
+
+          On the wrapper rather than on `CompteRenduDocument`'s own lines,
+          because `ch` resolves against the element's font size and this
+          document sets several — that is `.measure`'s own argument for being a
+          wrapper class. Measured on the shipped renderer, the wrapper computes
+          at **14px**, so `58ch` here is 512px, which is 62 to 66 characters of
+          French lowercase: inside the 45–75 band `--prose` binds at both ends.
+          It is not `--type-copy`'s 15px; the pane is a size down from the
+          notepad and that is exactly why the number is in `ch` and not in
+          pixels.
+
+          It binds where it has to. At 960×600 the scroller is 621px wide and
+          the document is held to 512; at 1 183 — one pixel below the
+          breakpoint, the widest this pane is ever drawn — the scroller is 791
+          and the document is still 512. Removing the class is red at 960 on
+          `--prose`'s *ceiling*: « 76 car./ligne — span. [hors .measure]
+          (15px, 584px) ». 1 183 itself is measured by nothing, because
+          `smoke.mjs` runs 1280 and 960 and there is no size between them —
+          stated rather than implied.
+        */}
+        <div className="measure">
+          <CompteRenduDocument text={compteRendu} />
+        </div>
       </ReadingColumn>
 
       {/*
