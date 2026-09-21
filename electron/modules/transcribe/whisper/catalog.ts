@@ -36,20 +36,42 @@ export interface WhisperModel {
 }
 
 export const MODELS: WhisperModel[] = [
-  { id: 'Xenova/whisper-tiny', label: 'Whisper Tiny', sizeMb: 74, speed: 'fast', accuracy: 'correcte' },
-  { id: 'Xenova/whisper-base', label: 'Whisper Base', sizeMb: 145, speed: 'fast', accuracy: 'bonne' },
-  { id: 'Xenova/whisper-small', label: 'Whisper Small', sizeMb: 466, speed: 'medium', accuracy: 'très bonne' },
+  { id: 'Xenova/whisper-tiny', label: 'Whisper Tiny', sizeMb: 61, speed: 'fast', accuracy: 'correcte' },
+  { id: 'Xenova/whisper-base', label: 'Whisper Base', sizeMb: 130, speed: 'fast', accuracy: 'bonne' },
+  { id: 'Xenova/whisper-small', label: 'Whisper Small', sizeMb: 486, speed: 'medium', accuracy: 'très bonne' },
   {
-    // The fp32 encoder weights (~820 MB) sit in `encoder_model.onnx_data` and
-    // this repo's config.json does not say so. Hence the explicit declaration.
+    /*
+     * **This row is an offer the engine cannot honour. Measured 2026-09-21.**
+     *
+     * Every inference throws `Missing the following inputs: cache_position` —
+     * the merged decoder is exported against a newer graph signature than the
+     * pinned transformers (3.8.1) builds a feed for. Not once: every utterance,
+     * for the whole meeting. The throw is caught per segment, so a rep who
+     * selects this sees « transcription de l'audio système dégradée » and an
+     * empty transcript, on the engine DEC-30 makes the default. `MODELS`
+     * reaches Réglages through `modelSection` (`main.ts:667`), so it is
+     * selectable today. Same shape as the Deepgram row in `registry.ts`, and
+     * `ModelStatus` has no way to say it — `ready` | `absent` and nothing for
+     * « offered and broken ».
+     *
+     * `sizeMb` was 1031 and the comment here said the encoder data was
+     * « ~820 MB ». Both wrong: the Hub's blob sizes give **2848 MB**, because
+     * the shipped dtype map keeps the encoder fp32 and large-v3's encoder is
+     * 635M parameters (635M x 4 B = 2.54 GB). `modelSizeBytes` feeds the
+     * download progress bar, so the rep was promised 1 GB and charged 2.8.
+     *
+     * Kept, not deleted, because it is the only catalogue user of
+     * `externalDataFormat` and two tests in `whisper.test.ts` exercise that
+     * loader path through this id. Deleting the row deletes their subject.
+     */
     id: 'onnx-community/whisper-large-v3-turbo-ONNX',
     label: 'Whisper Large v3 Turbo',
-    sizeMb: 1031,
+    sizeMb: 2848,
     speed: 'medium',
     accuracy: 'très bonne',
     externalDataFormat: { 'encoder_model.onnx': true },
   },
-  { id: 'Xenova/whisper-medium', label: 'Whisper Medium', sizeMb: 1530, speed: 'slow', accuracy: 'très bonne' },
+  { id: 'Xenova/whisper-medium', label: 'Whisper Medium', sizeMb: 1614, speed: 'slow', accuracy: 'très bonne' },
 ]
 
 /**
