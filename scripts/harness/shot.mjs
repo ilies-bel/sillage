@@ -21,7 +21,8 @@
  *   --fade           every fading mask against the line box it fades over
  *   --census         how many rungs of one ladder a screen stands on at once
  *   --rhythm         every painted gap, padding and margin against the declared scale
- *   --cells          a growing cell short of its text while its fixed siblings hold slack
+ *   --cells          a growing cell short of its text while its fixed siblings hold slack,
+ *                    and a closed box keeping room its own capped cell cannot take
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -1223,6 +1224,106 @@ const SCREENS = {
       // The rep is still on the calendar: a refusal never navigates.
       await page.getByRole('region', { name: 'Calendrier' }).waitFor()
       await settled(page)
+    },
+  },
+
+  /*
+   * **The refusal arriving and leaving** — the one surface on the calendar that
+   * appears without a press, and until this round it did neither.
+   *
+   * Measured on the shipped banner at 1280×800 and 960×600 before the fix:
+   * `animationName: none`, `transitionDuration: 0s`. It was painted between two
+   * frames on a press that refuses a rep's gesture, and torn off the page
+   * between two more — under « ease-out on the way in, ease-in on the way out »,
+   * which every other appearing surface in this product is held to and
+   * frame-sampled for (`review-source-sortie`, `reglages-sortie`,
+   * `agenda-ligne-sortie`).
+   *
+   * Three assertions, and the third is the only one a class name cannot make:
+   * the arrival's curve, the exit's curve, and frames painted *between* the two
+   * ends with the last of them at zero — `judgeDeparture`, the same judge the
+   * widget window has used since round 19. A node created already wearing
+   * `.leaving` carries every declaration and paints none of them.
+   */
+  'agenda-preparer-refus-sortie': {
+    scenario: 'agenda',
+    async drive(page) {
+      await SCREENS['agenda-preparer-refus'].drive(page)
+      const alert = page.locator('[role="alert"]').filter({ hasText: 'en cours d’enregistrement' })
+
+      const arrival = await alert.first().evaluate((el) => {
+        const style = getComputedStyle(el)
+        return { name: style.animationName, ease: style.animationTimingFunction }
+      })
+      if (arrival.name !== 'riseIn' || !arrival.ease.startsWith('cubic-bezier(0.22, 1,')) {
+        throw new Error(
+          `le refus arrive sans la courbe d’entrée du produit : ${JSON.stringify(arrival)} — ` +
+            'la seule chose de cet écran qui apparaît sans pression apparaît entre deux images',
+        )
+      }
+
+      const fermer = page.getByRole('button', { name: 'Fermer', exact: true }).first()
+      await fermer.click()
+      const going = page.locator('[role="alert"].leaving').first()
+      await going.waitFor({ timeout: 5_000 }).catch(() => {
+        throw new Error(
+          'le refus se ferme sans départ — il disparaît une image après la pression, ' +
+            'ce que VISION §6 appelle un clignotement',
+        )
+      })
+      /*
+       * **And it leaves carrying its own sentence.** The banner outlives the
+       * state that holds the words by one `--motion`, so the last frames of the
+       * fade are a stroked box with nothing in it unless the renderer holds the
+       * sentence itself. That is the half `departureOf` cannot see: it samples
+       * opacity, and an empty box fades exactly as well as a full one.
+       */
+      const stillSaid = (await going.innerText()).replace(/\s+/g, ' ').trim()
+      if (!stillSaid.includes('Néovia Santé')) {
+        throw new Error(
+          `le refus s’en va vide : « ${stillSaid} » — la boîte porte encore son trait ` +
+            'pendant tout le fondu et la phrase est déjà partie',
+        )
+      }
+
+      const exit = await going.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return { property: style.transitionProperty, ease: style.transitionTimingFunction }
+      })
+      if (!exit.ease.includes('cubic-bezier(0.64, 0, 0.78, 0)')) {
+        throw new Error(`le refus s’en va sans --ease-in : ${JSON.stringify(exit)}`)
+      }
+      if (!/opacity/.test(exit.property)) {
+        throw new Error(`le refus s’en va sans transition d’opacité : ${exit.property}`)
+      }
+
+      // Raised again — the refusal is not idempotent chrome, it is the answer to
+      // a press, so the second one has to be asked for the same way.
+      await page.waitForTimeout(300)
+      await rowNamed(page, 'Banque Delcourt — négociation')
+        .getByRole('button', { name: 'Préparer', exact: true })
+        .click()
+      await alert.first().waitFor({ timeout: 5_000 })
+      await page.waitForTimeout(300)
+      /*
+       * `departureOf` presses from inside the page, in the same task it arms the
+       * tracer in, so it takes a selector rather than a locator. *Fermer* has no
+       * attribute of its own; the harness marks it here rather than asking the
+       * renderer for a hook it has no other use for — `review-source-sortie`'s
+       * own reasoning, one screen over.
+       */
+      await fermer.evaluate((el) => el.setAttribute('data-harness-press', ''))
+      judgeDeparture('refus d’armement', await departureOf(page, '[role="alert"]', '[data-harness-press]'))
+
+      // Raised once more and left on camera mid-flight: the photograph is of a
+      // departure in progress, the way `reglages-sortie` leaves its sheet.
+      await rowNamed(page, 'Banque Delcourt — négociation')
+        .getByRole('button', { name: 'Préparer', exact: true })
+        .click()
+      await alert.first().waitFor({ timeout: 5_000 })
+      await page.waitForTimeout(300)
+      await page.getByRole('button', { name: 'Fermer', exact: true }).first().click()
+      await page.locator('[role="alert"].leaving').first().waitFor({ timeout: 5_000 })
     },
   },
 
@@ -7326,7 +7427,8 @@ async function main() {
      */
     console.log(
       `  cellules: ${starved.flexible} cellule(s) extensible(s) dans ${starved.rows} rangée(s), ` +
-        `${starved.starved.length} à l’étroit`,
+        `${starved.starved.length} à l’étroit · ${starved.boxes} boîte(s) fermée(s), ` +
+        `${starved.loose.length} trop large(s)`,
     )
     if (starved.starved.length > 0) {
       console.log(
@@ -7342,6 +7444,21 @@ async function main() {
         )
         console.log(`       ${item.at.slice(0, 64)} « ${item.near} »`)
         console.log(`       rangée ${item.row.slice(0, 50)} : ${item.widths}`)
+      }
+      process.exitCode = 17
+    }
+    if (starved.loose.length > 0) {
+      console.log(
+        `  ✗ cellules: ${starved.loose.length} boîte(s) fermée(s) gardent de la place que rien ` +
+          'ne peut prendre — la cellule à qui on a dit de remplir est plafonnée',
+      )
+      for (const item of starved.loose.slice(0, 6)) {
+        console.log(
+          `     ${item.width}px de boîte dont ${item.free}px vides (~${item.characters} ` +
+            `caractère(s)) — la cellule extensible est plafonnée à ${item.cap}px`,
+        )
+        console.log(`       ${item.at.slice(0, 64)} « ${item.near} »`)
+        console.log(`       cellules : ${item.widths}`)
       }
       process.exitCode = 17
     }
@@ -10775,6 +10892,48 @@ async function rhythm(page) {
  * `text-overflow: clip`, with the ellipsis on one child and the clamp on another,
  * so a rule gated on it would have been asking the wrong box. The state is in the
  * finding so a reader can tell the two apart.
+ *
+ * ## Claim 2 — a closed box wider than anything in it can take
+ *
+ * The same arithmetic run the other way, and it is a *different* defect: not a
+ * cell short of its text, but a box holding space nothing in it is allowed to
+ * use. Found on the agenda's arming refusal, the one surface on that screen that
+ * appears without a press. `.measure` had been put on its sentence to cut a
+ * 96-character line to 58ch — correct, and this repo's one reading rule — inside
+ * a row that was still as wide as the day column. Measured at 1280×800:
+ *
+ *     banne 672px · cellule extensible 439.1 plafonnée à 439.078 · Fermer 40.3
+ *     → 154.6px libres, 23 % de la boîte, au-delà de son seul contrôle
+ *
+ * Both declarations on that cell were individually right; together, `flex-1`
+ * (« take the rest ») and `max-width` (« never exceed this ») contradict, and the
+ * remainder goes nowhere. So the rule is
+ *
+ *     every cell that grows is pinned at a length cap, *and* the row still keeps
+ *     more than one character of free space
+ *
+ * — both halves required, as in claim 1: a row with free space and a cell that
+ * could still grow is a row mid-layout, not a box aligned to nothing.
+ *
+ * **It asks about a box, and the sweep is why.** Run over all 85 stages at both
+ * smoke sizes, the arithmetic alone (closure not required) reports four distinct
+ * rows, all of them `.measure` + `flex-1`:
+ *
+ *     agenda-preparer-refus   div.border-warn.bg-card…      154.6px  23.0 %  ← closed
+ *     session-attente         div.border-subtle.bg-card-soft 635.2px  49.6 %
+ *     historique (×85 rows)   li.text-muted.flex.gap-snug    429.8px  45.1 %
+ *     review-transcription    div.border-subtle…border-b      60.0px  11.7 %
+ *
+ * The last three have `border-left-width: 0px`, `border-right-width: 0px` and
+ * `border-radius: 0px`: they are bands and list rows that end where the pane
+ * ends, with no inline edge of their own for the emptiness to sit inside. The
+ * first draws a 1px stroke on all four sides and a 10px corner, so the rep sees
+ * the box's right edge 154.6px past its own last control. That is the rule this
+ * claim states — « une boîte fermée tient ce qu'elle contient » — and it is why
+ * `closed()` is a condition and not a convenience: the three bands are a real
+ * question about reading width on three other lanes' screens, recorded in the
+ * round report rather than excused here, because `RHYTHM_ALLOWANCES` is right
+ * that « nobody has changed it yet » is not a reason.
  */
 async function cells(page) {
   return page.evaluate(() => {
@@ -10821,9 +10980,31 @@ async function cells(page) {
       return ctx.measureText(SAMPLE).width / SAMPLE.length
     }
 
+    /**
+     * **Does this row draw an edge of its own on the inline axis?**
+     *
+     * The second claim below is about a *box*, not about a band: a stroke on
+     * both sides, or a rounded fill, is a shape the rep can see the end of. A
+     * row with only a `border-b`, or no border at all, ends where the pane ends
+     * and has no right-hand edge to contradict its contents — which is exactly
+     * what separates the four sites the arithmetic finds on this tree. See the
+     * docblock above for the measured split.
+     */
+    const closed = (style) => {
+      const alpha = /rgba\([^)]*,\s*(0|0?\.\d+)\s*\)/.exec(style.backgroundColor)
+      const filled = style.backgroundColor !== 'transparent' && (alpha === null || Number(alpha[1]) > 0.5)
+      const stroked =
+        Number.parseFloat(style.borderLeftWidth) > 0 && Number.parseFloat(style.borderRightWidth) > 0
+      return stroked || (Number.parseFloat(style.borderTopLeftRadius) > 0 && filled)
+    }
+    /** A `max-width` that is a length, in px. A percentage is the parent's rule, not a cap. */
+    const capOf = (style) => (style.maxWidth.endsWith('px') ? Number.parseFloat(style.maxWidth) : null)
+
     const starved = []
+    const loose = []
     let rows = 0
     let flexible = 0
+    let boxes = 0
     for (const row of document.querySelectorAll('body *')) {
       const style = getComputedStyle(row)
       if (!style.display.includes('flex') || style.flexDirection.startsWith('column')) continue
@@ -10859,8 +11040,47 @@ async function cells(page) {
           widths: cells.map((c) => `${c.got}${c.grow > 0 ? '↔' : ''}/${c.want}`).join(' '),
         })
       }
+
+      // ── claim 2 ────────────────────────────────────────────────────────────
+      /*
+       * The other end of the same arithmetic: not a cell short of its text, but
+       * a *box* wider than anything in it can take. A wrapping row lays its
+       * cells on several lines, so this single-line sum would be wrong about it
+       * — and `flex-wrap` is the caller saying the width is not one row's.
+       */
+      if (style.flexWrap.startsWith('wrap')) continue
+      if (!closed(style)) continue
+      boxes += 1
+      const growing = cells.filter((c) => c.grow > 0)
+      if (growing.length === 0) continue
+      // Pinned: it was told to take the rest and told never to exceed a length,
+      // and it is sitting on that length. One of the two declarations is dead.
+      const pinned = growing.filter((c) => {
+        const cap = capOf(getComputedStyle(c.el))
+        return cap !== null && c.got >= cap - 1
+      })
+      if (pinned.length !== growing.length) continue
+      const box = row.getBoundingClientRect()
+      const inner =
+        box.width -
+        Number.parseFloat(style.paddingLeft) -
+        Number.parseFloat(style.paddingRight) -
+        Number.parseFloat(style.borderLeftWidth) -
+        Number.parseFloat(style.borderRightWidth)
+      const gaps = (Number.parseFloat(style.columnGap) || 0) * (kids.length - 1)
+      const free = round(inner - cells.reduce((total, c) => total + c.got, 0) - gaps)
+      // The same floor as claim 1, for the same reason: one character of the
+      // row's own font, rather than a pixel count chosen after the fact.
+      if (free <= advance(row)) continue
+      loose.push({
+        at: where(row), near: near(row),
+        width: round(box.width), free,
+        characters: Math.round(free / advance(row)),
+        cap: round(Math.max(...pinned.map((c) => capOf(getComputedStyle(c.el))))),
+        widths: cells.map((c) => `${c.got}${c.grow > 0 ? '↔' : ''}/${c.want}`).join(' '),
+      })
     }
-    return { rows, flexible, starved }
+    return { rows, flexible, starved, boxes, loose }
   })
 }
 

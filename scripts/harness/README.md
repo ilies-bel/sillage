@@ -252,6 +252,26 @@ that can scroll is exempt, that being `--scrollers`' subject; an ellipsis is
 itself resolves to `text-overflow: clip`, with the ellipsis on one child and the
 clamp on another.
 
+**The second claim is the same arithmetic run the other way: a closed box wider
+than anything in it can take.** Found on the agenda's arming refusal — a box of
+672 px at 1280×800 whose sentence was capped at 439.078 px by `.measure` and whose
+only control, *Fermer*, ended at 1080.4 with the box's own stroke at 1235: **154.6
+px, 23 % of the banner, past everything in it**. `flex-1` says take the rest and
+`max-width` says never exceed this; one of the two declarations is dead and the
+remainder goes nowhere. The rule is **every growing cell pinned at a length cap,
+*and* more than one character of the row's own font still free** — both halves, as
+in claim 1, because a row with free space and a cell that could still grow is a row
+mid-layout. Swept over all 85 stages at both sizes, the arithmetic alone finds four
+distinct rows, all `.measure` + `flex-1`: this banner (154.6 px), `session-attente`
+(635.2 px, 49.6 %), *Historique*'s match rows (429.8 px, 45.1 %, ×85) and the
+transcript reader's header (60 px). Only the first is **closed** — a 1 px stroke on
+both inline sides and a 10 px corner; the other three have `border-left-width: 0px`,
+`border-right-width: 0px` and `border-radius: 0px`, so they are bands and list rows
+that end where the pane ends and have no edge of their own for the emptiness to sit
+inside. Those three are a real question about reading width on three other lanes'
+screens and are recorded in the round report rather than excused here, because
+`RHYTHM_ALLOWANCES` is right that « nobody has changed it yet » is not a reason.
+
 **Two instruments were answering a narrower question than they appeared to, and
 both are fixed here.** `--census` read its radius ladder from a hand-written
 `['--radius-sm', '--radius', '--radius-lg']` under a docblock saying it read
@@ -476,6 +496,7 @@ what `serve.mjs` drops the meta for.
 | `agenda-demarrer-tot` | the **Semaine** view with an armable call ahead of its hour — the offer to start early, beside the invites that are not yet armable |
 | `agenda-preparer` | **the arming gesture, walked** — *Préparer* pressed on a named upcoming invite and the screen the rep actually lands on. Every earlier stage *counted* this control; none had ever pressed it, and the stub answered an id no meeting carried, so the press landed on « réunion introuvable: evt-evt-delcourt-tjm ». Staged on the one fixture day with nothing live, because `Agenda.#arm` declines beside a recording; the assertion is the objet on the session header, so « landed on *a* meeting » cannot pass for « landed on the one pressed » |
 | `agenda-preparer-refus` | the same press while a call is under way: `arm` is illegal beside a recording, and the refusal **names the live call** — « « Néovia Santé — cadrage renfort data » est déjà en cours d'enregistrement. Terminez-la, puis reprenez celle-ci — elle reste proposée. » in the calendar's own `role="alert"`, never a `window.alert` (HR-10). The sentence was fixed one round ago and no screenshot could reach it |
+| `agenda-preparer-refus-sortie` | the same refusal, **arriving and leaving**. It is the one thing on the calendar that appears without a press, and it had neither: `animationName: none`, `transitionDuration: 0s`, at both smoke sizes. Three assertions — the arrival's curve, the exit's curve, and `judgeDeparture` over the frames painted between the two ends, because a node created already wearing `.leaving` carries every declaration and paints none of them |
 | `review-rail` | the gate's measured rail with every value box drawn, read by `measureRail` — the eleven fields the confirmation is about |
 | `review-rail-inerte` | the same rail after the rep's own press removes the opportunity: nine of the eleven boxes lose their fill, because a field the gate cannot ship is text on the ground, not an input |
 | `review-garde-frappe` | the guard while the rep is **typing** into the compte-rendu — `Ctrl/⌘ Entrée` must not fire from inside an editable |
