@@ -7095,6 +7095,10 @@ async function main() {
     declared: 0,
     ellipsised: 0,
     columns: 0,
+    crowded: [],
+    allocated: 0,
+    flat: 0,
+    roomy: 0,
   }
   if (flags.scrollers) {
     await page.evaluate(() => document.fonts.ready)
@@ -7501,6 +7505,60 @@ async function main() {
        * and it could only ever have been read by a human looking at the right
        * two lines of output.
        */
+      process.exitCode = 9
+    }
+    /*
+     * The allocation half, printed with its own denominator for the reason the
+     * line above it carries one: « aucune bande fixe » over zero columns
+     * examined reads exactly like the same sentence over every column in the
+     * product, and that is the shape this file has now recorded four times.
+     */
+    const stage = `${screen}@${flags.viewport.width}x${flags.viewport.height}`
+    const allowed = CROWDED_KNOWN[stage] ?? null
+    const fresh = []
+    let held = 0
+    for (const item of boxes.crowded) {
+      if (allowed !== null && item.box >= allowed.box) {
+        held += 1
+        continue
+      }
+      fresh.push(item)
+    }
+    /*
+     * The declared one first, so the run cannot be read as clean, and so an
+     * allowance that has outlived its finding is a failure rather than a line
+     * nobody deletes.
+     */
+    if (allowed !== null && held === 0) {
+      console.log(
+        `  ✗ ascenseurs: l'exemption « ${stage} » ne porte plus sur rien — ` +
+          `${allowed.what} n'est plus écrasée. Retirez l'entrée de CROWDED_KNOWN.`,
+      )
+      process.exitCode = 9
+    } else if (allowed !== null) {
+      console.log(
+        `  ascenseurs: ${allowed.what} reste écrasée à ${allowed.box}px, ` +
+          `défaut déclaré (${allowed.lane}) — plancher, pas une dispense`,
+      )
+    }
+    if (fresh.length === 0) {
+      console.log(
+        `  ascenseurs: aucune bande fixe ne dépasse la colonne qu'elle borde — ` +
+          `${boxes.allocated} colonne(s) en concurrence de hauteur · ` +
+          `${boxes.roomy} sans débordement, ${boxes.flat} hors d'une pile verticale` +
+          (held > 0 ? `, ${held} défaut(s) déclaré(s)` : ''),
+      )
+    } else {
+      console.log(
+        `  ✗ ascenseurs: ${fresh.length} colonne(s) plus petite(s) que ` +
+          'la bande fixe qui les borde',
+      )
+      for (const item of fresh) {
+        console.log(
+          `     ${item.what} — ${item.box}px de fenêtre sur ${item.content}px ` +
+            `(${item.share}%), bande fixe ${item.pinned}px : ${item.furniture.join(', ')}`,
+        )
+      }
       process.exitCode = 9
     }
   }
@@ -10611,6 +10669,37 @@ async function echo(page) {
  * containers themselves are exempt (they are the thing the guard measures) and
  * so is anything that opts out by declaring the overflow deliberately.
  */
+/**
+ * **The columns this rule already found, and cannot fix from here.**
+ *
+ * Keyed by stage and size, because that is the only handle the measurement has:
+ * both entries are the same element, the `ReadingColumn` *Demander* answers
+ * into (`src/screens/session/AskPanel.tsx:331`), and it carries no attribute to
+ * name it by. Adding one is `ui-session`'s line to write, not this file's.
+ *
+ * | stage | size | window | content | pinned under it |
+ * |---|---|---|---|---|
+ * | `session-demander` | 960x600 | **21px** | 314px | 73px page turn |
+ * | `session-suivi` | 960x600 | 57px | 307px | 73px page turn |
+ *
+ * Twenty-one pixels is one line of `--type-ui` minus two: the rep asks a
+ * question during a call and the cited answer arrives into a slot shorter than
+ * the sentence it holds, under a control taller than the column it turns. It is
+ * the same defect as the review rail's, on a different screen and in a lane
+ * this change does not hold, so it is declared with its number rather than
+ * scoped out of the rule — a rule that fired only on the gate would be the
+ * narrow instrument this repo has now caught nine times.
+ *
+ * **An allowance whose finding has gone fails**, the way `check-platform.mjs`'s
+ * do: fix the column and this list is one line too long, and the run says so.
+ * `box` is the ceiling as well as the record — the column may not get smaller
+ * than it already is while the entry stands.
+ */
+const CROWDED_KNOWN = {
+  'session-demander@960x600': { box: 21, lane: 'ui-session', what: 'la colonne des réponses de *Demander*' },
+  'session-suivi@960x600': { box: 57, lane: 'ui-session', what: 'la colonne des réponses de *Demander*' },
+}
+
 async function scrollers(page) {
   return page.evaluate(() => {
     const SLACK = 2
@@ -10714,6 +10803,93 @@ async function scrollers(page) {
         box: Math.round(el.clientHeight),
       })
     }
+    /*
+     * **The second rule, over the boxes the first one exempts.**
+     *
+     * `columns` — every `.fade-below` and `[data-scroller]` — is skipped above,
+     * and rightly: a reading column is *supposed* to hold more than its box, and
+     * it draws the ramp that says so. What nothing asked is how big the box was
+     * allowed to be. Measured on the shipped gate at 960x600, the size `main.ts`
+     * declares as the legal minimum: the review rail is a 196px window on 1100px
+     * of eleven fields — 17.8% — while the pinned band beside it, which scrolls
+     * nothing, holds 313. The furniture outweighed the payload by 117px on the
+     * one screen whose single press writes into a client's CRM, and twelve
+     * passes were green over it.
+     *
+     * The rule is about **allocation**, not about how much content a column
+     * holds: « une bande fixe ne prend pas plus de haut que le defilement
+     * qu'elle borde ». A transcript is 17 000px long and no window will ever
+     * show a quarter of it, so a share-of-content floor would be a rule about
+     * the meeting's length. A share-of-*column* rule is a rule about the layout,
+     * which is the thing a lane can fix.
+     *
+     * What it stops measuring, stated:
+     *
+     * - A column whose parent is not a flex **column** is not looked at: with no
+     *   main-axis competition there is nothing to have taken the height. That
+     *   exempts the two side-by-side halves of the gate from being compared to
+     *   each other, which is deliberate — they are a pair, not a squeeze.
+     * - A column that does not overflow is not looked at. Nothing is hidden, so
+     *   no allocation was wrong.
+     * - A sibling that is itself a scroller does not count as furniture: two
+     *   columns sharing a parent split the height between two payloads.
+     * - A sibling that grows (`flex-grow > 0`) does not count either — it is not
+     *   pinned, it is the flex resolving, and holding it against the column would
+     *   make this rule fire on whichever of two elastic boxes happened to lose.
+     *
+     * So this cannot see a column crushed by a *sibling row* higher up the tree,
+     * nor one crushed by a fixed height on itself. Both are findings this pass
+     * would print « rien » over.
+     */
+    const crowded = []
+    let allocated = 0
+    let flat = 0
+    let roomy = 0
+    for (const column of columns) {
+      const parent = column.parentElement
+      if (!parent) continue
+      const box = column.clientHeight
+      if (box === 0) continue
+      if (column.scrollHeight - column.clientHeight <= SLACK) {
+        roomy += 1
+        continue
+      }
+      const shell = getComputedStyle(parent)
+      if (!shell.display.includes('flex') || !shell.flexDirection.startsWith('column')) {
+        flat += 1
+        continue
+      }
+      allocated += 1
+      let pinned = 0
+      const furniture = []
+      for (const sibling of parent.children) {
+        if (sibling === column) continue
+        const rect = sibling.getBoundingClientRect()
+        if (rect.height === 0) continue
+        const own = getComputedStyle(sibling)
+        if (parseFloat(own.flexGrow) > 0) continue
+        if (sibling.scrollHeight - sibling.clientHeight > SLACK) continue
+        pinned += rect.height
+        furniture.push(
+          `${sibling.tagName.toLowerCase()}.${(sibling.className || '').toString().split(' ')[0]}` +
+            ` ${Math.round(rect.height)}px`,
+        )
+      }
+      if (pinned <= box) continue
+      crowded.push({
+        what:
+          column.id ||
+          column.getAttribute('aria-label') ||
+          (column.dataset.rail !== undefined ? 'le rail du gate' : null) ||
+          `${column.tagName.toLowerCase()}.${(column.className || '').toString().split(' ')[0]}`,
+        box: Math.round(box),
+        content: Math.round(column.scrollHeight),
+        share: Math.round((column.clientHeight / column.scrollHeight) * 100),
+        pinned: Math.round(pinned),
+        furniture,
+      })
+    }
+
     return {
       items: out.sort((a, b) => b.hidden - a.hidden),
       walked,
@@ -10722,6 +10898,10 @@ async function scrollers(page) {
       declared,
       ellipsised,
       columns: columns.length,
+      crowded,
+      allocated,
+      flat,
+      roomy,
     }
   })
 }

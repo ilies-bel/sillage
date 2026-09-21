@@ -2124,8 +2124,16 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
           The arming guard is untouched by construction rather than by
           assertion: the clearance spacer below carries `data-unmeasured`, which
           `shippedHeight` subtracts, so the column's shipped height is what it
-          always was. `review-garde-mort` still reports *Valider* reached in 6
-          presses then 4.
+          always was.
+
+          **The press count is read off the stage, and this sentence has been
+          wrong.** It said « *Valider* reached in 6 presses then 4 » for an
+          unknown number of rounds; driven at `34d8ef2`, `review-garde-mort`
+          reported **8 then 7** at 1280×800 and **14 then 14** at 960×600. With
+          the manifest moved out of the pinned band and into the rail — the note
+          on the `<fieldset>` below has the arithmetic — it reports 8 then 6, and
+          10 then 8. Two numbers, both sizes, off the run; do not restate them
+          from memory.
         */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main
@@ -2618,11 +2626,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             /*
               `pb-block` on top of `py-row`, and it is not decoration.
 
-              Two things sit at the bottom of this scroller — the group chips and
-              « Interlocuteurs : … », the list of people the Outlook draft goes to
-              — and the pinned « Ce qui sera créé » panel begins at the scroller's
+              The bottom of this scroller is the last thing that ships — the group
+              chips, « Interlocuteurs : … » and, since the manifest moved in here,
+              « Ce qui sera créé » — and the pinned band began at the scroller's
               bottom edge to the pixel. The detector measured the recipients line
-              at `top: 503.30` and the panel at `top: 503.30`: at the scroll
+              at `top: 503.30` and the band at `top: 503.30`: at the scroll
               position the gate opens on, the names of the people about to be
               mailed were exactly one hundred per cent hidden, on the screen whose
               only job is to show a rep what they are about to send.
@@ -2769,6 +2777,69 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               : panel.interlocuteurs.map((a) => a.name || a.email).join(', ')}
           </p>
 
+          {/*
+            **The manifest is the last thing that ships, so it is the last thing
+            in the column that ships — not furniture pinned beside it.**
+
+            It was inside the pinned band, and the band has no ceiling of its
+            own. Measured on the shipped gate, `scrollHeight`/`clientHeight` read
+            off the rail itself:
+
+            | | rail window | rail content | shown | pinned band |
+            |---|---|---|---|---|
+            | 1280×800, before | 396px | 1025px | 38.6% | 313px |
+            | 960×600, before  | **196px** | 1100px | **17.8%** | **313px** |
+
+            313 pixels of furniture is 39% of an 800px window and **61% of the
+            600px one `main.ts` declares as the legal minimum** — a fixed cost
+            paid out of a shrinking budget, so the smaller the window the larger
+            its share, and the scroller pays all of it. Eleven fields, ten
+            verified and one `⚠ faible`, read through 196 pixels — and
+            `review-garde-mort`, pressing the product's own page turn, needed
+            **14 presses** to arm the gate at 960 against 8 at 1280. It reports
+            10 and 8 with the manifest moved. Those four are *observed*, off the
+            stage; `(scroll − client) / client` is arithmetic over the table
+            above and is not the same claim.
+
+            Moving the manifest into the scroller costs the band 206 of its 313
+            pixels and gives them to the rail. It is the same rule the textarea
+            twenty rows above already states about a field with more to say: « a
+            field with more to say makes the column longer, which the guard
+            *does* measure and does charge a page turn for ». The manifest is
+            three rows of what is about to be written into a client's CRM; it
+            belongs to the payload, not to the frame.
+
+            **Nothing is lost by the move, and one thing is gained.** The guard
+            requires the whole rail to have been *shown* before *Valider* exists,
+            so « Ce qui sera créé » is still guaranteed on the rep's screen before
+            the press — guaranteed by measurement now, where before it was
+            guaranteed by being nailed down. And the band's height stops
+            depending on the *manifest's* content — the sub-line under the button
+            can still wrap, and does: the docblock on `IntentRow`'s summary
+            records a long « besoin » growing this footer from 313 to **432px**
+            and crushing the rail from 434 to 315. That growth now lands in the
+            scroller, where the guard charges for it.
+
+            **What stays pinned is the decision**, which is the rule this column
+            was built on and is untouched: the button and the line under it never
+            scroll. Fields scroll, and the three boxes that choose what ships are
+            fields.
+          */}
+          <fieldset className="mt-block">
+            <SectionHeader as="legend" className="mb-snug">
+              Ce qui sera créé
+            </SectionHeader>
+            {intents.map((intent) => (
+              <IntentRow
+                key={intent.id}
+                intent={intent}
+                checked={checked.includes(intent.id)}
+                onToggle={() => toggle(intent.id)}
+                connector={connectorFor(intent.kind, health)}
+                onRetry={retry}
+              />
+            ))}
+          </fieldset>
 
           {/* The clearance `.fade-below` needs under the last line. */}
           <div aria-hidden data-unmeasured className="h-gutter shrink-0" />
@@ -2805,22 +2876,6 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             the one that says the decision does not scroll.
           */}
           <div className="border-subtle shrink-0 border-t px-row py-row">
-            <fieldset>
-              <SectionHeader as="legend" className="mb-snug">
-                Ce qui sera créé
-              </SectionHeader>
-              {intents.map((intent) => (
-                <IntentRow
-                  key={intent.id}
-                  intent={intent}
-                  checked={checked.includes(intent.id)}
-                  onToggle={() => toggle(intent.id)}
-                  connector={connectorFor(intent.kind, health)}
-                  onRetry={retry}
-                />
-              ))}
-            </fieldset>
-
             {/*
               One button (DEC-4). It ships everything still checked, together, and
               the rep is never asked again — `confirm` is legal from
@@ -3614,9 +3669,11 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
           `line-clamp-2` is `display: -webkit-box` plus `-webkit-line-clamp: 2`,
           and the `block` utility overwrote the display it needs — so the
           declaration resolved, the class name was right, and the element drew
-          **nine lines**. The pinned footer has no ceiling of its own, so it grew
-          from 313 to 432px of an 800px window on a long « besoin » and crushed
-          the eleven-field rail from 434px to 315. Third of the family CLAUDE.md
+          **nine lines**. The footer this row then sat in had no ceiling of its
+          own, so it grew from 313 to 432px of an 800px window on a long
+          « besoin » and crushed the eleven-field rail from 434px to 315. The row
+          is inside the rail's own scroller now, so that growth lands where the
+          arming guard charges a page turn for it. Third of the family CLAUDE.md
           already names — `bg-muted/30`, `ring-card` — and the shape is always
           the same: a class that is spelled correctly and silently inert.
         */}
