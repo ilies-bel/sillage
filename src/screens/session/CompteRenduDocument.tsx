@@ -120,11 +120,55 @@ const GUTTER = 'pl-10'
  * than the notepad coming down, because the reference sets its note body near
  * 17px with a title at roughly twice that
  * (`docs/stories/ref/granola-note.png`) and the gap to close was upward.
+ *
+ * **And for three rounds that paragraph named only the sizes, so the same rung
+ * was set in two typefaces.** The line above gave `font-display` to level 1 and
+ * not to 2 or 3, while `.notepad .ProseMirror h1, h2, h3` takes the display
+ * face from the base layer's tag rule — and the compte-rendu's headings are
+ * `<div>`s, because this is a **typesetter** and not a markdown renderer, so
+ * they inherited the body font instead. Driven on the shipped renderer,
+ * `session-compte-rendu`@1280×800, the one screen that draws both documents at
+ * once:
+ *
+ *     rung   bloc-notes                          compte-rendu
+ *     24px   24/500/Fraunces  ls −0.8  lh 30     24/500/Fraunces  ls −0.8  lh 30
+ *     19px   19/500/Fraunces  ls −0.4  lh 23.75  19/600/Inter     ls none  lh 26.13
+ *     16px   (16/500/Fraunces by the same rule)  16/600/Inter     ls none  lh 22
+ *
+ * « À retenir » and « Résumé », the same rung and the same ink, in two
+ * typefaces, one column apart. That is `4ee37e6`'s eyebrow and round 23's 28px
+ * wordmark for the third round running, one rung lower each time, and each time
+ * the family was decided by the tag rather than written down.
+ *
+ * **Which way it was settled, and it is a product decision and not a tidy-up.**
+ * VISION §6 declares this ladder as « the compte-rendu and the rep's notepad are
+ * one document set two ways », and `tokens.css` records that the *sizes* were
+ * unified by bringing the compte-rendu up to the notepad's. The face follows the
+ * same argument in the same direction: the notepad is the reference document,
+ * all three of its headings are in the display face, and the alternative —
+ * carving `font-family: var(--font-body)` into `.notepad .ProseMirror h2, h3` —
+ * would be a fourth site deciding a family, which is the defect rather than the
+ * fix. Fraunces at 16px is not a new setting in this product; it is what the
+ * rep's own notepad has been drawing all along.
+ *
+ * No weight utility on any of the three: `.font-display` carries
+ * `--display-weight` in the base layer, which is the rule `4ee37e6` shipped so
+ * that writing the face writes the weight. The 0.4px of tracking is the
+ * notepad's own — `index.css` writes it on `h2` and the base layer's `h3` rule
+ * gives the same number to the rung below — and `leading-tight` is its 1.25,
+ * which is what `text-title` was already wearing at level 1 while 2 and 3 wore
+ * `leading-snug`. A rung is a size, a face, a weight, a tracking and a leading,
+ * and holding three of the five equal is how two documents look alike in a
+ * screenshot and different on a screen.
+ *
+ * `--census`' third display-face claim is what refuses the next one: every
+ * heading inside a `[data-document]` is held to the declared display face, at
+ * both smoke sizes, on every stage that draws either document.
  */
 const HEADING_CLASS: Record<1 | 2 | 3, string> = {
   1: 'font-display text-strong mt-block first:mt-0 text-title leading-tight',
-  2: 'text-strong mt-block first:mt-0 text-heading font-semibold leading-snug',
-  3: 'text-strong mt-row first:mt-0 text-subhead font-semibold leading-snug',
+  2: 'font-display text-strong mt-block first:mt-0 text-heading leading-tight tracking-[-0.4px]',
+  3: 'font-display text-strong mt-row first:mt-0 text-subhead leading-tight tracking-[-0.4px]',
 }
 
 /**
@@ -165,7 +209,15 @@ export function CompteRenduDocument({
   }
 
   return (
-    <div className={className ? `${GUTTER} ${className}` : GUTTER}>
+    /*
+      `data-document`: this element declares what it is, and the notepad
+      (`src/editor/Notepad.tsx`) declares the same thing. VISION §6 calls the two
+      « one document set two ways » and gives them one type ladder; `--census`'s
+      third display-face claim holds every heading inside either of them to the
+      display face, and it finds them by this attribute rather than by a
+      selector list in the harness that a rename in this file would turn silent.
+    */
+    <div data-document="compte-rendu" className={className ? `${GUTTER} ${className}` : GUTTER}>
       {lines.map((line, index) => {
         // Index as key: these are lines of one immutable string, they have no
         // identity of their own and the list is replaced wholesale or not at all.

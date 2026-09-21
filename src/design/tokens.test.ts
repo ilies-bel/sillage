@@ -59,11 +59,25 @@ const rendererSources = (): string => {
     .join("\n");
 };
 
-/** `--name: value;` → Map, ignoring comments and `var()` aliases. */
+/**
+ * `--name: value;` → Map.
+ *
+ * **Comments are stripped before the scan, and that is not tidiness.** The
+ * pattern reads to the next `;`, so a docblock in `tokens.css` writing a token
+ * name followed by a colon — `« --radius: 12px was mapped as… »` — matched as a
+ * *declaration* and then swallowed every character up to the next real
+ * semicolon, taking the token declared under it with it. Driven: that one
+ * sentence in the prose above `--radius-sm` made this map answer `undefined` for
+ * `--radius-sm` and `12px` for a token `tokens.css` no longer declares, and
+ * three assertions failed with « --radius-sm is no longer a px value ». A file
+ * whose comments argue about its own token names is exactly the file this reads,
+ * so the parser has to read past them.
+ */
 const declarations = (css: string): Map<string, string> => {
   const found = new Map<string, string>();
-  for (const [, name, value] of css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-    found.set(name, value.trim().replace(/\s*\/\*.*?\*\/\s*$/, "").trim());
+  const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const [, name, value] of source.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+    found.set(name, value.trim());
   }
   return found;
 };
@@ -192,14 +206,17 @@ describe("the rules VISION.md §6 states in prose", () => {
    * entry must carry the reason and the cost, and it must still be *true*: a
    * rung listed here that something has started wearing fails, so the list can
    * only be removed from, never left behind.
+   *
+   * **It is empty now, and that is the point of it.** Its one entry was
+   * `--radius`, whose stated cost was that `shot.mjs --census` read its ladder
+   * from a hand-written list of three names and failed every stage at two. Round
+   * 23 made that pass discover the rungs by prefix, so the cost stopped being
+   * true — and an entry whose reason has expired is exactly what the third
+   * assertion below exists to force out. The rung is deleted from `tokens.css`,
+   * which leaves the first assertion binding with nothing excused: both
+   * remaining rungs are worn by a class `src/` writes.
    */
-  const UNWORN: Record<string, string> = {
-    "--radius":
-      "worn by 0 of the 40 388 rounded corners on the 170 stagings smoke.mjs drives, and " +
-      "it cannot leave tokens.css alone: shot.mjs --census reads the ladder from a " +
-      "hand-written list of three names and fails every stage at two (exit 15). " +
-      "tailwind.config.js has already moved `rounded` off it onto --radius-sm.",
-  };
+  const UNWORN: Record<string, string> = {};
 
   test("every radius rung is worn by a class src/ writes", () => {
     const config = read("../../tailwind.config.js");

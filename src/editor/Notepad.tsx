@@ -270,8 +270,13 @@ export function Notepad({
     // `data-scrolls`: an editor holds more than its box by definition — the rep
     // is typing into it and the caret is what decides what is on screen. It is
     // not the « clipped and looks short » failure `--scrollers` measures.
+    // `data-document`: see `src/screens/session/CompteRenduDocument.tsx`, which
+    // declares the other half. VISION §6 — « the compte-rendu and the rep's
+    // notepad are one document set two ways » — and `--census` holds the
+    // headings inside both to one family by reading this attribute.
     <div
       data-scrolls
+      data-document="bloc-notes"
       className="notepad relative h-full min-h-0 overflow-y-auto text-prose leading-[1.7]"
     >
       {empty && placeholder ? (

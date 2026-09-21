@@ -606,19 +606,15 @@
    */
   --widget-rim: rgb(255 255 255 / 70%);
 
-  /* geometry — radius 10–14px, borders 1px, shadows barely there */
-  --radius-sm: 10px;
   /*
-   * **The middle rung is worn by nothing, and it is still declared because
-   * `shot.mjs --census` fails without it. Both halves are measured.**
+   * geometry — radius 10 and 14, borders 1px, shadows barely there
    *
-   * It was mapped as Tailwind's `rounded` DEFAULT, so it was reachable, spelled
-   * correctly, and `grep -rn -- '--radius)'` found it — the shape this file
-   * already lost `--motion-fast`, `shadow-card`, `animate-fade-in` and
-   * `ring-card` to. A token consumed through a Tailwind class whose name does
-   * not contain the token cannot be counted by reading `src/`, so it was
-   * counted on the running renderer: every corner of every element, all 85
-   * stages at both sizes, 170 stagings.
+   * **The middle rung is gone, and the reason it survived two rounds is worth
+   * keeping.** `--radius` (12px) was mapped as Tailwind's `rounded` DEFAULT, so
+   * it was reachable, spelled correctly, and `grep -rn -- '--radius)'` found it
+   * — the shape this file already lost `--motion-fast`, `shadow-card`,
+   * `animate-fade-in` and `ring-card` to. Counted on the running renderer
+   * instead, every corner of every element over 170 stagings:
    *
    *   10px (`--radius-sm`)    33 524 corners
    *   14px (`--radius-lg`)       528
@@ -626,35 +622,30 @@
    *   9999px (`rounded-full`)  3 264
    *   12px                         **0**
    *
-   * Not nearly none — none. `--census` already says so on every run (« non
-   * porté(s) ici : radius »), and the *reason* is worth more than the count:
-   * bare `rounded` is written on exactly two elements under `src/`, the
-   * provider-field and API-key inputs in `Reglages.tsx`, and **no stage renders
-   * either of them** — a provider row only grows those inputs when it declares
-   * `fields`. The one pair of elements in the product wearing a 12px corner was
-   * also the one pair no screenshot, no `--targets`, no `--contrast` and no
-   * `--geometry` had ever contained, and it wore a corner none of its 61
-   * sibling inputs has.
+   * Not nearly none — none. `f02e994` moved `rounded` off it onto `--radius-sm`
+   * so that the two elements that could reach it — the provider-field and
+   * API-key inputs in `Reglages.tsx`, which no stage renders — draw the corner
+   * their 61 siblings draw. What it could **not** do was delete the line:
+   * `shot.mjs --census` read its ladder from a hand-written
+   * `['--radius-sm', '--radius', '--radius-lg']` and failed every stage with
+   * « 2 échelon(s) lus dans :root au lieu de 3 », exit 15. The instrument that
+   * proved the token dead was the reason it could not be removed, and a later
+   * scorer raised the finding, read that commit and withdrew it.
    *
-   * **What changed is the corner, not the declaration.** `rounded` now means
-   * `--radius-sm`, so those two inputs draw the corner every other input in the
-   * product draws and nothing can reach a rung the ladder does not spend.
-   * Deleting the Tailwind entry instead would have taken their corner away in
-   * silence — `rounded` with no DEFAULT compiles to no rule at all, which is
-   * `bg-muted/30` exactly.
+   * Round 23 made `--census` discover the rungs by prefix and refuse only an
+   * *empty* ladder, which is what released this line. Re-driven before deleting
+   * it rather than read off the new docblock: with `--radius` removed the census
+   * reads a two-rung ladder, no corner lands on the stray list, and every stage
+   * passes. `tokens.test.ts` now holds both remaining rungs to a class `src/`
+   * actually writes, with **no** `UNWORN` entry left to excuse either.
    *
-   * **And the token cannot leave from this file alone.** `shot.mjs --census`
-   * reads the ladder from a hand-written `['--radius-sm', '--radius',
-   * '--radius-lg']` and fails every stage with « 2 échelon(s) lus dans :root au
-   * lieu de 3 » if one of the three is missing — measured, exit 15 on `review`.
-   * Its own docblock says it reads the ladder the way `--motion` reads its curve
-   * set, i.e. by prefix; it does not. Until `--census` discovers the rungs
-   * instead of listing them, removing this line turns twelve gates red, so it
-   * stays and says why. `tokens.test.ts` holds it: the rung must be either worn
-   * by a class `src/` writes or named here with its reason, and a debt entry
-   * that has stopped being true fails too.
+   * What that costs, stated: « at most two card rungs on one screen » cannot
+   * fire against a two-rung ladder. It binds again the moment a third rung is
+   * declared, which is the only way a screen could stand on three — and an
+   * off-ladder corner is still caught by the stray list, which is the direction
+   * a deleted rung actually fails in.
    */
-  --radius: 12px;
+  --radius-sm: 10px;
   --radius-lg: 14px;
   --border-width: 1px;
   /*

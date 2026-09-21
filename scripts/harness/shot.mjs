@@ -21,10 +21,12 @@
  *   --scrollers      content hidden inside a scroller the arming guard cannot see
  *   --motion         every transition through the tokens, and silent under reduced motion
  *   --fade           every fading mask against the line box it fades over
- *   --census         how many rungs of one ladder a screen stands on at once
+ *   --census         how many rungs of one ladder a screen stands on at once,
+ *                    and one family per rung inside the product's documents
  *   --rhythm         every painted gap, padding and margin against the declared scale
  *   --cells          a growing cell short of its text while its fixed siblings hold slack,
- *                    and a closed box keeping room its own capped cell cannot take
+ *                    a closed box keeping room its own capped cell cannot take,
+ *                    and a reading column that pads itself out of its own measure
  *   --sans-entra     stage any screen with **no Entra app registration** — the
  *                    case the first demo ships in (DEC-28). Signed out with
  *                    nothing to sign into, empty agenda, calendar and Outlook
@@ -8485,6 +8487,41 @@ async function main() {
     }
 
     /*
+     * **Printed whether or not it fails, and « 0 document » is a real answer.**
+     *
+     * Most stages draw neither document — the agenda, Réglages, every widget
+     * stage — and their line has to read differently from a stage whose
+     * documents were all checked, for the same reason « 0 marque » does on the
+     * line above. What this cannot say is that a stage which *should* hold a
+     * document does: `data-document` removed in either renderer prints « aucun
+     * document » here and passes. The instrument for that direction is a source
+     * assertion and it exists — `src/screens/session/__tests__/
+     * CompteRenduDocument.test.tsx` and `src/editor/__tests__/notepad.test.tsx`
+     * both fail when the attribute goes.
+     */
+    console.log(
+      `  document: ${counted.documents.length} (${counted.documents.join(', ') || 'aucun'}) · ` +
+        `${counted.docHeadings.reduce((sum, run) => sum + run.n, 0)} titre(s) au-dessus de ` +
+        `${counted.bodyRung}px sur ${counted.docHeadings.length} réglage(s) ` +
+        `(${counted.docHeadings.map((r) => `${r.which} ${r.size}px/${r.weight}/${r.face}×${r.n}`).join(' ') || 'aucun'})`,
+    )
+
+    if (counted.docStray.length > 0) {
+      console.log(
+        `  ✗ document: ${counted.docStray.length} échelon(s) de titre hors de la fonte ` +
+          `d’affichage (${counted.face}) — le compte-rendu et le bloc-notes sont un seul ` +
+          'document composé de deux façons (VISION §6), pas deux',
+      )
+      for (const run of counted.docStray.slice(0, 8)) {
+        console.log(
+          `     ${run.which} — ${run.size}px en ${run.face}/${run.weight}, ` +
+            `${run.n} passage(s), près de « ${run.near} »`,
+        )
+      }
+      process.exitCode = 15
+    }
+
+    /*
      * **The ladder has to exist — and « exist » is not « be three ».**
      *
      * This was `< 3`, which is the same defect as the list it guarded: it froze
@@ -8716,7 +8753,8 @@ async function main() {
     console.log(
       `  cellules: ${starved.flexible} cellule(s) extensible(s) dans ${starved.rows} rangée(s), ` +
         `${starved.starved.length} à l’étroit · ${starved.boxes} boîte(s) fermée(s), ` +
-        `${starved.loose.length} trop large(s)`,
+        `${starved.loose.length} trop large(s) · ${starved.columns} colonne(s) à la mesure, ` +
+        `${starved.padded.length} rembourrée(s)`,
     )
     if (starved.starved.length > 0) {
       console.log(
@@ -8747,6 +8785,20 @@ async function main() {
         )
         console.log(`       ${item.at.slice(0, 64)} « ${item.near} »`)
         console.log(`       cellules : ${item.widths}`)
+      }
+      process.exitCode = 17
+    }
+    if (starved.padded.length > 0) {
+      console.log(
+        `  ✗ cellules: ${starved.padded.length} colonne(s) plafonnée(s) à la mesure se rembourrent ` +
+          'elles-mêmes — le plafond porte sur la boîte, donc la prose en reçoit moins',
+      )
+      for (const item of starved.padded.slice(0, 6)) {
+        console.log(
+          `     mesure ${item.cap}px, contenu ${item.inner}px — ${item.pl}px à gauche et ` +
+            `${item.pr}px à droite (~${item.characters} caractère(s))`,
+        )
+        console.log(`       ${item.at.slice(0, 64)} « ${item.near} »`)
       }
       process.exitCode = 17
     }
@@ -12672,7 +12724,7 @@ async function geometry(page) {
  * **The display face.** The fourth ladder, and the only one of the four whose
  * rule is *global* rather than per-screen: it does not ask what this screen
  * holds, it asks whether every run set in Fraunces matches what `:root`
- * declares. Two claims, and the second is the one the first cannot make.
+ * declares. Three claims, and each is one the ones before it cannot make.
  *
  *   · **One weight for the face.** `--display-weight`. Measured over all 83
  *     stages at both sizes before this existed, Fraunces was painted at
@@ -12693,6 +12745,46 @@ async function geometry(page) {
  *     weights, two colours, and no weight utility written at any of the three
  *     sites. This half has to be global, because the two variants never meet on
  *     one screen: a per-screen rule sees one of them at a time and passes.
+ *
+ *   · **One rung, one family — inside a document.** The two claims above hold
+ *     everything *already* set in Fraunces and say nothing about what is not.
+ *     Measured on `session-compte-rendu`@1280×800, the one screen that draws
+ *     both of this product's documents at once, with both of them green:
+ *
+ *         rung   notepad                            compte-rendu
+ *         24px   24/500/Fraunces  ls -0.8  lh 30    24/500/Fraunces  ls -0.8  lh 30
+ *         19px   19/500/Fraunces  ls -0.4  lh 23.75 19/600/Inter     ls none  lh 26.13
+ *         16px   —                                  16/600/Inter     ls none  lh 22
+ *
+ *     One rung, two typefaces, side by side. `HEADING_CLASS[1]` wrote
+ *     `font-display` and `[2]` and `[3]` did not, while
+ *     `.notepad .ProseMirror h1,h2,h3` gives the face to all three through the
+ *     base layer's tag rule — so the compte-rendu's headings, which are `<div>`s
+ *     because the document is *typeset* and not marked up, fell through to the
+ *     body font. That is `4ee37e6`'s eyebrow and round 23's 28px wordmark for
+ *     the third round running, one rung lower each time.
+ *
+ *     **The rule is scoped to the documents, and the scope was measured rather
+ *     than assumed.** « One size, one family » swept over all 88 stages at both
+ *     sizes reports **109 of 176 stagings** red, on sites that are not defects:
+ *     the calendar's « Septembre 2026 » is `--type-copy` in Fraunces beside 14px
+ *     Inter rows on 36 stagings, the onboarding steps set a 14px Fraunces
+ *     heading over 14px Inter prose on 18, and `agenda-sans-entra` paints one
+ *     12px Fraunces run among 74 Inter ones. The *interface* ladder carries two
+ *     faces at one size on purpose; the *document* ladder is the one VISION §6
+ *     calls « the compte-rendu and the rep's notepad are one document set two
+ *     ways », and that sentence is the rule. So the subject is `[data-document]`
+ *     and a run above `--type-prose`, both read at runtime.
+ *
+ *     **What it stops measuring, stated.** Everything outside a document — the
+ *     109 stagings above are unasked, and that is a decision, not an oversight.
+ *     Inside a document, everything at or below the body rung — which is where
+ *     the gutter's `#`/`##` markers live, `--type-meta` in the mono face, and
+ *     `CompteRenduDocument`'s own docblock argues for that third face because
+ *     they hang in a column of their own. And it asks about the *family* only:
+ *     the weight is the first claim's, and the 0.4px of tracking and the 2.4px
+ *     of leading that separated the two documents at 19px are fixed in the
+ *     product and held by nothing here.
  *
  * **What this half cannot see**: the name is the literal `'Sillage'` here. A
  * rename would leave every stage printing « 0 marque(s) » and passing, which is
@@ -12875,6 +12967,14 @@ async function census(page) {
       '--display-tracking',
       '--wordmark-weight',
       '--wordmark-ink',
+      /*
+       * The document ladder's body rung. It is what separates « a heading in a
+       * document » from « the document's prose » below, so deleting it would
+       * leave every size comparison against `NaN` — false for every run — and
+       * the third claim would print a green line over an unmeasured screen.
+       * Same argument the wordmark's five make, one rung down.
+       */
+      '--type-prose',
     ]
     const missing = DECLARED.filter((name) => root.getPropertyValue(name).trim() === '')
     const probe = document.createElement('span')
@@ -12895,7 +12995,23 @@ async function census(page) {
     }
     probe.style.fontWeight = 'var(--display-weight)'
     const displayWeight = getComputedStyle(probe).fontWeight
+    probe.style.fontSize = 'var(--type-prose)'
+    const bodyRung = round(Number.parseFloat(getComputedStyle(probe).fontSize))
     probe.remove()
+
+    /*
+     * The documents on this screen, and they say so themselves: the notepad
+     * (`src/editor/Notepad.tsx`) and the compte-rendu
+     * (`src/screens/session/CompteRenduDocument.tsx`) each carry
+     * `data-document`. Not a selector list typed here — `.notepad` plus
+     * whatever the compte-rendu's wrapper happens to be spelled today is the
+     * hand-written-ladder shape this function was caught holding for two
+     * rounds, and a wrapper renamed in another lane would turn this claim
+     * silent rather than red.
+     */
+    const documents = [...document.querySelectorAll('[data-document]')]
+    const docHeadings = new Map()
+    const docStray = []
 
     const setting = (style) => ({
       face: style.fontFamily.split(',')[0].replace(/["']/g, '').trim(),
@@ -13049,6 +13165,39 @@ async function census(page) {
           const seen = display.get(key) ?? { size: worn.size, weight: worn.weight, n: 0, near }
           seen.n += 1
           display.set(key, seen)
+        }
+
+        /*
+         * **Claim three: a heading inside a document is set in the display
+         * face.** See the docblock above for the sweep this rule was cut down
+         * from and what that cost.
+         *
+         * « Inside a document » is `data-document`, and « a heading » is a run
+         * above the document ladder's body rung — both read at runtime, neither
+         * typed here. Below the rung is deliberately unasked: the gutter's
+         * `#`/`##` markers are `--type-meta` in the mono face, which
+         * `CompteRenduDocument`'s own docblock argues for at length (« the
+         * block markers can afford a different face because they hang in a
+         * gutter, in a column of their own »), and a rule reaching under the
+         * body rung would be refusing that.
+         */
+        const inside = documents.length > 0 ? el.closest('[data-document]') : null
+        if (inside !== null && worn.size > bodyRung + 0.5) {
+          const which = inside.getAttribute('data-document') || '?'
+          const key = `${which}|${worn.size}|${worn.face}|${worn.weight}`
+          const seen = docHeadings.get(key) ?? {
+            which,
+            size: worn.size,
+            face: worn.face,
+            weight: worn.weight,
+            n: 0,
+            near,
+          }
+          seen.n += 1
+          docHeadings.set(key, seen)
+          // Once per *setting*, not once per run: the finding is « this rung is
+          // in the wrong face », and seven paintings of it are one decision.
+          if (seen.n === 1 && worn.face !== mark.face) docStray.push(seen)
         }
       }
 
@@ -13315,6 +13464,10 @@ async function census(page) {
       glyphs: [...glyphs]
         .sort((a, b) => b[1].n - a[1].n)
         .map(([text, seen]) => ({ text, ...seen })),
+      documents: documents.map((el) => el.getAttribute('data-document') || '?'),
+      bodyRung,
+      docHeadings: [...docHeadings.values()].sort((a, b) => b.size - a.size),
+      docStray,
     }
   })
 }
@@ -14135,6 +14288,58 @@ async function rhythm(page) {
  * question about reading width on three other lanes' screens, recorded in the
  * round report rather than excused here, because `RHYTHM_ALLOWANCES` is right
  * that « nobody has changed it yet » is not a reason.
+ *
+ * ## Claim 3 — a reading column padded by its own box
+ *
+ * Same family, one step out: not a cell inside a row, but the column itself.
+ * `max-width` caps the **border** box, so a column that declares the measure
+ * *and* pads itself hands its prose the measure minus the padding — and then
+ * stands on an axis no other column on the screen stands on. Found on
+ * `Onboarding.tsx`, the first screen a rep ever sees, where the `<header>` was
+ * `max-w-[58ch] px-gutter` while the `<nav>` under it and the `<main>` between
+ * them both wrote the padding outside and `.measure` inside. Measured on the
+ * shipped renderer:
+ *
+ *     1280×800   colonne de lecture 383.88 → 896.13
+ *                <header> 383.88 → 896.13, mais son contenu 415.88 → 864.13
+ *      960×600   colonne 223.88 → 736.13, contenu 255.88 → 704.13
+ *
+ * Exactly `--space-gutter` on both sides, at both sizes, on nine screens — the
+ * logo and *Passer* inset from the title and the button that sit under them.
+ *
+ * **Two conditions, and the second came out of the sweep rather than out of the
+ * defect.** Run over all 88 stages at both sizes with the padding alone as the
+ * rule, it reports two shapes: the header on **18 stagings**, and `historique`
+ * and `historique-demander` on **4**, where four `div.fade-below` columns carry
+ * `pr-1` — 4px of scrollbar gutter — inside boxes of 466px and 330px against a
+ * 512.25px cap. The cap is not what is limiting those boxes, so their padding
+ * comes out of the pane's width and not out of the measure. So the rule is
+ *
+ *     a column is capped at the reading measure, *and* the cap is what its box
+ *     is sitting on, *and* it is not a form field, *and* the padding is worth
+ *     more than one character
+ *
+ * — and the third condition came out of the first full smoke, which is the only
+ * sweep that uses the shipped predicate rather than an approximation of it: 48
+ * stagings over 24 screens, **every one of them a `<textarea class="measure
+ * …">` at `px-2`**, 8px a side and about three characters. `.measure` on a
+ * field caps the text and is right; the 8px is the gap between a field's box
+ * and its text, which every input in this product has.
+ *
+ * **The measure is probed, never typed.** A `.measure` element is built with the
+ * candidate's own font and asked what its cap comes to, because `58ch` is a
+ * different number of pixels at every size it is written at. `58` appearing in
+ * this file would be the hand-written-ladder shape `--census` was caught with
+ * twice.
+ *
+ * **What a probed cap costs, and it was driven rather than assumed.** Comment
+ * `max-width: 58ch` out of `.measure` and this claim answers « 0 colonne(s) à la
+ * mesure, 0 rembourrée(s) » — a green line over a screen it stopped measuring.
+ * The pass that speaks up is `--prose`, in the same run: `onboarding` at
+ * 1280×800 goes « ✗ mesure: 2 surface(s) au-delà de 75 caractères — 169
+ * car./ligne » and « 197 car./ligne ». So the deletion is caught, by the check
+ * whose subject it actually is, and this one's count is printed on every stage
+ * so that a reader can tell « no column here » from « no column anywhere ».
  */
 async function cells(page) {
   return page.evaluate(() => {
@@ -14206,6 +14411,76 @@ async function cells(page) {
     let rows = 0
     let flexible = 0
     let boxes = 0
+
+    // ── claim 3 ──────────────────────────────────────────────────────────────
+    /*
+     * **A reading column padded by its own box.** See the docblock above.
+     *
+     * The measure is not the number `58`: a probe wearing `.measure` is built
+     * with the candidate's own font and asked what its cap comes to, because
+     * `ch` resolves against the element's own size and two columns at two sizes
+     * are two different pixel caps for one declaration. `index.css` says that
+     * in as many words — « a wrapper holding prose at one size is exactly right
+     * and a wrapper holding three sizes is right for its own ».
+     */
+    const capProbe = document.createElement('div')
+    capProbe.className = 'measure'
+    capProbe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden'
+    document.body.append(capProbe)
+    const reading = (el) => {
+      const own = getComputedStyle(el)
+      capProbe.style.font = ''
+      capProbe.style.fontSize = own.fontSize
+      capProbe.style.fontFamily = own.fontFamily
+      const cap = capOf(getComputedStyle(capProbe))
+      return cap
+    }
+    const padded = []
+    let columns = 0
+    for (const el of document.querySelectorAll('body *')) {
+      if (!shown(el)) continue
+      const style = getComputedStyle(el)
+      const cap = capOf(style)
+      if (cap === null) continue
+      const declared = reading(el)
+      if (declared === null || Math.abs(cap - declared) > 0.5) continue
+      columns += 1
+      const box = el.getBoundingClientRect()
+      // Only when the cap is what is limiting the box. A column narrower than
+      // its own cap is being sized by its parent, and its padding is taken out
+      // of the parent's width rather than out of the measure — which is
+      // `historique`'s 4px scrollbar gutter on a 466px column, the one other
+      // shape the sweep found and the one this rule must not claim.
+      if (box.width < cap - 0.5) continue
+      /*
+       * **A field is not a reading column**, and this exemption is the shape of
+       * the data rather than a guess. The full smoke without it reports 48
+       * stagings over 24 screens, and every one of them is a `<textarea
+       * class="measure …">` at `px-2` — 8px a side, about three characters:
+       * the gate's compte-rendu fields, its five read-only ones, and Réglages'
+       * mention sentence. `.measure` on a field caps the *text*, which is right
+       * and is why they wear it; the 8px is the gap between the field's box and
+       * its text, which every input in this product has. The onboarding header,
+       * the site this claim exists for, is a `<header>` at 32px a side.
+       *
+       * What it stops measuring: a field whose inset grew large enough to matter
+       * is unasked here. `--targets` measures the box and `--prose` counts the
+       * characters a line inside it, both on the shipped element.
+       */
+      if (el.matches('textarea, input, select, [contenteditable="true"]')) continue
+      const pl = Number.parseFloat(style.paddingLeft) || 0
+      const pr = Number.parseFloat(style.paddingRight) || 0
+      // The same floor as the two claims above: one character of the column's
+      // own font, never a pixel count chosen after the fact.
+      if (pl + pr <= advance(el)) continue
+      padded.push({
+        at: where(el), near: near(el),
+        cap: round(cap), inner: round(box.width - pl - pr), pl: round(pl), pr: round(pr),
+        characters: Math.round((pl + pr) / advance(el)),
+      })
+    }
+    capProbe.remove()
+
     for (const row of document.querySelectorAll('body *')) {
       const style = getComputedStyle(row)
       if (!style.display.includes('flex') || style.flexDirection.startsWith('column')) continue
@@ -14281,7 +14556,7 @@ async function cells(page) {
         widths: cells.map((c) => `${c.got}${c.grow > 0 ? '↔' : ''}/${c.want}`).join(' '),
       })
     }
-    return { rows, flexible, starved, boxes, loose }
+    return { rows, flexible, starved, boxes, loose, columns, padded }
   })
 }
 

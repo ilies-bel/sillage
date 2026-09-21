@@ -255,6 +255,23 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
         pixels of nothing beside them — a first screen that reads as a pane that
         failed to load. `mx-auto` on the header, the body and the footer alike,
         so the three stay on one axis as the step changes height.
+
+        **And for the header that was a sentence, not a fact.** It carried
+        `max-w-[58ch]` and `px-gutter` on the *same* element, while `<main>` and
+        the `<nav>` below both write the padding outside and put the measure on
+        an inner box. `max-width` caps the border box, so the gutter came out of
+        the measure: driven on the shipped renderer, the `<header>` spanned the
+        reading column exactly — 383.88 → 896.13 at 1280×800, 223.88 → 736.13 at
+        960×600 — and its *children* sat at 415.88 → 864.13 and 255.88 → 704.13.
+        Exactly `--space-gutter` inside the axis, on both sides, at both sizes,
+        on the nine stagings that draw this screen: the wordmark and *Passer*
+        inset from the step title and the *Continuer* directly under them, on the
+        first screen a rep ever sees. The footer was right the whole time and is
+        the shape copied here.
+
+        `--cells`' third claim is what measures it now, and it is measured rather
+        than declared: `.measure`'s own cap is probed at the element's own font,
+        and the padding only counts when the cap is what the box is sitting on.
       */}
       {/*
           `pt-7` was 28px, and the ladder's rungs are 4/6/8/12/16/20/32 — a
@@ -263,25 +280,27 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
           20 at 960×600, where every step of this screen already overflows its
           box, and 32 above the `lg` breakpoint. Net at the tight size, −8.
         */}
-        <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-row pt-block lg:pt-gutter">
-        {/*
-          See `ui/Logo.tsx` — this drew the previous product's mark, invisibly.
-          The mark and the word are one component now (`ui/Wordmark.tsx`): this
-          header's proportion, 32px beside 28px, is the one it keeps, and it is
-          what the app rail draws too. The word used to be set here, on the
-          splash and in the rail in three different ways — measured, two weights
-          and two colours, neither of them written down.
-        */}
-        <Wordmark asHeading className="self-center" />
-        <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
-        {/*
-          The way out, on every step and in the same place. An onboarding whose
-          only exit is the end of it is a modal, and a rep who installed this
-          between two meetings has ninety seconds.
-        */}
-        <Button variant="text" className="shrink-0" onClick={() => void leave()}>
-          Passer
-        </Button>
+      <header className="shrink-0 px-gutter pb-row pt-block lg:pt-gutter">
+        <div className="measure mx-auto flex w-full items-baseline gap-inline">
+          {/*
+            See `ui/Logo.tsx` — this drew the previous product's mark, invisibly.
+            The mark and the word are one component now (`ui/Wordmark.tsx`): this
+            header's proportion, 32px beside 28px, is the one it keeps, and it is
+            what the app rail draws too. The word used to be set here, on the
+            splash and in the rail in three different ways — measured, two weights
+            and two colours, neither of them written down.
+          */}
+          <Wordmark asHeading className="self-center" />
+          <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
+          {/*
+            The way out, on every step and in the same place. An onboarding whose
+            only exit is the end of it is a modal, and a rep who installed this
+            between two meetings has ninety seconds.
+          */}
+          <Button variant="text" className="shrink-0" onClick={() => void leave()}>
+            Passer
+          </Button>
+        </div>
       </header>
 
       {/*
