@@ -197,9 +197,13 @@ export function CalendarGrid({
  */
 const LEGEND: readonly { mark: DayMark; label: string }[] = [
   /*
-    Read as a 2×2: filled in the left column, hollow in the right; blue on the
-    top row, orange on the bottom. That is the code's own two axes, so a rep
-    learns both from one glance instead of reading four entries in a line.
+    **The order is the code's own two axes, read down.** Filled then hollow,
+    twice: square then square, dot then dot. So the pair that shares a shape is
+    also the pair that shares a hue, and the four entries teach « square is the
+    meeting, round is the recorder » and « filled is happening, hollow is
+    offered » in one pass down the list rather than in four separate readings.
+    The column reflowed as a 2×2 and does not any more — see `Legend` — so the
+    pairing has to come from the order.
   */
   { mark: 'captured', label: 'réunion enregistrée' },
   { mark: 'scheduled', label: 'réunion prévue' },
@@ -287,8 +291,15 @@ function Legend() {
 
         All four clear it, by a quarter of a point. That margin is the reason to
         declare rather than the reason not to: nothing was holding it, and the
-        two hollow marks are carried by a 1px border on a 6px dot, which is the
-        thinnest ink this product draws.
+        two hollow marks are carried by a 1px border, which is the thinnest ink
+        this product draws.
+
+        **And clearing the ground was never the question a key answers.** All
+        four of those numbers were green while « réunion enregistrée » and
+        « enregistrement en cours » measured 1.0077:1 against *each other*
+        — the pair a rep actually compares, four lines apart in this very list.
+        `shot.mjs --marks` asks that question now and `MARK_CLASS` carries the
+        answer; the two sizes below exist because of it.
 
         `MARK_NAME` and not `label`, so the name this reports is the one the grid
         reports for the same mark and a census cannot show the same colour under
@@ -297,11 +308,17 @@ function Legend() {
       <ul className="text-muted grid grid-cols-1 gap-y-tight text-label">
         {LEGEND.map(({ mark, label }) => (
           <li key={mark} className="flex items-center gap-tight">
-            <span
-              aria-hidden
-              data-graphic={MARK_NAME[mark]}
-              className={cn('h-1.5 w-1.5 shrink-0 rounded-full', MARK_CLASS[mark])}
-            />
+            {/*
+              **A fixed 8 px box around a mark that is 6 or 8 px wide**, because
+              the marks stopped being one size the day shape became the second
+              channel. Without it the four labels sit on two left edges 2 px
+              apart — G35-12 (« the rail's five rows sit on two left edges ») in
+              a key of four lines, and a key whose entries do not align is
+              harder to read down than the code it teaches.
+            */}
+            <span aria-hidden className="flex h-2 w-2 shrink-0 items-center justify-center">
+              <span data-graphic={MARK_NAME[mark]} className={cn('shrink-0', MARK_CLASS[mark])} />
+            </span>
             {label}
           </li>
         ))}
@@ -337,10 +354,46 @@ const MARK_CLASS: Record<DayMark, string> = {
     called that « réunion prête ». The grid said *ready* about a call in
     progress.
   */
-  recording: 'bg-accent',
-  armed: 'border border-accent',
-  captured: 'bg-brand-500',
-  scheduled: 'border border-brand-500',
+  /*
+    **And round is the recorder, square is the meeting — because fill was the
+    only channel here and hue was doing the rest of the work.**
+
+    Measured with `shot.mjs --marks`, which exists because no pass in the
+    harness had ever compared two marks to *each other*: `--accent`
+    `rgb(215,112,0)` against `--brand-500` `rgb(5,148,218)` is **1.0077:1,
+    ΔL\* 0.226** — a fifth of a just-noticeable lightness difference, on 6 px
+    dots, one above the other in the legend and side by side in the grid. In
+    greyscale, or for a blue-orange deficiency, « réunion enregistrée » and
+    « enregistrement en cours » were **one mark**, and the question the month is
+    read to answer is « is anything recording right now ». `--contrast` was
+    green over it the whole time and correctly so: each mark clears its own
+    ground at 3.24–3.26:1.
+
+    The two colours cannot move. `--accent` is pinned at 3.38:1 on white as a
+    mark and sits 1.76:1 from `--warn`, which was itself moved to hue 42° after
+    three filled shapes collided at 1.48:1; `--brand-500` has 0.005 of margin on
+    `--bg-subtle`. Both are therefore locked into the same lightness band, which
+    is *why* they measure 1.0077:1 — so the second channel has to be shape, and
+    fill-against-hollow was already spent on offered-against-happening.
+
+    So the blue pair takes an 8 px square and the orange pair keeps the 6 px
+    dot: **the round mark is the recorder** — hollow is armed, filled is rolling,
+    and it is the same filled orange circle `Widget.tsx` draws over the client's
+    video, so « en cours » has one glyph on both surfaces — and **the square is
+    the meeting in the book**, hollow when it is only planned, filled once it is
+    recorded. Measured by `--marks` on the shipped screen, the two pairs that
+    were 0.0000 before: « enregistrée » against « en cours » is now **0.5605** of
+    their union, « prévue » against « prête » **1.0000**. The floor is 0.30, and
+    a 6 px square against a 6 px dot (**0.2186**, corners and nothing else)
+    deliberately fails it — which is why the sizes differ as well as the shape.
+
+    The size difference is load-bearing and not decoration: at one size a square
+    and a circle differ only by their corners, which is under the floor.
+  */
+  recording: 'h-1.5 w-1.5 rounded-full bg-accent',
+  armed: 'h-1.5 w-1.5 rounded-full border border-accent',
+  captured: 'h-2 w-2 bg-brand-500',
+  scheduled: 'h-2 w-2 border border-brand-500',
 }
 
 function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: DayCellProps) {
@@ -367,9 +420,11 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
       {/*
         The dot's row is always laid out, whether or not there is a dot in it —
         a grid whose numbers shift by two pixels as meetings arrive is a grid
-        that flickers all morning.
+        that flickers all morning. It is 8px rather than 6 for the same reason:
+        the marks are two sizes now (`MARK_CLASS`), so the row is the taller of
+        them and a day that changes state does not move the number above it.
       */}
-      <span aria-hidden className="flex h-1.5 items-center">
+      <span aria-hidden className="flex h-2 items-center">
         {mark ? (
           /*
             `data-graphic`, because here the dot is the whole signal.
@@ -382,10 +437,7 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
             Undeclared, it was invisible to `--contrast`, which printed
             « 0 graphique(s) » on the one screen the marks are the point of.
           */
-          <span
-            data-graphic={MARK_NAME[mark]}
-            className={cn('h-1.5 w-1.5 rounded-full', MARK_CLASS[mark])}
-          />
+          <span data-graphic={MARK_NAME[mark]} className={MARK_CLASS[mark]} />
         ) : null}
       </span>
     </button>

@@ -179,8 +179,8 @@ block, wrong for the third time in the same direction.
   darkest pixel under the grain, printed 4.458:1 against a 4.5 floor on 138 runs, and bound
   nothing; `--census` read its radius ladder from a hand-written array; `--a11y` computes a
   heading-to-prose ratio and prints it on the *green* line; and every one of the eight
-  visibility predicates across the twelve passes ignored whether an ancestor's overflow had
-  scrolled the element away — on `historique` at 1280×800, 1 621 of 1 750 painted elements
+  visibility predicates across the twelve passes then shipped ignored whether an ancestor's
+  overflow had scrolled the element away — on `historique` at 1280×800, 1 621 of 1 750 painted elements
   are outside their scroller. What decides whether that last one matters is not which helper
   a pass uses but whether its question is **relational**: a pass asking something intrinsic
   about one element is unaffected; a pass asking about the distance between two is corrupted.
@@ -204,19 +204,22 @@ npm run dist              # package (scripts/package-app.mjs), either host
 ```
 npm run dev -- --port 5180 --strictPort        # first, in another shell
 node scripts/harness/shot.mjs review scratch/review.png --scan
-node scripts/harness/smoke.mjs                 # every stage × two sizes, all twelve checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, all thirteen checks
 ```
 
-`--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--scrollers`,
-`--motion`, `--fade`, `--census`, `--rhythm` and `--cells` are the twelve `smoke.mjs`
-passes (`PASSES`, `smoke.mjs:189`); `--scan` is a thirteenth it does not pass. This said
-« six » and named the first list for three rounds, then « nine » for one round after
-`--census` landed, then « ten » for one round after `--rhythm` and `--cells` landed — each
-time omitting exactly the passes added most recently, which are the ones a reviewer is
-likeliest to assume unrun and re-run by hand. **Count them in `smoke.mjs` before repeating
-this sentence**; it has now been wrong three times, in the same direction, about a list it
-sits four lines above, and each time the sentence was written by whoever had just added the
-pass it omitted. Each exists because something shipped past a screenshot. **Both sizes,
+`--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--marks`,
+`--scrollers`, `--motion`, `--fade`, `--census`, `--rhythm` and `--cells` are the thirteen
+`smoke.mjs` passes (`PASSES`, `smoke.mjs:193`); `--scan` is a fourteenth it does not pass.
+This said « six » and named the first list for three rounds, then « nine » for one round
+after `--census` landed, then « ten » for one round after `--rhythm` and `--cells` landed,
+then « twelve » while `--marks` was being added — each time omitting exactly the passes
+added most recently, which are the ones a reviewer is likeliest to assume unrun and re-run
+by hand. **Count them in `smoke.mjs` before repeating this sentence**; it has now been
+wrong three times, in the same direction, about a list it sits four lines above, and each
+time the sentence was written by whoever had just added the pass it omitted. `--marks` is
+the only **relational** one: it compares two marks of a key to each other rather than each
+to its ground, and the other twelve were green over a calendar that said « recorded » and
+« recording now » in two colours 1.0077:1 apart. Each exists because something shipped past a screenshot. **Both sizes,
 always** — 1280×800 and 960×600, the minimum `main.ts` declares. A design pass that only
 reads `src/` has not looked at the product. Stages are held together by the product's own
 French strings, so a copy change breaks one silently.
