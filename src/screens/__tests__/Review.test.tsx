@@ -588,6 +588,47 @@ describe('DEC-21 — the one button says what it is shipping', () => {
 })
 
 describe('DEC-20 / DEC-4 — three intents, one button', () => {
+  /*
+   * **Where the manifest lives, because where it lives decides what the guard
+   * charges for and how much of the rail a rep gets.**
+   *
+   * « Ce qui sera créé » sat in the pinned band under the rail's scroller, and
+   * that band has no ceiling: measured on the shipped renderer at 960×600, the
+   * minimum window `main.ts` declares, it held **313px of a 510px column** and
+   * left the eleven typed fields a **196px window on 1100px** — 17.8%, five page
+   * turns, and `review-garde-mort` needed fourteen presses to arm the gate.
+   * Inside the scroller the same three rows cost 206px of content that the
+   * arming guard measures instead of 206px of furniture that it cannot, and the
+   * rail's window goes to 403px.
+   *
+   * jsdom measures every box as zero, so the arithmetic is the harness's
+   * (`--scrollers`, « aucune bande fixe ne dépasse la colonne qu'elle borde »).
+   * What this asserts is the structural fact that arithmetic rests on, and it is
+   * the half a screenshot cannot state: the three checkboxes are **inside** the
+   * measured column, and *Valider* is **outside** it. Swap either and this goes
+   * red.
+   */
+  test('the manifest is inside the measured rail; the button is not', async () => {
+    bridge.when('review:get', () => openGate())
+
+    const { container } = render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const rail = container.querySelector('[data-rail]')
+    expect(rail).toBeTruthy()
+
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(3)
+    for (const box of boxes) expect(rail!.contains(box)).toBe(true)
+
+    // The legend travels with the rows it heads.
+    expect(rail!.contains(screen.getByText('Ce qui sera créé'))).toBe(true)
+
+    // And the decision does not scroll: it is the pinned sibling, not inside it.
+    const ship = screen.getByRole('button', { name: /^Valider/ })
+    expect(rail!.contains(ship)).toBe(false)
+  })
+
   test('all three are drafted and checked, and Valider ships them together', async () => {
     bridge.when('review:get', () => openGate())
 
