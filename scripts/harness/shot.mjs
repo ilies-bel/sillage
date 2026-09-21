@@ -1457,6 +1457,15 @@ const SCREENS = {
    */
   'agenda-preparer-refus-sortie': {
     scenario: 'agenda',
+    /*
+     * One: the refusal banner itself. This stage was written in the same round
+     * as the rule that requires the declaration, by a lane that could not see
+     * it, and `--motion` refused the stage on the first merged run — which is
+     * the rule doing its job rather than a collision. The banner is the one
+     * thing on this surface that appears without a press, so it is also the one
+     * whose departure a zero must never be able to stand in for.
+     */
+    departs: 1,
     async drive(page) {
       await SCREENS['agenda-preparer-refus'].drive(page)
       const alert = page.locator('[role="alert"]').filter({ hasText: 'en cours d’enregistrement' })
