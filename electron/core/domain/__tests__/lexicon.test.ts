@@ -82,6 +82,59 @@ test('project names come out of an agenda, sentence openings do not', () => {
   assert.ok(!names.includes('Nous'))
 })
 
+test('a French company name survives its own accents', () => {
+  // The lexicon exists to make Whisper produce French proper nouns. Its
+  // extractor could not read one: the character class was `[A-Za-z0-9]`, so
+  // every accented letter ended the word it sat in.
+  //
+  // « Néovia Santé » came back as `Sant`. Not a near miss — a fragment that is
+  // not a word, spending one of twelve budget slots to bias the decoder
+  // toward it, on the term the compte-rendu has to get right to be sendable.
+  assert.deepEqual(projectNamesFrom('Point Néovia Santé — migration DIMOS'), [
+    'Néovia Santé',
+    'DIMOS',
+  ])
+  assert.deepEqual(projectNamesFrom('Kickoff Société Générale / projet Atlas'), [
+    'Société Générale',
+    'Atlas',
+  ])
+})
+
+test('an accented word is never truncated, dropped, or left as its plain tail', () => {
+  // The three shapes the ASCII class failed in, each one measured on HEAD:
+  //   truncation — `Société`  → `Soci`
+  //   drop       — `Écritures` → nothing at all
+  //   plain tail — `Véolia Eau` → `Eau`, a common noun in a bounded budget
+  for (const [subject, expected] of [
+    ['Cadrage Écritures comptables', 'Écritures'],
+    ['Suivi Elior Réseaux', 'Elior Réseaux'],
+    ['Réunion Véolia Eau', 'Véolia Eau'],
+  ] as const) {
+    const names = projectNamesFrom(subject)
+    assert.ok(
+      names.includes(expected),
+      `${subject} → ${JSON.stringify(names)}, expected to contain ${expected}`,
+    )
+    // And nothing that is a prefix of a term is kept beside it: a fragment is
+    // worse than a miss, because the decoder is asked to produce it.
+    for (const name of names)
+      assert.ok(
+        name === expected || !expected.startsWith(name),
+        `${JSON.stringify(name)} is a fragment of ${expected}`,
+      )
+  }
+})
+
+test('a hyphenated proper noun is one term, and a capital mid-word is not a term', () => {
+  // `Île-de-France` used to arrive as `France` — the half with no accent in it.
+  assert.deepEqual(projectNamesFrom('Revue Crédit Agricole Île-de-France'), [
+    'Crédit Agricole Île-de-France',
+  ])
+  // The boundary has to be Unicode-aware too, and a Unicode-aware one must not
+  // become *looser* than `\b` was: `iPhone` is not a proper noun called `Phone`.
+  assert.deepEqual(projectNamesFrom('Point iPhone et Android'), ['Android'])
+})
+
 test('attendee surnames outrank everything the app already knows', () => {
   const terms = meetingTerms(
     context({ subject: 'Kickoff DIMOS', attendees: [attendee('Ahmed ZAIOU'), attendee('Léo Crozat')] }),

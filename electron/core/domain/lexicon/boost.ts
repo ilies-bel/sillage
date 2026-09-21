@@ -145,6 +145,46 @@ export const surnameOf = (displayName: string): string | null => {
 }
 
 /**
+ * One proper-noun word: a capital, then letters, digits and internal hyphens,
+ * ending on a letter or digit so a trailing hyphen is not part of the name.
+ *
+ * **Unicode letters, not `A-Za-z`.** This class was ASCII for the life of the
+ * lexicon, in a product whose entire job is French proper nouns, and an
+ * accented letter therefore *ended* the word it sat in. What each name came
+ * back as, run through the old expression:
+ *
+ *   Néovia Santé      -> Sant            a fragment, boosted as if it were a word
+ *   Société Générale  -> Soci            same
+ *   Crédit Agricole   -> Agricole        the accented half dropped
+ *   Écritures         -> (nothing)       a name that opens with an accent is invisible
+ *   Véolia Eau        -> Eau             the plain tail survives alone
+ *   Île-de-France     -> France          same
+ *
+ * All three shapes cost more than a miss. `Sant` and `Soci` are not words: the
+ * prompt is prepended as preceding context, so the decoder is being *asked* to
+ * produce them, and each one spends one of twelve slots (`DEFAULT_MAX_TERMS`)
+ * on making the transcript worse. `Eau` and `France` spend a slot on a common
+ * noun Whisper already gets right. And this is the calendar path — the one the
+ * design calls free — so it fired on nearly every meeting a French ESN holds.
+ *
+ * The hyphen moves inside the word for the same reason: the run separator only
+ * admits a capital after it, so `Île-de-France` could never be one term while
+ * `-de-` sat between two words of the run.
+ */
+const PROPER_WORD = String.raw`\p{Lu}[\p{L}\p{N}-]{1,}[\p{L}\p{N}]`
+
+/**
+ * A Unicode-aware left boundary. `\b` could not be used once the class was
+ * widened — it is defined over ASCII word characters, so it sees a boundary in
+ * the middle of `Écritures` and none before it — but a replacement must not be
+ * *looser* than `\b` was either, or `iPhone` yields a project called `Phone`.
+ */
+const PROPER_RUN = new RegExp(
+  String.raw`(?<![\p{L}\p{N}])` + PROPER_WORD + `(?: ${PROPER_WORD})*`,
+  'gu',
+)
+
+/**
  * Capitalised multi-word runs and ALL-CAPS acronyms out of the agenda — how a
  * project name is written in a calendar invite.
  *
@@ -154,7 +194,7 @@ export const surnameOf = (displayName: string): string | null => {
  */
 export const projectNamesFrom = (agenda: string): string[] => {
   const found = new Set<string>()
-  for (const match of agenda.matchAll(/\b[A-Z][A-Za-z0-9]{2,}(?:[ -][A-Z][A-Za-z0-9]{2,})*\b/g)) {
+  for (const match of agenda.matchAll(PROPER_RUN)) {
     // A capital at the start or after a full stop is a sentence opening rather
     // than a name — but only its *first word* is. "Migration DIMOS" matches as
     // one run, and discarding the run would throw away the one word in it worth

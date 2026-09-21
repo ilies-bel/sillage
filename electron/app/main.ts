@@ -1498,6 +1498,49 @@ const boot = async (): Promise<void> => {
     updateLoop = setInterval(() => void updateTick(), UPDATE_CHECK_INTERVAL_MS)
   }
 
+  /**
+   * The meeting's context, with the synthesised one for a meeting that has no
+   * calendar entry — **one function, because three callers disagreed.**
+   *
+   * `meeting:create` stores `context: null` (`ipc/register.ts`), so
+   * `projections.context()` answers null for every meeting the rep starts by
+   * hand — « Démarrer une réunion », a meeting placed on the app's own calendar
+   * (DEC-31), and on an install with no Microsoft account every meeting there
+   * is, which the product supports the whole way down (`repEmail` is nullable)
+   * and the first demo runs on. **Not** a detected call: `Agenda` creates that
+   * one with `adHocContext`, so it has had a context all along.
+   *
+   * The extraction path already handled the null by falling back to
+   * `manualContext`. The lexicon's two sites did not: they passed the
+   * raw null into `buildBoostSet` and `termsLearnedFrom`, both of which return
+   * an empty list for a null context, by design. Measured, same title and same
+   * client on both:
+   *
+   *   calendar meeting   boost 4 terms   learned 4 terms
+   *   manual meeting     boost 0 terms   learned 0 terms
+   *
+   * The second number is the one that compounds. `termsLearnedFrom` is the only
+   * writer the lexicon has, so a null context there does not cost one meeting's
+   * boost — it means nothing is ever written, `forClient` returns an empty list
+   * for ever, and DEC-17's « the second meeting with this client starts already
+   * boosted » cannot happen on that install no matter how many meetings run.
+   *
+   * What the rep typed is a real source: `NewMeeting.tsx` opens focused on a
+   * title field and they write « Point Néovia Santé » in it. `manualContext`
+   * puts that in `subject`, which is where `meetingTerms` already looks for the
+   * company. The immediate « Démarrer une réunion » path sends `title: ''` and
+   * so still yields nothing — an empty title is an empty context, which is the
+   * honest answer, not a gap.
+   */
+  function contextFor(meetingId: string, meeting: Meeting): MeetingContext
+  function contextFor(meetingId: string, meeting?: Meeting | null): MeetingContext | null
+  function contextFor(meetingId: string, meeting?: Meeting | null): MeetingContext | null {
+    const context = store.projections.context(meetingId)
+    if (context) return context
+    const known = meeting ?? store.projections.getMeeting(meetingId)
+    return known ? manualContext(known) : null
+  }
+
   // Built before the orchestrator so `onEnded` can close over it. `identity` is
   // assigned further down and read lazily, which is why `repEmail` is a
   // function: a rep can sign in after the app has booted.
@@ -1680,10 +1723,10 @@ const boot = async (): Promise<void> => {
 
       await enhancement.run({
         session,
-        // A manually started meeting has no calendar entry, so the context is
-        // synthesised from what the rep typed. `eventId: null` is the whole
-        // point of DEC-15's nullable id — everything downstream accepts it.
-        context: store.projections.context(meetingId) ?? manualContext(meeting),
+        // Synthesised when there is no calendar entry — see `contextFor`.
+        // `eventId: null` is the whole point of DEC-15's nullable id:
+        // everything downstream accepts it.
+        context: contextFor(meetingId, meeting),
         // Read here rather than held anywhere, and read on every run: this path
         // serves the end of the meeting *and* a regeneration the rep asked for
         // after switching the picker, and only the second one has a different
@@ -1704,10 +1747,7 @@ const boot = async (): Promise<void> => {
        * start already boosted.
        */
       const after = store.projections.getMeeting(meetingId)
-      const learned = termsLearnedFrom(
-        store.projections.context(meetingId),
-        after?.clientName ?? null,
-      )
+      const learned = termsLearnedFrom(contextFor(meetingId, after), after?.clientName ?? null)
       if (learned.length > 0) {
         store.lexicon.addAll(learned)
         diagnostics.record({
@@ -2201,7 +2241,7 @@ const boot = async (): Promise<void> => {
     if (!credential) return null
 
     const meeting = store.projections.getMeeting(meetingId)
-    const context = store.projections.context(meetingId)
+    const context = contextFor(meetingId, meeting)
     const boost = buildBoostSet(context, {
       capability: sttDescriptorFor(providerId)?.boost ?? 'none',
       stored: store.lexicon.forClient(meeting?.clientName ?? null),
