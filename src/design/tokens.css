@@ -852,8 +852,25 @@
    * the curve *did*. Every other `--ease*` in this file is held to the opposite
    * assertion, so « nothing bounces » is still enforced everywhere §6 means it.
    *
-   * Drawn by `.widget-arrive` and `.widget-panel-arrive` in `index.css`, and by
-   * nothing else — grep it before adding a third.
+   * Drawn by **three** rules in `index.css`, and by nothing else —
+   * `.widget-arrived`, `.widget-panel-arrive` and `.widget-card-arrive`, at lines
+   * 639, 643 and 731. This said « `.widget-arrive` and `.widget-panel-arrive` …
+   * grep it before adding a third » and the third had already landed with the
+   * card's own arrival; the first name was the `@keyframes`, not the class that
+   * runs it. Counted, not remembered — that instruction asked the reader to do
+   * the one thing the sentence above it had not.
+   *
+   * **The bundled detector calls this « bounce-easing » on every stage, and the
+   * answer is « keep it ».** `shot.mjs --scan` reports
+   * `⚠ bounce-easing ×1 — cubic-bezier(0.22, 1.5, 0.36, 1)` at page level — on
+   * `body`, with `isPageLevel: true`, so it is the *declaration* it has found and
+   * not a use: the same warning appears on `splash`, where nothing draws with it.
+   * Its advice is « use exponential easing instead », which is exactly what
+   * `--ease-out` is and what every other motion in this product already uses. The
+   * carve-out is one decision (DEC-50), three rules, one surface, and a peak of
+   * 1.0800 — 1.54px on the pill — pinned by shape in `tokens.test.ts` and bounded
+   * under 1.15 there. Suppressing the warning would cost the detector's ability
+   * to catch a *second* overshoot, which is the thing actually worth catching.
    */
   --ease-overshoot: cubic-bezier(0.22, 1.5, 0.36, 1);
 
