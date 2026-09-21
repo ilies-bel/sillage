@@ -40,6 +40,7 @@ import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { formatElapsed } from '../app/format.ts'
 import { Notepad } from '../editor/Notepad.tsx'
 import { EditorErrorBoundary } from '../editor/editor-error-boundary'
+import { ArmedBrief } from './session/ArmedBrief.tsx'
 import { CompteRenduPane } from './session/CompteRenduPane.tsx'
 import { EnhancementNotice } from './session/EnhancementNotice.tsx'
 import { OutcomeNotice } from './session/OutcomeNotice.tsx'
@@ -477,6 +478,18 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         broadcast that re-rendered `Session` would reconcile the notepad's
         subtree along with it.
       */}
+      {/*
+        And before it has started, what it *is* — the hour, the far side, and
+        that nothing is being recorded yet. First in the stack because the three
+        below it answer for a meeting that has already run: no two of the four
+        are ever drawn together.
+      */}
+      <ArmedBrief
+        state={current}
+        eventId={initial.meeting.eventId}
+        scheduledStart={initial.meeting.scheduledStart}
+      />
+
       <EnhancementNotice meetingId={meetingId} {...(onReglages ? { onReglages } : {})} />
 
       {/*
