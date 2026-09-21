@@ -47,7 +47,14 @@ import type {
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
-import { Button, Logo, ReadingColumn, StateDot, unavailable, type StateDotProps } from '../ui/index.ts'
+import {
+  Button,
+  ReadingColumn,
+  StateDot,
+  Wordmark,
+  unavailable,
+  type StateDotProps,
+} from '../ui/index.ts'
 import { SECTION_FOR_CONNECTOR, type SectionId } from './Reglages.tsx'
 
 export interface OnboardingProps {
@@ -257,9 +264,15 @@ export function Onboarding({ onDone, onReglages, initialStep = 'quoi' }: Onboard
           box, and 32 above the `lg` breakpoint. Net at the tight size, −8.
         */}
         <header className="mx-auto flex w-full max-w-[58ch] shrink-0 items-baseline gap-inline px-gutter pb-row pt-block lg:pt-gutter">
-        {/* See `ui/Logo.tsx` — this drew the previous product's mark, invisibly. */}
-        <Logo className="h-8 w-8 self-center" />
-        <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
+        {/*
+          See `ui/Logo.tsx` — this drew the previous product's mark, invisibly.
+          The mark and the word are one component now (`ui/Wordmark.tsx`): this
+          header's proportion, 32px beside 28px, is the one it keeps, and it is
+          what the app rail draws too. The word used to be set here, on the
+          splash and in the rail in three different ways — measured, two weights
+          and two colours, neither of them written down.
+        */}
+        <Wordmark asHeading className="self-center" />
         <p className="text-muted min-w-0 flex-1 text-ui">Première utilisation</p>
         {/*
           The way out, on every step and in the same place. An onboarding whose
@@ -464,7 +477,7 @@ function Quoi() {
 function Promise({ title, children }: { title: string; children: string }) {
   return (
     <li>
-      <h3 className="text-strong mb-tight text-copy font-semibold">{title}</h3>
+      <h3 className="text-strong mb-tight text-copy">{title}</h3>
       {/* `.measure` on the paragraph and not inherited: `ch` resolves against
           the element's own size, so the step's own measure is a wider one once
           the text inside is `--type-ui`. The class goes on the prose that wears
@@ -598,7 +611,7 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
           return (
             <li key={id} className="py-row">
               <div className="flex items-baseline gap-inline">
-                <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
+                <h3 className="text-strong min-w-0 flex-1 text-copy">
                   {NEEDS[id].title}
                 </h3>
                 {/*
@@ -834,7 +847,7 @@ function Beat({ n, title, says }: { n: string; title: string; says: readonly str
     <li className="flex gap-inline">
       <span className="text-brand-700 w-4 shrink-0 tabular-nums text-copy font-semibold">{n}</span>
       <div className="min-w-0 space-y-hair">
-        <h3 className="text-strong text-copy font-semibold">{title}</h3>
+        <h3 className="text-strong text-copy">{title}</h3>
         {says.map((line) => (
           <p key={line} className="text-muted measure text-ui leading-relaxed">
             {line}

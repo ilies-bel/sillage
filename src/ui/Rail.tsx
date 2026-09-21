@@ -31,6 +31,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 import { SectionNav, type SectionNavItem } from './SectionNav.tsx'
+import { Wordmark } from './Wordmark.tsx'
 
 /** Where the rep is. `À valider` is a query, not a screen — see `RailProps`. */
 export type RailPlace = 'aujourdhui' | 'a-valider' | 'historique'
@@ -132,11 +133,21 @@ export function Rail({
     <div className="bg-subtle flex w-44 shrink-0 flex-col py-row lg:w-56">
       {/*
         The product's name, once, at the top of the one surface that is on every
-        screen. It is not a heading: the page's `h1` says what changed (US-22),
-        and a wordmark that claimed to be the heading would take that from it on
-        all three screens at once.
+        screen — **and the mark beside it, which this rail did not have.**
+
+        It is not a heading: the page's `h1` says what changed (US-22), and a
+        wordmark that claimed to be the heading would take that from it on all
+        three screens at once. That was written here, and it was also the whole
+        reason the word rendered at a different weight from every other place
+        the product names itself — `<p>` inherits 400, `<h1>` takes
+        `--display-weight`, and the class string was identical. Measured on
+        `agenda`@1280×800: 28px/400/rgb(20, 32, 42) here against
+        28px/500/rgb(2, 51, 75) on the splash, with « Jeudi 17 septembre » on
+        the same 28px rung 256px to the right. `ui/Wordmark.tsx` owns all of it
+        now: it renders a `<p>` unless a caller asks for `asHeading`, so the
+        sentence above stays true here while the type no longer depends on it.
       */}
-      <p className="font-display text-strong mb-block px-row text-display leading-none">Sillage</p>
+      <Wordmark className="mb-block px-row" />
 
       <SectionNav
         label="Navigation principale"

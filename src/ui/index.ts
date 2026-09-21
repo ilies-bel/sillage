@@ -38,6 +38,7 @@ export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmente
 export { EmptyState, Centered, type EmptyStateProps } from './EmptyState.tsx'
 export { PageTurn } from './PageTurn.tsx'
 export { Logo, type LogoProps } from './Logo.tsx'
+export { Wordmark, type WordmarkProps } from './Wordmark.tsx'
 export { ReadingColumn, type ReadingColumnProps } from './ReadingColumn.tsx'
 export {
   readingTurnLabels,

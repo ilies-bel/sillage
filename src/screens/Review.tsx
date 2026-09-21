@@ -1967,7 +1967,11 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
 
           +5px of header at the 960x600 minimum, 49 to 54.
         */}
-        <h1 className="text-strong min-w-0 flex-1 truncate text-heading font-semibold">
+        {/* No `font-semibold`: `h1` is already the display face, and that face
+            carries one weight, `--display-weight`. It was painted at 600 here
+            and at 500 on the session screen's own `h1` — same face, same role,
+            two weights, neither screen naming a reason. */}
+        <h1 className="text-strong min-w-0 flex-1 truncate text-heading">
           {panel.meeting.title}
           {edits.accountName && !panel.meeting.title.includes(edits.accountName)
             ? ` · ${edits.accountName}`

@@ -51,7 +51,9 @@ export function CalendarConnect({
           <CalendarDays size={18} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-strong text-ui font-semibold">Agenda Outlook</h3>
+          {/* See `--display-weight`: an `h3` is already in the display face and
+              that face has one weight. */}
+          <h3 className="text-strong text-ui">Agenda Outlook</h3>
           <p className="text-muted mt-hair text-meta leading-relaxed">
             {auth.reason ??
               'Non connecté. Vos réunions, leurs participants et l’objet de l’invitation apparaîtront ici.'}

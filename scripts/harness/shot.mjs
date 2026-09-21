@@ -8139,6 +8139,55 @@ async function main() {
     )
 
     /*
+     * **The display face, printed whether or not it fails**, for the reason the
+     * line above is printed: a stage that draws no Fraunces at all must not read
+     * like a stage on which every run of it was checked. The wordmark's count is
+     * in it because « 0 marque » on `agenda` would be a defect and « 0 » on the
+     * widget is correct.
+     */
+    console.log(
+      `  fonte d’affichage: ${counted.display.reduce((sum, run) => sum + run.n, 0)} passage(s) ` +
+        `en ${counted.face} sur ${counted.display.length} réglage(s) ` +
+        `(${counted.display.map((run) => `${run.size}px/${run.weight}×${run.n}`).join(' ') || 'aucun'}) ` +
+        `· graisse déclarée ${counted.declared.displayWeight} · ${counted.marks} marque(s) ` +
+        `« Sillage » à ${counted.declared.size}px/${counted.declared.weight}/${counted.declared.ink}`,
+    )
+
+    /*
+     * The scale has to exist, exactly as the radius ladder's guard argues: a
+     * wordmark rule whose declaration has been deleted would pass every stage
+     * while measuring nothing.
+     */
+    if (counted.missing.length > 0) {
+      console.log(
+        `  ✗ fonte d’affichage: ${counted.missing.join(', ')} — non déclaré(s) dans :root, ` +
+          'la marque n’a rien à quoi être comparée',
+      )
+      process.exitCode = 15
+    }
+
+    if (counted.heavy.length > 0) {
+      console.log(
+        `  ✗ fonte d’affichage: ${counted.heavy.length} réglage(s) hors de la graisse déclarée ` +
+          `(${counted.declared.displayWeight}) — la graisse appartient à l’échelon, pas à la balise`,
+      )
+      for (const run of counted.heavy.slice(0, 8)) {
+        console.log(`     ${run.size}px en ${run.weight} — ${run.n} passage(s), près de « ${run.near} »`)
+      }
+      process.exitCode = 15
+    }
+
+    if (counted.strayMark.length > 0) {
+      console.log(
+        `  ✗ fonte d’affichage: ${counted.strayMark.length} « Sillage » hors de la marque déclarée`,
+      )
+      for (const item of counted.strayMark.slice(0, 8)) {
+        console.log(`     <${item.tag}> à (${item.at}) — ${item.off.join(', ')}`)
+      }
+      process.exitCode = 15
+    }
+
+    /*
      * **The ladder has to exist — and « exist » is not « be three ».**
      *
      * This was `< 3`, which is the same defect as the list it guarded: it froze
@@ -11805,6 +11854,85 @@ async function geometry(page) {
  *
  * **Icon stroke.** Moved here from `--geometry`, unchanged, because it is the
  * same question and there should be one place that asks it.
+ *
+ * **The display face.** The fourth ladder, and the only one of the four whose
+ * rule is *global* rather than per-screen: it does not ask what this screen
+ * holds, it asks whether every run set in Fraunces matches what `:root`
+ * declares. Two claims, and the second is the one the first cannot make.
+ *
+ *   · **One weight for the face.** `--display-weight`. Measured over all 83
+ *     stages at both sizes before this existed, Fraunces was painted at
+ *     **three** weights — 400 on 118 runs, 500 on 180, 600 on 114 — and which
+ *     one a heading got depended on whether its author reached for a `<p>`, a
+ *     `<span>` or an `<h1>`: the base layer gives `h1,h2,h3` 500, a `<p
+ *     class="font-display">` inherits the body's 400, and `font-semibold`
+ *     beside a heading tag makes 600. `fonts.css` said « Used at weight 500 »
+ *     the whole time. Grouped by size, that split **28px (400/500), 24px
+ *     (400/500) and 14px (500/600) on 64 of 170 stagings**.
+ *
+ *   · **One wordmark.** Every element whose entire own text is the product's
+ *     name is held to four settings read back off `:root` — `--type-display`,
+ *     `--wordmark-weight`, `--display-tracking`, `--wordmark-ink` — and to the
+ *     display face. Before: `ui/Rail.tsx` drew it on a `<p>` at
+ *     28px / 400 / rgb(20, 32, 42), 54 paintings; the splash and first run drew
+ *     it on an `<h1>` at 28px / 500 / rgb(2, 51, 75), 22. One word, two
+ *     weights, two colours, and no weight utility written at any of the three
+ *     sites. This half has to be global, because the two variants never meet on
+ *     one screen: a per-screen rule sees one of them at a time and passes.
+ *
+ * **What this half cannot see**: the name is the literal `'Sillage'` here. A
+ * rename would leave every stage printing « 0 marque(s) » and passing, which is
+ * the same silence `--echo`'s declared-stage guard exists to break — except
+ * that 0 is *correct* on the fourteen widget stagings, so there is no per-stage
+ * count to assert against. Stated rather than guarded: the source-level half of
+ * that question belongs in `scripts/check-*`, not in a pass that sees one
+ * screen.
+ *
+ * The tokens are resolved through a probe element rather than read as strings,
+ * because `getPropertyValue` on `:root` returns a custom property's *specified*
+ * value — `--wordmark-ink: var(--brand-900)` reads back as the literal text
+ * `var(--brand-900)` and would never compare equal to a painted `rgb(2, 51,
+ * 75)`. The probe is what the cascade would do.
+ *
+ * And a missing declaration is a failure, on the radius ladder's argument: a
+ * check whose scale has been deleted is measuring nothing while printing green.
+ * Deleting `--wordmark-weight` turns every stage red rather than silently
+ * exempting the wordmark from its own rule.
+ *
+ * **What it does not ask**, since a blind spot stated is a blind spot the next
+ * round does not rediscover: it says nothing about which *size* a given heading
+ * picks. The review gate's `h1` is 19px while the compte-rendu's own H1 inside
+ * it is 24px, and both are at the declared weight, so this pass is silent over
+ * that inversion.
+ *
+ * Which rung a thing stands on is `--a11y`'s question, and this lane was
+ * briefed that `--a11y` « prints its heading-to-prose ratio on its own green
+ * line and binds nothing ». **That is false, and it was checked before it was
+ * acted on.** The pass pushes a problem at `px <= body` and its own docblock
+ * argues that threshold — « strictly greater, not 1.25 … a check people work
+ * around is worse than none ». Driven rather than read: setting `--type-title`
+ * to 12px turns `agenda` red at once, « ✗ titre de page à 12px sous une prose à
+ * 14px (0.86x) — Jeudi 17 septembre », exit **7**.
+ *
+ * What it does *not* do is refuse a step that is merely small, and the round
+ * that added this ladder swept the ratio over all 170 stagings before agreeing
+ * with that:
+ *
+ *     1.27×  19/15  37 stagings  the review gate
+ *     1.33×  16/12  14           the widget
+ *     1.58×  19/12   6      1.6×  24/15  18      1.71×  24/14  17
+ *     2×     24/12  23      2.18× 24/11  15      2.33×  28/12  20   2.55× 28/11 2
+ *
+ * A floor raised to the published 1.25 guideline refuses nothing that ships;
+ * the next value up, 1.5, turns **51 stagings** red at once — the whole review
+ * gate and the whole widget, two other lanes' surfaces, and DEC-49 makes the
+ * widget's compactness deliberate. So the threshold stays where its own
+ * docblock put it, and the distribution is written down here so the next lane
+ * to consider moving it does not have to sweep for it again. Measured after
+ * this round moved the page titles from 28px to 24px: `agenda` reads « titre
+ * 24px sur prose 14px (1.71×) » and `historique` « 24px sur prose 12px (2×) »,
+ * both far above the `px <= body` case that pass refuses, and the sweep above
+ * is the post-move one.
  */
 async function census(page) {
   return page.evaluate(() => {
@@ -11871,6 +11999,53 @@ async function census(page) {
 
     const shapes = new Map()
     const heights = new Map()
+
+    /*
+     * **The display face's declaration, resolved the way the cascade resolves
+     * it.** `--wordmark-ink` is `var(--brand-900)`, and a custom property reads
+     * back off `:root` as its *specified* text, so a string comparison would be
+     * against « var(--brand-900) » and could never match a painted colour.
+     */
+    const PRODUCT = 'Sillage'
+    const DECLARED = [
+      '--font-display',
+      '--type-display',
+      '--display-weight',
+      '--display-tracking',
+      '--wordmark-weight',
+      '--wordmark-ink',
+    ]
+    const missing = DECLARED.filter((name) => root.getPropertyValue(name).trim() === '')
+    const probe = document.createElement('span')
+    probe.textContent = PRODUCT
+    probe.style.cssText =
+      'position:absolute;left:-9999px;top:0;font-family:var(--font-display);' +
+      'font-size:var(--type-display);font-weight:var(--wordmark-weight);' +
+      'letter-spacing:var(--display-tracking);color:var(--wordmark-ink)'
+    document.body.append(probe)
+    const probed = getComputedStyle(probe)
+    const face = probed.fontFamily.split(',')[0].replace(/["']/g, '').trim()
+    const mark = {
+      face,
+      size: round(Number.parseFloat(probed.fontSize)),
+      weight: probed.fontWeight,
+      tracking: probed.letterSpacing,
+      ink: probed.color,
+    }
+    probe.style.fontWeight = 'var(--display-weight)'
+    const displayWeight = getComputedStyle(probe).fontWeight
+    probe.remove()
+
+    const setting = (style) => ({
+      face: style.fontFamily.split(',')[0].replace(/["']/g, '').trim(),
+      size: round(Number.parseFloat(style.fontSize)),
+      weight: style.fontWeight,
+      tracking: style.letterSpacing,
+      ink: style.color,
+    })
+    const display = new Map()
+    const strayMark = []
+    let marks = 0
     const CONTROLS =
       'button, a[href], input:not([type="hidden"]), select, [role="button"], [role="tab"], [role="switch"], [role="checkbox"]'
 
@@ -11918,6 +12093,34 @@ async function census(page) {
           stadiums.set(String(radius), seen)
         } else {
           stray.push({ value, near, size: `${Math.round(box.width)}×${Math.round(box.height)}` })
+        }
+      }
+
+      /*
+       * The element's **own** text, not its subtree's: a wrapper inherits the
+       * face and would otherwise be counted as a run of its child's type.
+       */
+      let own = ''
+      for (const child of el.childNodes) if (child.nodeType === 3) own += child.textContent ?? ''
+      own = own.trim()
+      if (own !== '') {
+        const worn = setting(getComputedStyle(el))
+        if (own === PRODUCT) {
+          marks += 1
+          const off = []
+          if (worn.face !== mark.face) off.push(`${worn.face} au lieu de ${mark.face}`)
+          if (Math.abs(worn.size - mark.size) > 0.51) off.push(`${worn.size}px au lieu de ${mark.size}px`)
+          if (worn.weight !== mark.weight) off.push(`graisse ${worn.weight} au lieu de ${mark.weight}`)
+          if (worn.tracking !== mark.tracking)
+            off.push(`approche ${worn.tracking} au lieu de ${mark.tracking}`)
+          if (worn.ink !== mark.ink) off.push(`${worn.ink} au lieu de ${mark.ink}`)
+          if (off.length > 0)
+            strayMark.push({ tag: el.tagName.toLowerCase(), off, at: `${Math.round(box.left)},${Math.round(box.top)}` })
+        } else if (worn.face === mark.face) {
+          const key = `${worn.size}|${worn.weight}`
+          const seen = display.get(key) ?? { size: worn.size, weight: worn.weight, n: 0, near }
+          seen.n += 1
+          display.set(key, seen)
         }
       }
 
@@ -11994,7 +12197,16 @@ async function census(page) {
       weights.set(key, seen)
     }
 
+    const heavy = [...display.values()].filter((run) => run.weight !== displayWeight)
+
     return {
+      face: mark.face,
+      declared: { ...mark, displayWeight },
+      missing,
+      marks,
+      strayMark,
+      display: [...display.values()].sort((a, b) => b.size - a.size || Number(a.weight) - Number(b.weight)),
+      heavy,
       ladder: rungs,
       rounded,
       worn: [...worn].map(([name, seen]) => ({ name, value: seen.value, n: seen.n, near: seen.near })),

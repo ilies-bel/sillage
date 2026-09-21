@@ -252,13 +252,18 @@ export function Historique({
             holds — was nowhere at all.
 
             A non-breaking space while the first answer is in flight, and never a
-            word: the h1 is 28 px with `leading-none`, an *empty* one generates no
+            word: the h1 is 24 px with `leading-none`, an *empty* one generates no
             line box at all and an ordinary space collapses to nothing, so the search
             field under it would jump by the height of a title when the count lands,
             200 ms of debounce later. « Chargement… » is already said once, inside
             the list, and saying a thing twice is the defect this round is about.
           */}
-          <h1 className="font-display text-strong flex-1 text-display leading-none">
+          {/*
+            `text-title`: 28px was the wordmark's rung and this one at once, and
+            only the tag separated them — the rail's « Sillage » is a `<p>` at
+            400 and this is an `<h1>` at 500, from the same class string.
+          */}
+          <h1 className="font-display text-strong flex-1 text-title leading-none">
             {search.result ? listTitle(search.result, search.capped) : '\u00A0'}
           </h1>
         </div>
