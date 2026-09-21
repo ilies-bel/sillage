@@ -2567,7 +2567,13 @@ const SCREENS = {
       await page.reload({ waitUntil: 'domcontentloaded' })
       await SCREENS.review.drive(page)
       await page.waitForTimeout(900)
-      const sources = page.locator('button').filter({ hasText: 'source ▸' })
+      /*
+       * `/^source$/` and no longer `'source ▸'`: the row's mark is a drawn
+       * chevron now — Inter carries neither U+25B8 nor U+25BE, so it used to be
+       * the operating system's glyph — and the anchor is exact because « Voir
+       * la source dans la transcription » is a button on the same screen.
+       */
+      const sources = page.locator('button').filter({ hasText: /^source$/ })
       if ((await sources.count()) < 2) throw new Error('aucune citation à suivre dans le rail')
       await sources.nth(1).click()
       await page.waitForTimeout(600)
@@ -2612,7 +2618,13 @@ const SCREENS = {
       await page.waitForTimeout(900)
 
       // The DEC-21 route into the tab, on a gate nothing has been read on yet.
-      const sources = page.locator('button').filter({ hasText: 'source ▸' })
+      /*
+       * `/^source$/` and no longer `'source ▸'`: the row's mark is a drawn
+       * chevron now — Inter carries neither U+25B8 nor U+25BE, so it used to be
+       * the operating system's glyph — and the anchor is exact because « Voir
+       * la source dans la transcription » is a button on the same screen.
+       */
+      const sources = page.locator('button').filter({ hasText: /^source$/ })
       if ((await sources.count()) < 3) throw new Error('aucune citation à suivre dans le rail')
       // The third, like `review-garde-citation`: the two deterministic rows carry no span
       // (DEC-7) and their panel offers no jump, so a lower index opens a dead end.
@@ -8135,7 +8147,14 @@ async function main() {
         (counted.controls.length > 0
           ? ` (${counted.controls.map((c) => `${c.h}×${c.n}`).join(' ')})`
           : '') +
-        ` · ${icons(counted.strokes)}`,
+        /*
+         * The two exemptions are printed with the count they spared, every run,
+         * pass or fail. An exemption nobody can see is the round-22 shape: a
+         * check that got narrower and kept printing the wider sentence.
+         */
+        (counted.onALine > 0 ? `, ${counted.onALine} dictée(s) par la ligne de texte` : '') +
+        (counted.midFlight > 0 ? `, ${counted.midFlight} en cours d'animation` : '') +
+        ` · ${icons(counted.strokes, counted.filled, counted.glyphs)}`,
     )
 
     /*
@@ -8237,6 +8256,49 @@ async function main() {
       console.log(`  ✗ recensement: ${counted.strokes.length} épaisseurs de trait d'icône sur un même écran`)
       for (const item of counted.strokes) {
         console.log(`     stroke-width ${item.width} — ${item.count} icône(s), près de « ${item.near} »`)
+      }
+      process.exitCode = 15
+    }
+
+    /*
+     * **The cluster, and it is the count that is not the rule.** Three heights
+     * on a screen may be a hierarchy; two heights 0.46px apart are one decision
+     * taken twice by two different files. See `census`' own paragraph for where
+     * the one-pixel line comes from — it is the empty band in the measured
+     * distribution, not a tolerance somebody liked.
+     */
+    if (counted.clustered.length > 0) {
+      console.log(
+        `  ✗ recensement: ${counted.clustered.length} paire(s) de hauteurs de contrôle ` +
+          'à moins d’un pixel l’une de l’autre — un écart que personne n’a décidé',
+      )
+      for (const pair of counted.clustered) {
+        console.log(
+          `     ${pair.low.h}px ×${pair.low.n} « ${pair.low.near} » ↔ ` +
+            `${pair.high.h}px ×${pair.high.n} « ${pair.high.near} » — ${pair.gap}px`,
+        )
+      }
+      process.exitCode = 15
+    }
+
+    /*
+     * **A mark the product does not ship the glyph for.** The rule the icon
+     * weight cannot state, for the two grammars it cannot see: a character
+     * standing in for a word has to be in a font this app carries, or the OS
+     * draws it and the mark on Windows — the primary platform — is not the mark
+     * anybody here has looked at.
+     */
+    const foreign = counted.glyphs.filter((glyph) => !glyph.carried)
+    if (foreign.length > 0) {
+      console.log(
+        `  ✗ recensement: ${foreign.length} caractère(s)-marque absent(s) des polices du produit — ` +
+          'dessiné(s) par le système, jamais mesuré(s) sur Windows (HR-2)',
+      )
+      for (const glyph of foreign) {
+        console.log(
+          `     « ${glyph.text} » ${glyph.code} ×${glyph.n} à ${glyph.size}` +
+            (glyph.near ? ` — « ${glyph.near} »` : ''),
+        )
       }
       process.exitCode = 15
     }
@@ -11839,11 +11901,10 @@ async function geometry(page) {
  *     and `hover:bg-inner` fills all of it. Not fixed here: it is
  *     `src/screens/session/CompteRenduDocument.tsx`, another lane's file.
  *
- * Note what the rule cannot see, since a blind spot stated is a blind spot the
+ * Note what that rule cannot see, since a blind spot stated is a blind spot the
  * next round does not have to rediscover: a component drawn at **one** wrong
  * height everywhere — the five 24×58.5 bookmarks — is a single-valued
- * distribution and passes. The printed line is the evidence for that case; the
- * failure is only for the split.
+ * distribution and passes.
  *
  * The looser rules were measured and rejected rather than guessed, over the
  * same 164 stagings: « two controls in one flex row at different heights »
@@ -11933,6 +11994,53 @@ async function geometry(page) {
  * 24px sur prose 14px (1.71×) » and `historique` « 24px sur prose 12px (2×) »,
  * both far above the `px <= body` case that pass refuses, and the sweep above
  * is the post-move one.
+ * **And for two rounds that was the whole of it, so the line beneath it bound
+ * nothing.** The split rule needs *one component* drawn twice, so three or four
+ * heights across three or four components ship green with every value
+ * impeccable: `review` printed `24×15 26.59×9 24.38×9 27.05×5 32.59×3 13×3
+ * 28.59×1` on the pass line, at both sizes, on the screen whose one press
+ * writes into a client's CRM — 24 against 24.38, and 26.59 against 27.05, two
+ * pairs less than half a pixel apart. `agenda` printed five heights;
+ * `widget-survol` and `widget-arret` printed `24×12 26.59×1 28×1` on one 340px
+ * card. A number that is computed, printed and binds nothing is not a check.
+ *
+ * So the second height rule, and it is about a **distribution** and not a
+ * count: **no two authored heights on one screen may be less than a pixel
+ * apart.** Three heights may be a hierarchy; two heights 0.46px apart are one
+ * decision taken twice in two files, and the rep cannot see the difference the
+ * product went to the trouble of making. Where the pixel comes from is measured
+ * in the function itself — the 622 adjacent gaps over 168 stagings fall into a
+ * group at or under 0.90 and a group at or over 1.41, with nothing between —
+ * and the two exemptions (a height the line box dictated, a box caught
+ * mid-transform) are counted in the printed line rather than skipped in
+ * silence. Swept before the fix: **61 of 170 stagings** failed, on two pairs —
+ * the chip family at 27.05 against the segmented option at 26.59 (27 screens),
+ * and the session header's objet field at 31.69 against the button beside it at
+ * 32.59 (11 screens). Both were fixed in the product rather than exempted.
+ *
+ * And what it deliberately does *not* fire on, because the count is not the
+ * rule: the widget's own `24 / 26.59 / 28` is three heights on one card and
+ * passes — 1.41px is a difference somebody can see and may well have chosen.
+ * This rule claims one thing only, and it is that a difference under a pixel is
+ * not a choice.
+ *
+ * **Marks.** Moved here from `--geometry`, because it is the same question and
+ * there should be one place that asks it — and then widened, because « one icon
+ * weight » was asking it of one grammar out of three. It counted stroked
+ * `<svg>` and nothing else, so on the widget's 340px card it saw `EyeOff` and
+ * not the filled speech bubble, the filled bookmark, the `▾` or the `×`: « 1
+ * icône(s) à stroke-width 2 » over a card carrying five marks, and « aucune
+ * icône » over the pill, where two were painting.
+ *
+ * All three grammars are counted now, and the two that have no stroke to weigh
+ * are held to the rule that does apply to them: **a character used as a mark
+ * must be carried by a font the app ships**. Measured on Inter 4.1 as shipped —
+ * `▾ ▴ ▸ ✕` are not, `× ‹ › · — ⚠ # … → ✓ ⌘ ⇧ ★` are — which put **84 of 170
+ * stagings** on an operating system's glyph: eleven `source ▸` on the review
+ * gate, the recipe chip's, the widget's disclosure, and Réglages' close. On
+ * Windows, where this ships first (HR-2), that is Segoe UI Symbol at its own
+ * advance and its own metrics, so no screenshot this repo has ever judged those
+ * four marks on was a photograph of the product. They are drawn now.
  */
 async function census(page) {
   return page.evaluate(() => {
@@ -12049,6 +12157,73 @@ async function census(page) {
     const CONTROLS =
       'button, a[href], input:not([type="hidden"]), select, [role="button"], [role="tab"], [role="switch"], [role="checkbox"]'
 
+    /*
+     * **Two exemptions from the *cluster* rule, and both are counted rather than
+     * skipped in silence.**
+     *
+     * They do not touch the `split` rule below, which still sees every control:
+     * the 24.38/48.75 followable line it caught is an inline-in-prose control,
+     * and narrowing that rule to buy this one would trade a live finding for a
+     * new one.
+     *
+     * **Dictated by the line box.** A control that declares no padding and no
+     * border, and whose box is exactly its own `line-height`, has the height the
+     * typesetter gave the line it sits in — nobody chose it, and changing it
+     * means changing the prose. This is `--targets`' WCAG inline exception
+     * measured rather than claimed: WCAG's own predicate (`display: inline*`
+     * plus a parent holding more text) exempts a *row of chips* too, because the
+     * row holds every chip's text, and a chip's height is very much authored.
+     *
+     * What it stops measuring, stated because an exemption that does not is the
+     * shape this repo found five times in round 22: on `review` at 1280×800, the
+     * nine 24.38px controls of the compte-rendu — five citations and four
+     * followable lines — sit 0.38px from the fifteen 24px controls of the chrome
+     * around them and are **not** reported as a cluster. A followable line that
+     * grows a padding stops being dictated and comes straight back into the
+     * count.
+     *
+     * **Mid-flight.** `getBoundingClientRect` includes transforms, which is
+     * DEC-50's own trap. `widget-carte-sortie` photographs the card leaving at
+     * `scale: 0.980745`, so its three 24px buttons measure 23.55 and pair with
+     * the 24px one outside the card — a cluster that is an animation frame, not
+     * a decision. Counted, so a stage that measures nothing but moving controls
+     * cannot print the same sentence as a stage that measured a resting screen.
+     */
+    const dictated = (style, box) => {
+      const sum = (...names) => names.reduce((n, name) => n + (parseFloat(style[name]) || 0), 0)
+      if (sum('paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth') > 0) return false
+      const line = parseFloat(style.lineHeight)
+      return Number.isFinite(line) && Math.abs(box.height - line) < 0.02
+    }
+    /*
+     * **Identity is not motion**, and getting that wrong cost the widget its
+     * whole census for one revision of this function: the first version read
+     * `scale !== 'none'`, and DEC-50's arrival is `animation: widget-arrive …
+     * both`, so its `to { scale: 1 }` is still applied when the card is at rest
+     * — `none` is what an untouched box answers, `1` is what a finished
+     * animation leaves. The pass printed « 0 hauteur(s) de contrôle décidée(s) par
+     * l'auteur, 15 en cours d'animation » over a resting 340px card — an
+     * exemption swallowing the surface it was written to protect. Both
+     * properties are compared against every spelling of identity Chromium
+     * returns.
+     */
+    const still = (value) =>
+      value === 'none' ||
+      value === '1' ||
+      value === '1 1' ||
+      value === '1 1 1' ||
+      value === 'matrix(1, 0, 0, 1, 0, 0)' ||
+      value === 'matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)'
+    const moving = (el) => {
+      for (let node = el; node; node = node.parentElement) {
+        const style = getComputedStyle(node)
+        if (!still(style.transform) || !still(style.scale)) return true
+      }
+      return false
+    }
+    let onALine = 0
+    let midFlight = 0
+
     for (const el of document.querySelectorAll('*')) {
       const style = getComputedStyle(el)
       if (style.display === 'none' || style.visibility === 'hidden') continue
@@ -12132,9 +12307,13 @@ async function census(page) {
           const shape = shapes.get(key) ?? { near, tall: new Map() }
           shape.tall.set(height, (shape.tall.get(height) ?? 0) + 1)
           shapes.set(key, shape)
-          const tally = heights.get(String(height)) ?? { n: 0, near }
-          tally.n += 1
-          heights.set(String(height), tally)
+          if (moving(el)) midFlight += 1
+          else if (dictated(style, box)) onALine += 1
+          else {
+            const tally = heights.get(String(height)) ?? { n: 0, near }
+            tally.n += 1
+            heights.set(String(height), tally)
+          }
         }
       }
     }
@@ -12154,6 +12333,43 @@ async function census(page) {
         shape: key.slice(0, 80),
         tall: [...shape.tall].sort((a, b) => a[0] - b[0]).map(([h, n]) => `${h}px ×${n}`),
       })
+    }
+
+    /*
+     * **A cluster: two authored heights a rep cannot tell apart.**
+     *
+     * The `split` rule above fires only when *one* component draws at two
+     * heights, so three or four heights across three or four components ship
+     * unflagged — which is what `review` does: 24 / 26.59 / 27.05 / 28.59 /
+     * 32.59, four of them inside three pixels, on the screen whose one press
+     * writes into a client's CRM.
+     *
+     * **The threshold is read off the distribution, not chosen.** Swept over
+     * every stage at both sizes before this rule existed — 168 stagings of the
+     * 170, `widget-entree` having timed out twice under four parallel lanes —
+     * the 622 adjacent gaps between the authored heights of one screen fall
+     * into two groups with nothing between them: 113 gaps at 0.38, 0.44, 0.45,
+     * 0.46 and 0.90 px, then 509 gaps at 1.41 px and above. A pixel is the
+     * empty band in the middle, and the sweep was taken before the two
+     * exemptions below existed, so it is the raw distribution and not one this
+     * rule had already shaped.
+     *
+     * Under a pixel is not a decision: 26.59 is `--type-ui` on a 4px padding
+     * and 27.05 is `--type-meta` on the same padding plus a border, and the
+     * 0.46 between them is the arithmetic of two type rungs meeting a border —
+     * nobody wrote it and nobody can see it. What a rep sees is two controls
+     * that are *nearly* the same size, which is the one thing a ladder exists
+     * to prevent. Two heights a whole pixel apart may well be a hierarchy; two
+     * heights half a pixel apart are an accident with two authors.
+     */
+    const heightList = [...heights]
+      .map(([h, tally]) => ({ h: Number(h), n: tally.n, near: tally.near }))
+      .sort((a, b) => a.h - b.h)
+    const clustered = []
+    for (let at = 1; at < heightList.length; at += 1) {
+      const gap = round(heightList[at].h - heightList[at - 1].h)
+      if (gap >= 1) continue
+      clustered.push({ gap, low: heightList[at - 1], high: heightList[at] })
     }
 
     /*
@@ -12182,13 +12398,16 @@ async function census(page) {
      * initial `1px` for them.
      */
     const weights = new Map()
+    let filled = 0
     for (const svg of document.querySelectorAll('svg')) {
       const box = svg.getBoundingClientRect()
       if (box.width === 0 || box.width > 24) continue
       const carrier = svg.hasAttribute('stroke-width') ? svg : svg.querySelector('[stroke-width]')
-      if (carrier === null) continue
-      const painted = getComputedStyle(carrier).stroke
-      if (painted === 'none' || painted === '') continue
+      const painted = carrier === null ? 'none' : getComputedStyle(carrier).stroke
+      if (carrier === null || painted === 'none' || painted === '') {
+        filled += 1
+        continue
+      }
       const key = String(Number.parseFloat(carrier.getAttribute('stroke-width')))
       const seen = weights.get(key) ?? { count: 0, near: '' }
       seen.count += 1
@@ -12198,6 +12417,123 @@ async function census(page) {
     }
 
     const heavy = [...display.values()].filter((run) => run.weight !== displayWeight)
+    /*
+     * **The third grammar: a mark that is a text character.**
+     *
+     * The weight tally above counts *stroked `<svg>`* and nothing else, so on
+     * the widget it saw one of five marks: `EyeOff` at stroke-width 2, and not
+     * the 12×12 filled speech bubble, the 10×12 filled bookmark, the 5.67×12
+     * `▾` or the 7.95×12 `×` — both of those last two being Unicode characters
+     * set in the body font. It printed « 1 icône(s) à stroke-width 2 » over that
+     * card, and « aucune icône » over the pill, where two marks were painting.
+     *
+     * « One icon weight » does not extend to a text character: a character has
+     * no stroke to weigh, and asking `getComputedStyle().strokeWidth` of one
+     * answers the CSS initial. The rule that *does* extend is about the font:
+     *
+     *   **a character used as a mark must be carried by a font the app ships.**
+     *
+     * The shipped families are read out of `document.fonts` at runtime — the
+     * `@font-face` rules the page really loaded — rather than named here, for
+     * the reason the radius ladder above records at length. Coverage is then
+     * measured, not asked: `document.fonts.check()` answers from the
+     * `unicode-range` of the declaration and says `true` for a range-less
+     * `@font-face` whatever the glyph, so the character is *drawn* twice on a
+     * canvas — once in the shipped family, once in a family that does not exist
+     * — and identical ink means the same fallback drew both and the shipped
+     * font carried nothing. `textBaseline` is `alphabetic` and not `top`,
+     * because `top` is measured from the primary font's ascent and moves the
+     * fallback glyph down the canvas, which reports every character as carried.
+     *
+     * Measured on Inter 4.1 as shipped: `× ‹ › · — ⚠ # … → ✓ ⌘ ⇧ ★` are carried;
+     * `▾ ▴ ▸ ✕` are not. The last four are painted by whatever the operating
+     * system substitutes — on this machine a mac fallback, on **Windows**, the
+     * primary platform (HR-2), Segoe UI Symbol, at its own advance and its own
+     * vertical metrics. Every screenshot this repo has judged those four marks
+     * on was a photograph of a font it does not ship.
+     *
+     * Quoted text is not a mark and is excluded by where it sits, not by a
+     * list: `[data-hangs]` is the compte-rendu's own `#`, `##`, `-` and `**`
+     * hanging in the gutter — the literal characters VerySwing receives, which
+     * `--geometry` owns — and `code`/`kbd`/`pre` is Réglages printing markdown
+     * and shortcut keys at the rep. A character inside a word or a sentence is
+     * excluded too: the element's *own* text has to be the mark and nothing
+     * else.
+     */
+    const shipped = [...new Set([...document.fonts].map((face) => face.family.replace(/^["']|["']$/g, '')))]
+    const paper = document.createElement('canvas')
+    paper.width = 300
+    paper.height = 300
+    const ink = paper.getContext('2d', { willReadFrequently: true })
+    const inked = (text, family) => {
+      ink.clearRect(0, 0, 300, 300)
+      ink.font = `200px ${family}`
+      ink.textBaseline = 'alphabetic'
+      ink.fillText(text, 20, 220)
+      const pixels = ink.getImageData(0, 0, 300, 300).data
+      let n = 0
+      let sum = 0
+      for (let at = 3; at < pixels.length; at += 4) {
+        if (pixels[at] === 0) continue
+        n += 1
+        sum = (sum * 31 + at + pixels[at]) | 0
+      }
+      return `${n}:${sum}`
+    }
+    const coverage = new Map()
+    const carried = (text) => {
+      const known = coverage.get(text)
+      if (known !== undefined) return known
+      const answer =
+        shipped.length > 0 &&
+        shipped.some((family) => inked(text, `"${family}"`) !== inked(text, '"ZzAucunePolice"'))
+      coverage.set(text, answer)
+      return answer
+    }
+
+    const glyphs = new Map()
+    for (const el of document.querySelectorAll('*')) {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
+      const box = el.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0) continue
+      if (el.closest('code, kbd, pre, [data-hangs]') !== null) continue
+      let own = ''
+      for (const child of el.childNodes) if (child.nodeType === 3) own += child.textContent ?? ''
+      for (const token of own.split(/\s+/)) {
+        /*
+         * **Unicode draws the line between a mark and punctuation, not this
+         * file.** A token made entirely of symbols (`\p{S}`) is a mark: `▾ ▴ ▸
+         * ✕ × ⚠ →`. Punctuation is not, whatever it looks like: `« » ‹ › · — …`
+         * are `\p{Pi} \p{Pf} \p{Po} \p{Pd}`, and so is every character the
+         * compte-rendu's own markdown is made of — `# ## - ** _`, which is the
+         * literal string VerySwing receives and is not a mark at all. Measured
+         * on Inter 4.1: every one of those punctuation characters is carried, so
+         * the boundary costs this rule nothing it could have caught.
+         *
+         * Tokenised on whitespace rather than taken whole, because the mark that
+         * hides best is the one inside a label: `source ▸` is eleven controls on
+         * the review gate and its text is not « a symbol », it is a word and a
+         * symbol.
+         */
+        if (token === '' || !/^\p{S}+$/u.test(token)) continue
+        const seen = glyphs.get(token) ?? {
+          n: 0,
+          carried: carried(token),
+          code: [...token].map((c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase()).join(' '),
+          size: `${round(box.width)}×${round(box.height)}`,
+          near: (
+            el.closest('button, a, label, li')?.getAttribute('aria-label') ??
+            (el.closest('button, a, label, li')?.textContent ?? '')
+          )
+            .trim()
+            .replace(/\s+/g, ' ')
+            .slice(0, 30),
+        }
+        seen.n += 1
+        glyphs.set(token, seen)
+      }
+    }
 
     return {
       face: mark.face,
@@ -12215,10 +12551,17 @@ async function census(page) {
       caps: [...caps].map(([value, seen]) => ({ value, n: seen.n, near: seen.near })),
       stray,
       controls: [...heights].sort((a, b) => b[1].n - a[1].n).map(([h, t]) => ({ h, n: t.n, near: t.near })),
+      onALine,
+      midFlight,
+      clustered,
       split,
       strokes: [...weights]
         .sort((a, b) => b[1].count - a[1].count)
         .map(([width, seen]) => ({ width, count: seen.count, near: seen.near })),
+      filled,
+      glyphs: [...glyphs]
+        .sort((a, b) => b[1].n - a[1].n)
+        .map(([text, seen]) => ({ text, ...seen })),
     }
   })
 }
@@ -13258,11 +13601,26 @@ function report(findings, target, screen, viewport) {
   console.log(`  → ${file}`)
 }
 
-/** « 62 icône(s) à stroke-width 2 », or « aucune icône ». */
-const icons = (strokes) =>
-  strokes.length === 0
-    ? 'aucune icône'
-    : `${strokes[0].count} icône(s) à stroke-width ${strokes[0].width}`
+/**
+ * « 62 icône(s) à stroke-width 2, 2 glyphe(s) plein(s), 2 caractère(s)-marque ▾ × ».
+ *
+ * All three grammars, because for as long as this said « aucune icône » over the
+ * widget's pill there were two marks painting on it and one line of output
+ * saying there were none. A zero has to be a zero.
+ */
+const icons = (strokes, filled = 0, glyphs = []) => {
+  const parts = [
+    strokes.length === 0
+      ? 'aucune icône à trait'
+      : `${strokes[0].count} icône(s) à stroke-width ${strokes[0].width}`,
+    filled > 0 ? `${filled} glyphe(s) plein(s)` : null,
+    glyphs.length > 0
+      ? `${glyphs.reduce((n, g) => n + g.n, 0)} caractère(s)-marque ` +
+        `(${glyphs.map((g) => g.text).join(' ')})`
+      : null,
+  ].filter((part) => part !== null)
+  return parts.join(', ')
+}
 
 /** Vite's dev-server chatter, which says nothing about the app. */
 const IGNORED = [/\[vite\]/i, /Download the React DevTools/i, /source-?map/i]

@@ -14,7 +14,7 @@ introduced after something shipped that the other could not have caught.
 
 ```
 node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--no-png] [--sans-entra]
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all ten checks
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all twelve passes
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 
@@ -338,6 +338,42 @@ classes still wear does **not** turn it red and cannot — `rounded-sm` resolves
 browser drops, so the corner is simply not painted (40 rounded boxes → 1, exit
 0). `src/design/tokens.test.ts` is the instrument that catches that, and it does
 (2 tests red).
+
+**And the other two thirds of `--census` were still printing rather than
+asking.** Its control-height line was a list on the *pass* line — `review` printed
+`24×15 26.59×9 24.38×9 27.05×5 32.59×3 13×3 28.59×1` at both sizes — and the only
+rule under it needed *one component* drawn at two heights, so four heights across
+four components shipped green with two of the pairs less than half a pixel apart.
+Its mark line counted stroked `<svg>` and nothing else, so it said « 1 icône(s) à
+stroke-width 2 » over a widget card carrying five marks and « aucune icône » over
+the pill, where two were painting.
+
+Both bind now. **Heights**: no two authored heights on one screen may be under a
+pixel apart, the pixel read off the distribution rather than chosen — 622 adjacent
+gaps over 168 stagings, 113 at or under 0.90 and 509 at or over 1.41, nothing
+between. Two exemptions, each *counted in the printed line* rather than skipped: a
+height the line box dictated (no padding, no border, box equal to `line-height` —
+the compte-rendu's nine 24.38px followable lines and citations, which sit 0.38px
+from the chrome's 24px and are not reported), and a box caught mid-transform
+(`widget-carte-sortie` measures its three 24px buttons at 23.55 under `scale:
+0.980745`). **Marks**: all three grammars are counted — stroked `<svg>`, filled
+`<svg>`, and Unicode characters — and the one rule that fits a character is that a
+font the app ships has to carry it. Coverage is measured, not asked:
+`document.fonts.check()` answers from a declaration's `unicode-range` and says
+`true` for a range-less `@font-face`, so the glyph is drawn twice on a canvas —
+once in the shipped family, once in a family that does not exist — and identical
+ink means the fallback drew both. Unicode decides what is a mark: `\p{S}` is,
+punctuation is not, which is why `« » ‹ › · — …` and the compte-rendu's own `# ##
+- ** _` are outside the rule and — measured — carried anyway.
+
+Swept before the fix, with the final instrument: **109 of 170 stagings red**, 84
+on a mark the product does not ship the glyph for (`▾ ▴ ▸ ✕`, none of them in
+Inter 4.1) and 61 on a height cluster (the chip family's 27.05 against a segmented
+option's 26.59 on 27 screens; the session header's 31.69 objet field against the
+32.59 button beside it on 11). The old pass was green on all 170. Every one was
+fixed in the product — the four marks are drawn now, the chips are set at
+`--type-ui`, the header fields carry the button's padding — and the sweep is 0 of
+170.
 
 `--contrast` had the same shape twice over: it composited the grain at a
 hard-coded `9 / 255` — so the remedy `index.css` names in its own words, « a

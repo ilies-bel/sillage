@@ -28,6 +28,7 @@
  * exactly one submit control on this screen and there is no second prompt.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import type {
   ReviewEdits,
   ReviewField,
@@ -3095,9 +3096,23 @@ function FieldRow({ field, value, onChange, onLocate, inert, reason }: FieldRowP
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="text-muted hover:text-body -my-hair ml-auto inline-flex min-h-[24px] shrink-0 items-center text-meta"
+          className="text-muted hover:text-body -my-hair ml-auto inline-flex min-h-[24px] shrink-0 items-center gap-hair text-meta"
         >
-          {`source ${open ? '▾' : '▸'}`}
+          source
+          {/*
+            **The arrow is drawn, and it used to be typed.** « ▸ » is U+25B8 and
+            « ▾ » is U+25BE; measured on the shipped stylesheet, Inter 4.1
+            carries neither, so eleven marks on this screen were painted by a
+            font the product does not ship — a mac fallback where this was
+            written, Segoe UI Symbol on Windows, where this ships first (HR-2).
+            No screenshot ever taken of this gate showed the mark a
+            rep will see.
+          */}
+          {open ? (
+            <ChevronDown aria-hidden size={12} strokeWidth={2} />
+          ) : (
+            <ChevronRight aria-hidden size={12} strokeWidth={2} />
+          )}
         </button>
       </div>
 

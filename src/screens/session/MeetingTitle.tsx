@@ -104,6 +104,22 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
      * controls. Eight inside twelve is two rungs of the declared ladder, which
      * is the smallest difference this scale can make and still be seen.
      */
+    /*
+     * **`py-tight` on both fields, and it is a height and not a taste.**
+     *
+     * At `py-hair` the header drew three controls in one row at three heights:
+     * the objet at **31.69px**, the client at **28.59**, and *Démarrer* /
+     * *Terminer* beside them at **32.59** — the objet and the button 0.90px
+     * apart, on eleven screens at both sizes. A difference that small is not a
+     * hierarchy, it is the arithmetic of `--type-copy` and `--type-ui` sharing a
+     * padding rung with a button that does not, and `--census` fails on it now.
+     *
+     * Six is the padding the `Button` beside them already carries. It puts the
+     * client field at exactly the button's 32.59 — the same control height, not
+     * nearly it — and the objet at 35.69, which is three pixels clear and is
+     * what holding `--type-copy` costs. The row is baseline-aligned, so the
+     * fields grow around their own text rather than pushing the header apart.
+     */
     <div className="flex min-w-0 flex-1 items-baseline gap-snug overflow-hidden">
       {/*
         `h1` is elsewhere on this screen's structure; this is the input that
@@ -150,7 +166,7 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * the calendar produces reaches it, and past it the truncation is
          * kinder than a header with no room for a control.
          */
-        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-hair font-sans text-copy font-medium outline-none [field-sizing:content]"
+        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-tight font-sans text-copy font-medium outline-none [field-sizing:content]"
       />
       <input
         value={client}
@@ -174,7 +190,7 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
           client in a 144px box leaves a hole between the two halves of what is
           meant to read as one title.
         */
-        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-[4rem] truncate rounded-sm border border-transparent bg-transparent px-tight py-hair text-ui outline-none [field-sizing:content]"
+        className="text-muted placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner max-w-36 min-w-[4rem] truncate rounded-sm border border-transparent bg-transparent px-tight py-tight text-ui outline-none [field-sizing:content]"
       />
     </div>
   )

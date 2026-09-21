@@ -275,7 +275,10 @@ export function AskPanel({
                   the declared floor — these sit in a wrapped row where a miss
                   lands on the suggestion below.
                 */
-                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-snug py-hair text-meta transition"
+                /* `text-ui`, for `Chip`'s measured reason: at `text-meta` these
+                  suggestions are 27.05px and the segmented option beside them
+                  26.59px. */
+                className="border-card bg-inner text-muted hover:text-body hover:bg-subtle inline-flex min-h-[24px] items-center rounded-sm border px-snug py-hair text-ui transition"
               >
                 {suggestion}
               </button>
