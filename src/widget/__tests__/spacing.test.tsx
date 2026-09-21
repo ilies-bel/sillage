@@ -341,48 +341,85 @@ test('la pilule est posée symétriquement dans sa carte', async () => {
  * that ran one direction of a two-direction rule, and it is the shape that
  * produced the defect above.
  *
+ * **The panel is the third card, and it was excluded by its own symmetry.** It
+ * wore `my-tight` — 6 px towards the pill and 6 px into the halo — so it had no
+ * direction to get wrong and got no attention; the round that fixed the notice
+ * cards measured it, wrote « the panel is 6 px from a pill that keeps 12 px
+ * between its own halves — round 22's rule, on the surface round 22 fixed, left
+ * standing » into `pile`'s own exemption, and shipped without it. Driven
+ * on the shipped renderer through Playwright on `widget-ouvert`, `widget-pause`,
+ * `widget-survol` and `widget-sombre` at 1280×800 and 960×600: **6.00 px on all
+ * eight**, against 16.00 for a two-line notice and 12 inside the pill. The
+ * smallest of three values on one window parted its two largest objects.
+ *
  * jsdom measures every box as zero, so what is read here is the declaration:
  * exactly one vertical margin, on the edge that faces the pill, and the same
- * step for both cards in both directions.
+ * step for all three cards in both directions. `my-` counts as a declaration
+ * and fails the side — it is not « the wrong edge », it is both edges, and the
+ * half that lands away from the pill is a second halo over the one `HALO`
+ * already declares.
  */
 const SEAM_SIDE = { above: 'mb-', below: 'mt-' } as const
 
-/** The vertical margin utilities a card declares, whatever the step. */
+/**
+ * The vertical margin utilities a card declares, whatever the step — including
+ * `my-`, which is a seam and an outer margin at once and must be *read* rather
+ * than skipped. A pattern of `/^m[tb]-/` reports `my-tight` as « no vertical
+ * margin at all », which is the one sentence about it that is false.
+ */
 const seams = (card: Element): string[] =>
-  (card.getAttribute('class') ?? '').split(/\s+/).filter((c) => /^m[tb]-/.test(c))
+  (card.getAttribute('class') ?? '').split(/\s+/).filter((c) => /^m[tby]-/.test(c))
 
 /**
- * The card in the one card slot, with the direction it says it is painted in.
+ * A card that hangs off the pill, with the direction it says it is painted in.
  * Read off `data-above`, which is the same expression the frame reads for
  * `flex-col-reverse` — so a margin that disagrees with it is a margin on the
  * outside of the stack.
  */
-const cardSeam = (role: 'alert' | 'status'): { above: boolean; seam: string } => {
-  /*
-   * `[data-health]` is excluded, and the exclusion is the point: the panel's
-   * health slot became a `role="status"` live region this round, so « the
-   * status » on this surface is now two elements and `getByRole` was answering
-   * with whichever React rendered first. The seam measured here is the mention
-   * card's, and a card is what carries a seam — the health line is a band
-   * inside the panel.
-   */
-  const spoken = screen.getAllByRole(role).filter((el) => !el.hasAttribute('data-health'))
-  if (spoken.length !== 1) {
-    throw new Error(`« ${role} » désigne ${spoken.length} élément(s) hors santé, pas un seul`)
-  }
-  const card = spoken[0].closest('[data-card]')
-  if (card === null) throw new Error(`la carte « ${role} » n’a pas été trouvée`)
+const seamOf = (card: Element | null, what: string): { above: boolean; seam: string } => {
+  if (card === null) throw new Error(`la carte « ${what} » n’a pas été trouvée`)
   const declared = seams(card)
   expect(
     declared.length,
-    `la carte déclare ${declared.length} marge(s) verticale(s) : ${declared.join(', ') || 'aucune'}`,
+    `« ${what} » déclare ${declared.length} marge(s) verticale(s) : ${declared.join(', ') || 'aucune'}`,
   ).toBe(1)
   return { above: card.getAttribute('data-above') === 'true', seam: declared[0] }
 }
 
+/**
+ * The one card slot: a refusal or a mention.
+ *
+ * `[data-health]` is excluded, and the exclusion is the point: the panel's
+ * health slot became a `role="status"` live region this round, so « the status »
+ * on this surface is now two elements and `getByRole` was answering with
+ * whichever React rendered first. The seam measured here is the mention card's,
+ * and a card is what carries a seam — the health line is a band inside the panel.
+ */
+const cardSeam = (role: 'alert' | 'status') => {
+  const spoken = screen.getAllByRole(role).filter((el) => !el.hasAttribute('data-health'))
+  if (spoken.length !== 1) {
+    throw new Error(`« ${role} » désigne ${spoken.length} élément(s) hors santé, pas un seul`)
+  }
+  return seamOf(spoken[0].closest('[data-card]'), role)
+}
+
+/**
+ * The panel — named by the heading it is the card around, the way the band test
+ * above names it, and not by `[data-card]` order: the **pill** carries
+ * `data-card` too and is first in the DOM.
+ */
+const panelSeam = () =>
+  seamOf(screen.getByRole('heading', { level: 1 }).closest('[data-card]'), 'panneau')
+
+/** The panel out, the way a rep opens it. */
+const openPanel = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: /^Ouvrir le panneau/ }))
+  await screen.findByRole('heading', { level: 1 })
+}
+
 /** The panel out and the stack reversed — the direction a pill dragged low opens in. */
 const stackUpward = async () => {
-  fireEvent.click(await screen.findByRole('button', { name: /^Ouvrir le panneau/ }))
+  await openPanel()
   act(() => bridge.emit('widget:placed', { above: true }))
   await waitFor(() =>
     /*
@@ -399,7 +436,7 @@ const stackUpward = async () => {
   )
 }
 
-test('les deux cartes cousent du côté de la pilule, dans les deux sens', async () => {
+test('les trois cartes cousent du côté de la pilule, dans les deux sens', async () => {
   bridge.when('meeting:mark', () => {
     throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
   })
@@ -407,15 +444,22 @@ test('les deux cartes cousent du côté de la pilule, dans les deux sens', async
   const read: Record<string, string> = {}
 
   for (const upward of [false, true]) {
-    for (const card of ['refus', 'mention'] as const) {
+    for (const card of ['refus', 'mention', 'panneau'] as const) {
       render(<Widget />)
       await screen.findByLabelText('Durée d’enregistrement')
+      /*
+       * Upward is the panel open and the stack reversed, which is the only way
+       * this window ever paints a card above the pill. Downward, the panel has
+       * to be opened on its own — the two notice cards are pressed from the
+       * pill with nothing else out.
+       */
       if (upward) await stackUpward()
+      else if (card === 'panneau') await openPanel()
 
       if (card === 'refus') {
         fireEvent.click(screen.getByRole('button', { name: 'Marquer ce moment' }))
         await screen.findByRole('alert')
-      } else {
+      } else if (card === 'mention') {
         fireEvent.click(screen.getByRole('button', { name: MENTION_LABEL }))
         await waitFor(() =>
           expect(
@@ -424,13 +468,17 @@ test('les deux cartes cousent du côté de la pilule, dans les deux sens', async
         )
       }
 
-      const where = card === 'refus' ? cardSeam('alert') : cardSeam('status')
-      expect(where.above, `la carte « ${card} » ne se sait pas au-dessus`).toBe(upward)
+      const where =
+        card === 'refus' ? cardSeam('alert') : card === 'mention' ? cardSeam('status') : panelSeam()
+      expect(where.above, `« ${card} » ne se sait pas au-dessus`).toBe(upward)
       const side = SEAM_SIDE[upward ? 'above' : 'below']
       expect(
         where.seam.startsWith(side),
-        `carte « ${card} » ${upward ? 'au-dessus' : 'au-dessous'} de la pilule : ` +
-          `${where.seam} met les pixels du mauvais côté, la couture reste à 0`,
+        `« ${card} » ${upward ? 'au-dessus' : 'au-dessous'} de la pilule : ${where.seam} ` +
+          (where.seam.startsWith('my-')
+            ? 'coud des deux côtés — la moitié qui ne touche pas la pastille part dans le halo, ' +
+              'que HALO déclare déjà, et celle qui la touche n’est pas le pas de l’échelle'
+            : 'met les pixels du mauvais côté, la couture reste à 0'),
       ).toBe(true)
       read[`${card}-${upward ? 'above' : 'below'}`] = where.seam.slice(side.length)
       cleanup()
@@ -438,7 +486,7 @@ test('les deux cartes cousent du côté de la pilule, dans les deux sens', async
   }
 
   /*
-   * One relationship, one value. Four readings, one step — and the step is on
+   * One relationship, one value. Six readings, one step — and the step is on
    * the ladder and strictly looser than the `gap-inline` the pill keeps between
    * its own two halves, which is round 22's rule and the reason this seam is
    * 16 and not 12.
@@ -450,6 +498,9 @@ test('les deux cartes cousent du côté de la pilule, dans les deux sens', async
       .map(([k, v]) => `${k} ${v}`)
       .join(', ')}`,
   ).toBe(1)
+  // The census, before the judgement: three cards × two directions, and a
+  // reading that failed to happen must not be able to pass as agreement.
+  expect(Object.keys(read).length, `${Object.keys(read).length} lecture(s) sur 6`).toBe(6)
 
   const step = px([...steps][0])
   expect(step, `couture « ${[...steps][0] as string} » hors échelle`).not.toBeNull()

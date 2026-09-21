@@ -941,87 +941,153 @@ async function assertTurnGrammar(page) {
  *    remembers; computed, it is one value in **both** directions by
  *    construction, which is the half a per-stage tolerance could not pin.
  *
+ * **And the panel hangs off the same pill, so it is the same measurement** —
+ * `pile(page, 'panneau')`. It was left out for a round on the grounds that it
+ * is « a different box under its own declaration, `my-tight`, symmetric, so it
+ * has no direction to get wrong », and that exemption measured the defect and
+ * then let it stand: driven on `widget-ouvert`, `widget-pause`, `widget-survol`
+ * and `widget-sombre` at both smoke sizes, the panel read **6.00 px** from a
+ * pill that keeps 12 between its own halves, in all eight. One window, one
+ * relationship, three values, the smallest of them parting the two largest
+ * objects. The subject is a parameter rather than a second function because the
+ * rule is one rule: same direction agreement, same ladder, same floor, and the
+ * ladder resolves to 16 for both by arithmetic nothing here writes down.
+ *
  * **What it stops short of, measured rather than waved at.**
  *
- *  · The **panel**'s seam. It is a different box under its own declaration —
- *    `my-tight`, symmetric — so it has no direction to get wrong, and driven on
- *    `widget-ouvert`, `widget-pause` and `widget-survol` at both smoke sizes it
- *    reads **6.00 px** every time, above the pill in all six. Which means two
- *    things this does not decide: the panel is 6 px from a pill that keeps 12 px
- *    between its own halves — round 22's rule, on the surface round 22 fixed,
- *    left standing — and **no stage in this file stands the panel below the
- *    pill**, so its other direction is drawn by nothing and measured by nothing.
+ *  · The **width** assertion is the notice's alone, and is skipped for the
+ *    panel. « The notice is as wide as the pill it hangs from » is a rule about
+ *    a box *sized from* `--pill-w`; the panel is `w-[340px]` and is the widest
+ *    box on the window, so asserting it there would be asserting that 340 = the
+ *    pill's content width, which is false by construction and in both states.
+ *    Nothing else about the panel's width is measured here.
+ *  · A pile with **both** a notice and the panel in it. The card slot sits
+ *    between them in the DOM, so `pill → panel` is then not a seam but a sum of
+ *    three, and this refuses to report it rather than printing a number that is
+ *    a distance between two boxes with a third one in it.
  *  · The **mention** card *above* the pill. `widget-carte-sortie` is the only
  *    stage that draws that card at all and it draws it below — measured there,
  *    16.00 px at both smoke sizes against a 281.55 px recording pill — so three
  *    of the four (card × direction) pairs are painted somewhere and the fourth
- *    is painted nowhere. Both cards share one `CARD_SEAM`, and
+ *    is painted nowhere. All three cards share one `CARD_SEAM`, and
  *    `src/widget/__tests__/spacing.test.tsx` reads that declaration for each of
  *    them in each direction, which is what a renderer test can do and this
  *    cannot, jsdom measuring every box as zero.
  */
-async function pile(page) {
+async function pile(page, subject = 'notice') {
   // `getBoundingClientRect` includes transforms and both boxes ride
   // `--ease-overshoot` on the way in — see the width assertion's own note.
-  await settled(page)
-  const read = await page.evaluate(() => {
-    const pill = document.querySelector('[data-pill]')
-    /*
-     * Whichever card is in the one card slot, and not `[role="alert"]`: the slot
-     * holds a refusal *or* a mention, and a parameter defaulted to the one the
-     * first caller wanted is a parameter with one value. Direct children only —
-     * the *panel* carries `data-above` too and holds a `role="status"` of its
-     * own several bands down, and `closest('[data-card]')` from that one would
-     * measure the panel while reporting a card.
-     */
-    const notice = document
-      .querySelector('[data-card] > [role="alert"], [data-card] > [role="status"]')
-      ?.closest('[data-card]')
-    if (!pill || !notice) return null
-
-    const root = getComputedStyle(document.documentElement)
-    const ladder = [...root]
-      .filter((name) => name.startsWith('--space-'))
-      .map((name) => Number.parseFloat(root.getPropertyValue(name)))
-      .filter((n) => Number.isFinite(n) && n > 0)
-      .sort((a, b) => a - b)
-
-    const p = pill.getBoundingClientRect()
-    const c = notice.getBoundingClientRect()
-    const rows = [pill, ...pill.querySelectorAll('*')]
-      .map((el) => Number.parseFloat(getComputedStyle(el).columnGap))
-      .filter((n) => Number.isFinite(n))
-    const round = (n) => Math.round(n * 100) / 100
-
-    return {
-      ladder,
-      inside: rows.length > 0 ? Math.max(...rows) : null,
-      painted: c.bottom <= p.top ? 'above' : 'below',
-      claimed: notice.getAttribute('data-above') === 'true' ? 'above' : 'below',
-      gap: round(c.bottom <= p.top ? p.top - c.bottom : c.top - p.bottom),
+  const take = async () =>
+    page.evaluate((which) => {
+      const pill = document.querySelector('[data-pill]')
       /*
-       * `--shadow-overlay` opens on a `0 0 0 1px var(--widget-rim)` spread, so
-       * each box paints one pixel outside its own border box: at a zero gap the
-       * two rims are not adjacent, they are on top of one another.
-       *
-       * The widest zero-offset, zero-blur layer and not the first one: Tailwind
-       * lays two transparent `0px 0px 0px 0px` placeholders (`--tw-ring-offset-shadow`,
-       * `--tw-ring-shadow`) ahead of it, and reading the first match reported a
-       * 0px rim over a 1px one — measured, on `widget-refus` at 1280×800.
+       * Whichever card is in the one card slot, and not `[role="alert"]`: the slot
+       * holds a refusal *or* a mention, and a parameter defaulted to the one the
+       * first caller wanted is a parameter with one value. Direct children only —
+       * the *panel* carries `data-above` too and holds a `role="status"` of its
+       * own several bands down, and `closest('[data-card]')` from that one would
+       * measure the panel while reporting a card.
        */
-      rim: Math.max(
-        0,
-        ...[...getComputedStyle(notice).boxShadow.matchAll(/0px 0px 0px (\d+(?:\.\d+)?)px/g)].map(
-          (m) => Number.parseFloat(m[1]),
-        ),
-      ),
-      radius: round(Number.parseFloat(getComputedStyle(notice).borderTopLeftRadius)),
-      pill: round(p.width),
-      notice: round(c.width),
-    }
-  })
+      const notice = document
+        .querySelector('[data-card] > [role="alert"], [data-card] > [role="status"]')
+        ?.closest('[data-card]')
+      /*
+       * The panel is named by the class that carries its own arrival, which is
+       * the same element `data-card` is on — and both ends of it, because a panel
+       * on its way out is still a box at a distance from the pill.
+       */
+      const panel = document.querySelector(
+        '[data-card].widget-panel-arrive, [data-card].widget-panel-leaving',
+      )
+      const card = which === 'panneau' ? panel : notice
+      if (!pill || !card) return null
+      // See the docblock: three boxes are not a seam.
+      if (which === 'panneau' && notice) return { crowded: true }
 
-  if (read === null) throw new Error('pastille ou carte introuvable pour la mesure de la pile')
+      const root = getComputedStyle(document.documentElement)
+      const ladder = [...root]
+        .filter((name) => name.startsWith('--space-'))
+        .map((name) => Number.parseFloat(root.getPropertyValue(name)))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .sort((a, b) => a - b)
+
+      const p = pill.getBoundingClientRect()
+      const c = card.getBoundingClientRect()
+      const rows = [pill, ...pill.querySelectorAll('*')]
+        .map((el) => Number.parseFloat(getComputedStyle(el).columnGap))
+        .filter((n) => Number.isFinite(n))
+      const round = (n) => Math.round(n * 100) / 100
+
+      return {
+        subject: which,
+        ladder,
+        inside: rows.length > 0 ? Math.max(...rows) : null,
+        painted: c.bottom <= p.top ? 'above' : 'below',
+        claimed: card.getAttribute('data-above') === 'true' ? 'above' : 'below',
+        gap: round(c.bottom <= p.top ? p.top - c.bottom : c.top - p.bottom),
+        /*
+         * `--shadow-overlay` opens on a `0 0 0 1px var(--widget-rim)` spread, so
+         * each box paints one pixel outside its own border box: at a zero gap the
+         * two rims are not adjacent, they are on top of one another.
+         *
+         * The widest zero-offset, zero-blur layer and not the first one: Tailwind
+         * lays two transparent `0px 0px 0px 0px` placeholders (`--tw-ring-offset-shadow`,
+         * `--tw-ring-shadow`) ahead of it, and reading the first match reported a
+         * 0px rim over a 1px one — measured, on `widget-refus` at 1280×800.
+         */
+        rim: Math.max(
+          0,
+          ...[...getComputedStyle(card).boxShadow.matchAll(/0px 0px 0px (\d+(?:\.\d+)?)px/g)].map(
+            (m) => Number.parseFloat(m[1]),
+          ),
+        ),
+        radius: round(Number.parseFloat(getComputedStyle(card).borderTopLeftRadius)),
+        pill: round(p.width),
+        notice: round(c.width),
+      }
+    }, subject)
+
+  /*
+   * **Read at rest, and « at rest » is two readings that agree** — `restingBox`'s
+   * rule, reached here the way it was reached there. `settled()` asks « is
+   * anything running now », and under `smoke.mjs`'s four parallel lanes the
+   * panel's arrival has often not *started* when the question is put: this
+   * reported a **17.52 px** seam for a 16 px margin on `widget-dessous`, once in
+   * 178 stagings, the run after the stage landed. `getBoundingClientRect`
+   * includes transforms and what is measured here is the distance *between* two
+   * of them, so a mid-arrival reading is wrong at both ends at once — the shape
+   * `CLAUDE.md` calls relational, and the reason this needed more than the
+   * `settled()` its first draft had.
+   */
+  let read = null
+  let previous = null
+  for (let at = 0; at < 12; at += 1) {
+    await settled(page)
+    read = await take()
+    if (read === null || read.crowded) break
+    if (
+      previous !== null &&
+      Math.abs(read.gap - previous.gap) < 0.5 &&
+      Math.abs(read.pill - previous.pill) < 0.5 &&
+      Math.abs(read.notice - previous.notice) < 0.5
+    ) {
+      break
+    }
+    previous = read
+    await page.waitForTimeout(60)
+  }
+
+  if (read === null) {
+    throw new Error(
+      `pastille ou ${subject === 'panneau' ? 'panneau' : 'carte'} introuvable pour la mesure de la pile`,
+    )
+  }
+  if (read.crowded) {
+    throw new Error(
+      'une notice est ouverte entre la pastille et le panneau : la distance mesurée serait la ' +
+        'somme de trois séparations et non une couture',
+    )
+  }
   if (read.inside === null || read.ladder.length === 0) {
     throw new Error('ni pas d’espacement ni intervalle interne lisibles : rien n’est mesuré')
   }
@@ -1038,7 +1104,7 @@ async function pile(page) {
    * `w-[260px]`, a constant matching one state of a content-sized pill
    * approximately and the other not at all: 35px of overhang a side when idle.
    */
-  if (Math.abs(read.pill - read.notice) > 1) {
+  if (subject !== 'panneau' && Math.abs(read.pill - read.notice) > 1) {
     throw new Error(
       `la notice ne suit pas la pastille : pastille ${read.pill}px, notice ${read.notice}px ` +
         `(${Math.round(Math.abs(read.pill - read.notice) / 2)}px de débord par côté)`,
@@ -1052,9 +1118,9 @@ async function pile(page) {
   const rim = read.rim
   if (Math.abs(read.gap - want) > 0.5) {
     throw new Error(
-      `la couture entre la pastille et la carte mesure ${read.gap}px ${
-        read.painted === 'above' ? 'au-dessus' : 'au-dessous'
-      } — l’échelle ${read.ladder.join('/')} donne ${want}px, le premier pas au-dessus des ` +
+      `la couture entre la pastille et ${subject === 'panneau' ? 'le panneau' : 'la carte'} ` +
+        `mesure ${read.gap}px ${read.painted === 'above' ? 'au-dessus' : 'au-dessous'} — ` +
+        `l’échelle ${read.ladder.join('/')} donne ${want}px, le premier pas au-dessus des ` +
         `${read.inside}px qui séparent les moitiés de la pastille` +
         (read.gap < 2 * rim
           ? ` ; à ${read.gap}px les deux liserés de ${rim}px se recouvrent et les deux rayons de ` +
@@ -1064,7 +1130,8 @@ async function pile(page) {
   }
 
   console.log(
-    `   pile: pastille ${read.pill}px · notice ${read.notice}px · couture ${read.gap}px ` +
+    `   pile: pastille ${read.pill}px · ${subject === 'panneau' ? 'panneau' : 'notice'} ` +
+      `${read.notice}px · couture ${read.gap}px ` +
       `${read.painted === 'above' ? 'au-dessus' : 'au-dessous'} (${read.inside}px dans la pastille, ` +
       `liseré ${rim}px de chaque côté)`,
   )
@@ -5347,6 +5414,70 @@ const SCREENS = {
             `${JSON.stringify(before)} → ${JSON.stringify(after)}`,
         )
       }
+
+      /*
+       * **And the seam the panel hangs by** — the relationship `pile` measured
+       * on the notice card and left the biggest box on the window out of. It
+       * read 6.00 px here at both smoke sizes while the pill kept 12 between
+       * its own halves, and the exemption that spared it said so in writing.
+       * This is the direction a rep gets by default, the widget's own position
+       * being the bottom of the display; `widget-dessous` is the other one.
+       */
+      const stack = await pile(page, 'panneau')
+      if (stack.painted !== 'above') {
+        throw new Error(
+          `ce plan met le panneau ${stack.painted} : ce n’est plus le sens que la pastille ouvre par défaut`,
+        )
+      }
+    },
+  },
+
+  /**
+   * **The pill in the top half of the display, so the panel opens downward.**
+   *
+   * `opensAbove` answers on the pill's own half of the screen and the stub
+   * answered `true` unconditionally, which is right for where the widget starts
+   * — the bottom of the display — and silent about every rep who drags it up.
+   * So one of the two layouts this window has was drawn by no stage and
+   * measured by nothing, on the surface whose *other* direction had already
+   * shipped a seam of exactly 0 px for a round because nothing stood it there.
+   *
+   * What it holds: the chevron points where the panel will go (`data-arrow`,
+   * read off the glyph the product draws rather than a character an OS
+   * substitutes), and the seam between the pill and the panel is the same
+   * computed step in this direction as in the other — which is the half that
+   * cannot be got right by accident, the margin living on one edge and the
+   * paint order being reversed by `flex-col-reverse` only in the other case.
+   */
+  'widget-dessous': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      // Before the press, so the panel is laid out downward from its first
+      // frame rather than opening upward and flipping under the rep's eyes.
+      await page.evaluate(() => window.__harness.placeBelow())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+
+      const arrow = await page
+        .getByRole('button', { name: 'Replier le panneau' })
+        .locator('[data-arrow]')
+        .getAttribute('data-arrow')
+      if (arrow !== 'up') {
+        throw new Error(
+          `le panneau est ouvert vers le bas et le chevron pointe « ${arrow} » : ` +
+            'la pastille ment sur le sens dans lequel elle se replie',
+        )
+      }
+
+      const stack = await pile(page, 'panneau')
+      if (stack.painted !== 'below') {
+        throw new Error(
+          `ce plan met le panneau ${stack.painted} : le sens « vers le bas » n’est mesuré nulle part`,
+        )
+      }
     },
   },
 
@@ -8700,10 +8831,37 @@ async function main() {
       .reduce((sum, entry) => sum + entry.n, 0)
     const byRule = new Map()
     for (const item of beat.spared) byRule.set(item.why, (byRule.get(item.why) ?? 0) + item.n)
+    /*
+     * **The denominator is what was judged, and it was what was measured.**
+     *
+     * A spared value is off the ladder by construction — `take` files it to
+     * `spared` only after `onScale` has already returned false — so counting the
+     * spared in the bottom of a fraction whose top is « on the ladder » makes
+     * every exemption look like a defect, on the same line that names it as an
+     * exemption. Measured on the collapsed pill at 1280×800: « 47.6 % sur les 7
+     * pas déclarés · épargnés : 22 graphique », 20 of 42, while the number of
+     * values this pass would report on that screen is **zero**. A reviewer reads
+     * 47.6 % as « half this surface's spacing is off scale » — the blind scorer
+     * on round 23 says it nearly did — and the honest reading is 20 of 20.
+     *
+     * Both counts are printed, because the share alone would now hide the size
+     * of the exemption: `39 mesurés, 22 épargnés` is the sentence that lets a
+     * reader ask whether the sparing rules are too generous, which is the next
+     * question and one this line used to make unaskable in the other direction.
+     *
+     * **What is *not* taken out of the denominator, stated rather than left to
+     * be discovered.** A value covered by a `RHYTHM_ALLOWANCES` entry is off the
+     * ladder and is not spared — it is filed to `off` and then excused by name,
+     * one site at a time — so it still lowers this share, which is right: an
+     * allowance is an argument about one rectangle, not a rung of the scale.
+     * `historique` at 1280×800 reads « 99.9 % des 1364 jugé(s) » with the pass
+     * green for exactly that reason, one excused site out of 1 364.
+     */
+    const judged = total - [...byRule.values()].reduce((sum, n) => sum + n, 0)
     console.log(
       `  rythme: ${total} espacement(s) peint(s) sur ${beat.elements} élément(s), ` +
-        `${total === 0 ? 0 : Math.round((1000 * onLadder) / total) / 10}% sur les ` +
-        `${beat.ladder.length} pas déclarés` +
+        `${judged === 0 ? 0 : Math.round((1000 * onLadder) / judged) / 10}% des ${judged} jugé(s) ` +
+        `sur les ${beat.ladder.length} pas déclarés` +
         (byRule.size > 0
           ? ` · épargnés : ${[...byRule].map(([why, n]) => `${n} ${why}`).join(', ')}`
           : '') +
