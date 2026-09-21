@@ -604,7 +604,7 @@ what `serve.mjs` drops the meta for.
 | `widget-sombre` | the panel open over a dark ground — the overlay re-points its ink, and the contrast a rep sees is against what Teams is painting |
 | `widget-attente` | « Aucun enregistrement »: no clock, no meter, no mark button, which is the half a `waitFor` on one string cannot prove |
 | `widget-ennui` | a long quiet call — the surface a rep watches for fifty minutes with nothing arriving |
-| `widget-deux-pannes` | **two** health edges: the local engine dies while the audio route is already wrong, then the capture recovers and the transcription must still be reported |
+| `widget-deux-pannes` | **two** health edges: the local engine dies while the audio route is already wrong, then the capture recovers and the transcription must still be reported — and *in whose words*: the slot is a `role="status"` live region, it never repeats the `reason` the stub published for the machine, and it does not replace the one written for a rep |
 | `widget-survol` | the panel under the cursor, so every hover step is painted rather than declared |
 | `widget-pause-refus` | *Pause* refused: the control stays, and the sentence names the cause instead of a *Réessayer* |
 | `widget-carte-sortie` | the card leaving, read off whatever the alert or status element is actually saying |

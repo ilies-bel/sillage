@@ -81,15 +81,17 @@ import type { TranscriptSegment } from '../../electron/core/contracts/transcript
 import { speakerLabel } from '../../electron/core/contracts/transcript.ts'
 import type { ConnectorHealth } from '../../electron/core/contracts/health.ts'
 /*
- * A **value** from `core/contracts/`, and the only one this file takes. The
- * ranking of two connector states is a product rule with one implementation in
- * this repo; a second one written here would be free to disagree with the
- * header's, which is exactly what the two writers into this window's health
- * already did. `status.ts` imports types only and builds nothing at module
- * scope, so this costs the renderer bundle nothing — see its own header for why
- * it is not in `health.ts`, which would pull Zod across the boundary.
+ * **Which channel speaks, and in whose words.** `healthSentence.ts` wraps
+ * `aggregateStatus` — the repo's one ranking of connector states, imported
+ * there as the only *value* the widget takes out of `core/contracts/` — and
+ * answers the second half the ranking does not: whether the `reason` it carries
+ * is a sentence the product wrote for a rep or a fragment it wrote for itself.
+ * Ten of the sixteen producers emit the latter, five of them ending in a JS
+ * `Error`'s own words, and this surface renders over a live client call. See
+ * that file's header for why the table is in the renderer and what its
+ * predicate cannot tell apart.
  */
-import { aggregateStatus } from '../../electron/core/contracts/status.ts'
+import { healthLine, type HealthLine, type LiveConnector } from './healthSentence.ts'
 import {
   MARK_NOTE_MAX,
   interleaveMarks,
@@ -141,8 +143,12 @@ const NOTHING_YET = 'Rien n’a encore été transcrit.'
  * Written as a literal union rather than derived from `RequiredConnectorId`,
  * because the runtime guard on `health:changed` names the same two literals: a
  * type that widened on its own would stop agreeing with the filter under it.
+ *
+ * It is declared in `healthSentence.ts` and imported, not restated: that file's
+ * table of what this window says is keyed by it, and two copies of the list
+ * would let the sentence table and the broadcast filter drift apart — which is
+ * how the slot came to hold a string nobody had written a row for.
  */
-type LiveConnector = 'capture' | 'transcribe'
 
 /**
  * **The clipboard, and the fact that it is allowed to say no.**
@@ -596,16 +602,26 @@ export function Widget() {
    * `grep -c 'health:changed\|health:snapshot'` over that file returned 0, and
    * the strip was fed by one stage emitting one connector from a static table.
    *
-   * `aggregateStatus` decides, rather than a second ranking written here: it is
-   * the repo's one ordering of these states (`down` outranks `degraded`, ties to
-   * the earlier connector — capture first, because it is the one that cannot be
-   * repaired after the call), it returns the connector's `reason` verbatim, and
-   * it reads a `Partial`, so a snapshot missing a key is *nothing known* rather
-   * than nothing wrong. Only the two channels a recording needs are put in front
-   * of it: `llm` does not run during the call and DEC-14 keeps it off this
-   * surface. One sentence still, because the strip is one sentence — the one
-   * being held back comes forward the moment the worse one clears, which is what
-   * makes « the worst » honest rather than lossy.
+   * `aggregateStatus` decides *which* channel speaks, rather than a second
+   * ranking written here: it is the repo's one ordering of these states (`down`
+   * outranks `degraded`, ties to the earlier connector — capture first, because
+   * it is the one that cannot be repaired after the call) and it reads a
+   * `Partial`, so a snapshot missing a key is *nothing known* rather than
+   * nothing wrong. Only the two channels a recording needs are put in front of
+   * it: `llm` does not run during the call and DEC-14 keeps it off this surface.
+   * One sentence still, because the strip is one sentence — the one being held
+   * back comes forward the moment the worse one clears, which is what makes
+   * « the worst » honest rather than lossy.
+   *
+   * **It does not decide how that channel speaks, and for one round it was read
+   * as though it did.** `aggregateStatus` returns the connector's `reason`
+   * verbatim — that is its contract, and Réglages wants exactly that — so this
+   * slot held whatever string the producer happened to have. Six of the sixteen
+   * producers write a sentence for a rep; ten write a fragment for themselves,
+   * and `widget-deux-pannes` put « aucun fournisseur de transcription
+   * disponible » — lowercase, unterminated, no remedy — on a card drawn over a
+   * client's face. `healthLine` is the second half: the producer's sentence when
+   * it is one, this window's own when it is not.
    *
    * **The edge wins a late snapshot**, which the spread says and an effect that
    * overwrote could not: the read is one preload hop issued at mount and the
@@ -629,7 +645,7 @@ export function Widget() {
     if (connector !== 'capture' && connector !== 'transcribe') return
     setConnectors((was) => ({ ...was, [connector]: next }))
   })
-  const trouble = aggregateStatus(connectors).reason
+  const trouble = healthLine(connectors)
 
   /*
    * The turns arrive on the broadcast nothing had ever subscribed to.
@@ -2324,8 +2340,11 @@ interface PanelProps {
   heading: string
   turns: readonly TranscriptSegment[]
   marks: readonly MomentMark[]
-  /** Collected by the window, never here — see the note on the state itself. */
-  trouble: string | null
+  /**
+   * Collected *and worded* by the window, never here — see the note on the
+   * state itself, and `healthSentence.ts` for who wrote the sentence.
+   */
+  trouble: HealthLine | null
   onMark: (segmentId: string | null, note: string) => void
   onForget: (markId: string) => void
   onClose: () => void
@@ -2558,9 +2577,70 @@ function Panel({
         semibold too. They are not fixed here; this is the one on the surface the
         round is about, and the rest wants its own pass.
       */}
-      {trouble === null ? null : (
-        <p className="text-warn px-inline py-tight text-meta">{trouble}</p>
-      )}
+      {/*
+        **A live region, and it is mounted whether or not it has anything to
+        say.**
+
+        It had neither a `role` nor an `aria-live`, on the one reading in this
+        product that says a client call is not being recorded — a rep using a
+        screen reader got the sentence only by arrowing onto it, and nothing on
+        this card invites that.
+
+        `role="status"` and not `role="alert"`, which is the opposite of the two
+        other live regions on this surface and is the one decision here worth
+        arguing. `Refus` is `alert` because it is a *transient* answer to a press
+        the rep just made, and it is dismissed; `OutcomeNotice` is `alert`
+        because the meeting has ended under the rep and there is nothing after
+        it. This is neither. It is a **condition** that lasts for the rest of the
+        call, and it changes hands while it lasts: driven on the shipped renderer
+        in `widget-deux-pannes`, the slot reads capture → transcribe →
+        transcribe → capture over four `health:changed` edges in one call.
+        `alert` is assertive, so each of those would cut across a rep who is
+        mid-sentence with a client — four interruptions, one of which says
+        nothing new, on a window whose whole rule (DEC-49) is that it must not
+        take the call. `status` is polite: it is read at the next pause, which
+        is when a rep can do anything about it anyway.
+
+        And it is mounted unconditionally, with `text` empty when there is
+        nothing wrong, because a polite region that is *inserted* along with its
+        content is announced by no assistive technology reliably — the region has
+        to be in the accessibility tree before the text changes. An empty `<p>`
+        with its padding dropped generates no line box, so this costs the card
+        nothing, and that is a measurement and not a guess: the panel card is
+        **354.55 px** tall with everything well, at 1280×800 and at 960×600,
+        with this region mounted and empty — the same 354.55 px it was before
+        the region existed. With the route-change sentence in it the card is
+        395.78 px and the region 59.83.
+
+        `aria-atomic`, because the sentence is replaced whole when the worst
+        channel changes and half of a swapped sentence is not a sentence.
+
+        **What this still does not fix**: the slot lives in `Panel`, which is
+        mounted by a press on the pill. A rep who never opens the panel is told
+        nothing, sighted or not. That is a larger change — the pill would have to
+        carry a mark — and it is stated here rather than quietly left.
+      */}
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        /*
+          `data-health` because this is the **second** `role="status"` on the
+          surface — the mention card is the first — and a test that asked the
+          page for « the status » would have got whichever one React rendered
+          first. `spacing.test.tsx` was measuring the mention card's seam
+          through exactly that query.
+        */
+        data-health
+        /* Whose words: `connector` for the producer's sentence, `widget` for
+           this window's. Read by `widget-deux-pannes`, which cannot otherwise
+           tell « the fragment was replaced » from « the slot went quiet ». */
+        data-written={trouble === null ? undefined : trouble.written}
+        className={
+          trouble === null ? 'text-warn text-meta' : 'text-warn px-inline py-tight text-meta'
+        }>
+        {trouble === null ? '' : trouble.text}
+      </p>
 
       <div
         ref={scroller}
