@@ -427,3 +427,23 @@ test('the editor mounts against the ported note schema', () => {
   const state = EditorState.create({ schema })
   expect(state.doc.type.name).toBe('doc')
 })
+
+/*
+ * **The notepad declares that it is a document, and the other half is in
+ * `src/screens/session/__tests__/CompteRenduDocument.test.tsx`.**
+ *
+ * VISION §6 calls the two « one document set two ways » and gives them one type
+ * ladder. `shot.mjs --census`' third display-face claim holds every heading
+ * inside either of them to the declared display face — and it finds them by
+ * this attribute, so a rename here makes that claim print « aucun document » and
+ * pass over an unmeasured screen. That is the direction this asserts.
+ */
+test('declares itself a document, so the face census can find it', () => {
+  const { container } = mount()
+  const root = container.querySelector('[data-document]')
+  expect(root, 'the notepad must declare data-document').toBeTruthy()
+  expect(root?.getAttribute('data-document')).toBe('bloc-notes')
+  // The same element is the scroller, so the census reaches the editable's
+  // headings through it rather than through a wrapper that may not exist.
+  expect(root?.classList.contains('notepad')).toBe(true)
+})

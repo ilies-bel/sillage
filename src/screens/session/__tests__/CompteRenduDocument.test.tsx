@@ -101,3 +101,49 @@ describe('provenance glyph', () => {
     expect(container.querySelector('svg')).toBeNull()
   })
 })
+
+/*
+ * **One rung, one family — the half a browser has to measure, and the half that
+ * can be held here.**
+ *
+ * The defect these two assertions exist for was measured on the shipped
+ * renderer: « À retenir » in the notepad at 19px/500/Fraunces beside « Résumé »
+ * in the compte-rendu at 19px/600/Inter, one rung, one screen. jsdom answers
+ * zero for every box and resolves no stylesheet, so *nothing here can see a
+ * typeface* — `shot.mjs --census`' third display-face claim is the instrument
+ * that measures it, on the real renderer at both smoke sizes.
+ *
+ * What is held here is the two things that claim depends on and a browser check
+ * cannot state: that the document still says what it is, and that the three
+ * heading rungs still agree about their face rather than leaving it to a tag.
+ * Removing `data-document` makes `--census` print « aucun document » and pass —
+ * the silence its own docblock records — so this is where that direction fails.
+ */
+describe('one document, set two ways', () => {
+  it('declares itself a document, so the face census can find it', () => {
+    const { container } = render(<CompteRenduDocument text={'# Titre'} />)
+    const root = container.querySelector('[data-document]')
+    expect(root, 'the compte-rendu must declare data-document').not.toBeNull()
+    expect(root?.getAttribute('data-document')).toBe('compte-rendu')
+  })
+
+  it('sets all three heading rungs in the display face, and none of them in a weight', () => {
+    const { container } = render(
+      <CompteRenduDocument text={'# Titre\n\n## Section\n\n### Sous-section'} />,
+    )
+    const rungs = [...container.querySelectorAll('div[class*="text-title"], div[class*="text-heading"], div[class*="text-subhead"]')]
+    expect(rungs.length, 'three heading rungs are drawn').toBe(3)
+    for (const rung of rungs) {
+      const classes = rung.className
+      expect(classes, `${classes} must write the display face`).toContain('font-display')
+      /*
+       * `.font-display` carries `--display-weight` in the base layer, which is
+       * the rule `4ee37e6` shipped so that writing the face writes the weight.
+       * A `font-semibold` beside it is the tag deciding again, one level down —
+       * it is what level 2 and level 3 carried, and it is what made them 600
+       * against the notepad's 500.
+       */
+      expect(/\bfont-(thin|light|normal|medium|semibold|bold|extrabold|black)\b/.test(classes), `${classes} must not overrule the face's weight`).toBe(false)
+    }
+  })
+})

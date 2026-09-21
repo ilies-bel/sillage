@@ -157,12 +157,14 @@ module.exports = {
          * corner away in silence: `rounded` with no `DEFAULT` compiles to no rule
          * at all, exactly like `bg-muted/30`.
          *
-         * `--radius` itself is still declared in `tokens.css`, and that is not an
-         * oversight — `shot.mjs --census` reads the ladder from a hand-written
-         * list of three names and fails every stage at two. `tokens.css` carries
-         * the measurement and the blocker; `tokens.test.ts` holds the rung to
-         * being either worn by a class `src/` writes or named there with its
-         * reason.
+         * `--radius` itself survived in `tokens.css` for two rounds after that,
+         * because `shot.mjs --census` read its ladder from a hand-written list of
+         * three names and failed every stage at two — the instrument that proved
+         * the token dead was the reason it could not be deleted. Round 23 made
+         * that pass discover the rungs by prefix, so the line is gone and the
+         * ladder is 10 and 14. `tokens.css` carries the count and what the
+         * shorter ladder costs; `tokens.test.ts` holds both surviving rungs to
+         * being worn by a class `src/` writes, with no declared-debt entry left.
          */
         DEFAULT: 'var(--radius-sm)',
         lg: 'var(--radius-lg)',
