@@ -16,6 +16,7 @@
  *   --echo           fail on a visible string the screen draws more than once
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
+ *   --marks          the marks of one key against **each other**, not their ground
  *   --scrollers      content hidden inside a scroller the arming guard cannot see
  *   --motion         every transition through the tokens, and silent under reduced motion
  *   --fade           every fading mask against the line box it fades over
@@ -6074,6 +6075,7 @@ function parseArgs(argv) {
     echo: false,
     a11y: false,
     contrast: false,
+    marks: false,
     motion: false,
     fade: false,
     census: false,
@@ -6101,6 +6103,7 @@ function parseArgs(argv) {
     else if (arg === '--echo') flags.echo = true
     else if (arg === '--a11y') flags.a11y = true
     else if (arg === '--contrast') flags.contrast = true
+    else if (arg === '--marks') flags.marks = true
     else if (arg === '--scrollers') flags.scrollers = true
     else if (arg === '--motion') flags.motion = true
     else if (arg === '--fade') flags.fade = true
@@ -6130,7 +6133,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--marks] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -6505,6 +6508,106 @@ async function main() {
     grainAlpha = measured.grainAlpha
     grainTile = measured.grainTile
     grainPainted = measured.grainPainted
+  }
+
+  /*
+   * **`--marks`'s own self-test, and it creates every mark it attacks.**
+   *
+   *   SILLAGE_MARKS_ATTACK=1 node scripts/harness/shot.mjs <stage> /dev/null \
+   *     --no-png --marks
+   *
+   * must report the three pairs below, stay silent on the six that are
+   * separated — or are one mark with two names — and exit **21**. The bench is
+   * on the page beside the real marks, so it is compared against them too;
+   * every assertion names *both* halves of its own pair, because « this name
+   * appears in some finding » would be satisfied by a collision with the
+   * screen's own key and would prove nothing about the probe.
+   *
+   * Gated on `--marks` as well as on the variable, unlike the two attacks above
+   * it: this one injects **elements** rather than a stylesheet, so with the
+   * variable set and the flag absent it would be eighteen marks on the page
+   * that `--echo`, `--census` and `--rhythm` all measure and nothing asserts.
+   *
+   * A harness-only development override, which is what `process.env` is for
+   * here: DEC-34 is about the *app* requiring none, and nothing in `electron/`
+   * or `src/` reads this.
+   */
+  if (process.env.SILLAGE_MARKS_ATTACK && flags.marks) {
+    await page.evaluate(() => {
+      const root = document.querySelector('#root')
+      if (!root) throw new Error('SILLAGE_MARKS_ATTACK: pas de #root à attaquer')
+      const bench = document.createElement('div')
+      /* Laid out and fully opaque: `painted()` refuses anything under 0.99. */
+      bench.setAttribute('style', 'position:fixed;left:0;top:0;z-index:0;background:#fff')
+      root.append(bench)
+      const mark = (name, style) => {
+        const el = document.createElement('span')
+        el.dataset.graphic = name
+        el.setAttribute('style', `display:inline-block;${style}`)
+        bench.append(el)
+        return el
+      }
+      const BLEU = '#0594da'
+      const ORANGE = '#d77000'
+      const FONCE = '#036696'
+      const dot = (size, colour) =>
+        `width:${size}px;height:${size}px;border-radius:9999px;background:${colour}`
+
+      /* 1. The shipped defect: two filled 6px dots, one hue apart. */
+      mark('attaque-teinte-enregistre', dot(6, BLEU))
+      mark('attaque-teinte-en-cours', dot(6, ORANGE))
+
+      /*
+       * 2. Two filled 6px dots a *square*'s worth of corners apart and nothing
+       * else — the fix that looks like a second channel and is 0.2148 of one.
+       */
+      mark('attaque-carre-rond', dot(6, BLEU))
+      mark('attaque-carre-carre', `width:6px;height:6px;background:${BLEU}`)
+
+      /* 3. One name, two inks — the `#ff8500`/`#d77000` defect `tokens.css` records. */
+      mark('attaque-derive', dot(6, ORANGE))
+      mark('attaque-derive', dot(6, FONCE))
+
+      /* 4. Silent: the same two dots, separated by the brand ramp's own step. */
+      mark('attaque-clarte-claire', dot(8, BLEU))
+      mark('attaque-clarte-foncee', dot(8, FONCE))
+
+      /* 5. Silent: the product's own fill-against-hollow axis, one ink. */
+      mark('attaque-forme-plein', dot(6, '#7d5f18'))
+      mark(
+        'attaque-forme-creux',
+        'width:6px;height:6px;border-radius:9999px;border:1px solid #7d5f18',
+      )
+
+      /* 6. Silent: a ring drawn as an outset box-shadow, which reads as no ink
+         at all to anything that only knows `border`. */
+      mark('attaque-anneau-plein', dot(8, '#2f855a'))
+      mark(
+        'attaque-anneau-anneau',
+        'width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 1px #2f855a',
+      )
+
+      /* 7. Silent: size alone, which survives greyscale. */
+      mark('attaque-taille-petite', dot(6, '#c53030'))
+      mark('attaque-taille-grande', dot(9, '#c53030'))
+
+      /* 8. Silent, and counted: two names, one paint — the onboarding's two
+         completed steps, which are one mark drawn twice on purpose. */
+      mark('attaque-jumelle-a', dot(8, '#a3b4c1'))
+      mark('attaque-jumelle-b', dot(8, '#a3b4c1'))
+
+      /* 9. Silent: the defect pair, in `display:none`. A mark nobody sees is
+         not a mark two marks can be told apart by. */
+      mark('attaque-cachee-bleue', `${dot(6, BLEU)};display:none`)
+      mark('attaque-cachee-orange', `${dot(6, ORANGE)};display:none`)
+    })
+    await settled(page)
+  }
+
+  let paired = null
+  if (flags.marks) {
+    await page.evaluate(() => document.fonts.ready)
+    paired = await marks(page, MARK_FLOORS)
   }
 
   /*
@@ -7072,6 +7175,128 @@ async function main() {
         console.log(`     ${item.what} — ${item.image} — près de « ${item.text} »`)
       }
       process.exitCode = 8
+    }
+  }
+  if (flags.marks) {
+    const floors = `planchers ΔL* ${MARK_FLOORS.lightness} ou forme ${MARK_FLOORS.form}`
+    const pair = (item) =>
+      `« ${item.a} » / « ${item.b} » — ${item.inkA} contre ${item.inkB}, ` +
+      `ΔL* ${item.light.toFixed(3)}, forme ${item.form.toFixed(4)}, ${item.ratio.toFixed(4)}:1`
+    /*
+     * **The census says what was compared, because zero pairs is the normal
+     * case on most of this product's screens.** Swept over the whole list: 39
+     * of the 85 stages draw no declared mark at all, 14 draw exactly one, and
+     * 32 compare a pair. A verdict line that reads the same on a widget stage
+     * and on the agenda's six pairs would be green everywhere for the wrong
+     * reason — the failure `--fade` was rewritten to end and `--contrast` had
+     * to learn twice.
+     */
+    if (paired.compared === 0) {
+      console.log(
+        `  marques: ${paired.seen} peinte(s), ${paired.names} nom(s), aucune paire à comparer` +
+          (paired.twins > 0 ? `, ${paired.twins} jumelle(s)` : '') +
+          ' — un code ne se mesure qu’à partir de deux marques distinctes',
+      )
+    } else if (paired.items.length === 0) {
+      console.log(
+        `  marques: ${paired.seen} peinte(s), ${paired.names} nom(s), ${paired.compared} paire(s) ` +
+          `comparée(s) — ${paired.byLight} séparée(s) en clarté, ${paired.byForm} en forme` +
+          (paired.twins > 0 ? `, ${paired.twins} jumelle(s)` : '') +
+          (paired.inkless > 0 ? `, ${paired.inkless} sans encre` : '') +
+          ` · la plus serrée : ${pair(paired.weakest)} (${floors})`,
+      )
+    } else {
+      console.log(
+        `  ✗ marques: ${paired.items.length} paire(s) que seule la teinte sépare sur ` +
+          `${paired.compared} comparée(s) — ${floors}`,
+      )
+      for (const item of paired.items.slice(0, 8)) console.log(`   ✗ ${pair(item)}`)
+      process.exitCode = 19
+    }
+    if (paired.drift.length > 0) {
+      console.log(
+        `  ✗ marques: ${paired.drift.length} marque(s) peinte(s) de deux couleurs sur un ` +
+          'seul écran — une signification qui a besoin de deux valeurs n’est pas résolue',
+      )
+      for (const item of paired.drift.slice(0, 8)) {
+        console.log(`   ✗ « ${item.name} » — ${item.inks.join(' et ')}`)
+      }
+      process.exitCode = 19
+    }
+    if (process.env.SILLAGE_MARKS_ATTACK) {
+      const between = (left, right) =>
+        paired.items.some(
+          (item) =>
+            (item.a.includes(left) && item.b.includes(right)) ||
+            (item.a.includes(right) && item.b.includes(left)),
+        )
+      const missed = [
+        [
+          between('attaque-teinte-enregistre', 'attaque-teinte-en-cours'),
+          'deux pastilles pleines de 6px que seule la teinte sépare — le défaut expédié',
+        ],
+        [
+          between('attaque-carre-rond', 'attaque-carre-carre'),
+          'un carré de 6px contre un rond de 6px : une seconde voie qui ne vaut que 0,2148 ' +
+            'd’union — la forme qu’un correctif prend quand il ne mesure pas',
+        ],
+        [
+          paired.drift.some((item) => item.name === 'attaque-derive'),
+          'une seule marque peinte de deux couleurs sur un écran (#d77000 et #036696)',
+        ],
+        /*
+         * The six silent ones, asserted the other way round. A check that can
+         * only fail loudly cannot show that it does not fire, and every one of
+         * these is a distinction the product actually ships — a false positive
+         * here would be a lane told to repaint a mark that reads perfectly.
+         */
+        [
+          !between('attaque-clarte-claire', 'attaque-clarte-foncee'),
+          'RIEN — deux pastilles séparées par un échelon de la rampe de marque ' +
+            '(brand-500 contre brand-700, ΔL* 17,49) ont été signalées (faux positif : ' +
+            'c’est le compteur d’étapes de l’accueil)',
+        ],
+        [
+          !between('attaque-forme-plein', 'attaque-forme-creux'),
+          'RIEN — plein contre creux sur une même encre a été signalé (faux positif : ' +
+            'c’est l’axe que MARK_CLASS et le widget dépensent tous les deux)',
+        ],
+        [
+          !between('attaque-anneau-plein', 'attaque-anneau-anneau'),
+          'RIEN — un anneau dessiné en box-shadow a été lu comme absence d’encre ' +
+            '(faux positif : ring-* ne pose aucune bordure)',
+        ],
+        [
+          !between('attaque-taille-petite', 'attaque-taille-grande'),
+          'RIEN — deux pastilles de 6 et 9px sur une même encre ont été signalées ' +
+            '(faux positif : la taille survit au niveau de gris)',
+        ],
+        [
+          !between('attaque-jumelle-a', 'attaque-jumelle-b'),
+          'RIEN — deux noms sur une peinture identique ont été signalés (faux positif : ' +
+            'c’est une marque dessinée deux fois, pas deux marques confondues)',
+        ],
+        [
+          !between('attaque-cachee-bleue', 'attaque-cachee-orange'),
+          'RIEN — la paire en display:none a été comparée (faux positif : une marque ' +
+            'que personne ne voit ne distingue rien)',
+        ],
+      ]
+        .filter(([held]) => !held)
+        .map(([, what]) => what)
+      if (missed.length > 0) {
+        console.log(
+          `  ✗ auto-test des marques: ${missed.length} attaque(s) n’ont rien provoqué — ` +
+            'la vérification ne mesure pas ce qu’elle prétend mesurer sur cette mise en scène',
+        )
+        for (const what of missed) console.log(`     jamais signalé : ${what}`)
+        process.exitCode = 20
+      } else {
+        console.log(
+          '  auto-test des marques: les trois attaques signalées, les six dernières restées muettes',
+        )
+        process.exitCode = 21
+      }
     }
   }
   if (flags.motion) {
@@ -8174,6 +8399,388 @@ async function contrast(page) {
   })
   await stylesheet.evaluate((node) => node.remove())
   return findings
+}
+
+/**
+ * **The floors, and they are a judgement between two measured anchors rather
+ * than a number read off a standard. There is no standard number for this.**
+ *
+ * WCAG 1.4.11 holds a meaningful graphic to 3:1 against *adjacent colours*, and
+ * every instrument in this file reads that as « a mark against the ground it is
+ * painted on ». Nothing had ever asked it of two marks in one key, and 3:1
+ * between two marks cannot be the answer here: `--accent` and `--brand-500` are
+ * both pinned to clearing 3:1 on five near-white grounds, which bounds both of
+ * their lightnesses into the same band — they measure **1.0077:1** against each
+ * other. Holding them to 3:1 would fail a palette that cannot be repaired
+ * without breaking the floor that matters more.
+ *
+ * So the rule is « a rep must be able to tell them apart with the hue taken
+ * away », and it has two branches with a floor each:
+ *
+ *   **lightness** — ΔL*, the instrument `measureRail` already uses, because a
+ *   ratio is the wrong shape for two inks of the same family. `RAIL_FLOOR` is
+ *   2.5 for two large grounds sharing an edge; two 6 px marks compared across a
+ *   screen against a key two inches away need more, and the product's own only
+ *   lightness-separated pair — the onboarding's `brand-500` step against its
+ *   `brand-700` one, which reads correctly — measures **17.49**. The defect
+ *   measures **0.225**. 10 sits between them; it is not derived from anything.
+ *
+ *   **form** — the fraction of the two silhouettes' union that only one of them
+ *   paints, rasterised from the box, the corner radii and the ring or border
+ *   that draws it. The anchors are again the product's own, and both are read
+ *   off this instrument rather than worked out on paper: fill-against-hollow on
+ *   a 6 px dot — the axis `MARK_CLASS` and `Widget.tsx` both already spend, and
+ *   the weakest pair the agenda ships — measures **0.4447**, and a filled 6 px
+ *   square against a filled 6 px dot, two shapes that differ by their corners
+ *   and nothing else at that size, measures **0.2186** (probe 2 of the
+ *   self-test). 0.30 refuses the second and accepts the first with margin.
+ *
+ * Both are printed on every run, green or red, with the weakest pair named, so
+ * the distribution the verdict is drawn from is visible rather than implied.
+ */
+const MARK_FLOORS = { lightness: 10, form: 0.3 }
+
+/**
+ * **Two marks against each other — the question none of the twelve other passes
+ * can ask.**
+ *
+ * `--contrast` reads every `[data-graphic]` against `groundOf(parentElement)`.
+ * The calendar's « réunion enregistrée » clears its ground at 3.357:1 and its
+ * « enregistrement en cours » at 3.383:1, so that pass prints « 14 graphique(s)
+ * à 3:1 » and goes green — while the two of them measure **1.0077:1, ΔL* 0.226**
+ * against *each other*, painted on 6 px dots one above the other in the same
+ * legend. A rep glancing at the month to answer « is anything recording right
+ * now » is reading hue alone at six pixels; in greyscale, or for a red-green or
+ * blue-orange deficiency, a finished call and a live microphone are one mark.
+ * Every pass in this file asks something **intrinsic** about one element. This
+ * one is **relational**, and that is the whole of what it adds.
+ *
+ * **The subject is a pair the author asked to be different.** Two marks painted
+ * identically are one mark with two names — the onboarding draws two completed
+ * steps that way on purpose — and whether they *should* differ is a question
+ * about the code, not about the paint. They are counted as « jumelles » and
+ * printed, never failed on. Everything else is a pair somebody intended to
+ * separate, and it has to survive greyscale.
+ *
+ * **Scope, stated rather than implied.** It compares marks that are on one
+ * screen at one moment: a legend against itself, a legend against the grid it
+ * keys, two marks in one row. It does **not** reach a code spread across states
+ * — the widget's idle, paused and recording glyphs are three stages and never
+ * two elements, so this pass sees one mark there and says so. It does not reach
+ * two marks on two screens either: the widget's live dot and the calendar's are
+ * never compared, and keeping them the same shape is an argument in the source,
+ * not a measurement here.
+ *
+ * **And it inherits `data-graphic`'s opt-in, with the same cost.** 1.4.11 covers
+ * a graphic *required to understand the content* and only the author knows which
+ * those are — but an opt-in census cannot tell « nothing here needs checking »
+ * from « nobody has opted in ». `--contrast` already counts the marks nobody
+ * declared (« N marque(s) non déclarée(s) », one on the agenda today) and that
+ * number is the honest bound on this pass as well: a key drawn out of undeclared
+ * spans is a key this cannot see.
+ *
+ * **Scroll does not corrupt it**, which is worth one sentence because the
+ * relational passes in this file are exactly the ones a scrolled-away ancestor
+ * ruins. What it compares is each mark's own ink and its own silhouette, both
+ * intrinsic; where the mark sits decides nothing. A key scrolled out of view
+ * still teaches the code the rep reads two seconds later, so a painted mark
+ * counts wherever it is.
+ */
+async function marks(page, floors) {
+  return page.evaluate((FLOOR) => {
+    const parse = (value) => {
+      const found = /rgba?\(([^)]+)\)/.exec(value ?? '')
+      if (!found) return null
+      const parts = found[1]
+        .split(/[,\s/]+/)
+        .filter((part) => part !== '')
+        .map(Number)
+      if (parts.some((n) => Number.isNaN(n))) return null
+      if (parts.length > 3 && parts[3] < 0.99) return null
+      return parts.slice(0, 3)
+    }
+    const channel = (v) => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    }
+    const luminance = (rgb) => 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+    const ratioOf = (a, b) => {
+      const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p)
+      return (x + 0.05) / (y + 0.05)
+    }
+    /* CIE L*, on the same D65 luminance the ratio above is built from. */
+    const lstar = (rgb) => {
+      const y = luminance(rgb)
+      return y <= 216 / 24389 ? (y * 24389) / 27 : Math.cbrt(y) * 116 - 16
+    }
+
+    /*
+     * The same predicate `--contrast` uses, and `drawn` is deliberately not:
+     * a mark carrying information visually is *supposed* to be `aria-hidden`
+     * when a labelled parent says the same thing in words.
+     */
+    const painted = (el) => {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (Number(style.opacity) < 0.99) return false
+      return el.offsetParent !== null || style.position === 'fixed'
+    }
+
+    /*
+     * `box-shadow` split at the top level: a ring is `0 0 0 <spread>` with no
+     * offset and no blur, inset or not, and Tailwind emits the offset shadow
+     * first and the ring second. Anything with a blur or an offset is an
+     * elevation and not ink.
+     */
+    const shadows = (css) => {
+      if (!css || css === 'none') return []
+      const entries = []
+      let depth = 0
+      let start = 0
+      for (let at = 0; at < css.length; at++) {
+        const c = css[at]
+        if (c === '(') depth += 1
+        else if (c === ')') depth -= 1
+        else if (c === ',' && depth === 0) {
+          entries.push(css.slice(start, at))
+          start = at + 1
+        }
+      }
+      entries.push(css.slice(start))
+      return entries.map((entry) => {
+        const colour = /rgba?\([^)]+\)/.exec(entry)
+        const lengths = (entry.replace(/rgba?\([^)]+\)/, '').match(/-?[\d.]+px/g) ?? []).map(Number.parseFloat)
+        return {
+          colour: colour ? colour[0] : null,
+          inset: /\binset\b/.test(entry),
+          x: lengths[0] ?? 0,
+          y: lengths[1] ?? 0,
+          blur: lengths[2] ?? 0,
+          spread: lengths[3] ?? 0,
+        }
+      })
+    }
+
+    const CORNERS = [
+      'borderTopLeftRadius',
+      'borderTopRightRadius',
+      'borderBottomRightRadius',
+      'borderBottomLeftRadius',
+    ]
+    const radii = (style, w, h, grow) =>
+      CORNERS.map((corner) => {
+        const raw = style[corner]
+        const value = raw.endsWith('%')
+          ? (Number.parseFloat(raw) / 100) * Math.min(w, h)
+          : Number.parseFloat(raw)
+        const clamped = Math.min(Number.isNaN(value) ? 0 : value, Math.min(w, h) / 2)
+        return Math.max(0, clamped + grow)
+      })
+
+    const SIDES = [
+      ['borderTopWidth', 'borderTopColor'],
+      ['borderRightWidth', 'borderRightColor'],
+      ['borderBottomWidth', 'borderBottomColor'],
+      ['borderLeftWidth', 'borderLeftColor'],
+    ]
+
+    /*
+     * **The silhouette, from the three ways this product draws a mark.** A fill
+     * is the whole rounded box; a `border` or a `ring` is the band between the
+     * box and the box inset — or grown — by it. `ring-*` compiles to a
+     * `box-shadow`, and an unhandled one would read as no ink at all, which is
+     * the correction `--contrast` already carries twice.
+     */
+    const shapeOf = (el) => {
+      const style = getComputedStyle(el)
+      const box = el.getBoundingClientRect()
+      const w = box.width
+      const h = box.height
+      if (w <= 0 || h <= 0) return null
+      const outer = (grow) => ({
+        w: w + 2 * grow,
+        h: h + 2 * grow,
+        r: radii(style, w, h, grow),
+        dx: 0,
+        dy: 0,
+      })
+      if (parse(style.backgroundColor)) {
+        return { ink: style.backgroundColor, outer: outer(0), inner: null }
+      }
+      const ring = shadows(style.boxShadow).find(
+        (s) => s.colour && parse(s.colour) && s.x === 0 && s.y === 0 && s.blur === 0 && s.spread > 0,
+      )
+      if (ring) {
+        const inner = ring.inset
+          ? {
+              w: w - 2 * ring.spread,
+              h: h - 2 * ring.spread,
+              r: radii(style, w, h, -ring.spread),
+              dx: 0,
+              dy: 0,
+            }
+          : outer(0)
+        const shape = { ink: ring.colour, outer: ring.inset ? outer(0) : outer(ring.spread), inner }
+        if (shape.inner.w <= 0 || shape.inner.h <= 0) shape.inner = null
+        return shape
+      }
+      const drawn = SIDES.map(([width, colour]) => ({
+        width: Number.parseFloat(style[width]),
+        colour: style[colour],
+        opaque: Number.parseFloat(style[width]) > 0 && parse(style[colour]) !== null,
+      }))
+      if (!drawn.some((side) => side.opaque)) return null
+      const [top, right, bottom, left] = drawn.map((side) => (side.opaque ? side.width : 0))
+      const inner = {
+        w: w - left - right,
+        h: h - top - bottom,
+        r: radii(style, w, h, -Math.max(top, right, bottom, left)),
+        dx: (left - right) / 2,
+        dy: (top - bottom) / 2,
+      }
+      const ink = drawn.find((side) => side.opaque).colour
+      return { ink, outer: outer(0), inner: inner.w <= 0 || inner.h <= 0 ? null : inner }
+    }
+
+    const inside = (box, x, y) => {
+      const px = x - box.dx
+      const py = y - box.dy
+      const ax = Math.abs(px)
+      const ay = Math.abs(py)
+      const hw = box.w / 2
+      const hh = box.h / 2
+      if (ax > hw || ay > hh) return false
+      const corner = px >= 0 ? (py <= 0 ? 1 : 2) : py <= 0 ? 0 : 3
+      const r = Math.min(box.r[corner], hw, hh)
+      const cx = hw - r
+      const cy = hh - r
+      if (ax <= cx || ay <= cy) return true
+      return (ax - cx) ** 2 + (ay - cy) ** 2 <= r * r
+    }
+    const inked = (shape, x, y) => inside(shape.outer, x, y) && !(shape.inner && inside(shape.inner, x, y))
+
+    /*
+     * **Centred on each other, not placed.** A rep compares a 6 px dot in a grid
+     * cell against a swatch in a key two inches below it, so the question is
+     * what the two glyphs *are*, never where they sit. 0.1 px steps: the
+     * smallest ink this product draws is a 1 px border on a 6 px dot, and a
+     * coarser grid would read that band as a third of its width.
+     */
+    const STEP = 0.1
+    const formDistance = (a, b) => {
+      const span = Math.max(a.outer.w, a.outer.h, b.outer.w, b.outer.h) / 2 + STEP
+      let xor = 0
+      let union = 0
+      for (let x = -span; x <= span; x += STEP) {
+        for (let y = -span; y <= span; y += STEP) {
+          const inA = inked(a, x, y)
+          const inB = inked(b, x, y)
+          if (inA || inB) union += 1
+          if (inA !== inB) xor += 1
+        }
+      }
+      return union === 0 ? 0 : xor / union
+    }
+
+    const round = (n) => Math.round(n * 100) / 100
+    const signature = (shape) => {
+      const box = (b) =>
+        b === null
+          ? 'plein'
+          : `${round(b.w)}x${round(b.h)}:${b.r.map(round).join('/')}@${round(b.dx)},${round(b.dy)}`
+      return `${shape.ink}|${box(shape.outer)}|${box(shape.inner)}`
+    }
+
+    let seen = 0
+    let inkless = 0
+    const found = []
+    for (const el of document.querySelectorAll('[data-graphic]')) {
+      if (!painted(el)) continue
+      seen += 1
+      const shape = shapeOf(el)
+      /*
+       * A mark with no ink at all is `--contrast`'s finding — it prints « rien
+       * sur rgb(…) » and fails it at 0:1 — and counting it here as a second one
+       * would be the same defect reported twice under two names.
+       */
+      if (shape === null) {
+        inkless += 1
+        continue
+      }
+      found.push({ name: el.dataset.graphic || 'graphique', shape, sig: signature(shape) })
+    }
+
+    /*
+     * **One name, one paint.** `tokens.css` records the day « enregistrement en
+     * cours » was a 6 px filled dot in `#ff8500` on a row and `#d77000` in the
+     * grid 600 px away — 1.39:1 apart, for one state — and the lesson written
+     * under it is that a palette needing a second value for a meaning has not
+     * solved the meaning. Same paint means the same ink here, never the same
+     * size: a key's swatch may legitimately be drawn smaller than the mark it
+     * keys, so form is not held across one name.
+     */
+    const inks = new Map()
+    for (const mark of found) {
+      const seenInks = inks.get(mark.name) ?? new Set()
+      seenInks.add(mark.shape.ink)
+      inks.set(mark.name, seenInks)
+    }
+    const drift = [...inks.entries()]
+      .filter(([, set]) => set.size > 1)
+      .map(([name, set]) => ({ name, inks: [...set] }))
+
+    const byKey = new Map()
+    for (const mark of found) {
+      const key = `${mark.name} ${mark.sig}`
+      if (!byKey.has(key)) byKey.set(key, mark)
+    }
+    const reps = [...byKey.values()]
+
+    const items = []
+    const compared = []
+    let twins = 0
+    for (let i = 0; i < reps.length; i++) {
+      for (let j = i + 1; j < reps.length; j++) {
+        const a = reps[i]
+        const b = reps[j]
+        if (a.name === b.name) continue
+        const form = formDistance(a.shape, b.shape)
+        if (a.shape.ink === b.shape.ink && form === 0) {
+          twins += 1
+          continue
+        }
+        const inkA = parse(a.shape.ink)
+        const inkB = parse(b.shape.ink)
+        const light = Math.abs(lstar(inkA) - lstar(inkB))
+        const pair = {
+          a: a.name,
+          b: b.name,
+          inkA: a.shape.ink,
+          inkB: b.shape.ink,
+          light: Math.round(light * 1000) / 1000,
+          form: Math.round(form * 10000) / 10000,
+          ratio: Math.round(ratioOf(inkA, inkB) * 10000) / 10000,
+          margin: Math.max(light / FLOOR.lightness, form / FLOOR.form),
+        }
+        compared.push(pair)
+        if (pair.margin < 1) items.push(pair)
+      }
+    }
+    const weakest =
+      compared.length === 0 ? null : compared.reduce((worst, p) => (p.margin < worst.margin ? p : worst))
+    return {
+      seen,
+      inkless,
+      names: inks.size,
+      compared: compared.length,
+      twins,
+      byLight: compared.filter((p) => p.light >= FLOOR.lightness).length,
+      byForm: compared.filter((p) => p.form >= FLOOR.form).length,
+      weakest,
+      items,
+      drift,
+    }
+  }, floors)
 }
 
 /**

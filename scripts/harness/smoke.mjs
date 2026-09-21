@@ -173,18 +173,22 @@ const SIZES = ['1280x800', '960x600']
  * **The passes, declared once and counted rather than remembered.**
  *
  * This used to be an inline argument vector and `CLAUDE.md` a sentence beside
- * it; the sentence has been wrong twice, in the same direction, each time
+ * it; the sentence has been wrong three times, in the same direction, each time
  * omitting the passes added most recently — which are the ones a reviewer is
  * likeliest to assume unrun and re-run by hand. The run prints
  * `PASSES.length` at the end, so the number is read off the thing that was
  * actually passed.
  *
- * `--rhythm` and `--cells` are the two newest and they are here rather than
- * only in `shot.mjs` for the repo's eighth shape: a check nobody runs is a
- * control that is present and does nothing. They also both read *painted*
- * geometry over every stage, which is the half a hand-run reviewer never
- * reaches — `--cells` exists because ten passes were green over a client name
- * rendered in 40.3 px, and `--scrollers` could not see it by construction.
+ * `--marks` is the newest, and `--rhythm` and `--cells` the two before it; they
+ * are here rather than only in `shot.mjs` for the repo's eighth shape: a check
+ * nobody runs is a control that is present and does nothing. `--rhythm` and
+ * `--cells` both read *painted* geometry over every stage, which is the half a
+ * hand-run reviewer never reaches — `--cells` exists because ten passes were
+ * green over a client name rendered in 40.3 px, and `--scrollers` could not see
+ * it by construction. `--marks` is the first **relational** one: every other
+ * pass asks something about one element, and the twelve of them were green over
+ * a calendar whose « réunion enregistrée » and « enregistrement en cours »
+ * measured 1.0077:1 against each other on 6 px dots.
  */
 const PASSES = [
   '--geometry',
@@ -193,6 +197,7 @@ const PASSES = [
   '--echo',
   '--a11y',
   '--contrast',
+  '--marks',
   '--scrollers',
   '--motion',
   '--fade',

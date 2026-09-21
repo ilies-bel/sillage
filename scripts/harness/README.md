@@ -44,16 +44,17 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Twelve measured checks, and each exists because something shipped past a
+**Thirteen measured checks, and each exists because something shipped past a
 screenshot.** The list is not prose — it is `PASSES` in `smoke.mjs`, and
 `scripts/__tests__/harnessPasses.test.mjs` holds this line to it:
 
-    --geometry --targets --prose --echo --a11y --contrast --scrollers --motion --fade --census --rhythm --cells
+    --geometry --targets --prose --echo --a11y --contrast --marks --scrollers --motion --fade --census --rhythm --cells
 
 This sentence said « six » for three rounds, then « nine » for one, while the
 paragraph it sits in ended « All eight run on every stage » — three counts, none
 of them right, each omitting the passes added most recently, which are the ones a
-reviewer assumes unrun and re-runs by hand. It is a check now.
+reviewer assumes unrun and re-runs by hand. It is a check now, and it is the
+reason this line moved in the same commit as `--marks`.
 
 `--geometry` (ten of twenty-three gutter markers clipped),
 `--targets` (forty controls under WCAG 2.2's 24×24, none of them looking wrong in
@@ -71,7 +72,9 @@ check could not see it — and note what it still cannot ask, which is why `widg
 makes its own assertions rather than leaning on this: `--motion` reads *declarations*, so
 it can say that the widget's arrival is on tokens and going the right way and never that
 the window was sized off an untransformed box), `--fade`, `--scrollers`, `--census`,
-`--rhythm` and `--cells`, below. All twelve run on every stage at 1280×800 *and* at 960×600 —
+`--rhythm`, `--cells` and `--marks` — the last being the only one that compares two
+elements rather than judging one — below. All thirteen run on every stage at 1280×800
+*and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
 
@@ -271,6 +274,48 @@ that end where the pane ends and have no edge of their own for the emptiness to 
 inside. Those three are a real question about reading width on three other lanes'
 screens and are recorded in the round report rather than excused here, because
 `RHYTHM_ALLOWANCES` is right that « nobody has changed it yet » is not a reason.
+
+**`--marks` compares two marks to each other, which none of the other twelve can.**
+Every pass in `shot.mjs` asks something *intrinsic* about one element — this ink
+against that ground, this box against 24×24, this gap against the ladder — so a
+code made of several marks was measured one mark at a time and never as a code.
+The calendar's « réunion enregistrée » `rgb(5,148,218)` and « enregistrement en
+cours » `rgb(215,112,0)` each clear their own ground at 3.24–3.26:1 and measure
+**1.0077:1, ΔL\* 0.226** against *each other*, on 6 px dots one above the other in
+the same legend: in greyscale, and for a blue-orange deficiency, the month said
+nothing about whether anything was recording.
+
+It reads every painted `[data-graphic]` on one screen, takes its ink the way
+`--contrast` does (fill, then a `ring-*` box-shadow, then a border on any side)
+and rasterises its silhouette from the box, the four corner radii and the band
+that draws it. A pair of differently-named marks passes on **either** channel
+that survives greyscale: ΔL\* ≥ 10, or a form distance ≥ 0.30, where the form
+distance is the share of the two centred silhouettes' union that only one of them
+paints. Two marks painted *identically* are one mark with two names — the
+onboarding draws two completed steps that way on purpose — and they are counted
+as « jumelles » rather than failed on; the subject is a pair somebody meant to be
+different. A second rule holds one name to one ink, which is the `#ff8500`
+against `#d77000` defect `tokens.css` records.
+
+Both floors are judgements between two measured anchors and not numbers off a
+standard, and the docblock says so: 1.4.11 has no figure for two marks against
+each other, and 3:1 between them is unreachable for a palette whose oranges and
+blues are both pinned to clearing 3:1 on the same near-white grounds. The anchors
+are the product's own — `brand-500` against `brand-700` on the onboarding's step
+dots (ΔL\* 17.49, reads correctly), fill-against-hollow on a 6 px dot (0.4447,
+the axis `MARK_CLASS` and `Widget.tsx` both spend), and a 6 px square against a
+6 px dot (0.2186, corners and nothing else, refused).
+
+**What it does not reach**, stated rather than implied: a code spread across
+*states* — the widget's idle, paused and recording glyphs are three stages and
+never two elements at once, so it prints « aucune paire à comparer » on all
+fourteen widget stages — and two marks on two *screens*. Swept over the whole
+list: **39 of the 85 stages draw no declared mark at all, 14 draw exactly one,
+and 32 compare a pair** — which is why the census line names how many marks were
+painted and how many pairs were compared. A screen with one mark must not be
+able to print what the agenda's six pairs print.
+`SILLAGE_MARKS_ATTACK=1` injects nine probes, three that must be reported and six
+that must stay silent, and exits 21.
 
 **Two instruments were answering a narrower question than they appeared to, and
 both are fixed here.** `--census` read its radius ladder from a hand-written
