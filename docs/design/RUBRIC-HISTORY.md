@@ -693,6 +693,15 @@ being clean and never quoted the one number that settles it.
 That number is `review-garde-mort`, which presses until the gate arms and reports
 the count. Measured both ways at the same commit: ***Valider* reached in 6
 presses then 4, docked and not — byte-identical.** The guard was never touched.
+
+> **Superseded, round 24.** That 6-then-4 was true at that commit and is not the
+> product's number now: on `34d8ef2` the same stage reports **8 then 7** at
+> 1280×800 and **14 then 14** at 960×600, and after round 24 moved the manifest
+> into the rail's own scroller, **8 then 6** and **10 then 8**. A sentence in
+> `Review.tsx` was still quoting the old pair and is corrected. Left in place
+> because it was a correct measurement of its own commit — annotated because a
+> past measurement written in the present tense is how two findings in this file
+> became false briefs in later rounds.
 Second time this session a « blocked » claim of mine did not survive the first
 real measurement, after the first one was retracted for the same reason.
 
