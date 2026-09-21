@@ -177,14 +177,23 @@ block, wrong for the third time in the same direction.
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the
   darkest pixel under the grain, printed 4.458:1 against a 4.5 floor on 138 runs, and bound
-  nothing; `--census` read its radius ladder from a hand-written array; `--a11y` computes a
-  heading-to-prose ratio and prints it on the *green* line; and every one of the eight
+  nothing; `--census` read its radius ladder from a hand-written array (**closed** — it
+  discovers `--radius*` from `:root` and binds five findings; a lane in round 23 read this
+  sentence as a live claim, so it is marked); `--a11y` computes a heading-to-prose ratio and
+  prints it on the *green* line (**this one was wrong about the check** — `--a11y` does bind,
+  pushing a problem at `px <= body`, and its docblock argues that threshold; what it lacked
+  was a *denominator*, and round 23 added one. It was stated here as an unbound number and
+  repeated from here into a round-23 brief before a lane measured it); and every one of the eight
   visibility predicates across the twelve passes then shipped ignored whether an ancestor's
   overflow had scrolled the element away — on `historique` at 1280×800, 1 621 of 1 750 painted elements
   are outside their scroller. What decides whether that last one matters is not which helper
   a pass uses but whether its question is **relational**: a pass asking something intrinsic
   about one element is unaffected; a pass asking about the distance between two is corrupted.
   A number that is computed, printed and binds nothing is not a check.
+  **And a list of open findings goes stale the round after it is written.** Two of the five
+  above were closed or false within one round while this paragraph went on asserting them in
+  the present tense — which is the same defect the paragraph is about, committed by the
+  paragraph. Mark an entry when it closes, in the same commit that closes it.
 - A test is not a caller. A fixture that calls a private method no production path reaches asserts that the method behaves, never that the product is protected — that shape hid a `recording` state with no capture, no health and no diagnostic, for the life of the process.
 
 ## Commands
