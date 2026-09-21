@@ -309,7 +309,7 @@ the axis `MARK_CLASS` and `Widget.tsx` both spend), and a 6 px square against a
 **What it does not reach**, stated rather than implied: a code spread across
 *states* — the widget's idle, paused and recording glyphs are three stages and
 never two elements at once, so it prints « aucune paire à comparer » on all
-fourteen widget stages — and two marks on two *screens*. Swept over the whole
+fifteen widget stages — and two marks on two *screens*. Swept over the whole
 list: **39 of the 85 stages draw no declared mark at all, 14 draw exactly one,
 and 32 compare a pair** — which is why the census line names how many marks were
 painted and how many pairs were compared. A screen with one mark must not be
