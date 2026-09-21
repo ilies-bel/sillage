@@ -162,11 +162,38 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * its own, so the two platforms of HR-2 render this identically, and a
          * browser without it falls back to the bounded fixed box.
          *
-         * `max-w-[42ch]` is the ceiling for the objet that *is* long; nothing
-         * the calendar produces reaches it, and past it the truncation is
-         * kinder than a header with no room for a control.
+         * **`max-w-full`, and the `max-w-[42ch]` it replaces was a ceiling under
+         * the floor.** Its own comment here read « nothing the calendar produces
+         * reaches it ». Measured on the shipped renderer, `agenda-preparer` —
+         * the screen *Préparer* lands on, staged from the product's own fixture:
+         *
+         *     plafond 42ch          379.42px
+         *     boîte de contenu      365.41px
+         *     texte de l’objet      368.84px   ← coupé, aux deux tailles
+         *     place libre dans sa propre cellule, 1280×800   355.66px
+         *
+         * So the one invite the harness arms ended in an ellipsis at **both**
+         * smoke sizes while 355.66px of its own flex cell went unused. The cap
+         * was not protecting a control: everything to its right is `shrink-0`
+         * and the cell is `flex-1 min-w-0 overflow-hidden`, so the header
+         * already bounds this field — the objet can only ever take what the
+         * controls leave, and past that it shrinks and truncates exactly as
+         * before. `100%` says that in the one place that cannot drift from the
+         * layout, where a character count guessed in advance cannot.
+         *
+         * After, same stage, same fixture: 382.84px of box, 368.84 of content,
+         * 368.84 of text — the whole objet, at 1280×800 and at 960×600, with
+         * the header row still ending at x=1248 of 1280 and x=928 of 960, as it
+         * did before.
+         *
+         * **Not measured by any pass, and that is recorded rather than excused.**
+         * `--cells` is the check whose subject this is, and it is blind to it by
+         * construction: it reads what a cell's contents *want* through a `Range`
+         * over its child nodes, and an `<input>` has none — its value is not in
+         * the DOM. It reports « 0 à l’étroit » on this screen with the objet
+         * visibly cut. Widening it belongs to the `harness` lane.
          */
-        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-[42ch] shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-tight font-sans text-copy font-medium outline-none [field-sizing:content]"
+        className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-full shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-tight font-sans text-copy font-medium outline-none [field-sizing:content]"
       />
       <input
         value={client}

@@ -16,6 +16,20 @@
  * because at the app's own minimum window (960px) the fifty pixels it takes are
  * the meeting's own title truncating. A legend is what a narrow header drops;
  * the instrument stays.
+ *
+ * **That sentence was an argument, not a measurement, and for as long as it stood
+ * it was false.** Driven on `agenda-preparer` at 960×600 with the pill forced
+ * back on, against the `max-w-[42ch]` objet that shipped beside it:
+ *
+ *     sans la pastille   objet 379.41px de boîte, 365.41 de contenu, 368.84 de texte → coupé
+ *     avec la pastille   objet 343.06px de boîte, 329.06 de contenu, 368.84 de texte → coupé
+ *
+ * The trade bought 36.35px of a title that ended in an ellipsis either way: the
+ * cap, not the pill, was what the title was losing to. `MeetingTitle` lifted the
+ * cap, and only then did this become true — same stage, same fixture, after:
+ * without the pill the objet holds all 368.84px of its text, with it 329.06,
+ * 39.78px short, about five characters. The legend is now paid for by something
+ * a rep can see, which is what the paragraph above always claimed.
  */
 import { Languages } from 'lucide-react'
 import { TRANSCRIPTION_LANGUAGE, languageChip } from '../../../electron/core/contracts/transcript.ts'
