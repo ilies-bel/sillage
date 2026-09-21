@@ -1521,7 +1521,49 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
    * the button gains and this does not is a confirmation with no rectangle.
    */
   const armed = below === null && !pending
-  useShortcuts(armed && !busy ? { valider: () => void confirm() } : {})
+  /**
+   * **What the press would actually create — the set, not the count of rows.**
+   *
+   * `draftIntents` drafts an intent for exactly `view.available && checked`: all
+   * three kinds gate on it (`taskPossible`, `opportunityChecked`, `mailPossible
+   * && checked.has(id)`), so this list is the same list `review:confirm` builds
+   * on the other side of the bridge, and `review:preview` — which runs that very
+   * function — is where `live` comes from. It is not a second copy of the rule;
+   * it is the rule's two inputs, both of which this screen already holds.
+   *
+   * Empty means the press creates **nothing**, and the main process refuses it:
+   * « Rien ne serait créé — aucune action n'est cochée… ». Measured on the
+   * shipped renderer at 1280×800 before this existed, three rows unticked: the
+   * primary read `bg=rgb(3,102,150)` `color=rgb(255,255,255)` `cursor=pointer`
+   * 504.6×36.6 « Valider » — every property identical to the armed gate that
+   * writes three records into VerySwing, which is the one pair in this product
+   * that most needs telling apart. `POST /v1/crm/tasks` has no idempotency key
+   * and `CrmPort` has no delete verb.
+   */
+  const creating = (live ?? panel?.intents ?? []).filter(
+    (intent) => intent.available && (checked ?? []).includes(intent.id),
+  )
+  /*
+   * `Ctrl/⌘ Entrée`, and **only when the button is on screen**
+   * (`app/shortcuts.ts`).
+   *
+   * The guard is the same one the button carries — `armed` (nothing that is
+   * about to leave is still under a fold, and no rewrite waiting to land) and a
+   * non-empty `creating` — and it is expressed as the absence of a handler
+   * rather than as a handler that declines. A shortcut that could confirm while
+   * *Valider* was still refusing would be a second gate (DEC-4), and one that
+   * fired while the reveal control was on screen would confirm something the rep
+   * has not been shown.
+   *
+   * It is one expression and not two because the two have come apart before: the
+   * accelerator is the path with nothing on screen to look at, so a condition
+   * the button gains and this does not is a confirmation with no rectangle.
+   * Driven on the shipped renderer with the three rows unticked, before
+   * `creating` was in it: `Ctrl Entrée` then `⌘ Entrée` each reached
+   * `review:confirm` with `intentIds: []` — **two** presses spent on the empty
+   * set, by the one path that has no rectangle at all.
+   */
+  useShortcuts(armed && creating.length > 0 && !busy ? { valider: () => void confirm() } : {})
 
   /**
    * The two sentences a rewrite owes the rep, composed once so the narrowing is
@@ -2822,7 +2864,42 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               greyed (DEC-26) — and the sub-line sits where it will sit once the
               button is there.
             */}
-            {armed ? (
+            {/*
+              **And it is drawn only when it would create something.**
+
+              A rep who unticks the three rows was left with a *Valider* that was
+              full-strength brand blue, pointer, 504.6×36.6 — **identical in
+              every measured property** to the gate that writes a task, an
+              opportunity and an Outlook draft, except for the word inside it,
+              which was also identical (« Valider », both). The refusal existed,
+              one process away: `register.ts` answers « Rien ne serait créé »
+              and the press is not spent. But the two outcomes this product most
+              needs a rep to tell apart — three records into a client's CRM, and
+              none — were the same rectangle, and the only way to find out which
+              one was in front of you was to press it.
+
+              Not a greyed *Valider*, which is this screen's own rule two notes
+              above and the failure the brief for this change names outright: a
+              refused-but-full-strength button and an inert primary are two
+              different failures and one must not be fixed into the other. The
+              slot holds the decision or it holds nothing, the rectangle stays
+              reserved so the rail does not reflow, and the sub-line says what is
+              missing — a ticked row, which is forty pixels above it in this same
+              band, not a page away in a column.
+
+              `creating` is the same `available && checked` set `draftIntents`
+              drafts from, so the button is on screen exactly when the press
+              would create something. DEC-4 is untouched: this removes a path
+              that could only ever be refused, and adds none.
+
+              `|| busy` because the tick boxes are **not** disabled during a
+              push — only `available` disables them — so a rep who unticks a row
+              while « Envoi… » is on the wire would otherwise watch the control
+              vanish under a POST that is already made, on an endpoint with no
+              idempotency key. The send outranks the set: what is in flight was
+              composed before the tick.
+            */}
+            {armed && (creating.length > 0 || busy) ? (
               <Button
                 /*
                   **The one measurement this product makes about itself reaches
@@ -2892,10 +2969,36 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                 // already said by that control's own label and by the
                 // « Ce qui sera créé » list above the slot.
                 'measure mx-auto mt-tight text-center text-meta',
-                (shippingFaible.length > 0 && armed && !busy) || stalled ? 'text-warn' : 'text-muted',
+                (shippingFaible.length > 0 && armed && !busy) ||
+                  stalled ||
+                  (creating.length === 0 && !busy)
+                  ? 'text-warn'
+                  : 'text-muted',
               )}
             >
-              {pendingLine !== null && !busy
+              {/*
+                **« Rien ne sera créé » comes before everything, because it is
+                the one cause no amount of reading removes.**
+
+                The ladder's first two rungs both point the rep at work to
+                finish — a rewrite to wait for, a band to read — and at the end
+                of either, with nothing ticked, there is still no button. That
+                is the « eighty presses, nothing moves and *Valider* never
+                appears » shape this file names four hundred lines up, reached
+                from the other side. The remedy is a row in the list directly
+                above this sentence, so this rung names it and the ones about
+                reading wait their turn; the page turn is still at the foot of
+                each column, saying the same thing where the reading is.
+
+                Forty-eight characters, one line at both smoke sizes: the
+                measurement two notes above — arming moves this footer 51px
+                against a `SHRINK_SLACK` of 64 — is about the *height* of this
+                slot, and a sentence that wrapped here would spend the rest of
+                that slack on the state a rep reaches by unticking a row.
+              */}
+              {creating.length === 0 && !busy
+                ? 'Rien ne sera créé : cochez une action ci-dessus.'
+                : pendingLine !== null && !busy
                 ? pendingLine
                 : below !== null && !busy
                 ? below === 'document'

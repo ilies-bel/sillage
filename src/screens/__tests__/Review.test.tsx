@@ -2111,35 +2111,131 @@ describe('DEC-4 — every sentence about what leaves agrees with what is created
 })
 
 /**
- * **A refusal that leaves the gate usable** (DEC-4, `f630dcd`).
+ * **The control that writes must not be able to look like the control that
+ * writes nothing** (DEC-4).
  *
  * `register.ts` refuses a press that would create nothing *before* dispatching,
  * so the one confirmation is not spent on the empty set — the defect it repaired
  * left the meeting in `pushing` with an empty outbox, from which `confirm`,
- * `extract` and `abort` are all illegal for the life of the database, and the
- * gate read « Envoi en cours… » for ever about a POST that was never made.
+ * `extract` and `abort` are all illegal for the life of the database. That
+ * refusal is untouched and is tested where it lives
+ * (`electron/app/ipc/__tests__/register.test.ts`). What it never did was reach
+ * the rep's eyes *before* the press.
  *
- * « refused » and « refused and still usable » are two different facts and only
- * the second is the fix, so both halves are here: the sentence reaches the rep,
- * and the next press carries the row they ticked. `review-refus` photographs the
- * first half — it cannot drive the second, because a successful press navigates
- * off the screen it exists to keep on camera.
+ * Measured on the shipped renderer, `review-refus`'s own gesture — untick the
+ * three rows — at 1280×800:
+ *
+ *     disabled=false · bg=rgb(3,102,150) · color=rgb(255,255,255)
+ *     cursor=pointer · 504.6×36.6 · « Valider »
+ *
+ * Identical in every measured property, the label included, to the armed gate
+ * that writes a task, an opportunity and an Outlook draft. `POST /v1/crm/tasks`
+ * has no idempotency key and `CrmPort` has no delete verb, so « three records
+ * into a client's CRM » and « none » are the two outcomes in this product that
+ * most need telling apart, and they were the same rectangle.
+ *
+ * **Asserted over all sixteen states, and on both paths**, because the subject
+ * of the rule is the control and not the stage the defect was found on: the
+ * eight tick sets, twice — once with every row draftable, once with the Outlook
+ * row `available: false`, which is the « ou aucune n'est disponible » half of
+ * the refusal and the ordinary shape of the no-Entra build DEC-28 ships first.
+ * The predicate is computed from the panel (`available && checked`), which is
+ * what `draftIntents` drafts on, never from a list of the cases that broke.
+ *
+ * `Ctrl/⌘ Entrée` is in it because it is the path with no rectangle to look at:
+ * driven on the shipped renderer with the three rows unticked, before this fix,
+ * `Ctrl Entrée` then `⌘ Entrée` each reached `review:confirm` with
+ * `intentIds: []` — two presses spent on the empty set by a control nobody can
+ * see refusing.
  */
-describe('DEC-4 — a press that creates nothing is refused, and not spent', () => {
-  const EMPTY =
-    'Rien ne serait créé — aucune action n’est cochée, ou aucune n’est disponible. La raison est indiquée sur chaque ligne.'
+describe('DEC-4 — the one control is on screen exactly when it creates something', () => {
+  const IDS = ['m1:crm.task', 'm1:crm.opportunity', 'm1:mail.draft'] as const
 
-  test('the sentence reaches the rep and the button is still there for the next press', async () => {
-    bridge
-      .when('review:get', () => openGate())
-      // The handler's own rule, not a canned refusal: an empty draft is refused
-      // and anything else goes through.
-      .when('review:confirm', (payload: { intentIds: string[] }) =>
-        payload.intentIds.length === 0
-          ? { ok: false as const, state: 'awaiting_confirmation' as const, reason: EMPTY }
-          : { ok: true as const, state: 'pushing' as const, intentIds: payload.intentIds },
-      )
+  /** The gate as the main process would send it with some rows undraftable. */
+  const gateWith = (blocked: readonly string[]) =>
+    openGate({
+      intents: panel().intents.map((intent) =>
+        blocked.includes(intent.id)
+          ? { ...intent, available: false, reason: 'Aucun compte Microsoft connecté.' }
+          : intent,
+      ),
+    })
 
+  const boxes = () => screen.getAllByRole('checkbox') as HTMLInputElement[]
+
+  /** Every row draftable, then the Outlook row not — the refusal's two halves. */
+  const BLOCKED: readonly (readonly string[])[] = [[], ['m1:mail.draft']]
+
+  for (const blocked of BLOCKED) {
+    for (let mask = 0; mask < 8; mask += 1) {
+      const wanted = IDS.filter((_, i) => (mask & (1 << i)) !== 0)
+      // What `draftIntents` would draft: the rep's tick **and** the row being
+      // draftable. Both halves, because either one alone creates nothing.
+      const creating = wanted.filter((id) => !blocked.includes(id))
+      const name = `${wanted.length === 0 ? 'aucune' : wanted.join(' + ')}${
+        blocked.length === 0 ? '' : ' · Outlook indisponible'
+      }`
+
+      test(`cochées : ${name} — bouton et accélérateur suivent ${creating.length}`, async () => {
+        bridge.when('review:get', () => gateWith(blocked))
+        render(<Review meetingId="m1" onBack={() => {}} />)
+        await screen.findByText('Prêt à envoyer')
+
+        /*
+         * The fixture has to be able to exercise the property: three rows, one
+         * checkbox each, and the undraftable one unchecked to start with — a
+         * fourth row, or a row that arrives ticked while `available: false`,
+         * would make every count below meaningless.
+         */
+        expect(boxes()).toHaveLength(3)
+        for (const [i, box] of boxes().entries()) {
+          if (blocked.includes(IDS[i] as string)) expect(box.checked).toBe(false)
+        }
+
+        for (const [i, id] of IDS.entries()) {
+          const box = boxes()[i]
+          if (box && box.checked && !wanted.includes(id)) {
+            await act(async () => {
+              box.click()
+            })
+          }
+        }
+
+        const label =
+          [...document.querySelectorAll('button')]
+            .map((b) => b.textContent ?? '')
+            .find((t) => t.startsWith('Valider')) ?? null
+
+        // The accelerator, on the same state, with both modifiers.
+        fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+        await act(async () => {})
+        const pressed = bridge.calls.filter((c) => c.channel === 'review:confirm').length
+
+        expect({
+          jeu: name,
+          bouton: label !== null,
+          accelerateur: pressed > 0,
+        }).toEqual({ jeu: name, bouton: creating.length > 0, accelerateur: creating.length > 0 })
+
+        // And when it is not there, the slot says why rather than going silent.
+        if (creating.length === 0) {
+          expect((document.body.textContent ?? '').replace(/\s+/g, ' ')).toContain(
+            'Rien ne sera créé : cochez une action ci-dessus.',
+          )
+        }
+      })
+    }
+  }
+
+  /**
+   * **And the gate comes back.** A screen that removed the control and could
+   * not give it back would be the unrecoverable `pushing` state by another
+   * route — the very defect `register.ts`' refusal was written for. Ticking one
+   * row brings the button back and the press carries that row and nothing else.
+   */
+  test('recocher une ligne rend le bouton, et la presse porte cette ligne', async () => {
+    bridge.when('review:get', () => openGate())
     let confirmed = 0
     render(<Review meetingId="m1" onBack={() => {}} onConfirmed={() => (confirmed += 1)} />)
     await screen.findByText('Prêt à envoyer')
@@ -2149,24 +2245,79 @@ describe('DEC-4 — a press that creates nothing is refused, and not spent', () 
         box.click()
       })
     }
-    await valider()
+    expect(screen.queryByRole('button', { name: /^Valider/ })).toBeNull()
+    expect(bridge.calls.filter((c) => c.channel === 'review:confirm')).toHaveLength(0)
 
-    // The refusal is announced, the gate did not move, and nothing was confirmed.
-    expect((await screen.findByRole('alert')).textContent).toBe(EMPTY)
-    expect(confirmed).toBe(0)
-    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
-
-    // And the next press is a real one.
     await act(async () => {
       screen.getAllByRole('checkbox')[0]?.click()
     })
     await valider()
 
     const presses = bridge.calls.filter((c) => c.channel === 'review:confirm')
-    expect(presses).toHaveLength(2)
-    expect((presses[0]?.payload as { intentIds: string[] }).intentIds).toEqual([])
-    expect((presses[1]?.payload as { intentIds: string[] }).intentIds).toEqual(['m1:crm.task'])
+    expect(presses).toHaveLength(1)
+    expect((presses[0]?.payload as { intentIds: string[] }).intentIds).toEqual(['m1:crm.task'])
     expect(confirmed).toBe(1)
+  })
+
+  /**
+   * **A send already on the wire outranks the tick set.**
+   *
+   * The tick boxes are disabled by `available` and by nothing else, so they stay
+   * live while « Envoi… » is in flight. Hiding the control on an empty set
+   * without this clause would take it off the screen *during* the POST — the
+   * one endpoint in this product with no idempotency key and no delete verb —
+   * and leave « Rien ne sera créé » over a record that is being created.
+   */
+  test('décocher pendant l’envoi ne retire pas le contrôle', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      // Held open: this is the window between the press and the answer.
+      .when('review:confirm', () => new Promise(() => {}) as never)
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await valider()
+
+    for (const box of screen.getAllByRole('checkbox')) {
+      await act(async () => {
+        box.click()
+      })
+    }
+
+    const sending = screen.getByRole('button', { name: 'Envoi…' }) as HTMLButtonElement
+    expect(sending.disabled).toBe(true)
+    expect((document.body.textContent ?? '').replace(/\s+/g, ' ')).toContain(
+      'Envoi en cours. Ne fermez pas la fenêtre.',
+    )
+    expect((document.body.textContent ?? '').replace(/\s+/g, ' ')).not.toContain(
+      'Rien ne sera créé',
+    )
+  })
+
+  /**
+   * The refusal banner is still the one place any `review:confirm` « non »
+   * lands — a state refusal, a thrown bridge error — and it is still the widest
+   * prose the gate can print, so the reading measure stays asserted here. The
+   * empty-set route no longer reaches it, which is the point of the fix and is
+   * what `review-refus` used to photograph; `--prose` therefore no longer sees
+   * this paragraph on any stage, and this is what is left holding `.measure` on
+   * it.
+   */
+  test('un refus quelconque garde la mesure de lecture', async () => {
+    bridge
+      .when('review:get', () => openGate())
+      .when('review:confirm', () => ({
+        ok: false as const,
+        state: 'awaiting_confirmation' as const,
+        reason:
+          'La réunion n’est plus à valider — elle a déjà été confirmée depuis une autre fenêtre.',
+      }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    await valider()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.className.split(/\s+/)).toContain('measure')
+    expect(screen.getByRole('button', { name: /^Valider/ })).toBeTruthy()
   })
 })
 

@@ -589,7 +589,7 @@ what `serve.mjs` drops the meta for.
 | `review-rail-inerte` | the same rail after the rep's own press removes the opportunity: nine of the eleven boxes lose their fill, because a field the gate cannot ship is text on the ground, not an input |
 | `review-garde-frappe` | the guard while the rep is **typing** into the compte-rendu — `Ctrl/⌘ Entrée` must not fire from inside an editable |
 | `review-decocher` | the gate with intents unticked one at a time, so the primary's count follows what will actually ship |
-| `review-refus` | all three intents refused — the state where nothing is left to send and the primary must say so rather than stay pressable |
+| `review-refus` | the three rows unticked, compared **against the control that writes**: its paint is measured while it ships, then carried down the ladder 3 → 2 → 1 → 0, and nothing in the decision band may wear it at the last rung. Until round 24 the primary there was `rgb(3,102,150)` `pointer` 504.6×36.6 « Valider » — identical to the gate that writes three records — and this row claimed otherwise |
 | `review-sans-opportunite-valider` | the no-opportunity gate driven through its page turn to the end, so *Valider* is reached the way a rep reaches it |
 | `review-source-sortie` | the source panel **leaving** — the departure frame-sampled, not the rule asserted |
 | `session-attente-sortie` | « Compte-rendu en attente » on its way out (DEC-39): the notice that states the case and waits, measured as it goes |

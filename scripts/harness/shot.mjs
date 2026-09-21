@@ -3798,31 +3798,48 @@ const SCREENS = {
   },
 
   /**
-   * **DEC-4's only refusal, photographed.**
+   * **The two outcomes that most need telling apart, measured against each
+   * other on one screen.**
    *
    * `f630dcd` — round 17's headline fix — made `review:confirm` refuse a press
    * that would create nothing, so the one gate is not spent on the empty set.
-   * The refusal is rendered by one `role="alert"` paragraph in `Review.tsx`, and
-   * **no stage has ever drawn it**: the stub answered `ok: true` to every press,
-   * so across 154 stagings none of the ten measured checks had seen the sentence.
+   * This stage was built to photograph that refusal, and what it photographed
+   * instead was the reason the refusal was needed: with the three rows unticked
+   * the primary read, at 1280×800,
    *
-   * What that hid, measured on the shipped renderer through a Playwright driver
-   * before this stage existed: the alert runs **197 characters a line at 1280×800
-   * and 145 at 960×600**, outside `.measure`, against `--prose`'s ceiling of 75.
-   * It is the widest line of prose in the product — round 17's record was 185 in
-   * *Historique* — and it is the sentence a rep reads at the one human gate after
-   * pressing the one irreversible control.
+   *     disabled=false · bg=rgb(3,102,150) · color=rgb(255,255,255)
+   *     cursor=pointer · 504.6×36.6 · « Valider »
    *
-   * Reached by the rep's own gesture rather than by a harness flag: unticking the
-   * three rows is what makes `draftIntents` return nothing, and the stub applies
-   * the handler's own rule. The three unticks come **first**, because the rail's
-   * view key carries the payload — changing it after arming is what
-   * `review-garde`'s eighth attack is about — so the reading is done against the
-   * payload actually pressed.
+   * — identical in **every** measured property, the label included, to the
+   * armed gate that writes a task, an opportunity and an Outlook draft.
+   * `POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete
+   * verb. The only way to find out which of the two was in front of you was to
+   * press it.
    *
-   * Left on screen at the end, which is the point: this is the only way
-   * `--prose`, `--a11y`, `--contrast`, `--echo`, `--geometry`, `--targets`,
-   * `--scrollers`, `--motion`, `--fade` and `--scan` ever look at it.
+   * So the stage is now **relational**, which is the shape `--marks` has for two
+   * marks and nothing had for two controls: the ship control's own paint is
+   * measured while it ships, and then carried down the ladder — three rows
+   * ticked, two, one, none — and asserted against whatever holds the decision
+   * slot at each rung. A control that writes and a control that writes nothing
+   * may not be the same rectangle, and the assertion names both halves of the
+   * pair it is comparing, so « some button somewhere differs » cannot satisfy
+   * it.
+   *
+   * Reached by the rep's own gesture rather than by a harness flag: unticking
+   * is what empties `draftIntents`, and the stub applies the handler's own rule.
+   * The unticks come **first**, because the rail's view key carries the payload
+   * — changing it after arming is what `review-garde`'s eighth attack is about
+   * — so the reading is done against the payload actually pressed.
+   *
+   * **What this stopped measuring, stated.** The empty set is no longer a press
+   * the renderer can make, so the `role="alert"` refusal banner is not painted
+   * here any more and `--prose` no longer reads it on any stage — it was the
+   * widest prose in the product (197 char./line at 1280×800, 145 at 960×600,
+   * outside `.measure`) until that was fixed, and what holds `.measure` on it
+   * now is a unit test in `src/screens/__tests__/Review.test.tsx` driving a
+   * refusal the renderer can still receive (a stale gate), plus
+   * `register.test.ts` for the refusal itself. A class assertion is weaker than
+   * a painted line and is said so here rather than left to be discovered.
    */
   'review-refus': {
     scenario: 'review',
@@ -3830,40 +3847,120 @@ const SCREENS = {
       await SCREENS.review.drive(page)
       await page.waitForTimeout(900)
 
-      for (const name of [/Tâche compte-rendu/, /Opportunité/, /Brouillon de relance/]) {
-        await page.getByRole('checkbox', { name }).first().uncheck()
-        await page.waitForTimeout(250)
-      }
+      const primary = page.getByRole('button', { name: /^Valider/ })
 
+      /*
+       * The decision band, which is the `<fieldset>`'s parent: the rows, the
+       * one control, and the sub-line. Anything filled in here is a candidate
+       * for « looks like the control that ships », which is why the comparison
+       * is scoped to it and not to the whole page.
+       */
+      const slot = async () =>
+        page.evaluate(() => {
+          const field = document.querySelector('fieldset')
+          const band = field?.parentElement ?? null
+          if (!band) return null
+          const controls = [...band.querySelectorAll('button')].map((b) => {
+            const r = b.getBoundingClientRect()
+            const s = getComputedStyle(b)
+            return {
+              text: (b.innerText || '').replace(/\s+/g, ' ').trim(),
+              bg: s.backgroundColor,
+              fg: s.color,
+              cursor: s.cursor,
+              w: +r.width.toFixed(1),
+              h: +r.height.toFixed(1),
+            }
+          })
+          const line = [...band.querySelectorAll('p')].pop()
+          return { controls, line: (line?.innerText || '').replace(/\s+/g, ' ').trim() }
+        })
+
+      // Armed first, with everything ticked: this is the control that writes.
       for (let i = 0; i < 40; i += 1) {
         const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
         if ((await turn.count()) === 0) break
         await turn.click()
         await page.waitForTimeout(STAGING_TURN_MS)
       }
-      const primary = page.getByRole('button', { name: /^Valider/ })
       if ((await primary.count()) === 0) {
-        throw new Error(
-          'aucune intention cochée et « Valider » est injoignable : la refus de DEC-4 ne peut pas être atteint',
-        )
+        throw new Error('le gate ne s’arme pas : impossible de mesurer le contrôle qui écrit')
       }
-      await primary.first().click()
-      const alert = page.locator('[role="alert"]')
-      await alert.first().waitFor()
+      const before = await slot()
+      const ships = before?.controls.find((c) => c.text.startsWith('Valider'))
+      if (!ships) throw new Error('le contrôle qui écrit est introuvable dans la bande de décision')
+      console.log(
+        `     écrit: « ${ships.text} » ${ships.bg} ${ships.fg} ${ships.cursor} ${ships.w}×${ships.h}`,
+      )
 
       /*
-       * The gate is refused and **not spent**: the button is still there, the rep
-       * can tick a row and press again. A refusal that also removed the control
-       * would be the unrecoverable `pushing` state by another route.
+       * Down the ladder. The button is owed at every rung where something is
+       * still checked — a fix that hid it one row early would be DEC-4's gate
+       * refusing a payload the rep built.
        */
-      if ((await primary.count()) === 0) {
-        throw new Error('le refus a emporté le bouton — la porte de DEC-4 est fermée derrière lui')
+      const rows = [/Tâche compte-rendu/, /Opportunité/, /Brouillon de relance/]
+      for (const [index, name] of rows.entries()) {
+        await page.getByRole('checkbox', { name }).first().uncheck()
+        await page.waitForTimeout(400)
+        for (let i = 0; i < 40; i += 1) {
+          const turn = page.getByRole('button', { name: /(la suite|Remonter)/ }).first()
+          if ((await turn.count()) === 0) break
+          await turn.click()
+          await page.waitForTimeout(STAGING_TURN_MS)
+        }
+        const left = rows.length - index - 1
+        const now = await slot()
+        const still = now?.controls.find((c) => c.text.startsWith('Valider')) ?? null
+        if (left > 0 && still === null) {
+          throw new Error(
+            `« Valider » a disparu alors que ${left} action(s) sont encore cochées — la porte refuse un envoi que le commercial a composé`,
+          )
+        }
+        if (left === 0 && still !== null) {
+          throw new Error(
+            `rien n’est coché et « Valider » est toujours là : ${still.bg} ${still.fg} ${still.cursor} ${still.w}×${still.h} — contre ${ships.bg} ${ships.fg} ${ships.cursor} ${ships.w}×${ships.h} pour le contrôle qui écrit`,
+          )
+        }
       }
-      const said = (await alert.first().innerText()).replace(/\s+/g, ' ').trim()
-      if (!said.startsWith('Rien ne serait créé')) {
-        throw new Error(`le refus dit « ${said} », pas la phrase que register.ts renvoie`)
+
+      /*
+       * The pair, stated. Nothing in the decision band may wear the paint of the
+       * control that writes, and the slot has to say why it is empty — an empty
+       * rectangle with no sentence is the silence this screen refuses.
+       */
+      const after = await slot()
+      const impostor = (after?.controls ?? []).find(
+        (c) => c.bg === ships.bg && c.w >= ships.w - 1 && c.h >= ships.h - 1,
+      )
+      if (impostor) {
+        throw new Error(
+          `« ${impostor.text} » ne crée rien et porte la peinture de « ${ships.text} » : ${impostor.bg} ${impostor.w}×${impostor.h}`,
+        )
       }
-      console.log(`     refus: « ${said} », bouton toujours présent`)
+      if (after?.line !== 'Rien ne sera créé : cochez une action ci-dessus.') {
+        throw new Error(`la bande de décision ne dit pas ce qui manque — elle dit « ${after?.line} »`)
+      }
+
+      /*
+       * And the path with no rectangle at all. `Ctrl/⌘ Entrée` used to reach
+       * `review:confirm` with `intentIds: []` from exactly this state — measured
+       * twice, once per modifier — and the stub answers it with the refusal
+       * banner, so a banner appearing here is the accelerator still confirming
+       * what the button no longer offers (DEC-4).
+       */
+      await page.locator('body').click({ position: { x: 4, y: 4 } })
+      await page.keyboard.press('Control+Enter')
+      await page.keyboard.press('Meta+Enter')
+      await page.waitForTimeout(400)
+      if ((await page.locator('[role="alert"]').count()) > 0) {
+        const said = (await page.locator('[role="alert"]').first().innerText())
+          .replace(/\s+/g, ' ')
+          .trim()
+        throw new Error(`l’accélérateur a validé l’ensemble vide : « ${said} »`)
+      }
+      console.log(
+        `     ne crée rien: aucun contrôle, la bande dit « ${after?.line} », accélérateur muet`,
+      )
     },
   },
 
