@@ -28,6 +28,12 @@ import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge
 import { Widget } from '../Widget.tsx'
 import { MENTION_LABEL, MENTION_NOT_LOGGED, MENTION_NOTE } from '../mention.ts'
 /*
+ * The sentences the *window* writes when a producer hands it a fragment, read
+ * from the shipped table rather than restated here: a copy in a test is a copy
+ * that agrees with itself after the product has stopped agreeing with either.
+ */
+import { WIDGET_SENTENCES } from '../healthSentence.ts'
+/*
  * The sentence comes down `widget:state` now (US-19), so the test asserts against the
  * **contract's** default rather than against a constant in the file under test — and a
  * deployment that has configured its own wording is a separate test below, because
@@ -2039,7 +2045,16 @@ const snapshot = (
   ...troubled,
 })
 
-/** The sentence `Recording.ts` emits when the local engine will not start. */
+/**
+ * **`Orchestrator.ts:482`'s reason, word for word — and it is a fragment, not a
+ * sentence.**
+ *
+ * Lowercase, unterminated, no remedy: a state machine's note to itself. It is
+ * the fixture on purpose, because it is what a rep met on `widget-deux-pannes`
+ * before `healthSentence.ts` existed. The assertions below read
+ * `WIDGET_SENTENCES.transcribe.down` — what the window says *instead* — so a
+ * change that let the raw string back through fails them.
+ */
 const TRANSCRIBE_DOWN = {
   state: 'down' as const,
   reason: 'aucun fournisseur de transcription disponible',
@@ -2047,7 +2062,12 @@ const TRANSCRIBE_DOWN = {
   retryable: true,
 }
 
-/** `capture/index.ts` `#checkOutputRoute`, word for word — DEC-32's `degraded`. */
+/**
+ * `capture/index.ts` `#checkOutputRoute`, word for word — DEC-32's `degraded`,
+ * and one of the seven reasons in the tree that *is* a written sentence. It
+ * names the side and the remedy, so the window renders it verbatim rather than
+ * replacing it with its own, blunter one.
+ */
 const CAPTURE_DEGRADED = {
   state: 'degraded' as const,
   reason:
@@ -2080,7 +2100,7 @@ test('une panne de transcription survit au rétablissement de la capture', async
       at: STARTED + 120_000,
     })
   })
-  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(await screen.findByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
 
   act(() => {
     bridge.emit('health:changed', {
@@ -2089,7 +2109,7 @@ test('une panne de transcription survit au rétablissement de la capture', async
       at: STARTED + 130_000,
     })
   })
-  expect(screen.queryByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(screen.queryByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
 })
 
 /**
@@ -2109,7 +2129,7 @@ test('le canal le plus atteint parle, pas le premier de la liste', async () => {
   render(<Widget />)
   await openPanel()
 
-  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(await screen.findByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
   expect(screen.queryByText(CAPTURE_DEGRADED.reason)).toBeNull()
 })
 
@@ -2123,7 +2143,7 @@ test('le canal encore atteint reprend la parole quand le pire se rétablit', asy
   )
   render(<Widget />)
   await openPanel()
-  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(await screen.findByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
 
   act(() => {
     bridge.emit('health:changed', {
@@ -2163,11 +2183,109 @@ test('un état arrivé avant l’instantané n’est pas écrasé par lui', asyn
       at: STARTED + 120_000,
     })
   })
-  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(await screen.findByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
 
   await act(async () => {
     answer(snapshot({}))
     await Promise.resolve()
   })
-  expect(screen.queryByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(screen.queryByText(WIDGET_SENTENCES.transcribe.down)).toBeTruthy()
+})
+
+/**
+ * The health slot, named by its attribute and not by its role: the mention card
+ * is also a `role="status"` on this surface, so « the status » is two elements
+ * and a bare `getByRole` answers with whichever React rendered first.
+ */
+const healthRegion = async () => {
+  const region = await waitFor(() => {
+    const found = screen.getAllByRole('status').filter((el) => el.hasAttribute('data-health'))
+    expect(found, 'la fente de santé n’est pas une région vivante').toHaveLength(1)
+    return found[0]
+  })
+  return region
+}
+
+/**
+ * **What the slot held before `healthSentence.ts`, and why jsdom can see it.**
+ *
+ * Round 23 fixed *which* connector speaks. It did not fix *how*, and the stage
+ * the fix added is what exposed the rest: `aggregateStatus` returns the
+ * connector's `reason` verbatim — correctly, that is its contract — and five of
+ * the twelve producers compose a fragment for themselves rather than a sentence
+ * for a rep. Measured on the shipped renderer at 1280×800 and 960×600 before
+ * this landed, the slot read:
+ *
+ *     « aucun fournisseur de transcription disponible »   role: null  aria-live: null
+ *
+ * on a card that is over everything the rep is sharing, during a call. The two
+ * tests below are the jsdom half: the string and the wiring, which is all jsdom
+ * can answer for. The box it sits in is `widget-deux-pannes`' half.
+ */
+test('un fragment interne n’atteint jamais l’écran du commercial', async () => {
+  bridge.when('health:snapshot', () => snapshot({ transcribe: TRANSCRIBE_DOWN }))
+  render(<Widget />)
+  await openPanel()
+
+  const line = await healthRegion()
+  /*
+   * Asserted as an inequality against the *producer's own literal*, not against
+   * a predicate: a check that re-applied `isWrittenSentence` here would pass on
+   * a fix that had been reverted and a predicate that had been loosened to
+   * match. This one can only pass if the string changed.
+   */
+  expect(line.textContent).not.toBe(TRANSCRIBE_DOWN.reason)
+  expect(line.textContent).toBe(WIDGET_SENTENCES.transcribe.down)
+  expect(line.getAttribute('data-written')).toBe('widget')
+})
+
+/**
+ * And the other half, which is what stops the fix from being « replace
+ * everything »: a producer that *did* write a sentence keeps it, because it
+ * names the channel — « le son du client » — and nothing derivable from
+ * `AppStatus` can.
+ */
+test('une phrase écrite par le producteur est rendue telle quelle', async () => {
+  bridge.when('health:snapshot', () => snapshot({ capture: CAPTURE_DEGRADED }))
+  render(<Widget />)
+  await openPanel()
+
+  const line = await healthRegion()
+  expect(line.textContent).toBe(CAPTURE_DEGRADED.reason)
+  expect(line.getAttribute('data-written')).toBe('connector')
+})
+
+/**
+ * **The live region is there before it has anything to say.**
+ *
+ * A polite region inserted *with* its text is announced by no assistive
+ * technology reliably — it has to be in the accessibility tree before the text
+ * changes. So the region is mounted unconditionally and the text arrives into
+ * it, which is the sequence this drives: a healthy panel, then an edge.
+ *
+ * `role="status"` and not `role="alert"`: this is a condition that lasts the
+ * rest of the call and changes hands while it lasts, not a transient answer to
+ * a press. Asserted rather than described, because the element carried neither
+ * role for the life of this file.
+ */
+test('la région vivante existe avant d’avoir quelque chose à dire', async () => {
+  bridge.when('health:snapshot', () => snapshot({}))
+  render(<Widget />)
+  await openPanel()
+
+  const line = await healthRegion()
+  expect(line.textContent).toBe('')
+  expect(line.getAttribute('aria-live')).toBe('polite')
+  expect(line.getAttribute('aria-atomic')).toBe('true')
+
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'transcribe',
+      health: TRANSCRIBE_DOWN,
+      at: STARTED + 120_000,
+    })
+  })
+  // The same node, not a new one — a region replaced is a region reinserted.
+  expect(await healthRegion()).toBe(line)
+  expect(line.textContent).toBe(WIDGET_SENTENCES.transcribe.down)
 })

@@ -5021,6 +5021,18 @@ const SCREENS = {
    * is a check measuring nothing. The session screen taught this repo that once
    * already — `transcript:appended` was emitted for every segment of every
    * meeting and read by no window.
+   *
+   * **A fourth assertion, and it is the one this stage was itself pinning the
+   * wrong way round.** Round 23 wrote step two as
+   * `getByText('aucun fournisseur de transcription')` — the orchestrator's
+   * internal `reason`, lowercase, unterminated, no remedy — so the stage
+   * *required* a state machine's note to itself to be on a card drawn over
+   * everything the rep is sharing. It was: measured here at both sizes,
+   * `role: null`, `aria-live: null`, 45 characters of internal fragment beside
+   * the 160-character designed sentence one edge earlier. The slot now carries
+   * what the window wrote (`healthSentence.ts`), and the assertion is stated as
+   * the property rather than as one string: **nothing in the health slot is a
+   * `reason` composed for the machine**, and the slot is a live region.
    */
   'widget-deux-pannes': {
     scenario: 'widget-ennui',
@@ -5036,6 +5048,72 @@ const SCREENS = {
       const route = page.getByText('La sortie audio de l’ordinateur a changé', { exact: false })
       await route.waitFor()
 
+      /*
+       * The health slot, read as a whole — the region **and** every gold run on
+       * the card, because a second element drawing the raw reason would satisfy
+       * a check that only read the region.
+       *
+       * `reason` comes back from `health:snapshot` rather than being spelled
+       * here: the string that must not reach a rep is the one the stub actually
+       * published, so the assertion cannot drift away from the fixture and a
+       * fixture that stopped publishing anything is visible as `reason: null`
+       * instead of passing vacuously.
+       */
+      const readSlot = () =>
+        page.evaluate(async () => {
+          const card = [...document.querySelectorAll('[data-card]')].find((el) =>
+            el.querySelector('.rounded-b-lg'),
+          )
+          /*
+            `[data-health]` and not `[role="status"]`: the attribute is the
+            slot's identity and the role is the claim being measured, so a
+            version that dropped the role reports « la fente n'est plus une
+            région vivante » rather than « la fente a disparu ». The mention
+            card is the surface's other `role="status"`.
+          */
+          const region = card?.querySelector('[data-health]') ?? null
+          const health = await window.app.invoke('health:snapshot', {})
+          return {
+            found: region !== null,
+            role: region?.getAttribute('role') ?? null,
+            text: (region?.textContent ?? '').trim(),
+            written: region?.getAttribute('data-written') ?? null,
+            live: region?.getAttribute('aria-live') ?? null,
+            atomic: region?.getAttribute('aria-atomic') ?? null,
+            warns: [...(card?.querySelectorAll('.text-warn') ?? [])].map((el) =>
+              (el.textContent ?? '').trim(),
+            ),
+            published: {
+              capture: health?.capture?.reason ?? null,
+              transcribe: health?.transcribe?.reason ?? null,
+            },
+          }
+        })
+
+      /*
+       * The opening reading, kept: it carries the designed sentence the capture
+       * module published, and step four puts that same string back on the wire
+       * rather than spelling it here. A stage that restated it would be a copy
+       * of a module's prose in a harness file, which has drifted four times.
+       */
+      const opening = await readSlot()
+      if (!opening.found) {
+        throw new Error('la fente de santé a disparu de la carte — [data-health] introuvable')
+      }
+      if (opening.role !== 'status') {
+        throw new Error(
+          `la fente de santé n’est pas une région vivante (role=${opening.role}) — ` +
+            'la seule phrase de cette fenêtre qui dit que le produit est en panne ' +
+            'n’est annoncée à personne',
+        )
+      }
+      if (opening.written !== 'connector' || opening.text !== opening.published.capture) {
+        throw new Error(
+          `la fente n’ouvre pas sur la phrase du module de capture : « ${opening.text} » ` +
+            `au lieu de « ${opening.published.capture} »`,
+        )
+      }
+
       // Two: the local engine dies while the route is still wrong. `down`
       // outranks `degraded`, so the strip changes hands — the *worst* live
       // channel speaks, not the first one in an array.
@@ -5045,12 +5123,51 @@ const SCREENS = {
       if (heard === 0) {
         throw new Error('personne n’écoute health:changed — la fenêtre ne collecte plus la santé')
       }
-      const dead = page.getByText('aucun fournisseur de transcription', { exact: false })
-      await dead.waitFor()
+      await settled(page)
       if ((await route.count()) > 0) {
         throw new Error(
           'la capture dégradée parle encore alors que la transcription est à l’arrêt — ' +
             'le canal le plus atteint n’a pas la parole',
+        )
+      }
+      const dead = await readSlot()
+
+      /*
+       * **Whose words are on the card.** Round 23 wrote this step as
+       * `getByText('aucun fournisseur de transcription')`, which *required* the
+       * orchestrator's internal `reason` to be there — and it was, with no role
+       * and no remedy. The claim is now the property: what the rep reads is
+       * never the string the producer published for itself.
+       */
+      if (!dead.found || dead.role !== 'status') {
+        throw new Error(
+          `la fente de santé n’est plus une région vivante (role=${dead.role}) après l’arrêt ` +
+            'de la transcription',
+        )
+      }
+      if (dead.published.transcribe === null) {
+        throw new Error(
+          'le stub ne publie plus de phrase pour la transcription — ' +
+            'la fente n’a rien à ne pas répéter, et ce contrôle ne mesure plus rien',
+        )
+      }
+      const leaked = dead.warns.filter((t) => t === dead.published.transcribe)
+      if (leaked.length > 0) {
+        throw new Error(
+          `le commercial lit la phrase interne de l’orchestrateur : « ${leaked[0]} » — ` +
+            'minuscule, sans point final, sans remède, sur une fenêtre par-dessus ce qu’il partage',
+        )
+      }
+      if (dead.written !== 'widget') {
+        throw new Error(
+          `la fente dit « ${dead.text} » et se déclare écrite par « ${dead.written} » — ` +
+            'un fragment interne doit être remplacé par une phrase de la fenêtre',
+        )
+      }
+      if (dead.live !== 'polite' || dead.atomic !== 'true') {
+        throw new Error(
+          `la région vivante est mal câblée (aria-live=${dead.live}, aria-atomic=${dead.atomic}) — ` +
+            'un commercial qui n’a pas les yeux sur cette carte n’apprend rien',
         )
       }
 
@@ -5058,10 +5175,34 @@ const SCREENS = {
       // is the one that was red.
       await page.evaluate(() => window.__harness.health('capture', 'ok'))
       await settled(page)
-      if ((await dead.count()) === 0) {
+      const after = await readSlot()
+      if (after.text !== dead.text) {
         throw new Error(
-          'le rétablissement de la capture a effacé l’arrêt de la transcription — ' +
-            'la fenêtre ne signale plus rien pour le reste de l’appel',
+          'le rétablissement de la capture a changé ce que dit la fenêtre sur la transcription — ' +
+            `« ${dead.text} » → « ${after.text} »`,
+        )
+      }
+
+      /*
+       * And the other half of « the product wrote it »: the *designed* sentence
+       * is not replaced. The route-change reason names the side — « le son du
+       * client » — and nothing derivable from `AppStatus` can, so a fix that
+       * blanket-replaced every reason would lose DEC-32's « the sentence names
+       * which side » on the one surface that carries it during a call.
+       */
+      await page.evaluate((health) => window.__harness.health('capture', health), {
+        state: 'degraded',
+        reason: opening.published.capture,
+        since: Date.now(),
+        retryable: true,
+      })
+      await page.evaluate(() => window.__harness.health('transcribe', 'ok'))
+      await settled(page)
+      const back = await readSlot()
+      if (back.written !== 'connector' || back.text !== back.published.capture) {
+        throw new Error(
+          'la phrase écrite par le module de capture a été remplacée par celle de la fenêtre — ' +
+            `« ${back.text} » au lieu de « ${back.published.capture} »`,
         )
       }
     },

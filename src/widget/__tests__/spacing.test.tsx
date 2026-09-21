@@ -358,7 +358,19 @@ const seams = (card: Element): string[] =>
  * outside of the stack.
  */
 const cardSeam = (role: 'alert' | 'status'): { above: boolean; seam: string } => {
-  const card = screen.getByRole(role).closest('[data-card]')
+  /*
+   * `[data-health]` is excluded, and the exclusion is the point: the panel's
+   * health slot became a `role="status"` live region this round, so « the
+   * status » on this surface is now two elements and `getByRole` was answering
+   * with whichever React rendered first. The seam measured here is the mention
+   * card's, and a card is what carries a seam — the health line is a band
+   * inside the panel.
+   */
+  const spoken = screen.getAllByRole(role).filter((el) => !el.hasAttribute('data-health'))
+  if (spoken.length !== 1) {
+    throw new Error(`« ${role} » désigne ${spoken.length} élément(s) hors santé, pas un seul`)
+  }
+  const card = spoken[0].closest('[data-card]')
   if (card === null) throw new Error(`la carte « ${role} » n’a pas été trouvée`)
   const declared = seams(card)
   expect(
@@ -405,7 +417,11 @@ test('les deux cartes cousent du côté de la pilule, dans les deux sens', async
         await screen.findByRole('alert')
       } else {
         fireEvent.click(screen.getByRole('button', { name: MENTION_LABEL }))
-        await screen.findByRole('status')
+        await waitFor(() =>
+          expect(
+            screen.getAllByRole('status').filter((el) => !el.hasAttribute('data-health')),
+          ).toHaveLength(1),
+        )
       }
 
       const where = card === 'refus' ? cardSeam('alert') : cardSeam('status')
