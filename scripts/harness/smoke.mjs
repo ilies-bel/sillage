@@ -185,8 +185,8 @@ const SIZES = ['1280x800', '960x600']
  * `PASSES.length` at the end, so the number is read off the thing that was
  * actually passed.
  *
- * `--marks` is the newest, and `--rhythm` and `--cells` the two before it; they
- * are here rather than only in `shot.mjs` for the repo's eighth shape: a check
+ * `--press` is the newest, `--marks` the one before it, and `--rhythm` and
+ * `--cells` the two before that; they are here rather than only in `shot.mjs` for the repo's eighth shape: a check
  * nobody runs is a control that is present and does nothing. `--rhythm` and
  * `--cells` both read *painted* geometry over every stage, which is the half a
  * hand-run reviewer never reaches — `--cells` exists because ten passes were
@@ -195,6 +195,14 @@ const SIZES = ['1280x800', '960x600']
  * pass asks something about one element, and the twelve of them were green over
  * a calendar whose « réunion enregistrée » and « enregistrement en cours »
  * measured 1.0077:1 against each other on 6 px dots.
+ *
+ * `--press` is the first that reads **two frames**. Every other pass measures
+ * one settled frame, which is why all thirteen were green over an agenda whose
+ * arming refusal dropped the day list 71.2 px under a pointer that had not
+ * moved and put *Ouvrir* on the live recording — a navigating control, already
+ * `:hover`, whose hit area is the whole row — under the rep's finger. The
+ * defect exists only in the transition between two rested states, and both
+ * rested states are impeccable.
  */
 const PASSES = [
   '--geometry',
@@ -210,6 +218,7 @@ const PASSES = [
   '--census',
   '--rhythm',
   '--cells',
+  '--press',
 ]
 
 const drive = (screen, viewport) =>

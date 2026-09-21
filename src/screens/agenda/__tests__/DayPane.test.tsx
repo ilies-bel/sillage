@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { DayPane } from '../DayPane.tsx'
+import type { ReactNode } from 'react'
 import type { AgendaEntry } from '../entries.ts'
 
 /**
@@ -276,5 +277,76 @@ describe('DayPane — one filled control for the whole pane', () => {
     drawDay(null)
     expect(screen.getAllByRole('button')).toHaveLength(5)
     expect(filled()).toHaveLength(0)
+  })
+})
+
+/**
+ * **Where an arming refusal is drawn, which is the one thing about it jsdom can
+ * measure.**
+ *
+ * The harm is geometric and this file cannot see it: every box here is zero, so
+ * « the list fell 71.2px and *Ouvrir* on the live call took the pointer » is
+ * `shot.mjs --press`'s measurement and only its. What survives the move to jsdom
+ * is the fact underneath it — **document order**. A refusal drawn above the list
+ * moves every row in it; one drawn after the row it answers about moves only the
+ * rows below. So this asserts the order, and it is red the moment the notice
+ * goes back to being a sibling of the list.
+ */
+describe('DayPane — where an arming refusal is drawn', () => {
+  const week = [
+    row({ key: 'live', meetingId: 'm-live', eventId: null, state: 'recording', title: 'Néovia Santé — cadrage renfort data' }),
+    row({ key: 'asked', meetingId: null, eventId: 'evt-delcourt', state: null, title: 'Banque Delcourt — négociation' }),
+    row({ key: 'after', meetingId: null, eventId: 'evt-arkelia', state: null, title: 'Arkelia Logistique — point' }),
+  ]
+
+  const draw = (refusal: { eventId: string; notice: ReactNode } | null) =>
+    render(
+      <DayPane
+        entries={week}
+        reason={null}
+        when="today"
+        showDay={false}
+        unsynced={false}
+        emphasis={null}
+        onOpen={() => {}}
+        onArm={() => {}}
+        refusal={refusal}
+      />,
+    )
+
+  const notice = <div role="alert">« Néovia Santé — cadrage renfort data » est déjà en cours d’enregistrement.</div>
+
+  test('it follows the row that was pressed, and nothing above that row moves', () => {
+    draw({ eventId: 'evt-delcourt', notice })
+
+    const items = [...document.querySelectorAll('li')]
+    const pressed = items.findIndex((li) => li.textContent?.includes('Banque Delcourt'))
+    const carrying = items.findIndex((li) => li.querySelector('[role="alert"]') !== null)
+    const live = items.findIndex((li) => li.textContent?.includes('Néovia Santé — cadrage'))
+    const below = items.findIndex((li) => li.textContent?.includes('Arkelia'))
+
+    expect(pressed).toBeGreaterThanOrEqual(0)
+    // Immediately after the pressed row: not above the list, and not at its end.
+    expect(carrying).toBe(pressed + 1)
+    // The live call's row — the one whose *Ouvrir* took the pointer — is above it.
+    expect(live).toBeLessThan(carrying)
+    expect(below).toBeGreaterThan(carrying)
+  })
+
+  test('no refusal, no row: the list is exactly the day', () => {
+    draw(null)
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(0)
+    expect(document.querySelectorAll('li')).toHaveLength(3)
+  })
+
+  /**
+   * The stated limit of the placement: a sentence about a row that is no longer
+   * on screen is not drawn at all, rather than stranded at the top of a list it
+   * is no longer about.
+   */
+  test('a refusal about an event this range no longer holds is not drawn', () => {
+    draw({ eventId: 'evt-parti', notice })
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(0)
+    expect(document.querySelectorAll('li')).toHaveLength(3)
   })
 })
