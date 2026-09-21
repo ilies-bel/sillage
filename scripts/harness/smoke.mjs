@@ -195,6 +195,13 @@ const SIZES = ['1280x800', '960x600']
  * pass asks something about one element, and the twelve of them were green over
  * a calendar whose « réunion enregistrée » and « enregistrement en cours »
  * measured 1.0077:1 against each other on 6 px dots.
+ *
+ * It has a second half now, and that one is relational across **time**: a stage
+ * that drives the product from one state to the next snaps the marks at each,
+ * and two marks sharing a slot at two moments are compared. `widget-code` is
+ * the only stage that drives one today — which is why the line prints how many
+ * moments it read, so « 1 lecture » cannot be mistaken for a code that was
+ * checked.
  */
 const PASSES = [
   '--geometry',
