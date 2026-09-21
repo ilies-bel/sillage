@@ -70,7 +70,15 @@ the rep's call, and every curve in `:root` being an allowed curve is precisely w
 check could not see it — and note what it still cannot ask, which is why `widget-entree`
 makes its own assertions rather than leaning on this: `--motion` reads *declarations*, so
 it can say that the widget's arrival is on tokens and going the right way and never that
-the window was sized off an untransformed box), `--fade`, `--scrollers`, `--census`,
+the window was sized off an untransformed box — **and it watches the stage being driven**,
+because it is the one pass whose subject is a transient: `settled()` waits every `.leaving`
+out before anything measures, correctly for geometry and wrongly for this, and it printed
+« 0 qui s'en vont » on **83 of the 85 stages** including five of the seven that exist for
+nothing else. That zero was read as a product finding in three separate rounds and became
+a false premise in a fourth. A stage that stages a departure declares `departs: N` on its
+own plan and the pass refuses it when the count is not met; a stage that stages none prints
+what its watch looked at, so a zero cannot be mistaken for a verdict), `--fade`,
+`--scrollers`, `--census`,
 `--rhythm` and `--cells`, below. All twelve run on every stage at 1280×800 *and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.

@@ -1409,6 +1409,88 @@ machine) or in `core/domain/` — never in an IPC handler.
   **back-loaded**, measured as progress at an early fraction of the duration, so *any*
   front-loaded curve fails and not only the one that shipped.
 
+- **`--motion` ran after `settled()`, whose job is to remove the thing `--motion` measures**
+  (`motionReader`, `shot.mjs --motion`, `SCREENS[*].departs`). Measured on HEAD at 1280×800
+  over all 85 stages: **83 printed « 0 qui s'en vont »** — including five of the seven stages
+  that exist for nothing but a departure (`agenda-ligne-sortie`, `review-source-sortie`,
+  `reglages-sortie`, `session-attente-sortie`, `widget-panneau-sortie`). The two that did not
+  (`widget-sortie`, `widget-carte-sortie`) reported 1 only because their exit outlives
+  `settled()`'s two-second bound. The per-stage drivers could see those departures perfectly:
+  `agenda-ligne-sortie` records 12 painted frames, last opacity 0.000, detached at 192 ms. The
+  one pass that runs on every stage could not, because `settled()` waits
+  `[class*="-leaving"], .leaving` out before anything measures — correctly, for geometry and
+  contrast, and fatally for this.
+  **That zero cost three rounds and one lane.** It was read as a *product* finding in rounds
+  18 and 19, recorded as an open defect in round 21 — a round after the exit ladder shipped —
+  and in round 22 it was pushed into another lane's brief as a false premise that lane had to
+  spend its time refuting (`36925b3`). A departure is a **transient**, and every other pass in
+  this harness measures a resting frame; the analysis is an `addInitScript` now and a
+  `MutationObserver` on `class`, `style` and `childList` watches the stage as it is driven.
+  Six of the seven `-sortie` stages report a departure caught in flight; `session-attente-sortie`
+  reports two where it reported none.
+  **The reading happens in the observer's own callback, and batching it to an animation frame
+  is what a measurement refuted.** The first version drained a pending set on `requestAnimationFrame`,
+  on the reasoning that three `getComputedStyle` calls per mutation is a forced style recalculation.
+  Headless Chromium ran **7 frames across the whole of `agenda-ligne-sortie`'s drive** and 4
+  across `widget-sortie`'s, so a departure queued after one drain was detached before the next
+  and five stages still read zero. The frames were never there to batch into. The cost is paid
+  down instead by an **exact** declarative pre-filter — the only elements that can answer
+  `leaving` are the ones an `opacity: 0` rule points at, the ones a rule runs a fading
+  `@keyframes` on, or the ones carrying it inline, and all three are `matches()` and a string
+  read, which resolve no style. `animation-name` is read off `cssText`, because a shorthand
+  carrying a `var()` is a pending-substitution value and the longhand answers `''` — which is
+  exactly how `.widget-card-leaving` is written.
+  Being *connected* at the moment of judgement is load-bearing and is the second silent probe:
+  `revealed()` peels a Tailwind reveal down to a **descendant** selector, and a detached node
+  has no ancestors, so judging after the fact would hand back the seven false findings the
+  escape test was built to lose.
+  **And the whole departure half had been switched off by a `try` one line too wide.** Moving
+  the cascade census into `build()` left `STATE` behind in it; `revealed()` closes over `STATE`,
+  and the `ReferenceError` was raised *inside* `leavingHere`'s `try`, whose `catch` exists for a
+  selector the browser cannot parse. Every element on every stage answered « not leaving », with
+  a green line printed over it. The two catches hold their `matches()` call and nothing else now.
+- **A count that cannot tell « nothing left » from « I did not look » is a number that binds
+  nothing** (`shot.mjs`, three passes). « 0 qui s'en vont » was the same shape `--scrollers`
+  had when it printed « rien de caché » over four panes it never entered, and the fix there was
+  the *scope*; the **line** was left bare, so a reader still could not tell 1 752 elements
+  walked from 0. Three green lines now carry their population: `--motion` prints
+  « aucun départ joué ici : N élément(s) mutés guettés, M lu(s) en entier … mesure vide, pas un
+  constat sur le produit », `--scrollers` prints what it walked, what can clip, what really
+  overflows and each exemption by name, and `--a11y` prints how many controls, fields and
+  headings the verdict is over — measured: 63/1/4 on `agenda`, **3/0/0 on `widget`**, which is
+  a number a reader can weigh.
+  And the zero is no longer the only defence: a stage named `-sortie` must declare `departs`,
+  a **minimum** count (not a flag, so one departure going quiet cannot be covered by another
+  still firing — the `backwards.length >= 3` lesson), and `--motion` refuses the stage if the
+  declaration is missing or unmet. Two probes join the self-test, and they are the first that
+  test the *in-flight* half: `#sillage-attack-envol` is created, sent away and removed while the
+  stage is driven — `settled()` cannot reach it, and asserting it against `caught` rather than
+  `backwards` is what makes the list it lands in the claim. `#sillage-attack-devoile-envol` is
+  the control. Falsified: with `observer.observe` disabled, probe 13 is the one thing that goes
+  red. The self-test's own two counts are read off the list now — it said « les douze attaques …
+  les trois » over eleven and three.
+- **An element cannot be arriving and leaving at once, and a CSS animation outranks a
+  transition** (`DayPane.tsx`). `entry.armed && 'animate-rise-in'` and `leaving && 'leaving'`
+  were independent conditions, so a row withdrawn while its arrival was still running wore
+  both — and `riseIn`'s `opacity: 0 → 1` on `--ease-out` painted over `.leaving`'s `opacity: 0`
+  on `--ease-in` for the rest of its 150 ms: the departure did not begin until the arrival
+  finished. Measured on `session-attente-sortie` the hour `--motion` could first see a
+  departure: at the frame `.leaving` lands, `el.getAnimations()` answers
+  `[{ riseIn, running, currentTime: 17 }]`, and the pass reads « li.bg-card — 150ms /
+  cubic-bezier(0.22,1,0.36,1) : part moyenne du changement déjà faite 83 % ». The other two
+  rungs of the ladder already spell it exclusively — `Reglages.tsx` and `Review.tsx` both write
+  `leaving ? 'leaving' : 'animate-rise-in'`, the shape `useDismiss`'s own docblock shows. This
+  row was the one that did not, and nothing could see it because `--motion` ran after
+  `settled()`.
+- **A box read « at rest » by `settled()` can be read before the motion starts**
+  (`restingBox`, `widget-ouvert`). `settled()` asks « is anything running now », which under
+  `smoke.mjs`'s four parallel lanes answers « no, not yet »: the pill's DEC-50 arrival had not
+  begun, so the chevron's `before` box came back **23.26×23.26** for a 24×24 control and the
+  stage reported it moving 5 px under the pointer when nothing had moved. The round that first
+  found this recorded the same 23.26 and fixed it with the `settled()` that can still answer too
+  early. A box at rest is a box that has **stopped moving**, so it is now read until two
+  readings agree.
+
 - **A synthesised end is not a scheduled end** (`Orchestrator.#startEndWatch`). `graceFor`
   shortens the end-of-meeting grace from 75 s to 25 s once the silence begins past
   `scheduledEnd`, and that reasoning is entirely about a *calendar* slot. Both paths that

@@ -423,7 +423,34 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         'relative transition',
         // The same condition the stretched hit area is drawn on, below.
         entry.meetingId !== null && 'hover:bg-subtle',
-        entry.armed && 'animate-rise-in',
+        /*
+          **`!leaving`, because a row cannot be arriving and leaving at once.**
+
+          These two were independent conditions, so a row that was withdrawn
+          while its arrival was still running wore both — and a CSS *animation*
+          outranks a *transition* on the same property, so `riseIn`'s
+          `opacity: 0 → 1` on `--ease-out` painted over `.leaving`'s
+          `opacity: 0` on `--ease-in` for the rest of its 150 ms. The departure
+          did not start until the arrival finished.
+
+          Measured on `session-attente-sortie`, which is the stage where the two
+          overlap: at the frame `.leaving` lands, `el.getAnimations()` answers
+          `[{ riseIn, running, currentTime: 17 }]` and `--motion` reads
+          « li.bg-card — 150ms / cubic-bezier(0.22,1,0.36,1) : part moyenne du
+          changement déjà faite 83 % ». Ease-out on the way in, ease-in on the
+          way out — not both on one element.
+
+          Nothing could see it until this round: `--motion` runs after
+          `settled()`, which waits every `.leaving` out before it measures, so
+          the one pass that judges departure curves was handed a page with no
+          departures on it. `motionReader` is what changed.
+
+          The other two rungs of this ladder already spell it exclusively —
+          `Reglages.tsx` and `Review.tsx` both write
+          `leaving ? 'leaving' : 'animate-rise-in'`, the shape `useDismiss`'s own
+          docblock shows. This row was the one that did not.
+        */
+        entry.armed && !leaving && 'animate-rise-in',
         /*
           And the other end of it. The offer arrived over 150 ms of
           `animate-rise-in` and was removed between two frames — VISION §6 asks
