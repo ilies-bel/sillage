@@ -45,6 +45,7 @@
  * glyph it spends on a claim about a model.
  */
 import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { RECIPES, recipeById, type RecipeId } from '../../../electron/core/contracts/recipes.ts'
 import { Button } from '../../ui/index.ts'
 import { cn } from '../../lib/utils.ts'
@@ -99,10 +100,19 @@ export function RecipeSwitch({ current, edited, failure, onRewrite }: RecipeSwit
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((shown) => !shown)}
-        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-hair rounded-sm border px-snug py-hair text-meta transition"
+        /* `text-ui`, not `text-meta`: `Chip`'s own docblock has the measurement —
+           at meta this box is 27.05px and the segmented option beside it is
+           26.59px, which is a difference nobody decided. */
+        className="border-card bg-inner text-body hover:bg-subtle inline-flex min-h-[24px] shrink-0 items-center gap-hair rounded-sm border px-snug py-hair text-ui transition"
       >
         {`Modèle : ${recipe.title}`}
-        <span aria-hidden>{open ? '▾' : '▸'}</span>
+        {/* Drawn, not typed: Inter carries neither U+25BE nor U+25B8, so this
+            mark was the operating system's — see `Review.tsx`'s own row. */}
+        {open ? (
+          <ChevronDown aria-hidden size={12} strokeWidth={2} />
+        ) : (
+          <ChevronRight aria-hidden size={12} strokeWidth={2} />
+        )}
       </button>
 
       {failure ? (

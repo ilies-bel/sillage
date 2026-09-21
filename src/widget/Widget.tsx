@@ -76,7 +76,7 @@
  * and not a guess until somebody decides otherwise.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { EyeOff } from 'lucide-react'
+import { ChevronDown, ChevronUp, EyeOff } from 'lucide-react'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { speakerLabel } from '../../electron/core/contracts/transcript.ts'
 import {
@@ -2159,9 +2159,26 @@ function Pill({
         aria-label={open ? 'Replier le panneau' : `Ouvrir le panneau${title ? ` — ${title}` : ''}`}
         className="no-drag text-muted hover:bg-subtle hover:text-strong inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded-sm transition"
       >
-        <span aria-hidden className="text-ui leading-none">
-          {open === above ? '▾' : '▴'}
-        </span>
+        {/*
+          **Drawn, not typed.** This was « ▾ »/« ▴ » — U+25BE and U+25B4, set in
+          the body font. Measured on the shipped stylesheet: Inter 4.1 does not
+          carry either, so the mark was painted by whatever the operating system
+          substituted — a mac fallback here, Segoe UI Symbol on **Windows**,
+          which is where this ships first (HR-2). It also painted at
+          **5.67×12** beside the card's 10×12 bookmark and 12×12 bubble, because
+          a character's ink is a fraction of its em while an icon's is its box.
+          Lucide at 12 puts it on the one icon weight the census holds, in a font
+          this app ships, at the size of the marks beside it.
+
+          The direction still says where the panel will go, and the test still
+          reads it — off `data-arrow`, which is the attribute that replaced a
+          `textContent` assertion on a character.
+        */}
+        {open === above ? (
+          <ChevronDown aria-hidden data-arrow="down" size={12} strokeWidth={2} />
+        ) : (
+          <ChevronUp aria-hidden data-arrow="up" size={12} strokeWidth={2} />
+        )}
       </button>
       </span>
     </div>

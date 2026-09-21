@@ -52,6 +52,7 @@
  * four characters of it, which is the whole vocabulary the screen has for a
  * secret.
  */
+import { X } from 'lucide-react'
 import { useCallback, useState, type ReactNode } from 'react'
 import type { DiagEvent } from '../../electron/core/contracts/diagnostics.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
@@ -711,13 +712,16 @@ function Sheet({
             </h2>
             {/* `min-w-[24px]`, like the calendar's month pager: a glyph this
                 narrow is 9px of target otherwise (WCAG 2.2, 24×24). */}
+            {/* Drawn, not typed. « ✕ » is U+2715 and Inter 4.1 does not carry
+                it, so this close was painted by whatever the OS substituted —
+                Segoe UI Symbol on Windows (HR-2), at its own size. */}
             <Button
               variant="nav"
               className="min-w-[24px]"
               aria-label="Fermer les réglages"
               onClick={onClose}
             >
-              ✕
+              <X aria-hidden size={14} strokeWidth={2} />
             </Button>
           </div>
           {children}

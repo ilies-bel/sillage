@@ -2,7 +2,7 @@
  * A chip: a small bordered or tinted tag, sometimes pressable.
  *
  * Two real shapes in the code today — Review's sibling-account suggestions
- * (`border-card bg-inner text-body … px-snug py-hair text-meta`) and the uppercase
+ * (`border-card bg-inner text-body … px-snug py-hair text-ui`) and the uppercase
  * letterspaced micro-labels (*Prêt*, *Utilisé*, *Sur cette machine*) that
  * Agenda and Réglages both write out longhand.
  *
@@ -42,6 +42,25 @@ import { cn } from '../lib/utils.ts'
  * it moves. `label` never had it and still does not — a word in a row is not a
  * control, and enlarging it would only push the row it sits on apart.
  */
+/*
+ * **`text-ui` and no longer `text-meta`, because a chip is a control.**
+ *
+ * `--type-meta` (11px on a 17.05px line) is the size of the word *beside* a row.
+ * On a pressable chip it produced a box of 17.05 + 8 of padding + 2 of border =
+ * **27.05px**, and the product's segmented options — `--type-ui`, the same 4px
+ * padding, no border — produce **26.59px**. Measured over all 85 stages at both
+ * sizes: those two heights stood side by side on **27 screens**, 0.46px apart.
+ * Half a pixel is not a decision anybody took; it is two type rungs meeting a
+ * border, and `--census` now fails on it.
+ *
+ * At `--type-ui` the chip is 18.59 + 8 + 2 = **28.59px**, which is the rung the
+ * product's own one-line fields already stand on (« Objet du brouillon »,
+ * « Client », « Rechercher dans la transcription »). One height fewer on every
+ * screen that draws both, and the thing a rep presses is now set at the size
+ * every other control is set at. The uppercase `label` variant keeps
+ * `--type-meta`: it is a word in a row and not a control, which is the
+ * distinction the docblock below already drew about `min-h-[24px]`.
+ */
 const chip = cva('inline-flex shrink-0 items-center', {
   variants: {
     variant: {
@@ -54,9 +73,9 @@ const chip = cva('inline-flex shrink-0 items-center', {
        * excluded from it; a `choice` chip confirms nothing and is safe.
        */
       choice:
-        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-snug py-hair text-meta transition',
+        'border-card bg-inner text-body hover:bg-subtle active:translate-y-px min-h-[24px] rounded-sm border px-snug py-hair text-ui transition',
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
-      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-hair text-meta',
+      brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-hair text-ui',
       /** The uppercase micro-label. Not a control, just a word in a row. */
       label: 'text-muted text-label font-semibold uppercase tracking-wider',
     },

@@ -841,11 +841,11 @@ test('widget:placed flips which way the panel opens', async () => {
    * downward and the chevron points back the way it will collapse — « the arrow
    * points where the panel will go », which with the panel open is shut.
    */
-  expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▴')
+  expect(arrow(screen.getByRole('button', { name: 'Replier le panneau' }))).toBe('up')
 
   act(() => bridge.emit('widget:placed', { above: true }))
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▾')
+    expect(arrow(screen.getByRole('button', { name: 'Replier le panneau' }))).toBe('down')
   })
 })
 
@@ -995,14 +995,27 @@ test('une carte qui s’en va ne se remet pas en page', async () => {
 
   const toggle = await screen.findByRole('button', { name: /^Ouvrir le panneau/ })
   // The stub answers `above: false`, so a shut panel points down.
-  expect(toggle.textContent).toBe('▾')
+  expect(arrow(toggle)).toBe('down')
 
   await act(async () => {
     bridge.emit('widget:leave', {})
     bridge.emit('widget:placed', { above: true })
   })
-  expect(screen.getByRole('button', { name: /^Ouvrir le panneau/ }).textContent).toBe('▾')
+  expect(arrow(screen.getByRole('button', { name: /^Ouvrir le panneau/ }))).toBe('down')
 })
+
+/**
+ * Which way the chevron points, off the mark itself.
+ *
+ * This read `textContent` and compared it to « ▴ »/« ▾ » — U+25B4 and U+25BE,
+ * two characters Inter does not carry, so the assertion was pinned to a glyph
+ * the operating system chose. The mark is drawn now (`ChevronUp`/`ChevronDown`)
+ * and the direction is on the element, which is the thing the test was ever
+ * about: « the arrow points where the panel will go ».
+ */
+function arrow(control: Element): string | null {
+  return control.querySelector('[data-arrow]')?.getAttribute('data-arrow') ?? null
+}
 
 function assertShell(node: Element | null): asserts node is Element {
   if (node === null) throw new Error('la coque du widget n’a pas été trouvée')
