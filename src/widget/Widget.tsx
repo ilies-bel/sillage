@@ -79,6 +79,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { EyeOff } from 'lucide-react'
 import type { TranscriptSegment } from '../../electron/core/contracts/transcript.ts'
 import { speakerLabel } from '../../electron/core/contracts/transcript.ts'
+import type { ConnectorHealth } from '../../electron/core/contracts/health.ts'
+/*
+ * A **value** from `core/contracts/`, and the only one this file takes. The
+ * ranking of two connector states is a product rule with one implementation in
+ * this repo; a second one written here would be free to disagree with the
+ * header's, which is exactly what the two writers into this window's health
+ * already did. `status.ts` imports types only and builds nothing at module
+ * scope, so this costs the renderer bundle nothing — see its own header for why
+ * it is not in `health.ts`, which would pull Zod across the boundary.
+ */
+import { aggregateStatus } from '../../electron/core/contracts/status.ts'
 import {
   MARK_NOTE_MAX,
   interleaveMarks,
@@ -116,6 +127,22 @@ const KEPT_TURNS = 60
 
 /** Both windows' idea of « rien n'a encore été dit ». */
 const NOTHING_YET = 'Rien n’a encore été transcrit.'
+
+/**
+ * **The two channels this window reports on**, and it is a narrower list than
+ * `REQUIRED_CONNECTORS` on purpose.
+ *
+ * `llm` is the third required connector app-wide (DEC-32) and it is deliberately
+ * not here: no model runs during the call (DEC-14, DEC-5), so an analysis
+ * failure over a client's face is a sentence about work that has not started,
+ * on the one surface where every pixel is a pixel of Teams the rep cannot click.
+ * The header control says it, in the window the rep goes to afterwards.
+ *
+ * Written as a literal union rather than derived from `RequiredConnectorId`,
+ * because the runtime guard on `health:changed` names the same two literals: a
+ * type that widened on its own would stop agreeing with the filter under it.
+ */
+type LiveConnector = 'capture' | 'transcribe'
 
 /**
  * **The clipboard, and the fact that it is allowed to say no.**
@@ -550,22 +577,59 @@ export function Widget() {
    * surface in the app already does (`StatusControl`, the gate, the onboarding):
    * an edge that fired before this window existed is an edge nobody heard, and
    * a widget is created *during* a meeting.
+   *
+   * **What is held is the two channels, not the sentence** — and that is the
+   * correction. A `string | null` written by two handlers is two answers to one
+   * question, and they were different questions: the snapshot took the *first*
+   * non-`ok` of `['capture', 'transcribe']` under a variable called `worst`, the
+   * edge took the *latest* whatever it said. Both connectors report
+   * independently for the length of a call — `Recording.ts` wires
+   * `capture.on('health')` and `transcribe.on('health')` to the same `onHealth`,
+   * and `health:retry` on the capture row in Réglages publishes `capture: ok`
+   * mid-call — so a capture blip that recovered while the local engine was still
+   * dead erased the transcription warning and the window reported nothing wrong
+   * for the rest of the call. Driven on the shipped renderer at **both** smoke
+   * sizes, reading every `.text-warn` on the card: « La sortie audio de
+   * l’ordinateur a changé … » → « aucun fournisseur de transcription
+   * disponible » → **`[]`**, over a rep who believed notes were being taken.
+   * `Widget.test.tsx` holds all four cases now; before this commit
+   * `grep -c 'health:changed\|health:snapshot'` over that file returned 0, and
+   * the strip was fed by one stage emitting one connector from a static table.
+   *
+   * `aggregateStatus` decides, rather than a second ranking written here: it is
+   * the repo's one ordering of these states (`down` outranks `degraded`, ties to
+   * the earlier connector — capture first, because it is the one that cannot be
+   * repaired after the call), it returns the connector's `reason` verbatim, and
+   * it reads a `Partial`, so a snapshot missing a key is *nothing known* rather
+   * than nothing wrong. Only the two channels a recording needs are put in front
+   * of it: `llm` does not run during the call and DEC-14 keeps it off this
+   * surface. One sentence still, because the strip is one sentence — the one
+   * being held back comes forward the moment the worse one clears, which is what
+   * makes « the worst » honest rather than lossy.
+   *
+   * **The edge wins a late snapshot**, which the spread says and an effect that
+   * overwrote could not: the read is one preload hop issued at mount and the
+   * edges are a stream, so an answer that lands after an edge is a reading that
+   * was already stale when it was taken. Nothing reloads this channel, so the
+   * seed happens once.
    */
-  const [trouble, setTrouble] = useState<string | null>(null)
+  const [connectors, setConnectors] = useState<Partial<Record<LiveConnector, ConnectorHealth>>>({})
   const health = useInvoke('health:snapshot', {})
   useEffect(() => {
     if (health.state.status !== 'ready') return
     const snapshot = health.state.value
-    const worst = (['capture', 'transcribe'] as const)
-      .map((connector) => snapshot[connector])
-      .find((entry) => entry !== undefined && entry.state !== 'ok')
-    setTrouble(worst?.reason ?? null)
+    setConnectors((was) => ({
+      capture: snapshot.capture,
+      transcribe: snapshot.transcribe,
+      ...was,
+    }))
   }, [health.state])
   useBroadcast('health:changed', ({ connector, health: next }) => {
     if (gone.current) return
     if (connector !== 'capture' && connector !== 'transcribe') return
-    setTrouble(next.state === 'ok' ? null : (next.reason ?? null))
+    setConnectors((was) => ({ ...was, [connector]: next }))
   })
+  const trouble = aggregateStatus(connectors).reason
 
   /*
    * The turns arrive on the broadcast nothing had ever subscribed to.

@@ -494,6 +494,7 @@ what `serve.mjs` drops the meta for.
 | `widget-sombre` | the panel open over a dark ground — the overlay re-points its ink, and the contrast a rep sees is against what Teams is painting |
 | `widget-attente` | « Aucun enregistrement »: no clock, no meter, no mark button, which is the half a `waitFor` on one string cannot prove |
 | `widget-ennui` | a long quiet call — the surface a rep watches for fifty minutes with nothing arriving |
+| `widget-deux-pannes` | **two** health edges: the local engine dies while the audio route is already wrong, then the capture recovers and the transcription must still be reported |
 | `widget-survol` | the panel under the cursor, so every hover step is painted rather than declared |
 | `widget-pause-refus` | *Pause* refused: the control stays, and the sentence names the cause instead of a *Réessayer* |
 | `widget-carte-sortie` | the card leaving, read off whatever the alert or status element is actually saying |
@@ -501,10 +502,12 @@ what `serve.mjs` drops the meta for.
 
 A stage carrying `query` is loaded on that query string. There is exactly one today and it
 is the widget: the app has one window with no routes in its URL, and the second window is
-told which renderer it is by `?window=widget` (`src/main.tsx`). The fourteen widget stages are
-photographed over the app’s own canvas rather than over a video call — the nine checks measure
-the pill against paper, and the contrast a rep actually sees is against whatever Teams is
-painting. The shadow is what carries that separation, and a screenshot here cannot verify it:
+told which renderer it is by `?window=widget` (`src/main.tsx`). The fifteen widget stages are
+photographed over the app’s own canvas rather than over a video call — the twelve passes
+measure the pill against paper, and the contrast a rep actually sees is against whatever Teams
+is painting. (Both numbers said something else until they were counted: « fourteen » was
+right for one round and « nine » for three, and `CLAUDE.md` records the same drift one level
+up about the same list. Count `SCREENS` and `PASSES` before repeating either.) The shadow is what carries that separation, and a screenshot here cannot verify it:
 the harness page has five hundred pixels of paper around the pill, so the shadow lands
 beautifully whether or not the *window* has room for it. It did not, for a round — the window
 was sized to the card and `getBoundingClientRect` excludes a `box-shadow` — and the same blind

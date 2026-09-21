@@ -19,6 +19,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import type { TranscriptSegment } from '../../../electron/core/contracts/transcript.ts'
 import type { MomentMark } from '../../../electron/core/contracts/marks.ts'
+import type {
+  ConnectorHealth,
+  ConnectorId,
+  HealthSnapshot,
+} from '../../../electron/core/contracts/health.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Widget } from '../Widget.tsx'
 import { MENTION_LABEL, MENTION_NOT_LOGGED, MENTION_NOTE } from '../mention.ts'
@@ -1992,4 +1997,164 @@ test('un second enregistrement dans la même fenêtre porte ses propres marques'
   )
   await openPanel()
   expect(screen.queryByText('premier appel')).toBeNull()
+})
+
+/*
+ * ── The two required channels, and the one strip that reports them ──────────
+ *
+ * `grep -c 'health:changed\|health:snapshot'` over this file returned **0**
+ * before these four tests. The widget's own docblock calls the strip « the one
+ * reading that says the product is failing », and it was fed by one harness
+ * stage emitting one connector from a static table and asserted by nothing at
+ * all — so the two writers into `trouble` were free to disagree, and did.
+ */
+
+/**
+ * All six, because the orchestrator seeds all six at construction and
+ * `HealthSnapshot` is a total record — a fixture shorter than the product's own
+ * answer is a fixture simpler than the thing under test.
+ */
+const snapshot = (
+  troubled: Partial<Record<ConnectorId, ConnectorHealth>>,
+): HealthSnapshot => ({
+  capture: { state: 'ok' },
+  transcribe: { state: 'ok' },
+  calendar: { state: 'ok' },
+  llm: { state: 'ok' },
+  crm: { state: 'ok' },
+  mail: { state: 'ok' },
+  ...troubled,
+})
+
+/** The sentence `Recording.ts` emits when the local engine will not start. */
+const TRANSCRIBE_DOWN = {
+  state: 'down' as const,
+  reason: 'aucun fournisseur de transcription disponible',
+  since: STARTED + 120_000,
+  retryable: true,
+}
+
+/** `capture/index.ts` `#checkOutputRoute`, word for word — DEC-32's `degraded`. */
+const CAPTURE_DEGRADED = {
+  state: 'degraded' as const,
+  reason:
+    'La sortie audio de l’ordinateur a changé pendant l’appel — le son du client peut ne plus être capté. Terminez et redémarrez l’enregistrement pour le reprendre.',
+  since: STARTED + 60_000,
+  retryable: true,
+}
+
+/**
+ * **A capture blip that recovers must not erase a transcription that is still
+ * dead.**
+ *
+ * Both connectors report on `health:changed`, independently, for the length of
+ * the call (`Recording.ts` wires `capture.on('health')` and
+ * `transcribe.on('health')` to the same `onHealth`), and `health:retry` on the
+ * capture row in Réglages publishes `capture: ok` mid-call. Collapsing two
+ * connectors into one string at the point of receipt means the later edge wins
+ * whatever it says: the strip went silent for the rest of the call with no
+ * transcription happening, on the one surface whose job is to say so.
+ */
+test('une panne de transcription survit au rétablissement de la capture', async () => {
+  bridge.when('health:snapshot', () => snapshot({}))
+  render(<Widget />)
+  await openPanel()
+
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'transcribe',
+      health: TRANSCRIBE_DOWN,
+      at: STARTED + 120_000,
+    })
+  })
+  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'capture',
+      health: { state: 'ok' },
+      at: STARTED + 130_000,
+    })
+  })
+  expect(screen.queryByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+})
+
+/**
+ * **The strip names the worst live channel, not the first one in an array.**
+ *
+ * The snapshot path called its variable `worst` and took `.find()` over
+ * `['capture', 'transcribe']` — the *first* non-`ok`, which is a different
+ * question. A capture that is `degraded` (half the call still recorded, DEC-32)
+ * therefore outranked a transcription that is `down` (nothing recorded at all),
+ * for as long as both were true. `aggregateStatus` is the repo's one ranking of
+ * these states and it is what decides now.
+ */
+test('le canal le plus atteint parle, pas le premier de la liste', async () => {
+  bridge.when('health:snapshot', () =>
+    snapshot({ capture: CAPTURE_DEGRADED, transcribe: TRANSCRIBE_DOWN }),
+  )
+  render(<Widget />)
+  await openPanel()
+
+  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+  expect(screen.queryByText(CAPTURE_DEGRADED.reason)).toBeNull()
+})
+
+/**
+ * And the one it was holding back comes forward when the worse one clears —
+ * which is what makes « the worst, not a list » honest rather than lossy.
+ */
+test('le canal encore atteint reprend la parole quand le pire se rétablit', async () => {
+  bridge.when('health:snapshot', () =>
+    snapshot({ capture: CAPTURE_DEGRADED, transcribe: TRANSCRIBE_DOWN }),
+  )
+  render(<Widget />)
+  await openPanel()
+  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'transcribe',
+      health: { state: 'ok' },
+      at: STARTED + 200_000,
+    })
+  })
+  expect(await screen.findByText(CAPTURE_DEGRADED.reason)).toBeTruthy()
+})
+
+/**
+ * **An edge that beats the snapshot home is not overwritten by it.**
+ *
+ * The snapshot is one preload hop issued at mount and the edges are a stream;
+ * seeding from the answer when it lands would republish a reading that was
+ * already stale when it was taken. Driven with the answer held until after the
+ * edge, which is the order a window created *during* a meeting can genuinely
+ * see.
+ */
+test('un état arrivé avant l’instantané n’est pas écrasé par lui', async () => {
+  let answer: (value: HealthSnapshot) => void = () => {}
+  bridge.when(
+    'health:snapshot',
+    () =>
+      new Promise<HealthSnapshot>((resolve) => {
+        answer = resolve
+      }),
+  )
+  render(<Widget />)
+  await openPanel()
+
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'transcribe',
+      health: TRANSCRIBE_DOWN,
+      at: STARTED + 120_000,
+    })
+  })
+  expect(await screen.findByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
+
+  await act(async () => {
+    answer(snapshot({}))
+    await Promise.resolve()
+  })
+  expect(screen.queryByText(TRANSCRIBE_DOWN.reason)).toBeTruthy()
 })
