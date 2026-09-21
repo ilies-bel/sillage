@@ -54,6 +54,12 @@
  * a count of characters — and `ch` is the advance of the digit zero, so it
  * rendered eighty-one. Nothing counted, so nothing noticed, for four rounds.
  *
+ * It counts **both ends of the band** since round 23. The ceiling was there and
+ * the floor was not, so the rep's own notes set at 25 characters a line at
+ * 960×600 — on the screen named after the compte-rendu, which was showing 12.8 %
+ * of it — passed twelve green passes. A narrow column is not a hidden one, so
+ * `--scrollers` could not see it either.
+ *
  * It carries `--echo`, which asks the one question no other pass can:
  * does this screen draw the same visible string twice? The home screen printed
  * the day in the header and again as an `h2` 108 pixels lower, under

@@ -12,7 +12,8 @@
  *   --no-png         scan only
  *   --geometry       measure the hanging markers against the box they hang in
  *   --targets        measure every control against WCAG 2.2's 24×24 minimum
- *   --prose          count the characters a line of each prose surface really holds
+ *   --prose          count the characters a line of each prose surface really holds,
+ *                    against 75 above and 45 below
  *   --echo           fail on a visible string the screen draws more than once
  *   --a11y           names on controls, labels on fields, and the heading ladder
  *   --contrast       every text run against the ground it is painted on (WCAG AA)
@@ -1558,6 +1559,57 @@ const SCREENS = {
         .click()
       await page.getByRole('button', { name: 'Relire et valider' }).waitFor()
       await page.getByText('Le budget de la plateforme data', { exact: false }).waitFor()
+    },
+  },
+
+  /**
+   * **The rep's own notes on their own — the one session state nothing staged.**
+   *
+   * `showRail === false` has existed for as long as this screen has and has
+   * never been photographed: every session stage is the two or three columns,
+   * so the notepad at full width, the header's way back into the volets, and
+   * the reading measure of the surface DEC-11 calls « why the app is open »
+   * were measured by nothing at either size.
+   *
+   * It matters more now. Below `SIDE_BY_SIDE_PX` (`Session.tsx`, 1 184) this
+   * screen holds two reading columns and not three, and the notepad is the one
+   * that is not part of the judgement — so at 960×600 the notes are *behind*
+   * this press, which is what makes the press part of the product rather than a
+   * convenience.
+   *
+   * **The two sizes reach it by two different controls, and that is asserted
+   * rather than assumed.** At 960×600 it is « Mes notes » in the header; at
+   * 1280×800 that control must not exist — all three columns are on screen and
+   * a button offering to fetch one of them would be the dead control DEC-26
+   * names — so the stage checks it is absent and takes `LiveAside`'s own
+   * « Masquer », which is the same state by the same route a rep has always
+   * had. A stage that merely *tried* both would pass whichever way the
+   * breakpoint was spelled.
+   */
+  'session-mes-notes': {
+    scenario: 'compte-rendu',
+    async drive(page) {
+      await SCREENS['session-compte-rendu'].drive(page)
+      const wide = page.viewportSize().width >= 1184
+      const back = page.getByRole('button', { name: 'Mes notes' })
+      const found = await back.count()
+      if (wide && found > 0) {
+        throw new Error(
+          '« Mes notes » est dessiné à ' +
+            page.viewportSize().width +
+            'px, où les trois colonnes tiennent — un contrôle qui ne décide rien',
+        )
+      }
+      if (!wide && found === 0) {
+        throw new Error(
+          '« Mes notes » manque à ' +
+            page.viewportSize().width +
+            'px, où le bloc-notes n’est pas à l’écran — les notes sont inatteignables',
+        )
+      }
+      await (wide ? page.getByRole('button', { name: 'Masquer' }) : back).click()
+      await page.getByRole('button', { name: 'Afficher les volets' }).waitFor()
+      await page.getByText('Budget plateforme voté', { exact: false }).waitFor()
     },
   },
 
@@ -6912,16 +6964,95 @@ async function main() {
     }
   }
   if (flags.prose) {
-    if (long.length === 0) console.log('  mesure: aucune ligne au-delà de 75 caractères')
+    if (long.long.length === 0) console.log('  mesure: aucune ligne au-delà de 75 caractères')
     else {
-      console.log(`  ✗ mesure: ${long.length} surface(s) au-delà de 75 caractères`)
-      for (const item of long.slice(0, 8)) {
+      console.log(`  ✗ mesure: ${long.long.length} surface(s) au-delà de 75 caractères`)
+      for (const item of long.long.slice(0, 8)) {
         console.log(
           `   ✗ ${item.chars} car./ligne — ${item.what} (${item.size}, ${item.box}px) ` +
             `« ${item.text}… »`,
         )
       }
       process.exitCode = 6
+    }
+
+    /*
+     * **The other end of the band.** Same three rules the echo list runs
+     * under, for the same reason: a check that exits 1 on every run is a check
+     * nobody can gate on, and an allowance with no owner rots into a permanent
+     * exemption. An entry names one stage and one element, it says what the
+     * surface is and which story widens it, and **a stale entry fails** — if
+     * the surface stops being narrow the allowance has outlived its finding.
+     */
+    const unknownNarrow = [
+      ...PROSE_NARROW_DECLARED.flatMap((entry) =>
+        entry.stages
+          .filter((name) => !(name in SCREENS))
+          .map((name) => ({ what: entry.what, why: `« ${name} » n’est pas dans SCREENS` })),
+      ),
+      /*
+       * A viewport this file cannot produce would make the entry apply to
+       * nothing and never go stale — the silent permanent exemption, one field
+       * over. `shot.mjs` does not know `smoke.mjs`' size list, so this checks
+       * the shape rather than the membership, and says so.
+       */
+      ...PROSE_NARROW_DECLARED.filter(
+        (entry) =>
+          entry.viewports.length === 0 || entry.viewports.some((v) => !/^\d+x\d+$/.test(v)),
+      ).map((entry) => ({
+        what: entry.what,
+        why: `taille déclarée illisible : ${JSON.stringify(entry.viewports)}`,
+      })),
+    ]
+    if (unknownNarrow.length > 0) {
+      console.log(
+        `  ✗ mesure: ${unknownNarrow.length} colonne(s) étroite(s) déclarée(s) mal formée(s)`,
+      )
+      for (const item of unknownNarrow) console.log(`     « ${item.what} » — ${item.why}`)
+      process.exitCode = 19
+    }
+
+    /*
+     * **An entry names a stage *and* the sizes it was measured at**, because a
+     * column's width is a function of the window's and every one of these is a
+     * finding at 960×600 that does not exist at 1280×800. Without the second
+     * half, either the stale check fires on every wide run — which is the
+     * check calling a live finding dead — or it is dropped, which is the rot
+     * `ECHO_DECLARED`'s own third rule exists to prevent.
+     */
+    const here = `${flags.viewport.width}x${flags.viewport.height}`
+    const declaredNarrow = PROSE_NARROW_DECLARED.filter(
+      (entry) => entry.stages.includes(screen) && entry.viewports.includes(here),
+    )
+    const allowedNarrow = new Set(declaredNarrow.map((entry) => entry.what))
+    const undeclaredNarrow = long.narrow.filter((item) => !allowedNarrow.has(item.what))
+    const stale = declaredNarrow.filter(
+      (entry) => !long.narrow.some((item) => item.what === entry.what),
+    )
+
+    if (undeclaredNarrow.length === 0 && stale.length === 0) {
+      console.log(
+        declaredNarrow.length === 0
+          ? '  mesure: aucune colonne en deçà de 45 caractères'
+          : `  mesure: aucune colonne en deçà de 45 caractères hors les ${declaredNarrow.length} déclarée(s)`,
+      )
+    }
+    if (undeclaredNarrow.length > 0) {
+      console.log(`  ✗ mesure: ${undeclaredNarrow.length} colonne(s) en deçà de 45 caractères`)
+      for (const item of undeclaredNarrow.slice(0, 8)) {
+        console.log(
+          `   ✗ ${item.chars} car./ligne sur ${item.lines} lignes — ${item.what} ` +
+            `(${item.size}, ${item.box}px) « ${item.text}… »`,
+        )
+      }
+      process.exitCode = 19
+    }
+    if (stale.length > 0) {
+      console.log(`  ✗ mesure: ${stale.length} colonne(s) étroite(s) déclarée(s) sans constat`)
+      for (const item of stale) {
+        console.log(`     « ${item.what} » n’est plus en deçà de 45 caractères sur « ${screen} »`)
+      }
+      process.exitCode = 19
     }
   }
   if (flags.echo) {
@@ -7981,16 +8112,76 @@ async function a11y(page) {
  * carry most of it. Seventy-five is the ceiling: the classic band is 45–75, the
  * detector's own threshold is 80, and a surface that lands between them is a
  * choice rather than an accident.
+ *
+ * ## And forty-five is the floor, which until round 23 did not exist
+ *
+ * The band has two ends and this rule bound one of them. Measured on the
+ * shipped renderer at `session-compte-rendu` 960×600 — the window's own
+ * declared minimum, `main.ts` — the rep's own notes were set at **25
+ * characters a line** on their narrowest run (196px of content over an average
+ * advance of 7.72) and **28 over four lines** on the one this floor reports,
+ * while the pane the screen is named after showed **307px of a 2 390px
+ * document, 12.8 %**, with two page turns on screen at once 361px apart. Every
+ * one of the twelve passes was green: `--prose` had a ceiling and no floor, so
+ * twenty-five passed the rule about the reading measure, and `--scrollers`
+ * asks whether anything is *hidden* inside a measured column, which is a
+ * different question from whether the column is wide enough to read.
+ *
+ * Forty-five is the bottom of the same classic band `.measure`'s own docblock
+ * cites for the top, so the number is not a new authority — it is the other end
+ * of the one already written down. Measured over the 170 stagings that existed
+ * when it was chosen, it costs two declarations covering five stages
+ * (`PROSE_NARROW_DECLARED`), against **4 872** runs of prose whose median
+ * measure is **59** characters and whose tenth percentile is 36.
+ *
+ * ## The qualifier, and it is the mirror of the sixty above
+ *
+ * The ceiling ignores an element holding fewer than sixty characters of its own
+ * text, because such an element « cannot demonstrate a line that is too long —
+ * below that the check would be reporting a *capacity* nothing fills ». The
+ * floor needs the same argument from the other side: an element has to set
+ * enough lines for a short measure to cost anything. **Four**, measured off the
+ * element's own box over its own resolved line height.
+ *
+ * Measured across all 170 stagings, this is what the number decides — counted
+ * as (stage, element) pairs, which is the unit a declaration is written in:
+ *
+ *     ≥ 3 lines   27 pairs    ≥ 4 lines   10 pairs    ≥ 5 lines   3 pairs
+ *
+ * At three, **nine of the twenty-seven are the widget** — a 240–340px card over
+ * somebody else's video call, whose width DEC-49 fixes and whose three lines of
+ * prose are the whole content of the surface — and the rest include every
+ * two-line list item of the compte-rendu, which is a *line of a document* and
+ * not a column of text. At five, the three survivors are all the same empty
+ * calendar card, and the rep's own notes at 28 characters over four lines are
+ * gone — which is the finding this floor was built for. At four it reports ten
+ * pairs in three groups, and every one of them is a real column of prose set
+ * too narrow to read.
+ *
+ * The qualifier is **intrinsic** — the element's own box, its own line height —
+ * so it is unaffected by whether an ancestor's overflow has scrolled the
+ * element away, which is the corruption CLAUDE.md records for every relational
+ * predicate in this file.
  */
 async function prose(page) {
   return page.evaluate(() => {
     const SAMPLE = 'abcdefghijklmnopqrstuvwxyz eeeaisnrtoluu'
     const MAX = 75
+    /*
+     * The floor, and the number of lines an element has to set before it is
+     * asked about — see the docblock. Both are here rather than in the caller
+     * so the whole arithmetic of « how wide is this line, really » lives in one
+     * function on one side of the bridge.
+     */
+    const MIN = 45
+    const MIN_LINES = 4
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
 
     const seen = new Set()
     const out = []
+    const narrow = []
+    const seenNarrow = new Set()
     /*
      * **Every element that owns a run of prose, not only the ones that opted in.**
      *
@@ -8037,16 +8228,58 @@ async function prose(page) {
         el.getBoundingClientRect().width -
         parseFloat(style.paddingLeft) -
         parseFloat(style.paddingRight)
-      if (box < 40) continue
-      // Nothing to read: an empty wrapper is not a measure that is too long.
+      // Nothing to read: an empty wrapper is neither a measure that is too long
+      // nor one that is too short.
       if ((el.textContent ?? '').trim().length < 40) continue
+      // A box with no width at all is a subtree the layout has collapsed, not a
+      // column: it has no lines either, so the floor's own qualifier would drop
+      // it — this is here so the division below is never by nothing.
+      if (box < 8) continue
 
       ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
       const advance = ctx.measureText(SAMPLE).width / SAMPLE.length
       const chars = Math.round(box / advance)
-      if (chars <= MAX) continue
+      const shown = el.offsetParent !== null || style.position === 'fixed'
 
-      if (el.offsetParent === null && style.position !== 'fixed') continue
+      /*
+       * **The floor.** Only for an element that really is a column of text:
+       * four lines or more, measured off its own box over its own resolved
+       * line height. `line-height: normal` computes to a length in every
+       * engine this app runs in, but it is read defensively all the same — a
+       * `NaN` divisor would report every element as a thousand lines and turn
+       * the floor into a check that fires on chrome.
+       */
+      const leading = Number.parseFloat(style.lineHeight)
+      const lines =
+        Number.isFinite(leading) && leading > 0
+          ? Math.round(el.getBoundingClientRect().height / leading)
+          : 0
+      if (shown && chars < MIN && lines >= MIN_LINES) {
+        const held = el.closest('.measure, .notepad') !== null
+        const what = `${el.tagName.toLowerCase()}.${(el.className || '').split(' ')[0]}${held ? '' : ' [hors .measure]'}`
+        const key = `${what}:${chars}`
+        if (!seenNarrow.has(key)) {
+          seenNarrow.add(key)
+          narrow.push({
+            what,
+            chars,
+            lines,
+            box: Math.round(box),
+            size: style.fontSize,
+            text: (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 48),
+          })
+        }
+      }
+
+      /*
+       * The ceiling keeps its own 40px floor on the *box*, which is not the
+       * same number as the reading floor above and is not doing the same job:
+       * a box under 40px cannot demonstrate a line that is too long, and it is
+       * precisely where a line that is too short lives.
+       */
+      if (box < 40) continue
+      if (chars <= MAX) continue
+      if (!shown) continue
       // Named with whether it is inside a reading surface at all: « 82ch hors
       // .measure » is a different defect from « 82ch dans .measure », and they
       // have different fixes — one is a missing class, the other a wrong number.
@@ -8070,7 +8303,7 @@ async function prose(page) {
         text: (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 48),
       })
     }
-    return out
+    return { long: out, narrow }
   })
 }
 
@@ -8198,6 +8431,64 @@ async function prose(page) {
  * So an entry costs whoever lands its story exactly one deletion, and forgetting
  * that deletion is loud rather than silent.
  */
+/**
+ * **The reading columns this product sets under forty-five characters, each with
+ * the reason it is not widened *yet* and what widening it would cost.**
+ *
+ * **Two** entries, covering five stages, over the 170 stagings this was
+ * measured on — and neither is on the screen the floor was built for.
+ * `session-compte-rendu` at 960×600 went from 25 characters a line on its
+ * narrowest run to 54 in the same commit that added the floor, so the finding
+ * is fixed rather than declared. Both entries are 960×600 only: at 1280×800
+ * the same elements set three lines and fewer, which the qualifier drops.
+ *
+ * Same three rules as `ECHO_DECLARED`, and the third is the one that matters:
+ * an entry names **one stage and one element key**, never a bare width
+ * everywhere; it says what the surface is and which story widens it; and a
+ * **stale entry fails the run**, so an allowance that has outlived its finding
+ * costs whoever fixed it exactly one deletion and forgetting it is loud.
+ *
+ * The element key is the same string the failure prints — tag, first class, and
+ * « [hors .measure] » when the run is not inside a reading wrapper — so an entry
+ * can be copied out of a red run and nothing has to be guessed.
+ */
+const PROSE_NARROW_DECLARED = [
+  /*
+   * ── The empty-calendar card, and it is the same card on three screens ──
+   *
+   * « Aucune application Microsoft n'est configurée — le calendrier et les
+   * brouillons Outlook restent indisponibles. » is 110 characters of prose in a
+   * 137px box at 960×600: **24 characters a line over five lines**, the
+   * narrowest column in the product. DEC-31 says the calendar is always drawn,
+   * so the card sits inside the day grid and takes the width of a day cell —
+   * which is what has to change, and the cell's width is `ui-agenda`'s (G35-6
+   * already moved this column once).
+   */
+  {
+    stages: ['agenda-sans-entra', 'agenda-appel-imprevu', 'reglages-sans-entra'],
+    viewports: ['960x600'],
+    what: 'p.text-muted [hors .measure]',
+    why: '24 car./ligne sur 5 lignes à 960×600 — la carte prend la largeur d’une case du jour (DEC-31)',
+    story: 'ui-agenda — la carte « sans Entra » doit traverser la grille plutôt que tenir dans une case',
+  },
+  /*
+   * ── *Historique*'s search excerpts ──
+   *
+   * `Results.tsx` sets « quarante caractères de part et d'autre du résultat » in
+   * the result column, which at 960×600 is 37 characters a line over four. The
+   * column is a percentage of a three-pane screen and the fix is that screen's
+   * arithmetic, not this string's — US-22's and US-23's *Historique* halves are
+   * both in flight in `ui-history` and both move these panes.
+   */
+  {
+    stages: ['historique', 'historique-demander'],
+    viewports: ['960x600'],
+    what: 'span.',
+    why: '37 car./ligne sur 4 lignes à 960×600 — l’extrait tient dans la colonne des résultats',
+    story: 'ui-history — les moitiés Historique d’US-22 et US-23 refont le partage des volets',
+  },
+]
+
 const ECHO_DECLARED = [
   /*
    * ── *Historique*: a search result's surface label against a pane heading ──

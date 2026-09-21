@@ -52,6 +52,54 @@ import { DEFAULT_RECIPE, type RecipeId } from '../../electron/core/contracts/rec
 import { LanguagePill } from './session/LanguagePill.tsx'
 import { Button, StateDot } from '../ui/index.ts'
 
+/**
+ * **Three reading columns need 1 184 px, and the window's own minimum is 960.**
+ *
+ * Measured on the shipped renderer, `session-compte-rendu`, sweeping the
+ * viewport width and counting the characters a line of every run of prose on
+ * the screen really holds (`shot.mjs --prose`'s own arithmetic — the box over
+ * the average advance of French lowercase, not over `ch`):
+ *
+ *     960   notes 280  compte-rendu 440  trame 240   narrowest 25 car./ligne
+ *    1024   notes 344  compte-rendu 440  trame 240   narrowest 34
+ *    1120   notes 426  compte-rendu 448  trame 246   narrowest 42
+ *    1176   notes 447  compte-rendu 470  trame 259   narrowest 42
+ *    1184   notes 450  compte-rendu 474  trame 260   narrowest 47
+ *    1280   notes 486  compte-rendu 512  trame 282   narrowest 51
+ *
+ * 45 is the bottom of the classic 45–75 band that `.measure`'s own docblock
+ * cites for the top, and `shot.mjs --prose` now binds both ends. 1 184 is the
+ * first width at which *every* run on this screen clears it; 1 176 does not.
+ *
+ * So below it the screen holds **two** columns and not three: the compte-rendu
+ * and the trame, which are the pair DEC-14 says is read together — « Durée — »
+ * empty on the slate beside prose that is silent about it. The notepad is the
+ * one of the three that is not part of that judgement, so it is the one that
+ * yields, and it yields to a *press* rather than to nothing: « Mes notes » in
+ * the header below the breakpoint, and `LiveAside`'s own « Masquer » at any
+ * width, both reaching the same `showRail === false` the screen has always had.
+ *
+ * Measured at 960×600, the two arrangements:
+ *
+ *                     three columns (before)    two columns (here)
+ *     compte-rendu    440px, 42 chars a line   653px, 57 chars a line
+ *     trame           240px, 345/532 = 64.8%   307px, 446/446 = 100%
+ *     notes           280px, 25 chars a line   960px on one press, 69
+ *     page turns      2, 361px apart           1
+ *
+ * No new bar and no new pane: a strip of its own above the two slots costs
+ * **51px of a 600px window**, measured — 8.5 % of the screen's height,
+ * permanently, and every one of those pixels comes off the document. The
+ * control is a button in a header row that already exists.
+ *
+ * The number is a media query rather than a measurement in JavaScript because
+ * the *control* has to appear exactly where the layout changes; one number in
+ * one place, read by both, cannot drift. `SIDE_BY_SIDE_PX` is exported so
+ * `session-breakpoint.test.tsx` can assert that every Tailwind variant in this
+ * file spells it, and that the `max-` half is exactly one pixel below.
+ */
+export const SIDE_BY_SIDE_PX = 1184
+
 interface SessionProps {
   meetingId: string
   onBack: () => void
@@ -201,6 +249,17 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
     hasCompteRendu: compteRendu !== null,
     onChosen: setRecipe,
   })
+
+  /**
+   * Whether the compte-rendu column is on screen — and therefore whether the
+   * notepad is the one that yields below `SIDE_BY_SIDE_PX`.
+   *
+   * The same predicate the compte-rendu column is drawn under, named once: the
+   * notepad's `hidden` variant must agree with it exactly, or below the
+   * breakpoint the screen has two reading columns stacked into one slot, or an
+   * empty slot with neither.
+   */
+  const twoUp = showRail && compteRendu !== null
 
   // The persisted history, merged once. After mount the broadcasts are the
   // only source, which is why this is memoised on the load rather than on
@@ -366,6 +425,39 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
             {compteRendu === null ? 'Afficher les signaux' : 'Afficher les volets'}
           </Button>
         )}
+
+        {/*
+          **The way back to the rep's own notes, below `SIDE_BY_SIDE_PX`.**
+
+          Below the breakpoint the notepad is not on this screen: there is room
+          for two reading columns and the two being judged against each other
+          are the document and the slate (DEC-14). The notes are one press away
+          and this is the press — it is the *same* state `LiveAside`'s
+          « Masquer » reaches, named by what it reveals rather than by what it
+          puts away, because down here that is what the rep is looking for. Its
+          twin is the control directly above: one of the two is always drawn,
+          never both.
+
+          Above the breakpoint it is not drawn at all — all three columns are on
+          screen and a control offering to fetch one of them would be the dead
+          control DEC-26 names. In the header rather than over the panes because
+          a bar of its own costs **51px of a 600px window**, measured: 8.5 % of
+          the screen's height, permanently, for a press a rep makes rarely — and
+          every one of those pixels comes off the document this screen is named
+          after. The header's own title cell is `flex-1 min-w-0`, so this takes
+          its width from the one child that has it to give: measured at 960×600,
+          the button is 59px and the title cell goes from 442px to 371, with the
+          row still ending at x=928 of 960 exactly as it did.
+        */}
+        {showRail && compteRendu !== null ? (
+          <Button
+            variant="text"
+            className="shrink-0 min-[1184px]:hidden"
+            onClick={() => setShowRail(false)}
+          >
+            Mes notes
+          </Button>
+        ) : null}
       </header>
 
       {saveFailed ? (
@@ -431,7 +523,11 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           about it — and the notes are what the rep wrote during the call, an
           hour ago, and are not being compared to anything.
         */}
-        <main className="bg-inner min-w-[260px] flex-1">
+        <main
+          className={`bg-inner min-h-0 flex-1 min-[1184px]:min-w-[260px] ${
+            twoUp ? 'max-[1183px]:hidden' : ''
+          }`}
+        >
           <EditorErrorBoundary resetKey={meetingId}>
             <Notepad
               meetingId={meetingId}
@@ -467,8 +563,18 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           notepad keeps its floor and every pixel it needs to write in; what it
           gives up is space it was not using.
         */}
+        {/*
+          Below `SIDE_BY_SIDE_PX` it is not a column beside the notes: it *is*
+          the left slot, taking every pixel the trame does not, and the document
+          inside it keeps the one reading measure (`CompteRenduPane` wears
+          `.measure` now). Measured at 960×600: 653px of slot against 440, and
+          the narrowest run of the document goes from 42 characters a line to
+          57. `min-[1184px]:flex-none` is what hands the three-column layout
+          back its fixed share — a `flex-1` that also carries `w-[40%]` would
+          grow past the ceiling above it.
+        */}
         {showRail && compteRendu !== null ? (
-          <aside className="border-subtle bg-card-soft w-[40%] min-w-[440px] max-w-[560px] shrink-0 border-l">
+          <aside className="border-subtle bg-card-soft min-h-0 flex-1 min-[1184px]:w-[40%] min-[1184px]:min-w-[440px] min-[1184px]:max-w-[560px] min-[1184px]:flex-none min-[1184px]:shrink-0 min-[1184px]:border-l">
             {/*
               `eventId` rides along because the pane's *Demander* offers the
               follow-up, and a call with no calendar entry has no attendees to
@@ -498,8 +604,17 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           arithmetic still holds at the app's own minimum window (960px): 360 of
           document and 211 of rail leave the notepad 389, above its 380 floor.
         */}
+        {/*
+          Below `SIDE_BY_SIDE_PX` it is one of **two** columns rather than one
+          of three, so its share goes up: 32 % with a 360px ceiling, which at
+          960 is 307px against the 240 it was pinned to. That is the width its
+          own container query (`index.css`) was written to stop happening — at
+          240 the slate sets its label above its value and « 2 × Data Engineer
+          confirmé » staircases. The ceiling is what keeps the other slot from
+          being starved on the way up to the breakpoint.
+        */}
         {showRail ? (
-          <aside className="border-subtle bg-card-soft w-[22%] min-w-[240px] max-w-[300px] shrink-0 border-l">
+          <aside className="border-subtle bg-card-soft min-h-0 w-[32%] min-w-[280px] max-w-[360px] shrink-0 border-l min-[1184px]:w-[22%] min-[1184px]:min-w-[240px] min-[1184px]:max-w-[300px]">
             {/*
               Two views of the same call, and the rep picks (`LiveAside`). The
               slate is the default and the transcript is opt-in — DEC-38's
