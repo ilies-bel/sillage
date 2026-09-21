@@ -38,9 +38,10 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
+import { MENTION_LABEL } from '../mention.ts'
 import { Widget } from '../Widget.tsx'
 
 /*
@@ -315,4 +316,119 @@ test('la pilule est posée symétriquement dans sa carte', async () => {
   const left = side('pl-')
   const right = side('pr-')
   expect(left, `padding gauche seul : ${left.join(',')}`).toEqual(right)
+})
+
+/**
+ * **The seam between the pill and the card, on the side the card is on.**
+ *
+ * Round 22 gave that seam `mt-row` — 16 px, the first rung above the 12 the
+ * pill keeps between its own halves — and applied it unconditionally. The frame
+ * is `flex-col-reverse` when the card is `above`, which reverses the paint and
+ * not the box model, so the margin stayed on the card's geometric top: a gap
+ * against the top of the window, and **zero** between the card and the pill.
+ * Driven on the shipped renderer through `shot.mjs --no-png`, border box to
+ * border box, identical at 1280×800 and 960×600:
+ *
+ *   `widget-refus`        card below the pill   16.00 px
+ *   `widget-pause-refus`  card **above** it      0.00 px
+ *
+ * `pile()` in `scripts/harness/shot.mjs` now measures that distance on the real
+ * layout in both directions, and it is the instrument that binds the pixels.
+ * **This test exists for the case no stage reaches**: the *mention* card above
+ * the pill. `widget-carte-sortie` is the only stage that draws that card and it
+ * draws it below, so without this the above direction of one of the two cards
+ * would be held by nothing — which is this repo's own round-18 shape, a fixture
+ * that ran one direction of a two-direction rule, and it is the shape that
+ * produced the defect above.
+ *
+ * jsdom measures every box as zero, so what is read here is the declaration:
+ * exactly one vertical margin, on the edge that faces the pill, and the same
+ * step for both cards in both directions.
+ */
+const SEAM_SIDE = { above: 'mb-', below: 'mt-' } as const
+
+/** The vertical margin utilities a card declares, whatever the step. */
+const seams = (card: Element): string[] =>
+  (card.getAttribute('class') ?? '').split(/\s+/).filter((c) => /^m[tb]-/.test(c))
+
+/**
+ * The card in the one card slot, with the direction it says it is painted in.
+ * Read off `data-above`, which is the same expression the frame reads for
+ * `flex-col-reverse` — so a margin that disagrees with it is a margin on the
+ * outside of the stack.
+ */
+const cardSeam = (role: 'alert' | 'status'): { above: boolean; seam: string } => {
+  const card = screen.getByRole(role).closest('[data-card]')
+  if (card === null) throw new Error(`la carte « ${role} » n’a pas été trouvée`)
+  const declared = seams(card)
+  expect(
+    declared.length,
+    `la carte déclare ${declared.length} marge(s) verticale(s) : ${declared.join(', ') || 'aucune'}`,
+  ).toBe(1)
+  return { above: card.getAttribute('data-above') === 'true', seam: declared[0] }
+}
+
+/** The panel out and the stack reversed — the direction a pill dragged low opens in. */
+const stackUpward = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: /^Ouvrir le panneau/ }))
+  act(() => bridge.emit('widget:placed', { above: true }))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▾'),
+  )
+}
+
+test('les deux cartes cousent du côté de la pilule, dans les deux sens', async () => {
+  bridge.when('meeting:mark', () => {
+    throw new Error('Aucun enregistrement en cours — il n’y a pas de moment à marquer.')
+  })
+
+  const read: Record<string, string> = {}
+
+  for (const upward of [false, true]) {
+    for (const card of ['refus', 'mention'] as const) {
+      render(<Widget />)
+      await screen.findByLabelText('Durée d’enregistrement')
+      if (upward) await stackUpward()
+
+      if (card === 'refus') {
+        fireEvent.click(screen.getByRole('button', { name: 'Marquer ce moment' }))
+        await screen.findByRole('alert')
+      } else {
+        fireEvent.click(screen.getByRole('button', { name: MENTION_LABEL }))
+        await screen.findByRole('status')
+      }
+
+      const where = card === 'refus' ? cardSeam('alert') : cardSeam('status')
+      expect(where.above, `la carte « ${card} » ne se sait pas au-dessus`).toBe(upward)
+      const side = SEAM_SIDE[upward ? 'above' : 'below']
+      expect(
+        where.seam.startsWith(side),
+        `carte « ${card} » ${upward ? 'au-dessus' : 'au-dessous'} de la pilule : ` +
+          `${where.seam} met les pixels du mauvais côté, la couture reste à 0`,
+      ).toBe(true)
+      read[`${card}-${upward ? 'above' : 'below'}`] = where.seam.slice(side.length)
+      cleanup()
+    }
+  }
+
+  /*
+   * One relationship, one value. Four readings, one step — and the step is on
+   * the ladder and strictly looser than the `gap-inline` the pill keeps between
+   * its own two halves, which is round 22's rule and the reason this seam is
+   * 16 and not 12.
+   */
+  const steps = new Set(Object.values(read))
+  expect(
+    steps.size,
+    `la même couture sur ${steps.size} pas : ${Object.entries(read)
+      .map(([k, v]) => `${k} ${v}`)
+      .join(', ')}`,
+  ).toBe(1)
+
+  const step = px([...steps][0])
+  expect(step, `couture « ${[...steps][0] as string} » hors échelle`).not.toBeNull()
+  const inside = px('inline')
+  expect(step as number, `couture ${step as number}px contre ${inside as number}px dans la pilule`).toBeGreaterThan(
+    inside as number,
+  )
 })

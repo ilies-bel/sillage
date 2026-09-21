@@ -849,6 +849,178 @@ async function assertTurnGrammar(page) {
   return labels
 }
 
+/**
+ * **The pile: a pill, and the one card that hangs off it — measured on the side
+ * the card is really on.**
+ *
+ * This assertion existed and it measured **widths**: « pastille 201.56px ·
+ * notice 202px », the finding that the notice must not overhang the pill it
+ * hangs from. It never read the distance between them, and the stage it lived
+ * on stages the card *below* the pill — so when round 22 gave the seam a
+ * `mt-row`, the same sixteen pixels landed on the geometric top of the card in
+ * both directions, and `flex-col-reverse` puts that edge at the **outside** of
+ * the stack. Driven on the shipped renderer at both smoke sizes, before this
+ * function existed:
+ *
+ *   `widget-refus`        card below   16.00 px
+ *   `widget-ouvert`       panel above   6.00 px
+ *   `widget-pause-refus`  card above    0.00 px
+ *
+ * One window, one relationship, three values — and the one at zero is the
+ * common one, because a pill dragged to the foot of a real desktop opens
+ * upward. Twelve passes were green over it: `--rhythm` scores *declared*
+ * lengths against the ladder and `mt-row` is on the ladder whichever edge it
+ * lands on, its « flat group » rule compares a group against its surroundings
+ * and two sibling cards at the root of the frame form no group, and no
+ * screenshot pass asks about a distance at all.
+ *
+ * **What is asserted, and why each half is computed rather than written down.**
+ *
+ *  · **The direction is read off the paint**, not off `data-above`, and then the
+ *    two are required to agree. `data-above` also drives `transform-origin`
+ *    (`.widget-card-arrive[data-above='true']`), and a card that claims one
+ *    direction while painted in the other is the defect `Refus`' own docblock
+ *    records — a card growing out of its far edge.
+ *  · **The floor is the pill's own loosest inside interval**, read from the
+ *    pill's computed `column-gap` at measurement time. That is round 22's rule
+ *    — separation may not shrink going up the hierarchy — arrived at from the
+ *    painted box instead of from the class list.
+ *  · **The value is the ladder's first rung above that floor**, with the ladder
+ *    read out of `:root` by `--space-` prefix the way `--rhythm` and
+ *    `--census` now read theirs. Naming 16 here would be a number this file
+ *    remembers; computed, it is one value in **both** directions by
+ *    construction, which is the half a per-stage tolerance could not pin.
+ *
+ * **What it stops short of, measured rather than waved at.**
+ *
+ *  · The **panel**'s seam. It is a different box under its own declaration —
+ *    `my-tight`, symmetric — so it has no direction to get wrong, and driven on
+ *    `widget-ouvert`, `widget-pause` and `widget-survol` at both smoke sizes it
+ *    reads **6.00 px** every time, above the pill in all six. Which means two
+ *    things this does not decide: the panel is 6 px from a pill that keeps 12 px
+ *    between its own halves — round 22's rule, on the surface round 22 fixed,
+ *    left standing — and **no stage in this file stands the panel below the
+ *    pill**, so its other direction is drawn by nothing and measured by nothing.
+ *  · The **mention** card *above* the pill. `widget-carte-sortie` is the only
+ *    stage that draws that card at all and it draws it below — measured there,
+ *    16.00 px at both smoke sizes against a 281.55 px recording pill — so three
+ *    of the four (card × direction) pairs are painted somewhere and the fourth
+ *    is painted nowhere. Both cards share one `CARD_SEAM`, and
+ *    `src/widget/__tests__/spacing.test.tsx` reads that declaration for each of
+ *    them in each direction, which is what a renderer test can do and this
+ *    cannot, jsdom measuring every box as zero.
+ */
+async function pile(page) {
+  // `getBoundingClientRect` includes transforms and both boxes ride
+  // `--ease-overshoot` on the way in — see the width assertion's own note.
+  await settled(page)
+  const read = await page.evaluate(() => {
+    const pill = document.querySelector('[data-pill]')
+    /*
+     * Whichever card is in the one card slot, and not `[role="alert"]`: the slot
+     * holds a refusal *or* a mention, and a parameter defaulted to the one the
+     * first caller wanted is a parameter with one value. Direct children only —
+     * the *panel* carries `data-above` too and holds a `role="status"` of its
+     * own several bands down, and `closest('[data-card]')` from that one would
+     * measure the panel while reporting a card.
+     */
+    const notice = document
+      .querySelector('[data-card] > [role="alert"], [data-card] > [role="status"]')
+      ?.closest('[data-card]')
+    if (!pill || !notice) return null
+
+    const root = getComputedStyle(document.documentElement)
+    const ladder = [...root]
+      .filter((name) => name.startsWith('--space-'))
+      .map((name) => Number.parseFloat(root.getPropertyValue(name)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .sort((a, b) => a - b)
+
+    const p = pill.getBoundingClientRect()
+    const c = notice.getBoundingClientRect()
+    const rows = [pill, ...pill.querySelectorAll('*')]
+      .map((el) => Number.parseFloat(getComputedStyle(el).columnGap))
+      .filter((n) => Number.isFinite(n))
+    const round = (n) => Math.round(n * 100) / 100
+
+    return {
+      ladder,
+      inside: rows.length > 0 ? Math.max(...rows) : null,
+      painted: c.bottom <= p.top ? 'above' : 'below',
+      claimed: notice.getAttribute('data-above') === 'true' ? 'above' : 'below',
+      gap: round(c.bottom <= p.top ? p.top - c.bottom : c.top - p.bottom),
+      /*
+       * `--shadow-overlay` opens on a `0 0 0 1px var(--widget-rim)` spread, so
+       * each box paints one pixel outside its own border box: at a zero gap the
+       * two rims are not adjacent, they are on top of one another.
+       *
+       * The widest zero-offset, zero-blur layer and not the first one: Tailwind
+       * lays two transparent `0px 0px 0px 0px` placeholders (`--tw-ring-offset-shadow`,
+       * `--tw-ring-shadow`) ahead of it, and reading the first match reported a
+       * 0px rim over a 1px one — measured, on `widget-refus` at 1280×800.
+       */
+      rim: Math.max(
+        0,
+        ...[...getComputedStyle(notice).boxShadow.matchAll(/0px 0px 0px (\d+(?:\.\d+)?)px/g)].map(
+          (m) => Number.parseFloat(m[1]),
+        ),
+      ),
+      radius: round(Number.parseFloat(getComputedStyle(notice).borderTopLeftRadius)),
+      pill: round(p.width),
+      notice: round(c.width),
+    }
+  })
+
+  if (read === null) throw new Error('pastille ou carte introuvable pour la mesure de la pile')
+  if (read.inside === null || read.ladder.length === 0) {
+    throw new Error('ni pas d’espacement ni intervalle interne lisibles : rien n’est mesuré')
+  }
+  if (read.painted !== read.claimed) {
+    throw new Error(
+      `la carte est peinte ${read.painted === 'above' ? 'au-dessus' : 'au-dessous'} de la pastille ` +
+        `mais déclare data-above=${read.claimed === 'above'} — l’origine de son arrivée est du mauvais côté`,
+    )
+  }
+
+  /*
+   * **The notice is as wide as the pill it hangs from** — the assertion this
+   * function grew out of, kept verbatim and now run in both directions. It was
+   * `w-[260px]`, a constant matching one state of a content-sized pill
+   * approximately and the other not at all: 35px of overhang a side when idle.
+   */
+  if (Math.abs(read.pill - read.notice) > 1) {
+    throw new Error(
+      `la notice ne suit pas la pastille : pastille ${read.pill}px, notice ${read.notice}px ` +
+        `(${Math.round(Math.abs(read.pill - read.notice) / 2)}px de débord par côté)`,
+    )
+  }
+
+  const want = read.ladder.find((step) => step > read.inside)
+  if (want === undefined) {
+    throw new Error(`aucun pas au-dessus de ${read.inside}px dans l’échelle : ${read.ladder.join('/')}`)
+  }
+  const rim = read.rim
+  if (Math.abs(read.gap - want) > 0.5) {
+    throw new Error(
+      `la couture entre la pastille et la carte mesure ${read.gap}px ${
+        read.painted === 'above' ? 'au-dessus' : 'au-dessous'
+      } — l’échelle ${read.ladder.join('/')} donne ${want}px, le premier pas au-dessus des ` +
+        `${read.inside}px qui séparent les moitiés de la pastille` +
+        (read.gap < 2 * rim
+          ? ` ; à ${read.gap}px les deux liserés de ${rim}px se recouvrent et les deux rayons de ` +
+            `${read.radius}px se touchent par la tangente : les deux cartes n’en font qu’une`
+          : ''),
+    )
+  }
+
+  console.log(
+    `   pile: pastille ${read.pill}px · notice ${read.notice}px · couture ${read.gap}px ` +
+      `${read.painted === 'above' ? 'au-dessus' : 'au-dessous'} (${read.inside}px dans la pastille, ` +
+      `liseré ${rim}px de chaque côté)`,
+  )
+  return read
+}
+
 /** The screens, and how a rep would reach each one. */
 const SCREENS = {
   /*
@@ -4803,6 +4975,24 @@ const SCREENS = {
               'les deux moitiés de la fenêtre ne disent pas la même chose',
           )
         })
+
+      /*
+       * **And this is the stage that stands the card on the other side.** The
+       * panel is open here, so the frame is `flex-col-reverse` and the refusal
+       * is painted *above* the pill — which on a real desktop is the common
+       * direction, a pill dragged low having nowhere else to open. `pile`
+       * measured 0.00px here at both smoke sizes for a whole round while
+       * `widget-refus` measured 16.00 and reported « pile » about the widths.
+       * Measured after the re-read has settled, not before: the pill loses its
+       * `--accent` dot on the repair, republishes `--pill-w`, and the card is
+       * sized from that variable.
+       */
+      const stack = await pile(page)
+      if (stack.painted !== 'above') {
+        throw new Error(
+          `ce plan met la carte ${stack.painted} : la direction « au-dessus » n’est plus mesurée nulle part`,
+        )
+      }
     },
   },
 
@@ -4927,22 +5117,12 @@ const SCREENS = {
        * working product, produced entirely by reading a box mid-animation. Same
        * correction, same reason, as the `before`/`after` pair in `widget-ouvert`.
        */
-      await settled(page)
-      const stack = await page.evaluate(() => {
-        const pill = document.querySelector('[data-pill]')?.getBoundingClientRect()
-        const notice = document.querySelector('[role="alert"]')?.closest('[data-card]')?.getBoundingClientRect()
-        return pill && notice
-          ? { pill: Math.round(pill.width * 100) / 100, notice: Math.round(notice.width * 100) / 100 }
-          : null
-      })
-      if (!stack) throw new Error('pastille ou notice introuvable pour la mesure de largeur')
-      if (Math.abs(stack.pill - stack.notice) > 1) {
+      const stack = await pile(page)
+      if (stack.painted !== 'below') {
         throw new Error(
-          `la notice ne suit pas la pastille : pastille ${stack.pill}px, notice ${stack.notice}px ` +
-            `(${Math.round(Math.abs(stack.pill - stack.notice) / 2)}px de débord par côté)`,
+          `ce plan met la carte ${stack.painted} : la direction « au-dessous » n’est plus mesurée nulle part`,
         )
       }
-      console.log(`   pile: pastille ${stack.pill}px · notice ${stack.notice}px`)
 
       await page.evaluate(() => window.__harness.refuseMarks(null))
     },
@@ -5024,6 +5204,16 @@ const SCREENS = {
         )
       }
       await settled(page)
+      /*
+       * **The other card in the slot, on real layout.** `pile` is called on
+       * `widget-refus` and `widget-pause-refus`, and both of those draw the
+       * *refusal*: this is the only stage that draws the mention card, so
+       * without this line the seam of one of the two components that wear
+       * `CARD_SEAM` would be measured by nothing but a declaration. It is below
+       * the pill here — the panel is shut — and the above direction of this
+       * card is the one no stage reaches, which `pile`'s own docblock states.
+       */
+      await pile(page)
       judgeDeparture(
         'mention, écartée par le commercial',
         await departureOf(page, '[data-card].widget-card-arrive', 'button[aria-label="Masquer cette phrase"]'),

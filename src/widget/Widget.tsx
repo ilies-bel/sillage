@@ -206,8 +206,9 @@ const CARD_MOTION = (leaving: boolean): string =>
   leaving ? 'widget-card-leaving' : 'widget-card-arrive'
 
 /**
- * **The seam between the pill and the card that hangs under it, and it was the
- * tightest distance on the surface instead of the loosest.**
+ * **The seam between the pill and the card, on the side the card is actually
+ * on** — because for one round it was a margin on the top edge whichever edge
+ * faced the pill.
  *
  * Both notice cards wore `mt-tight` — 6 px — while the pill's own two halves
  * stand `gap-inline` apart, 12. Painted at both smoke sizes, `--rhythm` reads it
@@ -217,13 +218,45 @@ const CARD_MOTION = (leaving: boolean): string =>
  * *shrank* going up the hierarchy: two rectangles, each with looser internal
  * rhythm than the space parting them, read as one stack.
  *
- * `mt-row`, 16, is the first rung above the pill's 12 — `mt-inline` would tie with
- * it and the check would be right to keep saying so. The window is the size of its
- * own content (DEC-49), so this is ten more pixels of height reported back through
- * `widget:resize`; `--fade`, `--motion` and `--geometry` are the passes that watch
- * what that does.
+ * `--space-row`, 16, is the first rung above the pill's 12 — `inline` would tie
+ * with it and the check would be right to keep saying so.
+ *
+ * **And then it was spent on the wrong edge half the time.** The frame is
+ * `flex-col-reverse` when this card is `above`, which reverses the *paint* and
+ * not the box model: `margin-top` is still the card's geometric top, so above
+ * the pill it opened a gap against the top of the window and left the seam at
+ * **zero**. Driven on the shipped renderer through `shot.mjs --no-png`,
+ * pill border box to card border box, identical at 1280×800 and at 960×600:
+ *
+ *   `widget-refus`         card below the pill   16.00 px
+ *   `widget-pause-refus`   card **above** it      0.00 px
+ *
+ * Zero is not « tight »: both boxes carry `--shadow-overlay`, whose first layer
+ * is a `0 0 0 1px var(--widget-rim)` spread — `rgb(255 255 255 / 70%)`, read off
+ * the computed style — so at a 0 px box gap the two rims occupy the same 2 px
+ * band and overlap, and the two 14 px radii meet at a tangent with one white
+ * line through them. On a real desktop the pill sits low and
+ * `above` is the common case, so the direction left at zero is the one a rep
+ * sees: a refused *Pause* — the only privacy control on this window — read as
+ * the pill growing rather than as a message about it.
+ *
+ * **One value, and the measurement says the same one both ways.** The two
+ * directions paint the same pair of boxes: same `rounded-lg`, same
+ * `border-card`, same `shadow-overlay` whose blur is offset `0 4px` *downward*,
+ * so the upper box's shadow falls into the seam whichever box is upper. There is
+ * no asymmetry to pay for, and moving the margin to the facing edge costs no
+ * height at all — the window is the size of its own content (DEC-49), and above
+ * the pill the frame measured **142.09 px before and 142.09 px after**: the same
+ * sixteen pixels, moved off the outside of the stack and into the seam, so
+ * `widget:resize` publishes exactly what it published before.
+ *
+ * Branching on `above` and not on a second class, for `CARD_MOTION`'s reason:
+ * `above` is the prop both cards already carry and already render as
+ * `data-above`, and it is `above && open` — the same expression the frame's
+ * `flex-col-reverse` reads — so the margin can never land on the edge the paint
+ * did not reverse.
  */
-const CARD_SEAM = 'mt-row'
+const CARD_SEAM = (above: boolean): string => (above ? 'mb-row' : 'mt-row')
 
 export function Widget() {
   const state = useInvoke('widget:state', {})
@@ -1719,7 +1752,7 @@ function Refus({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay ${CARD_SEAM} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay ${CARD_SEAM(above)} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       {/*
         `--warn` and `font-semibold` together, never colour alone: `--warn`
@@ -1806,7 +1839,7 @@ function Mention({
       data-above={above}
       /* The width of the pill it hangs from — see `--pill-w`. */
       style={{ width: 'var(--pill-w, 260px)' }}
-      className={`bg-card border-card shadow-overlay ${CARD_SEAM} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
+      className={`bg-card border-card shadow-overlay ${CARD_SEAM(above)} flex items-start gap-tight self-center rounded-lg border px-snug py-tight ${CARD_MOTION(leaving)}`}
     >
       <div role="status" className="min-w-0 flex-1">
         <p className="text-strong measure text-ui">{sentence}</p>
