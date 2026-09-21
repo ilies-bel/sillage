@@ -64,6 +64,29 @@
   }
 
   /*
+   * **The same weight for everything set in that face, because the rule above
+   * was reachable only through a tag.**
+   *
+   * `4ee37e6` fixed the 11px eyebrow: `.pane-label` set every property but the
+   * family, so the family came from whether `SectionHeader` picked an `h2` or a
+   * `legend`. The top rung had the identical shape one round later, and nothing
+   * caught it because it is the *weight* that the tag decides rather than the
+   * family. `Rail.tsx` sets « Sillage » on a `<p class="font-display
+   * text-display">` and `Agenda.tsx` sets the day on an `<h1>` with the same
+   * class string: measured on `agenda`@1280×800, 28px/400 and 28px/500, sixteen
+   * pixels apart, no weight utility on either.
+   *
+   * So writing the face is writing the weight. It sits in `@layer base`, which
+   * is emitted before `@layer utilities` — same specificity, later wins — so a
+   * heading that genuinely wants another weight still writes `font-semibold`
+   * and overrides this. `shot.mjs --census` is what refuses one that has no
+   * reason to.
+   */
+  .font-display {
+    font-weight: var(--display-weight);
+  }
+
+  /*
    * Only ever at large sizes — Fraunces' -1.5px tracking is a display setting
    * and turns small headings into a smudge.
    */
@@ -815,6 +838,40 @@
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--text-muted);
+  }
+
+  /*
+   * **The wordmark — one object, one rule, and the only thing on the top rung.**
+   *
+   * It was set three times in three files and no two agreed. Measured on the
+   * shipped renderer over all 83 stages at both sizes:
+   *
+   *     rail (`ui/Rail.tsx`)          p    28px/400/Fraunces  rgb(20, 32, 42)   54 paintings
+   *     splash, first run, Réglages   h1   28px/500/Fraunces  rgb(2, 51, 75)    22 paintings
+   *
+   * Two weights and two colours for one word, and the weight was not written
+   * anywhere — it came from `<p>` versus `<h1>`. Beside it, « Jeudi 17
+   * septembre » and « Connecteurs » stood on the same 28px rung, so the top of
+   * this product's ladder held the brand and the page title at one size with a
+   * tag telling them apart.
+   *
+   * Four settings, read straight off `:root`, and `shot.mjs --census` reads the
+   * same four back and fails any painting of « Sillage » that misses one — so
+   * « the wordmark is one thing everywhere » is checked against this rule
+   * rather than against a screenshot.
+   *
+   * `line-height: 1` and not a token: the lockup aligns the mark to the word's
+   * own box, and a leading of 1.55 would put a third of a line of air under a
+   * 24px mark. It is `leading-none` on all three call sites today — written
+   * here once instead.
+   */
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: var(--type-display);
+    font-weight: var(--wordmark-weight);
+    letter-spacing: var(--display-tracking);
+    color: var(--wordmark-ink);
+    line-height: 1;
   }
 
   .pane-label::before {

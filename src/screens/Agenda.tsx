@@ -533,7 +533,16 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           anybody who looked once. It is why `smoke.mjs` drives two sizes, and it is
           worth not re-deriving.
           Here it is outside the scroller and the tallest text box above the fold
-          at both sizes (28px against the grid's 14px `h2`).
+          at both sizes (24px against the grid's 14px `h2`).
+
+          **`text-title` and not `text-display`.** 28px was the wordmark's rung
+          and this title's at the same time, and nothing but the tag told them
+          apart: measured on `agenda`@1280×800, « Sillage » 28px/400 at (0, 52)
+          and « Jeudi 17 septembre » 28px/500 at (256, 68), same class string,
+          no weight utility on either. 24 is the rung this product already
+          spends on « the name of what this screen is about » — the session's
+          meeting title and the compte-rendu's own H1 — and the weight now
+          travels with it (`tailwind.config.js`).
 
           It carries the **selected range** rather than `now`, which is a
           correction and not a move: the `h2` it replaces answered « what is the
@@ -542,7 +551,7 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           who clicked Thursday read a list of Thursday under a title saying Sunday.
           The day the rep is *on* is what changed; today is marked in the grid.
         */}
-        <h1 className="font-display text-strong text-display leading-none">
+        <h1 className="font-display text-strong text-title leading-none">
           {searching ? 'Résultats' : upperFirst(rangeLabel(view, selected, month, inRange.length))}
         </h1>
 

@@ -26,7 +26,14 @@ export const TYPE_STEPS = [
   'meta',
   'ui',
   'copy',
-  'display',
+  /*
+   * No `display`. 28px is the wordmark's rung and `.wordmark` in
+   * `src/design/index.css` is the one rule that spends it — the utility was
+   * deleted because it was written on the wordmark *and* on every page title
+   * with the weight coming from `<p>` versus `<h1>`. This list has to match the
+   * config's `fontSize` keys (`ui.test.tsx` holds it to them) or `cn()` stops
+   * recognising a size as a size and an override silently emits both.
+   */
   'prose',
   'subhead',
   'heading',

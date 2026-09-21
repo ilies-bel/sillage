@@ -30,7 +30,7 @@
  */
 import type { BootState, BootStep } from '../../electron/core/contracts/boot.ts'
 import { BOOT_STEPS, type BootStepId } from '../../electron/core/contracts/bootSteps.ts'
-import { Logo, StateDot } from '../ui/index.ts'
+import { StateDot, Wordmark } from '../ui/index.ts'
 import type { StateDotProps } from '../ui/index.ts'
 
 /**
@@ -115,25 +115,25 @@ export function Splash({ state }: SplashProps) {
       </div>
       <div className="border-card relative flex w-full max-w-sm flex-col items-center rounded-lg border bg-scrim p-gutter backdrop-blur-xl">
         {/*
-          The mark, drawn rather than loaded. It carried the archived
-          predecessor's circled monogram at 1.04:1 — white artwork on
-          transparency, so what a rep actually saw here was `shadow-card`
-          outlining an empty rounded square. `ui/Logo.tsx` has the measurement.
+          The mark and the word, as one object. The mark is drawn rather than
+          loaded: it carried the archived predecessor's circled monogram at
+          1.04:1 — white artwork on transparency, so what a rep actually saw
+          here was `shadow-card` outlining an empty rounded square.
+          `ui/Logo.tsx` has the measurement.
 
           No `rounded shadow-card` around it any more: the box and the lift were
           there to make a raster read as an app icon. A mark stands on its own,
           and VISION §6's « shadows barely there » is about panes.
-        */}
-        <Logo className="mb-row h-16 w-16" />
-        {/*
-          The wordmark. Fraunces at display size, which is the one place
-          `--display-tracking` is a setting rather than a smudge.
 
-          `--brand-900` rather than `--text-strong`: 13.31:1 on white, so it
-          gives up nothing legible, and it is the one moment in the product
-          where the brand gets to be the brand. Every other heading stays ink.
+          The type was set here, in `Onboarding.tsx` and in `ui/Rail.tsx`, and
+          the three did not agree: measured over 83 stages, 28px/500/rgb(2, 51,
+          75) on this screen against 28px/400/rgb(20, 32, 42) in the rail, with
+          no weight written at either site — `<h1>` takes `--display-weight` and
+          `<p>` inherits 400. `ui/Wordmark.tsx` owns the lockup now and
+          `.wordmark` owns its four settings; `asHeading` keeps this one the
+          page's `h1`, which `screens/__tests__/Splash.test.tsx` asserts.
         */}
-        <h1 className="text-brand-900 font-display text-display leading-none">Sillage</h1>
+        <Wordmark stacked asHeading />
 
         {/*
           What the app is, for the one second a rep spends here on the day they

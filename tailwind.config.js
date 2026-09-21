@@ -271,14 +271,45 @@ module.exports = {
         prose: 'var(--type-prose)',
         subhead: 'var(--type-subhead)',
         heading: 'var(--type-heading)',
-        title: ['var(--type-title)', { letterSpacing: '-0.8px' }],
         /*
-         * The one step that carries tracking, because tracking is a property of
-         * the size and not of the tag. `-1.5px` is a 28px setting; the base
-         * layer used to hang it on every `h1/h2/h3` and so applied it to a 14px
-         * meeting title and a 10px eyebrow as well.
+         * **The page-title rung, and the weight now travels with it.**
+         *
+         * Tracking has been a property of the size here since the base layer
+         * stopped hanging `-1.5px` on every `h1/h2/h3`; weight was still the
+         * tag's. Measured on the shipped renderer over 83 stages at both sizes:
+         * Fraunces painted at 400 (118 runs), 500 (180) and 600 (114), and
+         * which one a heading got depended on whether its author wrote a `<p>`,
+         * a `<span>` or an `<h1>` — « Néovia Santé — cadrage renfort » at
+         * 24px/400 on the compte-rendu's own H1 and « Néovia Santé — cadrage
+         * data » at 24px/500 in the header above it, on one screen.
+         *
+         * `text-title` is what the page titles wear now: `Agenda`'s day,
+         * `Historique`'s count and `Réglages`' pane heading came off the 28px
+         * rung so the wordmark could have it, and 24 is already the rung this
+         * product spends on « the name of what this screen is about ».
          */
-        display: ['var(--type-display)', { letterSpacing: 'var(--display-tracking)' }],
+        title: [
+          'var(--type-title)',
+          { letterSpacing: '-0.8px', fontWeight: 'var(--display-weight)' },
+        ],
+        /*
+         * **`text-display` is gone, and `--type-display` is not.**
+         *
+         * The rung is 28px and VISION §6 calls it « a splash wordmark ». It was
+         * also every page title, and nothing separated the two but the HTML
+         * tag — `Rail.tsx`'s `<p>` at 400 against `Agenda.tsx`'s `<h1>` at 500,
+         * the same class string on both. A utility is how that happened, so the
+         * utility is what goes: the rung is spent by one rule now, `.wordmark`
+         * in `src/design/index.css`, which sets the face, the size, the weight,
+         * the tracking and the ink together, and `ui/Wordmark.tsx` is the one
+         * component that writes it.
+         *
+         * Deleted rather than left mapped, on `shadow-card`'s precedent eleven
+         * lines above: a utility a developer can reach for and that no screen
+         * uses is the fourth shape on `CLAUDE.md`'s list. `design/tokens.test.ts`
+         * still holds `--type-display` to being drawn by something, and
+         * `index.css` is in what it reads.
+         */
       },
       fontFamily: {
         display: 'var(--font-display)',

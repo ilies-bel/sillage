@@ -124,7 +124,11 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
   return (
     <section className="mb-gutter mt-gutter">
       <div className="flex items-baseline gap-inline">
-        <h3 className="text-strong min-w-0 flex-1 text-copy font-semibold">
+        {/* No `font-semibold`: an `h3` already takes the display face, and the
+            weight of that face is the rung's (`--display-weight`). Written here,
+            it put « Vérifier que tout est capté » at 14px/600 Fraunces beside the
+            calendar's « Septembre 2026 » at 14px/500 Fraunces on `reglages`. */}
+        <h3 className="text-strong min-w-0 flex-1 text-copy">
           {busy ? 'À vous — parlez, ou lancez une vidéo' : 'Vérifier que tout est capté'}
         </h3>
         <Button

@@ -646,7 +646,16 @@ function Sheet({
             places, one shape.
           */
           <div className="bg-subtle flex w-[220px] shrink-0 flex-col py-row">
-            <p className="font-display text-strong mb-block px-row text-display leading-none">
+            {/*
+              The sheet's own rail head. `text-heading` and not the 28px rung it
+              used to share with the pane title beside it: measured on
+              `reglages`@1280×800 the two were « Réglages » 28px/**400** and
+              « Connecteurs » 28px/**500**, one rung apart in nothing but a `<p>`
+              against an `<h2>`. A rail label stands under the pane it opens, so
+              it takes the rung below the title rather than the same one at a
+              different weight.
+            */}
+            <p className="font-display text-strong mb-block px-row text-heading leading-none">
               Réglages
             </p>
             {nav}
@@ -706,7 +715,7 @@ function Sheet({
             French name.
           */}
           <div className="mb-row flex items-baseline gap-row">
-            <h2 className="font-display text-strong min-w-0 flex-1 truncate text-display leading-none">
+            <h2 className="font-display text-strong min-w-0 flex-1 truncate text-title leading-none">
               {title}
             </h2>
             {/* `min-w-[24px]`, like the calendar's month pager: a glyph this

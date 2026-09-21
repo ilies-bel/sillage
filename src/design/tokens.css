@@ -285,6 +285,24 @@
    * of these sizes — a column of figures that reflows as it updates is a column
    * nobody can scan.
    *
+   * **`--type-display` is the wordmark's rung, and for the life of this product
+   * it was two things at once.** VISION §6 calls 28px « a splash wordmark »;
+   * the rail, the splash and first run drew the wordmark there, and so did
+   * every page title. Nothing separated them but the HTML tag: `Rail.tsx` sets
+   * « Sillage » on a `<p>` and `Agenda.tsx` sets the day on an `<h1>`, with the
+   * **same class string**, and the base layer's `h1,h2,h3 { font-weight:
+   * var(--display-weight) }` is the entire distinction. Measured on the shipped
+   * renderer, `agenda`@1280×800: « Sillage » 28px / **400** / Fraunces at (0, 52),
+   * « Jeudi 17 septembre » 28px / **500** / Fraunces at (256, 68) — sixteen pixels
+   * apart, one rung, no weight utility on either. That is exactly the shape
+   * `4ee37e6` fixed for the 11px eyebrow one round earlier, on the top rung.
+   *
+   * The rung did not need a new name; it needed to stop being shared. Page
+   * titles step to `--type-title`, which is already what this product spends on
+   * « the name of what this screen is about » — the session's meeting title and
+   * the compte-rendu's own H1 — and `--type-display` is now written by exactly
+   * one rule, `.wordmark` in `index.css`.
+   *
    * `--type-label` and `--type-meta` are both 11px and that is not a duplicate
    * step: they are one size worn two ways — uppercase, tracked and 600 for a
    * section header, sentence case and regular for a meta line. The label was
@@ -724,8 +742,49 @@
   --font-display: "Fraunces", ui-serif, Georgia, serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /*
+   * **One weight for the display face, and it is not the tag's to choose.**
+   *
+   * Fraunces is a 300–700 variable and `fonts.css` has said « Used at weight
+   * 500 » since it was written. Measured on the shipped renderer over all 83
+   * stages at both sizes before this rule was enforced, it was painted at
+   * **three**: 400 on 118 runs (a `<p>` or `<span>` wearing `font-display`,
+   * which inherits the body's weight), 500 on 180 (`h1,h2,h3`, from the base
+   * layer), 600 on 114 (`font-semibold` written beside a heading tag). Which
+   * one a heading got depended on which element its author reached for.
+   *
+   * It is carried three ways now and all three read this token: the base rule
+   * on `h1,h2,h3`, a `.font-display` base rule for the elements that are *not*
+   * headings, and `fontWeight` on the `title` rung in `tailwind.config.js` —
+   * which is the argument that file already makes about tracking, « a property
+   * of the size and not of the tag », applied to the other axis.
+   */
   --display-weight: 500;
   --display-tracking: -1.5px;
+
+  /*
+   * **The wordmark's two remaining settings, so that « one wordmark » is a
+   * declaration and not an impression.**
+   *
+   * `.wordmark` in `index.css` is the one rule that spends these,
+   * `ui/Wordmark.tsx` is the one component that writes that class, and
+   * `shot.mjs --census` reads all four settings back off `:root` and fails any
+   * painting of the product's name that does not match. So the rule is measured
+   * against this block rather than against whichever screen a reviewer opened.
+   *
+   * **600, not `--display-weight`.** The wordmark leaves the content ladder in
+   * both axes — a rung up in size from `--type-title`'s 24, and a step up in
+   * weight from 500 — because a distinction carried by size alone is the one
+   * `--type-title` already makes between a page title and a heading.
+   *
+   * **`--brand-900`, not `--text-strong`.** 13.31:1 on white, so it gives up
+   * nothing legible, and it is the ink the splash and first run already used.
+   * The rail was the odd one out: measured, rgb(20, 32, 42) there against
+   * rgb(2, 51, 75) on onboarding — one word, two colours, 54 paintings against
+   * 22 over the stage list.
+   */
+  --wordmark-weight: 600;
+  --wordmark-ink: var(--brand-900);
 
   /*
    * Motion: ≤150ms, ease-out, opacity and 2–4px translate only. Nothing

@@ -13,7 +13,20 @@
  * here**. These are the open faces blume falls back to (VISION.md §6).
  */
 
-/* Display — Fraunces, variable 300–700. Used at weight 500 (see --display-weight). */
+/*
+ * Display — Fraunces, variable 300–700.
+ *
+ * **Set at `--display-weight` (500) everywhere but one, and this line used to
+ * say so while the product painted three weights.** Measured on the shipped
+ * renderer over all 83 stages at both sizes: 400 on 118 runs, 500 on 180, 600
+ * on 114 — a `<p class="font-display">` inheriting the body's weight, an
+ * `h1,h2,h3` taking the base rule, and `font-semibold` written beside a heading
+ * tag. `shot.mjs --census` holds the face to one weight now, so the sentence is
+ * checked rather than asserted.
+ *
+ * The one exception is declared: `--wordmark-weight` (600), spent by
+ * `.wordmark` in `index.css` and by nothing else.
+ */
 @font-face {
   font-family: "Fraunces";
   font-style: normal;
