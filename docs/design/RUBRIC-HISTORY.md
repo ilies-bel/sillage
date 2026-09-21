@@ -135,6 +135,9 @@ round 5 did not.
 | 22 | widget | `60f9686` | 9 | 7.5 | 6.5 | 9 | 8 | 8.5 | 7.5 | 7.5 | 7.5 | **71** ◊ |
 | 22 | main | `60f9686` | 7.5 | 7 | 8 | 6.5 | 8 | 8 | 7.5 | 8 | 7 | **67.5** ◊ |
 | 22 | detection | `60f9686` | 7.5 | 7 | 7.5 | 7 | 6.5 | 8 | 8 | 7 | 7 | **65.5** ◊ |
+| 23 | widget | `4e3da8a` | 8.5 | 7.5 | 6 | 7.5 | 8 | 8.5 | 8.5 | 7.5 | 8 | **70** |
+| 23 | main | `4e3da8a` | 7 | 7.5 | 8.5 | 7 | 8.5 | 7.5 | 8 | 7.5 | 7.5 | **69** ¶ |
+| 23 | detection | `4e3da8a` | 7.5 | 8 | 8.5 | 6.5 | 7 | 6.5 | 6 | 6 | 6.5 | **62.5** |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -1208,3 +1211,240 @@ rep's own notes at **20.7 characters per line** (196 px ÷ 9.45 px/ch), and puts
 **two « Lire la suite » buttons on screen at once**, 361 px apart. `--prose` has a
 75-character ceiling and no floor, so nothing sees it. Density has been 6.5 since
 round 19 and this is why.
+
+## Round 23
+
+Eight lanes, eight merged. The harness went from 85 screens and 12 passes to **88
+and 13**. Five of the eight lanes refuted part of the brief they were sent, and in
+each case the correction made the lane's work larger rather than smaller.
+
+### The instrument that could never see its own subject
+
+`--motion` printed « 0 qui s'en vont » on **83 of the 85 stages**, including five of
+the seven whose names end `-sortie` and which exist for nothing else. The cause is
+one line: `shot.mjs:154`, `settled()` waits every `.leaving` out before any pass
+runs — correct for geometry, and it means the one pass whose subject is a *transient*
+was handed a page with its subject already removed, by construction. After: **37
+stages, 93 departures.**
+
+That zero was read as a product finding in rounds 18, 19 and 21, and in round 22 I
+read the round-21 record and pushed « the exit ladder is unshipped » into a lane's
+brief, which a second lane then spent its time refuting. **An instrument that reports
+zero where the product ships four cost four rounds of false findings — more than the
+defect it was hiding would have.**
+
+Underneath it, a bug that had silently switched the entire departure half off:
+`STATE` left inside `build()` while `revealed()` closed over it, and the resulting
+`ReferenceError` swallowed by a `try` whose `catch` exists for unparseable selectors.
+Both catches now hold the `matches()` call and nothing else.
+
+The lane also refuted its own first design: a rAF-batched drain got **7 animation
+frames across an entire drive** — departures detached before the next read, five
+stages still zero — so it measured that and replaced it rather than shipping it.
+
+And a zero can no longer be mistaken for a verdict: a `-sortie` stage declares
+`departs: N` (a minimum, not a flag) and the pass refuses a stage that does not meet
+it; a stage that stages none prints what its watch looked at.
+
+### Two marks nobody could compare, and a third grammar nobody counted
+
+`--marks`, the thirteenth pass, compares the marks of one screen **to each other** —
+which none of the other twelve can, because every one of them asks something
+*intrinsic* about a single element. The calendar's « réunion enregistrée » and
+« enregistrement en cours » each cleared their own ground at 3.24–3.26:1 and measured
+**1.0077:1, ΔL\* 0.226** against each other on 6 px dots. The brief named one such
+pair; **there are two** — « prévue » / « prête » is the identical collision and had
+never been named. Separated by shape, not hue: no token moved.
+
+`--census` now binds the two distributions it was only printing. The height threshold
+was **read off the data, not chosen**: 622 adjacent gaps over 168 stagings fall into
+113 at ≤0.90 px and 509 at ≥1.41 px, with nothing in between. And the mark census
+found a grammar nobody had counted — Inter 4.1 does not carry `▾ ▴ ▸ ✕`, so **84 of
+170 stagings were painting an operating system's glyph**: eleven `source ▸`, the
+recipe chip, the widget's disclosure, Réglages' close. On Windows, where this ships
+first, that is Segoe UI Symbol at its own advance and its own metrics — **no
+screenshot this repo has ever judged those four marks on was a photograph of the
+product.** They are drawn now.
+
+### The merge is a measurement surface
+
+Three defects were invisible to every lane and appeared only where lanes met.
+
+- **A test asserting a glyph the product had stopped painting.** One lane's seam test
+  waited on the disclosure control's `textContent` being « ▾ »; another had replaced
+  that character with a drawn chevron. The old assertion was never measuring the
+  product — it was measuring whichever glyph the OS substituted, which is why it
+  passed on a mac and would have passed on Windows while painting a different mark at
+  a different size. The second lane had already left `data-arrow` for exactly this.
+- **A `-sortie` stage that predated the rule requiring a count.** One lane wrote the
+  stage; another wrote the rule beside it; the first merged smoke run refused it.
+  Declared 1, measures 3. The rule working on its first day.
+- **A README contradicting itself about one count** — « fourteen widget stages » at
+  line 312 and « fifteen » at line 571 — each lane correct about its own tree.
+
+None of these is a collision. Each is a question only the merge can ask, which makes
+the merge a place to measure rather than an administrative step.
+
+### My briefs were the weakest input, for the second round running
+
+Five of eight lanes corrected me, and the corrections were not stylistic:
+
+- `.find()` over `['capture','transcribe']` is **the first**, not the worst — and the
+  variable is named `worst`, and the docblock calls it worst. I read the name.
+- The refusal banner's stranded dismiss is **1280 only**. At 960 the sentence never
+  reaches its cap, so the growing cell fills the row and the slack is zero. I wrote
+  « at both sizes » because a scorer did.
+- **Two** colliding mark pairs, not one. **Seven** `-sortie` stages, not four.
+  **Eighty-three** blind stages, not sixteen. **Three** display weights, not two.
+
+And one false premise was mine by way of this file's own prose, within a single day:
+I committed « `--a11y` … prints its ratio on the green line and binds nothing » to
+`CLAUDE.md` in the morning and propagated it into a lane brief within the hour. It
+binds — it pushes a problem at `px <= body`, and `--type-title: 12px` turns `agenda`
+red at exit 7. Two lanes measured it independently and both disagreed with me; I
+retracted it to the second lane mid-flight, and it checked the retraction rather than
+taking it. What the check actually lacked was a **denominator**, now printed.
+
+`CLAUDE.md` now carries the rule that list was missing: **mark an entry when it
+closes, in the commit that closes it.** Two of its five entries had gone stale or
+false within one round while the paragraph asserted them in the present tense — which
+is the defect the paragraph is about, committed by the paragraph.
+
+### Named, priced, not fixed
+
+- **Three more `.measure` + `flex-1` sites** with the banner's arithmetic and none of
+  its closure: `EnhancementNotice` (635.2 px, 49.6 % of its strip), *Historique*'s
+  match rows (429.8 px, 45.1 %, ×85), the transcript reader's header (60 px). The
+  lane wrote **no allowance** for them, on the grounds that `RHYTHM_ALLOWANCES`' own
+  rule is that « nobody has changed it yet » is not a reason.
+- **1 183 px is measured by nothing.** `smoke.mjs` runs 1280 and 960 and there is no
+  size between them, so the widest the new two-column session pane is ever drawn is
+  covered only by one lane's driver.
+- **`--targets` reads `widget-carte-sortie`'s buttons at 23.55 px**, 0.05 from its
+  floor, because that stage is deliberately mid-exit. A slightly longer exit curve
+  turns that pass red for a reason that is not a defect.
+- **The Windows half of the glyph finding is inferred, not observed.** That Inter
+  does not carry the four characters is measured; which font Windows substitutes, and
+  at what metrics, is read off documentation.
+- **Three `Demander` suggestion chips rendered at 0×0** at 407 px on the old layout —
+  a live instance of shape #8, found in passing and fixed as a consequence of the
+  column change rather than deliberately.
+
+### The split worked
+
+**All three scorers scored blind.** Two wrote the whole table before opening this
+file. The third (¶) disclosed that after opening it, it revised axis 6 from 6.5 to
+7.5 — the trigger was reading round 22's note that `--motion`'s zero had become a
+false premise, which sent it to drive the five `-sortie` stages and measure 13
+departures. **The revised number is pinned by its own measurement and the original
+was pinned by an absence the harness explicitly says is not a verdict**, so the 69
+is the better number and the sequence is the fault. Blind total was 68.
+
+That is the whole difference from round 22, where all three were anchored by a file
+they were told to read. The instruction did not change; the file did.
+
+Three other self-corrections, all volunteered:
+
+- A focus probe reported eight widget controls at `opacity: 0` while focus-visible.
+  It was `getComputedStyle` reading t=0 of a 90 ms transition. Re-driven with a
+  180 ms settle, all fifteen are correct.
+- A scorer diffed `agenda-semaine` against `agenda-liste` over an 860×1040 region,
+  got **0 differing bytes**, and was about to file « two segments paint the same
+  list ». Its own row probe refuted it: 11 rows against 14. The diff region was the
+  shared top.
+- Programmatic `el.focus()` does not match `:focus-visible` on a `<button>` after a
+  pointer interaction, so the review gate appeared to have no focus ring. One global
+  rule at `index.css:131` settles it. Discarded rather than filed.
+
+### What round 23 closed, measured by someone who did not build it
+
+- **« No pass compares two marks to each other … twelve passes are structurally
+  unable to ask it »** — closed. `--marks` compares 6 pairs on the agenda, and the
+  1.0077:1 / ΔL\* 0.226 legend pair it was built for is gone.
+- **« `--prose` has a 75-character ceiling and no floor, so nothing sees it »** —
+  closed. « aucune colonne en deçà de 45 caractères » on all six main screens at both
+  sizes, and the 20.7 ch/line notepad is gone: the column is dropped at 960 rather
+  than crushed.
+- **Two « Lire la suite » buttons on one screen** — one now.
+- **« `Masquer` at x=737 directly above `Profil` at x=737 »** — half closed. They are
+  224 px apart at 960 now. The type collapse that made it a finding is not: `Masquer`
+  is still 12px/400/`rgb(93,107,118)` with no border, no fill and no underline against
+  labels at 11px/400 in the same ink.
+- **The stranded *Fermer*** — closed; `--cells` prints « 1 boîte(s) fermée(s), 0 trop
+  large(s) » on that stage.
+
+### The fix that wrote down the next round's finding and shipped without it
+
+The widget's card seam was branched on direction and is 16 px both ways. Its own
+docblock says: « the panel is 6 px from a pill that keeps 12 px between its own
+halves — round 22's rule, on the surface round 22 fixed, left standing. » The
+blind scorer's **top finding on that surface is exactly that sentence**, and axis 3
+is the widget's lowest at 6. Scope discipline and an open defect are the same act
+here; what makes it shape 2 rather than good judgement is that nothing was written
+that would fail.
+
+### Three more narrow instruments, found by scoring
+
+- **`--rhythm` prints a percentage whose denominator includes what the same line says
+  it spared.** `shot.mjs:8333`, `onLadder / beat.measured`. The collapsed pill prints
+  « 47.6 % sur les 7 pas déclarés · épargnés : 22 graphique » while the actual
+  off-ladder count is **zero**. A reader takes that as « half this surface's spacing
+  is off scale ». The scorer says it nearly did.
+- **`--marks` is vacuous on all fifteen widget stages** — « 1 peinte(s), 1 nom(s),
+  aucune paire à comparer ». No widget stage paints two state glyphs at once, so the
+  three marks that say recording / idle / paused are compared by nothing. The product
+  happens to be safe — filled disc, hollow ring, two bars — but the pass built to
+  catch this class measures nothing there. The lane said so when it shipped.
+- **The 24 px floor does not hold during the one motion a rep watches.** Three
+  controls measure **23.55** under the arrival scale, and `--targets` failed
+  `widget-attente` on one of two smoke runs. A gate whose verdict depends on machine
+  load is not a gate.
+
+### The most expensive thing on the product
+
+**`review-refus` draws the irreversible control at full strength.** Measured:
+`disabled=false · bg=rgb(2,51,75) · color=rgb(255,255,255) · cursor=pointer ·
+504.6×36.6 · « Valider »` — identical in every property to the armed gate on
+`review-garde` except the label and the fill. The screen has already said twice that
+nothing will be created: a `--danger` banner in the header and a caption under the
+button. The button says nothing.
+
+`POST /v1/crm/tasks` has no idempotency key and `CrmPort` has no delete verb, so
+« will write three records » and « will write none » are the two outcomes in this
+product that most need to be distinguishable. They are drawn the same. The machinery
+to fix it exists and is better than most products' — `ui/Button.tsx` cannot construct
+a disabled control without a French reason, surrenders the fill rather than dimming
+it, and wires the reason through `aria-describedby`. **The gate is the one screen that
+does not use it.**
+
+### And one the arming flow creates for itself
+
+Pressing *Préparer* inserts the `role="alert"` refusal **in flow**, the list drops
+**72 px**, the cursor does not move, and the rectangle that arrives under it is
+« Ouvrir » **on the live recording** — whose hit area is the whole 1050 px row
+(`after:inset-0`). The app refuses an act and then slides a different, navigating
+control under the unmoved pointer. `CLAUDE.md` states this rule for the review gate
+— « the one control that ships is never the rectangle the rep just pressed » — and
+the agenda has no equivalent. Round 23 fixed that banner's *width*; its position in
+flow is the next defect in the same element.
+
+### Still open, named and priced
+
+- The armed session screen, the landing pad for both human entrances into recording:
+  7 controls, 2 fields, **0 headings, no prose, 7 em-dashes**, a placeholder client,
+  and no sentence saying recording has not begun. Reachable in the harness only since
+  round 22 scored, which is why five of detection's six drops are this one screen.
+- The 19 px document rung is **two typefaces**: notepad `19/500/Fraunces`,
+  compte-rendu `19/600/Inter`, side by side on one screen. The same fault `4ee37e6`
+  fixed one rung up, two rounds ago.
+- The gate read through **18 % of itself** at the declared minimum — field rail
+  402×196 with 904 px below it, eleven fields, at 960×600.
+- `--radius` (12 px) worn by **0 corners on six screens at both sizes**. `--census`
+  refuses only an empty ladder, so it will not object. A token nothing wears is the
+  fourth shape, in CSS.
+- Onboarding's header inset **exactly 32.0 px** from its own reading column on both
+  sides at both sizes, while its footer aligns correctly.
+- The widget health slot renders `aggregateStatus(connectors).reason` raw, with no
+  `role` and no `aria-live`: one stage shows a designed sentence with a remedy, the
+  next shows « aucun fournisseur de transcription disponible » — lowercase, no
+  terminal period, no remedy. Round 23 fixed which connector speaks, not how.
