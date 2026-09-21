@@ -373,7 +373,17 @@ const stackUpward = async () => {
   fireEvent.click(await screen.findByRole('button', { name: /^Ouvrir le panneau/ }))
   act(() => bridge.emit('widget:placed', { above: true }))
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Replier le panneau' }).textContent).toBe('▾'),
+    /*
+     * `data-arrow`, not `textContent`. This read « ▾ » until a concurrent lane
+     * measured that Inter 4.1 does not carry U+25BE and replaced the character
+     * with a drawn chevron — so the assertion was reading an OS fallback glyph,
+     * and after the fix it read the empty string. The attribute exists because
+     * that lane left it for this test.
+     */
+    expect(
+      screen.getByRole('button', { name: 'Replier le panneau' }).querySelector('[data-arrow]')
+        ?.getAttribute('data-arrow'),
+    ).toBe('down'),
   )
 }
 
