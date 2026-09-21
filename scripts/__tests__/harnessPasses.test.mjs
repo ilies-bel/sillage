@@ -61,6 +61,38 @@ test('the harness README lists exactly the passes smoke.mjs runs', () => {
   )
 })
 
+/**
+ * **And the usage line four lines above it, which nothing held.**
+ *
+ * It listed twelve of the thirteen — `--marks` was missing — under a comment
+ * reading « with all twelve passes », in the same file whose next paragraph
+ * records that this count has been wrong three times. The argument vector was
+ * held to `PASSES`; the *usage* line was held to nothing, so the omission moved
+ * from the sentence that was checked into the one that was not. A reviewer
+ * copying that line runs twelve passes and believes they ran the set.
+ */
+test('the README’s usage line offers every pass shot.mjs accepts', () => {
+  const shot = read('harness/shot.mjs')
+  const accepted = [...shot.matchAll(/arg === '(--[a-z0-9]+)'\) flags\./g)].map((m) => m[1])
+  assert.ok(
+    accepted.length >= 10,
+    `${accepted.length} option(s) lues dans shot.mjs — la lecture a cessé de trouver`,
+  )
+  const usage = read('harness/README.md')
+    .split('\n')
+    .find((row) => row.startsWith('node scripts/harness/shot.mjs <screen>'))
+  assert.ok(usage !== undefined, 'la ligne d’usage a disparu du README')
+  // `--expand` is written `[--expand|--no-expand]`, so the flag is looked for as
+  // a token rather than inside brackets.
+  const missing = accepted.filter((flag) => !new RegExp(`${flag}(?![a-z0-9-])`).test(usage))
+  assert.deepEqual(
+    missing,
+    [],
+    `${missing.length} option(s) que shot.mjs accepte et que le README n’offre pas : ` +
+      `${missing.join(', ')}`,
+  )
+})
+
 test('every pass the smoke run passes is one shot.mjs accepts', () => {
   const shot = read('harness/shot.mjs')
   const unknown = passes().filter(

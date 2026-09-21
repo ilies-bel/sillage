@@ -203,6 +203,13 @@ const SIZES = ['1280x800', '960x600']
  * `:hover`, whose hit area is the whole row — under the rep's finger. The
  * defect exists only in the transition between two rested states, and both
  * rested states are impeccable.
+ *
+ * It has a second half now, and that one is relational across **time**: a stage
+ * that drives the product from one state to the next snaps the marks at each,
+ * and two marks sharing a slot at two moments are compared. `widget-code` is
+ * the only stage that drives one today — which is why the line prints how many
+ * moments it read, so « 1 lecture » cannot be mistaken for a code that was
+ * checked.
  */
 const PASSES = [
   '--geometry',

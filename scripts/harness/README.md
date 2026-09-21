@@ -14,7 +14,7 @@ introduced after something shipped that the other could not have caught.
 
 ```
 node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--marks] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--press] [--no-png] [--sans-entra]
-node scripts/harness/smoke.mjs                 # every stage × two sizes, with all twelve passes
+node scripts/harness/smoke.mjs                 # every stage × two sizes, with all fourteen passes
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
 
@@ -231,6 +231,26 @@ nothing on one side**, and **0 of 170 stagings red**. Those last three are print
 on every run beside `read`, because an exclusion that is not counted is a check
 quietly measuring less.
 
+**The share it prints is over what it judged, and it was not.** Both figures
+above — 79.6 % and 98.1 % — were `onLadder / measured`, and `measured` still
+counts the values the four rules remove from the judgement eight words later on
+the same line. On the collapsed widget pill that printed « 47.6 % sur les 7 pas
+déclarés · épargnés : 22 graphique » over a surface whose off-ladder count is
+**zero**: 20 values judged, 20 on the ladder, and 22 meter-bar gaps spared. A
+blind scorer read 47.6 % as « half this surface's spacing is off scale » and
+filed it before checking. The direction is what makes it worth a fix — it read
+*worse* than the truth, and nobody audits a number that flatters nothing.
+
+The arithmetic is `scripts/harness/rhythmShare.mjs` now, one pure function with
+`scripts/__tests__/rhythmShare.test.mjs` putting the pill's **recorded** beat
+through it: over `measured` that beat reads 47.6 %, over `judged` it reads 100 %,
+and the test asserts both so the old denominator cannot come back quietly. Swept
+over all 178 stagings: **52 818 painted spacings over 57 484 elements, 995
+spared, 51 823 judged, 44 off the ladder** — 98.0 % over the old denominator and
+**99.9 % over the judged one**, the weakest single staging 97.1 %. The line names
+every population it separates, and a `sound` identity refuses a share whose
+denominator has stopped matching the branch that fails.
+
 What it cannot see, so nobody has to rediscover it: claim 2 compares a group
 against what surrounds it, so a row with **no** groups in it is invisible to it.
 The widget's pill before its fix was six flat children at one interval — nothing
@@ -314,16 +334,42 @@ dots (ΔL\* 17.49, reads correctly), fill-against-hollow on a 6 px dot (0.4447,
 the axis `MARK_CLASS` and `Widget.tsx` both spend), and a 6 px square against a
 6 px dot (0.2186, corners and nothing else, refused).
 
-**What it does not reach**, stated rather than implied: a code spread across
-*states* — the widget's idle, paused and recording glyphs are three stages and
-never two elements at once, so it prints « aucune paire à comparer » on all
-sixteen widget stages — and two marks on two *screens*. Swept over the whole
-list: **39 of the 85 stages draw no declared mark at all, 14 draw exactly one,
-and 32 compare a pair** — which is why the census line names how many marks were
+**A second population, for the relation the first could not put.** Co-visibility
+was the whole of what this pass could ask when it shipped, and it left the
+surface that most needed it unmeasured: the widget's idle, paused and recording
+glyphs are three *states* and never two elements at once, so it printed « aucune
+paire à comparer » on all fifteen widget stages, and the three `data-graphic`
+names a rep reads state by were compared to each other by nothing. A stage now
+calls `snapMarks` at each state it drives the product through, and marks sharing
+a **structural slot** across two moments with different names are compared.
+`widget-code` is that stage; it walks « en cours » → « en pause » → « aucun
+enregistrement » through the shipped channels and snaps each.
+
+The floor there is **form alone** — `plancher forme 0.3`, and lightness does not
+rescue a pair. Co-visible, a rep *compares* two marks that are both on screen;
+across states they have one mark and the other only in memory, at eight pixels
+over somebody else's video. It is the product's own argument, written above the
+paused glyph in `Widget.tsx` (« an emptied circle already means there is nothing
+here »). Measured on the shipped renderer, the pill's three pairs are **0.6863**,
+**0.5607** and **0.6673**, the weakest 1.87× the floor; round 4's own defect —
+paused drawn as idle's annulus one hue apart — is form **0** at ΔL\* **14.344**,
+so the co-visible floor of 10 passes it and this refuses it. Restoring that class
+in `Widget.tsx` turns `widget-code` red at both sizes, exit 19; every other
+widget stage stays green and says « 1 lecture, aucun code d'états comparé ».
+
+**What it still does not reach**, stated rather than implied: two marks on two
+*screens*, and any state no stage drove — what is measured is what was snapped,
+and the moment count on every line says how many that was. Swept over the whole
+list — **and this sweep is stale, which is the honest state of it**: it was taken
+at **85** stages and the list is longer now (two lanes added `widget-dessous` and
+`widget-code` in the same round), so re-run it before quoting it. At 85 it read
+**39 stages drawing no declared mark at all, 14 drawing exactly one, and 32
+comparing a pair** — which is why the census line names how many marks were
 painted and how many pairs were compared. A screen with one mark must not be
 able to print what the agenda's six pairs print.
-`SILLAGE_MARKS_ATTACK=1` injects nine probes, three that must be reported and six
-that must stay silent, and exits 21.
+`SILLAGE_MARKS_ATTACK=1` injects twelve probes, five that must be reported —
+two of them codes across states, built by repainting one slot rather than by
+drawing two elements — and seven that must stay silent, and exits 21.
 
 **`--press` asks the only question in this file that needs two frames.** Every
 other pass measures one settled frame, and all thirteen of them were green over
@@ -617,6 +663,7 @@ what `serve.mjs` drops the meta for.
 | `widget-ouvert` | the same window opened: the live transcript that arrived **while it was shut**, the rep's own marks in place, the note field and the two ways out. The replay runs before the click, and the order is the assertion — a stage that has to be driven in an unnatural order is a stage describing a defect |
 | `widget-pause` | the paused call: the footer's *Pause* becomes *Reprendre* and the pill draws « En pause » where the clock was. Nothing changes on the press — only on `recording:paused`, which the stub emits the way the main process does |
 | `widget-refus` | **a refused mark, on the pill, with no panel open.** `meeting:mark` refuses whenever the meeting is not `recording` — `EndOfMeetingWatch` can make that true with the pill still floating over the call — and the sentence went into an `sr-only` paragraph measuring 1×1 with `clip: rect(0,0,0,0)`, on a window with no `role="alert"` in it, while the counter correctly did not move because nothing had been written. The stage measures the box, not the picture, and asserts the counter stayed put |
+| `widget-code` | **the pill's three states, driven and compared** — « enregistrement en cours », « enregistrement en pause », « aucun enregistrement ». It is the only stage that changes the mark under the mark: the pause is taken on the panel, the recording then ends underneath through `widget:state`'s own `{ meeting: null }` and the `session:changed` that carries it, and `snapMarks` takes a reading at each. `--marks` compares what shared a slot across the three, which is the relation no pass in this harness could express: fifteen widget stages each printed « 1 peinte(s), 1 nom(s), aucune paire à comparer » over a surface whose whole job is to say, across a desk, whether a client is being recorded. It ends idle, which nothing else in the `session` scenario photographs |
 | `widget-arret` | the second press. Ending a recording cannot be undone, so the confirmation is a different rectangle from the label that summoned it (DEC-4) |
 | `agenda-demarrer-tot` | the **Semaine** view with an armable call ahead of its hour — the offer to start early, beside the invites that are not yet armable |
 | `agenda-preparer` | **the arming gesture, walked** — *Préparer* pressed on a named upcoming invite and the screen the rep actually lands on. Every earlier stage *counted* this control; none had ever pressed it, and the stub answered an id no meeting carried, so the press landed on « réunion introuvable: evt-evt-delcourt-tjm ». Staged on the one fixture day with nothing live, because `Agenda.#arm` declines beside a recording; the assertion is the objet on the session header, so « landed on *a* meeting » cannot pass for « landed on the one pressed » |
@@ -724,6 +771,51 @@ and the elapsed clock always reads `00:22:00`. The browser context is
 `Europe/Paris` / `fr-FR`, so the app's `atParis()` arithmetic and the stub's
 `setHours()` land on the same day. Timers keep running — the search debounce is
 200 ms real time and has to fire.
+
+## Rest — the frame every pass below is measured on
+
+Every check here reads a rectangle, and `getBoundingClientRect` includes
+transforms, so a pass that runs mid-arrival measures a frame rather than a
+control. `settled()` asked « is anything running *now* », which under load is
+often asked **before** the arrival has started; the answer came back immediately
+and the passes measured a moving page. Measured with `SILLAGE_PROBE` at the
+exact instant the passes run, on the tree before this landed, 1280×800,
+unloaded — boxes still moving 200 ms later:
+
+    widget               0 of  74
+    widget-ouvert        0 of 139
+    widget-entree        0 of 139
+    widget-attente       8 of  13
+    widget-carte-sortie 69 of  78   — three controls at 23.58×23.58
+
+23.58 is 24 × 0.9825, the tail of DEC-50's arrival scale. `--targets` printed
+« toutes ≥ 24 px » on that stage in the same run only because the probe's own
+200 ms let the page settle before the pass ran; it failed `widget-attente` on one
+of two smoke runs. A gate decided by how loaded the machine is is not a gate, and
+widening the floor would have been the wrong repair — 23.58 against a 23.5
+tolerance is 0.08 px of margin.
+
+Rest is **established** now, not waited out: two consecutive readings of every
+painted box must agree to **0.1 px**, up to fourteen readings. Swept over all 178
+stagings, 166 rest on the second reading, 6 on the third, and 2 never —
+`widget-carte-sortie` at each size, the stage that ends with a 30 s departure in
+flight on purpose. Those boxes are marked `data-harness-inflight` and `--targets`
+exempts them, printing how many it stopped measuring. The verdict is on every
+run, green or red: « repos: immobile à la 2ᵉ lecture — 74 boîte(s) ».
+
+A page still moving while the product declares **no** motion at all fails,
+because nothing below it is measuring anything. The verdict asks about the page
+and not about each box, which is a stated limit rather than an oversight: on
+`widget-carte-sortie` the departure drags the pill's own card by 0.1 px and no
+instrument here can prove that one moved *because of* the other.
+
+    SILLAGE_REST_ATTACK=immobile node scripts/harness/shot.mjs widget /dev/null \
+      --no-png --targets          → ✗ repos, exit 18
+    SILLAGE_REST_ATTACK=declare   …  → pas de ✗, le contrôle de 20 px exempté
+
+Two runs and not one, because the two branches cannot coexist: a declared
+animation anywhere excuses the residual movement, so running both probes on one
+page would hide that limit instead of measuring it.
 
 ## `--expand`
 

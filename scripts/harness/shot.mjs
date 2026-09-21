@@ -58,6 +58,7 @@ import process from 'node:process'
 import { installAppBridge } from './bridge-stub.mjs'
 import { fileURLToPath } from 'node:url'
 import { pinnedNow } from './pinnedNow.mjs'
+import { rhythmShare } from './rhythmShare.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(path.join(REPO, 'package.json'))
@@ -204,6 +205,146 @@ const restingBox = async (page, locator, { tries = 12, gap = 60 } = {}) => {
     await page.waitForTimeout(gap)
   }
   return previous
+}
+
+/**
+ * **The page-wide half of `restingBox`, because the checks below measure boxes
+ * no locator names.**
+ *
+ * `settled()` asks « is anything running *now* ». `restingBox` already records
+ * why that is a different question from « has this finished » — under load the
+ * arrival has often not *started* when the question is put — and it answers it
+ * for one rectangle a stage names. Every pass in this file measures rectangles
+ * no stage names, and they had only `settled()`.
+ *
+ * Measured with `SILLAGE_PROBE`, on HEAD, at the exact instant the passes run,
+ * 1280×800, serially and unloaded — how many painted boxes were still moving
+ * 200 ms later:
+ *
+ *     widget               0 of  74
+ *     widget-ouvert        0 of 139
+ *     widget-entree        0 of 139
+ *     widget-attente       8 of  13
+ *     widget-carte-sortie 69 of  78   — three controls at 23.58×23.58
+ *
+ * 23.58 is 24 × 0.9825: not a control under the floor, a control read under a
+ * scale. `--targets` printed « toutes ≥ 24 px » on that stage in the same run
+ * *because the probe's own 200 ms let the page settle before the pass ran* —
+ * which is the whole shape of the defect. Whether that stage is red was decided
+ * by how loaded the machine is; it failed `widget-attente` on one of two smoke
+ * runs. A gate decided by load is not a gate.
+ *
+ * **Widening the floor would have been the wrong repair** — 23.58 against a
+ * 23.5 tolerance is 0.08 px of margin, and one slightly longer curve turns it
+ * red again while a genuinely 23 px control walks through.
+ *
+ * So rest is *established* rather than waited out: two consecutive readings of
+ * every painted box must agree to 0.01 px.
+ *
+ * **And what will not come to rest is named, not tolerated.** A stage can end
+ * mid-motion on purpose — `widget-carte-sortie` stretches `--motion` to 30 s so
+ * `--motion`'s census has a departure in flight to count — so no wait can
+ * settle it, and `settled()`'s `-leaving` rule times out silently at 2 s. Those
+ * boxes are marked `data-harness-inflight` and `--targets` exempts them, saying
+ * how many it stopped measuring.
+ *
+ * The verdict asks whether the product declares **any** motion, not whether it
+ * declares one per box, and that is a deliberate limit rather than an oversight:
+ * on `widget-carte-sortie` the 30 s departure moves 4 boxes inside itself and
+ * drags 16 more — the pill's own meter bars shift 0.01 px a frame because the
+ * card beside them is narrowing — and no instrument here can prove that a
+ * sibling moved *because of* that animation. Counting them as undeclared would
+ * be a false finding; claiming they were attributed would be false precision.
+ * Both numbers are printed. A page still moving while the product declares no
+ * motion at all is the case that fails: nothing below it is measuring anything.
+ */
+const RESTING = () => {
+  /*
+   * In flight is the union of three declarations the product itself makes: a
+   * running animation or transition, an infinite one (the motion self-test
+   * injects one deliberately and a spinner would hang this for ever), and the
+   * renderer's own name for a held departure — `useDeparture` removes the
+   * element rather than the class, which is `settled()`'s rule read here as a
+   * predicate rather than as a wait.
+   */
+  const flying = []
+  for (const animation of document.getAnimations()) {
+    const timing = animation.effect?.getComputedTiming?.()
+    const target = animation.effect?.target
+    if (!target || !timing) continue
+    if (timing.iterations === Infinity || animation.playState === 'running') flying.push(target)
+  }
+  for (const el of document.querySelectorAll('[class*="-leaving"], .leaving')) flying.push(el)
+  const declared = (el) => flying.some((node) => node === el || node.contains(el))
+
+  const all = [...document.querySelectorAll('body *')]
+  const boxes = all.map((el) => {
+    const box = el.getBoundingClientRect()
+    /*
+     * **A tenth of a pixel, and the digit below it is deliberately dropped.**
+     * At 0.01 px, `widget-carte-sortie`'s pill reported sixteen boxes « still
+     * moving » that were shifting 530.01 ↔ 530.02 px — the rounding wake of the
+     * card narrowing beside them, which no eye and no check can see. At 0.1 px
+     * they are at rest, and the arrival this exists to wait out is nowhere near
+     * that fine: between two readings 50 ms apart it moves whole pixels.
+     */
+    return (
+      `${Math.round(box.x * 10)},${Math.round(box.y * 10)},` +
+      `${Math.round(box.width * 10)},${Math.round(box.height * 10)}`
+    )
+  })
+  const before = window.__restLast ?? null
+  window.__restLast = boxes
+  for (const el of document.querySelectorAll('[data-harness-inflight]')) {
+    el.removeAttribute('data-harness-inflight')
+  }
+  /*
+   * A different number of boxes is a DOM change, not a measurement: the two
+   * readings are not comparable and the loop takes another one.
+   */
+  if (before === null || before.length !== boxes.length) {
+    return { moved: null, total: boxes.length, undeclared: [] }
+  }
+  let moved = 0
+  let under = 0
+  const who = []
+  for (let at = 0; at < boxes.length; at += 1) {
+    if (boxes[at] === before[at]) continue
+    moved += 1
+    const el = all[at]
+    el.setAttribute('data-harness-inflight', '')
+    if (declared(el)) under += 1
+    else if (who.length < 6) {
+      who.push(
+        `${el.tagName.toLowerCase()}${typeof el.className === 'string' && el.className ? '.' + el.className.split(/\s+/).slice(0, 3).join('.') : ''}` +
+          ` ${before[at]} → ${boxes[at]}`,
+      )
+    }
+  }
+  return { moved, total: boxes.length, under, running: flying.length, who }
+}
+
+/**
+ * Fourteen readings at 50 ms is 700 ms of budget on top of `settled()`'s own
+ * wait. Swept over all 176 stagings at both smoke sizes: **166 rest on the
+ * second reading, 6 on the third, 2 never** — `widget-carte-sortie` at each
+ * size, which is the stage that ends with a 30 s departure in flight on
+ * purpose. So the budget is not being spent: it exists for the two that will
+ * never spend it, and a stage that starts needing ten readings is a finding in
+ * itself rather than a slower run.
+ */
+const atRest = async (page, { tries = 14, gap = 50 } = {}) => {
+  await page.evaluate(() => {
+    delete window.__restLast
+  })
+  let last = { moved: null, total: 0, under: 0, running: 0, who: [] }
+  for (let read = 1; read <= tries; read += 1) {
+    await settled(page)
+    last = await page.evaluate(RESTING)
+    if (last.moved === 0) return { rest: true, reads: read, ...last }
+    await page.waitForTimeout(gap)
+  }
+  return { rest: false, reads: tries, ...last, moved: last.moved ?? last.total }
 }
 
 /**
@@ -5583,6 +5724,76 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **The three states of one mark, driven — the relation no pass could put.**
+   *
+   * The pill's dot is the whole of what this window says across a desk, over a
+   * client's video: `data-graphic` is « enregistrement en cours », « en pause »
+   * or « aucun enregistrement », one at a time. Fifteen widget stages each drew
+   * exactly one of them, so `--marks` printed « 1 peinte(s), 1 nom(s), aucune
+   * paire à comparer » fifteen times and the three were compared to each other
+   * by nothing — while the pass exists for precisely that kind of defect, and
+   * round 4 already found it here once, with paused and idle drawn as the same
+   * 8 px annulus one hue apart.
+   *
+   * Co-visibility is what `--marks` could reach; a code spread across *states*
+   * is a relation across time. This stage is how time is reached: it drives the
+   * shipped renderer through the three states the product really produces —
+   * a pause taken on the panel, then the recording ending under the pill the
+   * way `Orchestrator` ends it — and snaps the mark at each. No fixture paints
+   * two of them at once; every shape compared was painted by the product.
+   *
+   * It ends idle, which is a state no other `session`-scenario stage
+   * photographs.
+   */
+  'widget-code': {
+    scenario: 'session',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+      await snapMarks(page, 'en cours')
+
+      await page.getByRole('button', { name: 'Pause' }).click()
+      await page.getByRole('button', { name: 'Reprendre' }).waitFor()
+      await page.getByText('En pause', { exact: true }).waitFor()
+      await snapMarks(page, 'en pause')
+
+      /*
+       * **The recording ends underneath, which is the product's own path to the
+       * third state and not a fixture's shortcut.** `refuseMarks()` makes
+       * `widget:state` answer `{ meeting: null }` — `app/ipc/register.ts`
+       * derives that answer and the mark refusal from the one condition — and
+       * `session:changed` is the broadcast `main.ts` sends with it. The window
+       * re-reads and draws the pill with no meeting.
+       */
+      await page.evaluate(() => {
+        window.__harness.refuseMarks()
+        window.__harness.emit('session:changed', { meetingId: 'm-neovia-cadrage', state: 'ended' })
+      })
+      await page.getByText('Aucun enregistrement').waitFor()
+      if ((await page.getByLabel('Durée d’enregistrement').count()) !== 0) {
+        throw new Error('la pastille compte encore le temps alors qu’il n’y a plus de réunion')
+      }
+      await snapMarks(page, 'aucun')
+
+      /*
+       * The three names have to be three, or the stage drove one state twice and
+       * `--marks` would compare a thing to itself and print a pair count that
+       * means nothing.
+       */
+      const names = new Set(timeline.flatMap((moment) => moment.marks.map((mark) => mark.name)))
+      if (names.size !== 3) {
+        throw new Error(
+          `trois états attendus, ${names.size} marque(s) distincte(s) vue(s) : ${[...names].join(', ')}`,
+        )
+      }
+      await page.evaluate(() => window.__harness.refuseMarks(null))
+    },
+  },
+
   /*
    * **The privacy control, refused.**
    *
@@ -6820,8 +7031,83 @@ async function main() {
     await settled(page)
   }
 
-  // Nothing below measures a page that is still moving — see `settled`.
-  await settled(page)
+  /*
+   * Nothing below measures a page that is still moving — see `atRest`, which is
+   * `settled()` plus the two agreeing readings `settled()` alone cannot give:
+   * under load the arrival has often not started when the question is put, and
+   * `widget-carte-sortie` was read with 69 of its 78 boxes still in flight.
+   */
+  /*
+   * **`atRest`'s own self-test, in two runs because its two branches cannot
+   * coexist.**
+   *
+   *   SILLAGE_REST_ATTACK=immobile node scripts/harness/shot.mjs widget \
+   *     /dev/null --no-png --targets      → ✗ repos, exit 18
+   *   SILLAGE_REST_ATTACK=declare  …      → pas de ✗, le contrôle de 20px
+   *                                         exempté des cibles et compté
+   *
+   * The second cannot be folded into the first: the verdict asks whether the
+   * product declares **any** motion, so a declared animation anywhere excuses
+   * the residual movement — which is the limit `atRest`'s docblock states, and
+   * running the two probes on one page would hide it rather than measure it.
+   *
+   * Gated on `--targets` as well as on the variable, for the reason the marks
+   * attack is: it injects elements, and with the flag absent they would be two
+   * boxes that `--census`, `--rhythm` and `--cells` all measure and nothing
+   * asserts.
+   */
+  if (process.env.SILLAGE_REST_ATTACK && flags.targets) {
+    await page.evaluate((mode) => {
+      const root = document.querySelector('#root')
+      if (!root) throw new Error('SILLAGE_REST_ATTACK: pas de #root à attaquer')
+      if (mode === 'immobile') {
+        /*
+         * A box that changes size every frame with **nothing declared** — no
+         * animation, no transition, no `-leaving`. This is the page that will
+         * not stop for a reason nobody stated, and every number measured under
+         * it is a number read off a frame.
+         */
+        const restless = document.createElement('div')
+        restless.id = 'attaque-repos-sans-mouvement'
+        restless.setAttribute('style', 'position:fixed;left:0;top:0;height:4px;background:#111')
+        root.append(restless)
+        /*
+         * Continuous, not a two-value flip: two readings 50 ms apart are about
+         * three frames apart, and an alternation can land on the same value
+         * twice and be called at rest. Driven — the first draft of this probe
+         * did exactly that and reported « immobile à la 3ᵉ lecture ».
+         */
+        const tick = () => {
+          restless.style.width = `${10 + ((performance.now() / 7) % 37)}px`
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      } else {
+        /*
+         * A 20×20 control — under the floor on purpose — riding an infinite
+         * declared animation. It must be exempted and counted, never reported:
+         * `widget-carte-sortie` read three real controls at 23.58 and
+         * `widget-pause-refus` eleven at 22 for exactly this reason.
+         */
+        const sheet = document.createElement('style')
+        sheet.textContent =
+          '@keyframes attaque-repos { from { transform: translateX(0) } ' +
+          'to { transform: translateX(40px) } }'
+        document.head.append(sheet)
+        const control = document.createElement('button')
+        control.id = 'attaque-repos-declare'
+        control.textContent = 'x'
+        control.setAttribute(
+          'style',
+          'position:fixed;left:60px;top:0;width:20px;height:20px;' +
+            'animation:attaque-repos 1s linear infinite',
+        )
+        root.append(control)
+      }
+    }, process.env.SILLAGE_REST_ATTACK)
+  }
+
+  const rest = await atRest(page)
 
   if (process.env.SILLAGE_PROBE) {
     await page.evaluate(() => document.fonts.ready)
@@ -6886,9 +7172,12 @@ async function main() {
     groups = seen.groups
   }
 
+  let hits = { flying: 0, walked: 0 }
   if (flags.targets) {
     await page.evaluate(() => document.fonts.ready)
-    small = await targets(page)
+    const seen = await targets(page)
+    small = seen.small
+    hits = { flying: seen.flying, walked: seen.walked }
   }
 
   let long = []
@@ -7202,12 +7491,91 @@ async function main() {
       mark('attaque-cachee-orange', `${dot(6, ORANGE)};display:none`)
     })
     await settled(page)
+
+    /*
+     * **10 and 11 — the cross-state half, and it cannot be built on the bench
+     * above**, because a code spread across states is never two elements at
+     * once. One element is painted, snapped, repainted under a second name and
+     * snapped again, so the pair the pass compares is one slot at two moments:
+     * the shape of the thing `widget-code` drives, with the paint chosen.
+     *
+     * 10 must fire — two 8 px annuli one hue apart at the same lightness, which
+     * is the calendar's shipped defect transposed onto a state code. 11 must
+     * stay silent — a filled disc against two bars, which is the axis the pill
+     * really spends, so a false positive here would be a lane told to repaint a
+     * mark a rep can read.
+     *
+     * The probe is removed before the co-visible half runs, so the nine
+     * assertions above measure the same bench they always did.
+     */
+    /*
+     * Two slots, made once and kept: an element created where another has just
+     * been removed lands in the same structural place, and the two probes would
+     * be read as one code. That is the same trap the slot exists to avoid, met
+     * from the other side.
+     */
+    await page.evaluate(() => {
+      const host = document.createElement('div')
+      host.id = 'attaque-etats'
+      host.setAttribute('style', 'position:fixed;left:0;bottom:0;background:#fff')
+      host.append(
+        document.createElement('span'),
+        document.createElement('span'),
+        document.createElement('span'),
+      )
+      document.querySelector('#root').append(host)
+    })
+    const probe = async (index, states) => {
+      for (const [name, style] of states) {
+        await page.evaluate(
+          ({ index, name, style }) => {
+            const el = document.querySelector('#attaque-etats').children[index]
+            el.dataset.graphic = name
+            el.setAttribute('style', `display:inline-block;${style}`)
+          },
+          { index, name, style },
+        )
+        await snapMarks(page, `attaque ${name}`)
+        await page.evaluate(
+          (index) => document.querySelector('#attaque-etats').children[index].removeAttribute('data-graphic'),
+          index,
+        )
+      }
+    }
+    await probe(0, [
+      ['attaque-etat-arme', 'width:8px;height:8px;border-radius:9999px;background:#0594da'],
+      ['attaque-etat-en-pause', 'width:8px;height:8px;border-radius:9999px;background:#d77000'],
+    ])
+    await probe(1, [
+      ['attaque-etat-plein', 'width:8px;height:8px;border-radius:9999px;background:#d77000'],
+      [
+        'attaque-etat-barres',
+        'width:8px;height:8px;border-left:2px solid #d77000;border-right:2px solid #d77000',
+      ],
+    ])
+    /*
+     * 12 — round 4's shipped defect, exactly: paused drawn as *idle's* annulus,
+     * one hue apart. ΔL* 14.344, which clears the co-visible floor of 10 with
+     * margin, and form 0. If this probe goes silent the cross-state branch has
+     * quietly become the co-visible one and the widget is unmeasured again.
+     */
+    await probe(2, [
+      [
+        'attaque-etat-creux-arme',
+        'width:8px;height:8px;border-radius:9999px;box-shadow:inset 0 0 0 1px #d77000',
+      ],
+      [
+        'attaque-etat-creux-vide',
+        'width:8px;height:8px;border-radius:9999px;box-shadow:inset 0 0 0 1px #a3b4c1',
+      ],
+    ])
+    await page.evaluate(() => document.querySelector('#attaque-etats')?.remove())
   }
 
   let paired = null
   if (flags.marks) {
     await page.evaluate(() => document.fonts.ready)
-    paired = await marks(page, MARK_FLOORS)
+    paired = await marks(page, MARK_FLOORS, timeline)
   }
 
   /*
@@ -7604,6 +7972,32 @@ async function main() {
     ? `${rendered.width}×${rendered.height}`
     : `${flags.viewport.width}×${flags.viewport.height}`
   console.log(out ? `✓ ${screen} ${size} → ${out}` : `✓ ${screen} ${size}`)
+  /*
+   * **Printed green or red**, for `--census`'s reason: « au repos » over a page
+   * that took six readings to stop and over one that was never asked are two
+   * different statements, and this harness has shipped the second one as the
+   * first. The number of readings is the evidence that rest was established
+   * rather than assumed.
+   */
+  if (rest.rest) {
+    console.log(`  repos: immobile à la ${rest.reads}ᵉ lecture — ${rest.total} boîte(s)`)
+  } else if (rest.running > 0) {
+    console.log(
+      `  repos: ${rest.moved} boîte(s) sur ${rest.total} encore en mouvement après ` +
+        `${rest.reads} lecture(s), sous ${rest.running} mouvement(s) déclaré(s) ` +
+        `(${rest.under} dedans, ${rest.moved - rest.under} entraînée(s)) — ` +
+        'marquées « data-harness-inflight », exemptées des cibles',
+    )
+
+  } else {
+    console.log(
+      `  ✗ repos: ${rest.moved} boîte(s) sur ${rest.total} bougent encore après ` +
+        `${rest.reads} lecture(s) et le produit ne déclare aucun mouvement — ` +
+        'toute mesure ci-dessous est prise sur une page qui ne s’arrête pas',
+    )
+    for (const who of rest.who) console.log(`     ${who}`)
+    process.exitCode = 18
+  }
   if (findings) report(findings, flags.scan, screen, flags.viewport)
   if (flags.scrollers) {
     if (inner.length === 0) {
@@ -7861,6 +8255,13 @@ async function main() {
   }
   if (flags.marks) {
     const floors = `planchers ΔL* ${MARK_FLOORS.lightness} ou forme ${MARK_FLOORS.form}`
+    /*
+     * A different floor, because it is a different question — see the `margin`
+     * the cross-state loop takes. A rep comparing two marks on one screen has
+     * both in front of them; a rep reading a state has one, and the other only
+     * in memory.
+     */
+    const stateFloor = `plancher forme ${MARK_FLOORS.form} — la clarté seule ne fait pas un code d’états`
     const pair = (item) =>
       `« ${item.a} » / « ${item.b} » — ${item.inkA} contre ${item.inkB}, ` +
       `ΔL* ${item.light.toFixed(3)}, forme ${item.form.toFixed(4)}, ${item.ratio.toFixed(4)}:1`
@@ -7895,6 +8296,52 @@ async function main() {
       for (const item of paired.items.slice(0, 8)) console.log(`   ✗ ${pair(item)}`)
       process.exitCode = 19
     }
+    /*
+     * **The states, printed on every run — including « 1 instant ».**
+     *
+     * Fifteen widget stages printed « 1 peinte(s), 1 nom(s), aucune paire à
+     * comparer » and that sentence was true and useless: the surface a rep
+     * reads state on at a glance carries exactly one mark at a time, so the
+     * three `data-graphic` names it spends — « enregistrement en cours »,
+     * « enregistrement en pause », « aucun enregistrement » — were compared to
+     * each other by nothing. A stage that drives the product from one state to
+     * the next and snaps each is the only way this harness can put the
+     * question, and the count of moments is what tells a reader whether it was
+     * put at all.
+     */
+    if (paired.moments < 2) {
+      console.log(
+        `  états: 1 lecture, ${paired.slots} emplacement(s) — ` +
+          'aucun code d’états comparé : cette mise en scène ne change pas d’état',
+      )
+    } else if (paired.across === 0) {
+      /*
+       * A stage that took the trouble to snap several moments and produced no
+       * pair measured nothing, and the likeliest cause is that the mark moved
+       * in the tree between two states rather than that the code is safe.
+       */
+      console.log(
+        `  ✗ états: ${paired.moments} lectures et aucune paire d’états — ` +
+          `les marques n’ont pas partagé d’emplacement (${paired.slots} vus)`,
+      )
+      process.exitCode = 19
+    } else if (paired.acrossItems.length === 0) {
+      console.log(
+        `  états: ${paired.acrossNames} état(s) nommé(s) en ${paired.moments} lecture(s), ` +
+          `${paired.across} paire(s) d’états comparée(s) sur ${paired.slots} emplacement(s) · ` +
+          `la plus serrée : ${pair(paired.weakestAcross)} [${paired.weakestAcross.moments}] ` +
+          `(${stateFloor})`,
+      )
+    } else {
+      console.log(
+        `  ✗ états: ${paired.acrossItems.length} paire(s) d’états qu’aucune forme ne sépare sur ` +
+          `${paired.across} comparée(s) — ${stateFloor}`,
+      )
+      for (const item of paired.acrossItems.slice(0, 8)) {
+        console.log(`   ✗ ${pair(item)} [${item.moments}]`)
+      }
+      process.exitCode = 19
+    }
     if (paired.drift.length > 0) {
       console.log(
         `  ✗ marques: ${paired.drift.length} marque(s) peinte(s) de deux couleurs sur un ` +
@@ -7906,12 +8353,14 @@ async function main() {
       process.exitCode = 19
     }
     if (process.env.SILLAGE_MARKS_ATTACK) {
-      const between = (left, right) =>
-        paired.items.some(
+      const found = (list, left, right) =>
+        list.some(
           (item) =>
             (item.a.includes(left) && item.b.includes(right)) ||
             (item.a.includes(right) && item.b.includes(left)),
         )
+      const between = (left, right) => found(paired.items, left, right)
+      const across = (left, right) => found(paired.acrossItems, left, right)
       const missed = [
         [
           between('attaque-teinte-enregistre', 'attaque-teinte-en-cours'),
@@ -7927,7 +8376,21 @@ async function main() {
           'une seule marque peinte de deux couleurs sur un écran (#d77000 et #036696)',
         ],
         /*
-         * The six silent ones, asserted the other way round. A check that can
+         * The cross-state half, which is a different population and needs its
+         * own two probes: one slot, two moments, never two elements.
+         */
+        [
+          across('attaque-etat-arme', 'attaque-etat-en-pause'),
+          'un même emplacement peint de deux teintes à la même clarté à deux instants — ' +
+            'un code d’états que le niveau de gris efface',
+        ],
+        [
+          across('attaque-etat-creux-arme', 'attaque-etat-creux-vide'),
+          'le défaut du tour 4 lui-même : le même anneau de 8px à deux instants, une teinte ' +
+            'd’écart (ΔL* 14,34, forme 0) — la paire que le plancher de clarté laisse passer',
+        ],
+        /*
+         * The seven silent ones, asserted the other way round. A check that can
          * only fail loudly cannot show that it does not fire, and every one of
          * these is a distinction the product actually ships — a false positive
          * here would be a lane told to repaint a mark that reads perfectly.
@@ -7963,6 +8426,12 @@ async function main() {
           'RIEN — la paire en display:none a été comparée (faux positif : une marque ' +
             'que personne ne voit ne distingue rien)',
         ],
+        [
+          !across('attaque-etat-plein', 'attaque-etat-barres'),
+          'RIEN — un disque plein contre deux barres, à deux instants sur un même ' +
+            'emplacement, a été signalé (faux positif : c’est exactement l’axe que la ' +
+            'pastille dépense entre « en cours » et « en pause »)',
+        ],
       ]
         .filter(([held]) => !held)
         .map(([, what]) => what)
@@ -7975,7 +8444,8 @@ async function main() {
         process.exitCode = 20
       } else {
         console.log(
-          '  auto-test des marques: les trois attaques signalées, les six dernières restées muettes',
+          '  auto-test des marques: les cinq attaques signalées — dont deux codes d’états — ' +
+            'les sept dernières restées muettes',
         )
         process.exitCode = 21
       }
@@ -8553,13 +9023,67 @@ async function main() {
     }
   }
   if (flags.targets) {
-    if (small.length === 0) console.log('  cibles: toutes ≥ 24 px')
+    /*
+     * **The population and the exemption, beside the verdict** — `--scrollers`'
+     * lesson, which this line did not carry: « toutes ≥ 24 px » printed the same
+     * sentence over a screen with forty controls and over one whose controls were
+     * all skipped mid-arrival.
+     */
+    const census =
+      `${hits.walked} contrôle(s) parcouru(s)` +
+      (hits.flying > 0 ? ` · ${hits.flying} exempté(s), encore en mouvement` : '')
+    if (small.length === 0) console.log(`  cibles: toutes ≥ 24 px — ${census}`)
     else {
-      console.log(`  ✗ cibles: ${small.length} contrôle(s) sous 24 px`)
+      console.log(`  ✗ cibles: ${small.length} contrôle(s) sous 24 px — ${census}`)
       for (const item of small.slice(0, 8)) {
         console.log(`   ✗ ${item.w}×${item.h} — « ${item.text} » (${item.tag})`)
       }
       process.exitCode = 5
+    }
+    if (process.env.SILLAGE_REST_ATTACK) {
+      const missed =
+        process.env.SILLAGE_REST_ATTACK === 'immobile'
+          ? [
+              [
+                rest.rest === false && rest.running === 0,
+                'une page qui change de géométrie à chaque frame sans rien déclarer a été ' +
+                  `dite au repos (repos ${rest.rest}, ${rest.running} mouvement(s) déclaré(s))`,
+              ],
+              [
+                rest.who.some((who) => who.includes('attaque-repos') || who.includes('div ')),
+                'la boîte qui bougeait n’a pas été nommée dans le verdict',
+              ],
+            ]
+          : [
+              [
+                rest.running > 0 && rest.rest === false,
+                'un contrôle sous une animation infinie n’a pas été vu comme mouvement ' +
+                  `déclaré (repos ${rest.rest}, ${rest.running} déclaré(s))`,
+              ],
+              [
+                hits.flying > 0,
+                'le contrôle en mouvement déclaré n’a pas été exempté des cibles',
+              ],
+              [
+                !small.some((item) => Math.round(item.w) === 20 && Math.round(item.h) === 20),
+                'RIEN — le contrôle de 20px en vol a été signalé sous 24px (faux positif : ' +
+                  'un rectangle sous un transform est une image, pas une cible)',
+              ],
+            ]
+      const failed = missed.filter(([held]) => !held).map(([, what]) => what)
+      if (failed.length > 0) {
+        console.log(
+          `  ✗ auto-test du repos (${process.env.SILLAGE_REST_ATTACK}): ${failed.length} ` +
+            'assertion(s) non tenue(s) —',
+        )
+        for (const what of failed) console.log(`     ${what}`)
+        process.exitCode = 22
+      } else {
+        console.log(
+          `  auto-test du repos (${process.env.SILLAGE_REST_ATTACK}): ${missed.length} ` +
+            'assertion(s) tenue(s)',
+        )
+      }
     }
   }
   if (flags.geometry) {
@@ -8825,46 +9349,45 @@ async function main() {
      * evidence, and the rules that spared a value say so by name rather than
      * silently dropping it.
      */
-    const total = beat.measured
-    const onLadder = beat.values
-      .filter((entry) => beat.ladder.some((s) => Math.abs(s.value - Math.abs(entry.v)) <= 0.5))
-      .reduce((sum, entry) => sum + entry.n, 0)
-    const byRule = new Map()
-    for (const item of beat.spared) byRule.set(item.why, (byRule.get(item.why) ?? 0) + item.n)
     /*
-     * **The denominator is what was judged, and it was what was measured.**
-     *
-     * A spared value is off the ladder by construction — `take` files it to
-     * `spared` only after `onScale` has already returned false — so counting the
-     * spared in the bottom of a fraction whose top is « on the ladder » makes
-     * every exemption look like a defect, on the same line that names it as an
-     * exemption. Measured on the collapsed pill at 1280×800: « 47.6 % sur les 7
-     * pas déclarés · épargnés : 22 graphique », 20 of 42, while the number of
-     * values this pass would report on that screen is **zero**. A reviewer reads
-     * 47.6 % as « half this surface's spacing is off scale » — the blind scorer
-     * on round 23 says it nearly did — and the honest reading is 20 of 20.
-     *
-     * Both counts are printed, because the share alone would now hide the size
-     * of the exemption: `39 mesurés, 22 épargnés` is the sentence that lets a
-     * reader ask whether the sparing rules are too generous, which is the next
-     * question and one this line used to make unaskable in the other direction.
-     *
-     * **What is *not* taken out of the denominator, stated rather than left to
-     * be discovered.** A value covered by a `RHYTHM_ALLOWANCES` entry is off the
-     * ladder and is not spared — it is filed to `off` and then excused by name,
-     * one site at a time — so it still lowers this share, which is right: an
-     * allowance is an argument about one rectangle, not a rung of the scale.
-     * `historique` at 1280×800 reads « 99.9 % des 1364 jugé(s) » with the pass
-     * green for exactly that reason, one excused site out of 1 364.
+     * An allowance covers a value on an element on named sides, and it has to
+     * cover **every** side the value was painted on: `-mx-px` is an argument
+     * about two hairlines, not a licence for the same number anywhere else on
+     * the same box.
      */
-    const judged = total - [...byRule.values()].reduce((sum, n) => sum + n, 0)
+    const excused = (item) =>
+      RHYTHM_ALLOWANCES.some(
+        (a) =>
+          a.value === item.value &&
+          a.at.test(item.at) &&
+          item.sides.every((side) => a.sides.includes(side)),
+      )
+    const stray = beat.off.filter((item) => !excused(item))
+    /*
+     * **The denominator is the population the verdict is drawn from, and it was
+     * not.** `rhythmShare`'s own file carries the measurement and the argument;
+     * the short version is that this line printed « 47.6 % » over a pill whose
+     * off-ladder count is zero, because the share was taken over everything
+     * measured *including* the 22 values the same sentence says it spared.
+     */
+    const part = rhythmShare(beat, stray)
+    /*
+     * How `scripts/__tests__/rhythmShare.test.mjs`'s fixture is recorded: the
+     * beat that file puts through the shipped arithmetic is this one, dumped
+     * from a real run, so it can be refreshed rather than maintained by hand.
+     */
+    if (process.env.SILLAGE_BEAT_DUMP) {
+      fs.writeFileSync(process.env.SILLAGE_BEAT_DUMP, JSON.stringify(beat, null, 1))
+    }
     console.log(
-      `  rythme: ${total} espacement(s) peint(s) sur ${beat.elements} élément(s), ` +
-        `${judged === 0 ? 0 : Math.round((1000 * onLadder) / judged) / 10}% des ${judged} jugé(s) ` +
-        `sur les ${beat.ladder.length} pas déclarés` +
-        (byRule.size > 0
-          ? ` · épargnés : ${[...byRule].map(([why, n]) => `${n} ${why}`).join(', ')}`
+      `  rythme: ${part.total} espacement(s) peint(s) sur ${beat.elements} élément(s)` +
+        (part.byRule.size > 0
+          ? ` · ${part.spared} épargné(s) : ${[...part.byRule].map(([why, n]) => `${n} ${why}`).join(', ')}`
           : '') +
+        ` · ${part.judged} jugé(s), ` +
+        `${part.percent}% sur les ` +
+        `${beat.ladder.length} pas déclarés, ${part.off} hors échelle` +
+        (part.tolerated > 0 ? ` (dont ${part.tolerated} tolérée(s))` : '') +
         ` · ${beat.pairs} groupe(s) imbriqué(s)` +
         (beat.distributed > 0 ? ` (${beat.distributed} à espace réparti)` : '') +
         `, ${beat.read} titre(s) mesuré(s)` +
@@ -8885,6 +9408,24 @@ async function main() {
     )
 
     /*
+     * **The check on the check, and it is the whole repair.**
+     *
+     * What went wrong above was not arithmetic, it was that the printed share
+     * and the verdict were drawn from two different populations and nothing
+     * said so. This is an identity — every value `take()` measures is routed to
+     * exactly one of the three — so it is not expected to fire on a working
+     * tree. It fires the day somebody adds a fourth route and leaves the
+     * denominator counting it, which is precisely how the 47.6 % arrived.
+     */
+    if (!part.sound) {
+      console.log(
+        `  ✗ rythme: la part annoncée ne porte pas sur ce qui est jugé — ` +
+          `${part.judged} jugé(s) contre ${part.onLadder} sur l’échelle + ${part.off} hors échelle`,
+      )
+      process.exitCode = 16
+    }
+
+    /*
      * **The ladder has to exist, and « exist » is not « be seven ».**
      *
      * The first draft of this guard was `< 7`, which is exactly the defect
@@ -8903,20 +9444,6 @@ async function main() {
       process.exitCode = 16
     }
 
-    /*
-     * An allowance covers a value on an element on named sides, and it has to
-     * cover **every** side the value was painted on: `-mx-px` is an argument
-     * about two hairlines, not a licence for the same number anywhere else on
-     * the same box.
-     */
-    const excused = (item) =>
-      RHYTHM_ALLOWANCES.some(
-        (a) =>
-          a.value === item.value &&
-          a.at.test(item.at) &&
-          item.sides.every((side) => a.sides.includes(side)),
-      )
-    const stray = beat.off.filter((item) => !excused(item))
     if (stray.length > 0) {
       const occurrences = stray.reduce((sum, item) => sum + item.n, 0)
       console.log(
@@ -9650,14 +10177,26 @@ const MARK_FLOORS = { lightness: 10, form: 0.3 }
  * printed, never failed on. Everything else is a pair somebody intended to
  * separate, and it has to survive greyscale.
  *
- * **Scope, stated rather than implied.** It compares marks that are on one
- * screen at one moment: a legend against itself, a legend against the grid it
- * keys, two marks in one row. It does **not** reach a code spread across states
- * — the widget's idle, paused and recording glyphs are three stages and never
- * two elements, so this pass sees one mark there and says so. It does not reach
- * two marks on two screens either: the widget's live dot and the calendar's are
- * never compared, and keeping them the same shape is an argument in the source,
- * not a measurement here.
+ * **Two populations, and the second is a relation across *time*.** The first
+ * compares marks on one screen at one moment: a legend against itself, a legend
+ * against the grid it keys, two marks in one row. That is all this pass could
+ * ask when it shipped, and it left the surface that most needed it unmeasured —
+ * fifteen widget stages each printing « 1 peinte(s), 1 nom(s), aucune paire à
+ * comparer », because the pill's three names are three *states* and never two
+ * elements.
+ *
+ * The second population is what a stage **snapped** with `snapMarks` as it
+ * drove the product from one state to the next: two marks sharing a structural
+ * slot at two moments with different names are one element saying two things,
+ * which is exactly a code. `widget-code` is the stage that drives it. The floor
+ * there is form alone — see the `margin` that loop takes — because a rep
+ * reading a state has nothing on screen to compare against.
+ *
+ * It still does **not** reach two marks on two screens: the widget's live dot
+ * and the calendar's are never compared, and keeping them the same shape is an
+ * argument in the source, not a measurement here. Nor does it reach a state a
+ * stage did not drive: what is measured is what was snapped, and the moment
+ * count on every line says how many that was.
  *
  * **And it inherits `data-graphic`'s opt-in, with the same cost.** 1.4.11 covers
  * a graphic *required to understand the content* and only the author knows which
@@ -9674,8 +10213,32 @@ const MARK_FLOORS = { lightness: 10, form: 0.3 }
  * still teaches the code the rep reads two seconds later, so a painted mark
  * counts wherever it is.
  */
-async function marks(page, floors) {
-  return page.evaluate((FLOOR) => {
+/**
+ * **The moments a stage drove the product through, kept for `--marks`.**
+ *
+ * `shot.mjs` plays one stage per process, so a module-level list is the whole
+ * of the plumbing: a stage calls `snapMarks` at each state it reaches, and the
+ * pass at the end compares the marks that shared a slot across them.
+ *
+ * It is **opt-in by the stage**, and that is the honest scope: a stage that
+ * drives no state change contributes one moment, the pass says « 1 instant »,
+ * and nobody can read that as « the code was checked ».
+ */
+const timeline = []
+
+const snapMarks = async (page, label) => {
+  await settled(page)
+  await page.evaluate(() => document.fonts.ready)
+  const taken = await marks(page, MARK_FLOORS, [], true)
+  if (taken.snap.length === 0) {
+    throw new Error(`snapMarks(${label}) : aucune marque peinte à cet instant`)
+  }
+  timeline.push({ label, marks: taken.snap })
+  return taken.snap
+}
+
+async function marks(page, floors, moments = [], snap = false) {
+  return page.evaluate(({ FLOOR, MOMENTS, SNAP }) => {
     const parse = (value) => {
       const found = /rgba?\(([^)]+)\)/.exec(value ?? '')
       if (!found) return null
@@ -9879,6 +10442,27 @@ async function marks(page, floors) {
       return `${shape.ink}|${box(shape.outer)}|${box(shape.inner)}`
     }
 
+    /*
+     * **Where a mark sits, structurally — no classes.**
+     *
+     * `where()` elsewhere in this file names an element by tag and class list,
+     * which is exactly what a state change rewrites: the widget's dot goes from
+     * `bg-accent … rounded-full` to `border-accent … border-x-2` and would read
+     * as a different place. The chain of tag and nth-of-type from `body` is the
+     * part that does not move when the paint does.
+     */
+    const slot = (el) => {
+      const parts = []
+      for (let node = el; node && node !== document.body; node = node.parentElement) {
+        let index = 1
+        for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) {
+          if (sib.tagName === node.tagName) index += 1
+        }
+        parts.unshift(`${node.tagName.toLowerCase()}:${index}`)
+      }
+      return parts.join('>')
+    }
+
     let seen = 0
     let inkless = 0
     const found = []
@@ -9895,8 +10479,25 @@ async function marks(page, floors) {
         inkless += 1
         continue
       }
-      found.push({ name: el.dataset.graphic || 'graphique', shape, sig: signature(shape) })
+      found.push({
+        name: el.dataset.graphic || 'graphique',
+        shape,
+        sig: signature(shape),
+        at: slot(el),
+      })
     }
+    const seenNow = found.map((mark) => ({
+      name: mark.name,
+      shape: mark.shape,
+      sig: mark.sig,
+      at: mark.at,
+    }))
+    /*
+     * `snapMarks` runs this same function at a moment a stage chooses, and
+     * stops here: one measuring function, two populations, so the shapes a
+     * cross-state pair is judged on are read by the code that judges them.
+     */
+    if (SNAP) return { snap: seenNow, seen, inkless }
 
     /*
      * **One name, one paint.** `tokens.css` records the day « enregistrement en
@@ -9956,6 +10557,108 @@ async function marks(page, floors) {
     }
     const weakest =
       compared.length === 0 ? null : compared.reduce((worst, p) => (p.margin < worst.margin ? p : worst))
+
+    /*
+     * **The second population: one slot, several moments.**
+     *
+     * `MOMENTS` is what `snapMarks` took at each state a stage drove the product
+     * through, and the live marks are the last of them. Two marks sharing a slot
+     * and carrying different names are one element saying two things at two
+     * times — a code spread across states, which is the relation nothing in this
+     * harness could express.
+     *
+     * **Twins are not excused here, and that is the difference between the two
+     * halves.** Co-visible, two identical marks may be one mark with two names
+     * — the onboarding draws two completed steps that way on purpose. Across
+     * states, in one slot, identical paint for two state names *is* the defect:
+     * it is round 4's finding on this very surface, where paused and idle were
+     * the same 8 px annulus one hue apart. So they fall through to the floors
+     * and fail at ΔL* 0 / forme 0.
+     */
+    /*
+     * **The snaps, and the live marks only when there are none.** A pass earlier
+     * in the run may have left a stylesheet on the page — `--contrast` injects
+     * one to read the grain — and a mark read after that is a mark read under
+     * an instrument. Driven: with `--contrast` in the same argument vector the
+     * live « aucun enregistrement » came back with a different signature from
+     * the one the stage had snapped seconds earlier, and the pair count went
+     * from 3 to 5. What a stage snapped is what the product painted.
+     *
+     * **One representative per slot and name**: a code is one name, one paint,
+     * and *that* question belongs to `drift` below, which asks it of a single
+     * screen. This half asks only whether two different names can be told apart.
+     */
+    const across = []
+    const slots = new Map()
+    const moments = MOMENTS.length > 0 ? MOMENTS : [{ label: 'maintenant', marks: seenNow }]
+    for (const moment of moments) {
+      for (const mark of moment.marks) {
+        const list = slots.get(mark.at) ?? []
+        if (!list.some((held) => held.name === mark.name)) {
+          list.push({ ...mark, moment: moment.label })
+        }
+        slots.set(mark.at, list)
+      }
+    }
+    for (const [where, list] of slots) {
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          if (list[i].name === list[j].name) continue
+          const inkA = parse(list[i].shape.ink)
+          const inkB = parse(list[j].shape.ink)
+          if (!inkA || !inkB) continue
+          const form = formDistance(list[i].shape, list[j].shape)
+          const light = Math.abs(lstar(inkA) - lstar(inkB))
+          across.push({
+            a: list[i].name,
+            b: list[j].name,
+            at: where,
+            moments: `${list[i].moment} → ${list[j].moment}`,
+            inkA: list[i].shape.ink,
+            inkB: list[j].shape.ink,
+            light: Math.round(light * 1000) / 1000,
+            form: Math.round(form * 10000) / 10000,
+            ratio: Math.round(ratioOf(inkA, inkB) * 10000) / 10000,
+            /*
+             * **Form alone, and the lightness branch is deliberately not
+             * offered here.**
+             *
+             * Co-visible, a key sits beside the grid it keys and the rep
+             * *compares* two marks: a lightness step is a real second channel,
+             * and the onboarding's two brand steps read correctly on it. Across
+             * states there is nothing on screen to compare against — the rep has
+             * to *recall* what the other state looked like, at eight pixels,
+             * over somebody else's video. Recall is not discrimination.
+             *
+             * It is also the product's own argument, written in `Widget.tsx`
+             * above the paused glyph: « Subtraction cannot carry it: an emptied
+             * circle already means there is nothing here. Two bars is a shape
+             * idle cannot also be. » That change was made *because* hollow had
+             * been spent, not because the hue was wrong.
+             *
+             * Anchored on the only code across states this harness drives
+             * today, the pill's three, measured on the shipped renderer:
+             * en cours ↔ en pause **0.6863**, en cours ↔ aucun **0.5607**, en
+             * pause ↔ aucun **0.6673**. The weakest is 1.87× the 0.3 floor.
+             * Round 4's shipped defect — paused drawn as idle's annulus one hue
+             * apart — measures form **0** and ΔL* **14.344**, so the lightness
+             * floor of 10 would have passed it and this refuses it.
+             */
+            margin: form / FLOOR.form,
+          })
+        }
+      }
+    }
+    const weakestAcross =
+      across.length === 0 ? null : across.reduce((worst, p) => (p.margin < worst.margin ? p : worst))
+    /* How many state names actually took part, so « 3 paires » cannot be read
+       off two names compared three times. */
+    const acrossNames = new Set()
+    for (const pair of across) {
+      acrossNames.add(pair.a)
+      acrossNames.add(pair.b)
+    }
+
     return {
       seen,
       inkless,
@@ -9967,8 +10670,15 @@ async function marks(page, floors) {
       weakest,
       items,
       drift,
+      now: seenNow,
+      moments: moments.length,
+      slots: slots.size,
+      across: across.length,
+      acrossNames: acrossNames.size,
+      acrossItems: across.filter((p) => p.margin < 1),
+      weakestAcross,
     }
-  }, floors)
+  }, { FLOOR: floors, MOMENTS: moments, SNAP: snap })
 }
 
 /**
@@ -12788,8 +13498,25 @@ async function targets(page) {
       return el.offsetParent !== null || style.position === 'fixed'
     }
 
+    /*
+     * **A control the harness could not bring to rest is not measured, and the
+     * count says so.**
+     *
+     * `atRest` marks what was still moving after its budget, and it only ever
+     * marks motion the product declared — a running animation, an infinite one,
+     * or a held departure. A rectangle under a scale is a frame, not a target:
+     * `widget-carte-sortie` read three of these at 23.58×23.58 (24 × 0.9825,
+     * the arrival's own tail) and `widget-pause-refus` read eleven at 22 px
+     * (24 × 0.92, the exit's). Neither control was ever under the floor. The
+     * exemption is stated on every run rather than applied in silence.
+     */
+    let flying = 0
     for (const el of controls) {
       if (!drawn(el)) continue
+      if (el.hasAttribute('data-harness-inflight') || el.closest('[data-harness-inflight]')) {
+        flying += 1
+        continue
+      }
       const box = el.getBoundingClientRect()
       // Half a pixel of slack: a 24px box lands on 23.99 under a fractional
       // line-height, and a check that reports that is a check nobody can clear.
@@ -12833,11 +13560,11 @@ async function targets(page) {
       out.push({
         tag: el.tagName.toLowerCase(),
         text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40),
-        w: Math.round(box.width),
-        h: Math.round(box.height),
+        w: Math.round(box.width * 100) / 100,
+        h: Math.round(box.height * 100) / 100,
       })
     }
-    return out
+    return { small: out, flying, walked: controls.length }
   })
 }
 
