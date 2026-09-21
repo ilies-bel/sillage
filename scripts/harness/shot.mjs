@@ -227,14 +227,23 @@ const departureOf = (page, target, press) =>
       if (!going) return { error: `rien à écarter pour ${target}` }
       const control = document.querySelector(press)
       if (!control) return { error: `le contrôle ${press} est introuvable` }
-      const parent = going.parentElement
       const samples = []
       let detachedAt = null
       const started = performance.now()
       const observer = new MutationObserver(() => {
         if (!going.isConnected && detachedAt === null) detachedAt = performance.now() - started
       })
-      observer.observe(parent, { childList: true, subtree: true })
+      /*
+       * **The document, not the parent.** It observed `going.parentElement`,
+       * which cannot see a departure whose *parent* is what React removes — and
+       * that is the ordinary shape for a surface that lives inside a list row.
+       * The agenda's arming refusal moved into the day list this round and the
+       * tracer reported « l’élément ne part jamais » about a banner that fades
+       * on camera: the mutation was one level above the node it was watching.
+       * `isConnected` is exact either way, so widening the subscription can only
+       * catch removals that were being missed.
+       */
+      observer.observe(document.documentElement, { childList: true, subtree: true })
       const tick = () => {
         if (!going.isConnected) return
         samples.push(Number(getComputedStyle(going).opacity))
@@ -6488,6 +6497,7 @@ function parseArgs(argv) {
     census: false,
     rhythm: false,
     cells: false,
+    press: false,
     scrollers: false,
   }
   const positional = []
@@ -6517,6 +6527,7 @@ function parseArgs(argv) {
     else if (arg === '--census') flags.census = true
     else if (arg === '--rhythm') flags.rhythm = true
     else if (arg === '--cells') flags.cells = true
+    else if (arg === '--press') flags.press = true
     else if (arg === '--scan') {
       const next = argv[i + 1]
       flags.scan = next && !next.startsWith('--') && next.endsWith('.json') ? argv[++i] : ''
@@ -6540,7 +6551,7 @@ async function main() {
   const [screen, outfile] = positional
   if (!screen || (!outfile && flags.png)) {
     console.error(
-      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--marks] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells]',
+      'usage: node shot.mjs <screen> <outfile.png> [--viewport WxH] [--expand] [--scan [out.json]] [--no-png] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--marks] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--press]',
     )
     console.error('screens: ' + Object.keys(SCREENS).join(' · '))
     process.exit(2)
@@ -6596,6 +6607,13 @@ async function main() {
    */
   if (flags.motion) await page.addInitScript(motionReader)
   /*
+   * **Before the navigation, and for a stronger reason than `--motion`'s.** The
+   * subject here is a press the *stage* makes, and a stage's opening gesture is
+   * often its first press — an observer installed after `goto` would miss it and
+   * print a smaller denominator than the truth.
+   */
+  if (flags.press) await page.addInitScript(pressWatch)
+  /*
    * Probes 13 and 14 have to exist *before* the stage does, because what they
    * test is the watch that runs during it. See `motionFlightAttack`.
    */
@@ -6621,6 +6639,19 @@ async function main() {
     await browser.close()
     process.exit(1)
   }
+  /*
+   * **Read before anything else touches the page**, for the reason the sweep
+   * below states: `settled()`, `emulateMedia` and `--expand` all move boxes, and
+   * a press judged against a layout the harness changed is a finding about the
+   * harness. `SILLAGE_PRESS_ATTACK` runs first because its probes are pressed
+   * with the real mouse and have to be judged by the same reader.
+   */
+  let pressOff = null
+  if (flags.press) {
+    if (process.env.SILLAGE_PRESS_ATTACK) await pressAttack(page)
+    pressOff = await page.evaluate(() => window.__press?.report() ?? null)
+  }
+
   /*
    * The watch ends with the stage. Everything after this line is the harness
    * talking to the page — `settled()`, `emulateMedia`, `--expand`, and the
@@ -8718,6 +8749,127 @@ async function main() {
         console.log(`       cellules : ${item.widths}`)
       }
       process.exitCode = 17
+    }
+  }
+  if (flags.press) {
+    if (pressOff === null) {
+      console.log(
+        '  ✗ pressions: l’observateur n’a pas tourné — aucune pression n’a été jugée sur cette ' +
+          'mise en scène, et une passe qui ne regarde pas est un feu vert vide',
+      )
+      process.exitCode = 22
+    } else {
+      const { watched, unjudged, records } = pressOff
+      const real = records.filter((r) => !r.what?.probe)
+      const probes = records.filter((r) => r.what?.probe)
+      const tally = (verdict) => real.filter((r) => r.verdict === verdict).length
+      /*
+       * **What this pass tolerates, named, with its numbers, and unable to
+       * rot.** An entry applies only on the stage *and* at the sizes where the
+       * finding was measured, and there it **must still fire**: a tolerance that
+       * has stopped reproducing is removed by this check failing, which is the
+       * rule `check-platform.mjs` already holds its allowances to.
+       */
+      const size = `${flags.viewport.width}x${flags.viewport.height}`
+      const applies = PRESS_TOLERATED.filter(
+        (entry) => entry.screen === screen && entry.at.includes(size),
+      )
+      const every = real.filter((r) => r.verdict === 'arrivé')
+      const excused = (item) =>
+        applies.find(
+          (entry) => entry.pressed.test(item.what.name) && entry.arrived.test(item.under.name),
+        ) ?? null
+      const arrived = every.filter((item) => excused(item) === null)
+      /*
+       * **Printed every run, because « aucun contrôle n’est arrivé sous le
+       * pointeur » over forty presses and over none are two different
+       * statements** — and this harness has shipped the second one as the first
+       * three times (`--fade`, `--motion` and `--marks` each had to learn it).
+       * Most stages press something; a few press nothing at all, and on those
+       * the line says so with a zero denominator rather than a verdict.
+       */
+      console.log(
+        `  pressions: ${real.length} du produit sur ${watched} surveillée(s)` +
+          `${unjudged > 0 ? `, ${unjudged} non jugée(s)` : ''} · ` +
+          `${tally('tenu')} tenue(s) sous le pointeur, ` +
+          `${tally('remplacé')} suivie(s) d’un remplacement, ` +
+          `${tally('libéré')} laissée(s) sans contrôle, ` +
+          `${tally('recouvert')} sans image au repos · ` +
+          `${real.filter((r) => r.dy !== null && Math.abs(r.dy) >= 1).length} contrôle(s) ` +
+          'pressé(s) déplacé(s) par leur propre pression',
+      )
+      for (const entry of applies) {
+        const hit = every.filter((item) => excused(item) === entry).length
+        if (hit === 0) {
+          console.log(
+            `  ✗ pressions: la tolérance « ${entry.what} » ne se reproduit plus sur ${screen} ` +
+              `en ${size} — retirez-la de PRESS_TOLERATED`,
+          )
+          process.exitCode = 22
+        } else {
+          console.log(`  pressions tolérées: ${hit} × ${entry.what} — ${entry.why}`)
+        }
+      }
+      if (arrived.length > 0) {
+        console.log(
+          `  ✗ pressions: ${arrived.length} pression(s) après lesquelles un *autre* contrôle ` +
+            'occupe le rectangle visé — le rep vise, le produit répond, et son doigt est sur ' +
+            'autre chose',
+        )
+        for (const item of arrived.slice(0, 6)) {
+          console.log(
+            `     « ${item.what.name} » pressé en ${item.at[0]},${item.at[1]} → ` +
+              `« ${item.under.name} »${item.under.row ? ` (${item.under.row})` : ''} ` +
+              `${item.hovered ? 'déjà survolé' : 'sans survol'}, fond ${item.fill}`,
+          )
+          console.log(
+            `       le contrôle pressé a bougé de ${item.dy ?? 0}px ; ${item.moved} contrôle(s) ` +
+              `sur ${item.population} ont bougé avec lui`,
+          )
+        }
+        process.exitCode = 22
+      }
+      if (process.env.SILLAGE_PRESS_ATTACK) {
+        const verdict = (probe) =>
+          probes.find((r) => r.what.probe === probe)?.verdict ?? 'jamais pressé'
+        const missed = [
+          [
+            verdict('pousse') === 'arrivé',
+            'un bloc inséré AU-DESSUS du contrôle pressé (le défaut de l’agenda)',
+          ],
+          [
+            verdict('dessus') === 'arrivé',
+            'un calque arrivé PAR-DESSUS le contrôle pressé, sans rien déplacer',
+          ],
+          [
+            verdict('remplace') === 'remplacé',
+            'RIEN — une pression qui emporte son propre conteneur a été signalée (faux ' +
+              'positif : une navigation ne promet rien sous le pointeur)',
+          ],
+          [
+            verdict('stable') === 'tenu',
+            'RIEN — un bloc inséré EN DESSOUS a été signalé (faux positif : rien n’arrive ' +
+              'sous le doigt)',
+          ],
+        ]
+          .filter(([held]) => !held)
+          .map(([, what]) => what)
+        if (missed.length > 0) {
+          console.log(
+            `  ✗ auto-test des pressions: ${missed.length} attaque(s) mal jugée(s) — la ` +
+              'vérification ne mesure pas ce qu’elle prétend mesurer',
+          )
+          for (const what of missed) console.log(`     mal jugé : ${what}`)
+          for (const item of probes) console.log(`     sonde ${item.what.probe} → ${item.verdict}`)
+          process.exitCode = 23
+        } else {
+          console.log(
+            '  auto-test des pressions: les deux premières attaques signalées, les deux ' +
+              'dernières restées muettes',
+          )
+          process.exitCode = 21
+        }
+      }
     }
   }
   if (unanswered.length) console.log(`  canaux sans réponse: ${[...new Set(unanswered)].join(', ')}`)
@@ -11070,6 +11222,360 @@ function motionFlightAttack() {
     clearInterval(wait)
     play(root)
   }, 30)
+}
+
+/**
+ * **The presses this product makes that move a control under the pointer, and
+ * that this round did not fix — declared rather than left to a narrower rule.**
+ *
+ * `--press` is wider than the story that produced it, which is the point: the
+ * rule's subject is « a press », not « the agenda's refusal ». Swept over the
+ * 88 stages at both sizes, 665 pointer presses were judged and two product
+ * sites failed. One is fixed (the agenda's arming refusal, `Agenda.tsx`). The
+ * other is a gesture this round does not own, and it is written down here with
+ * what it costs rather than excused by making the question smaller:
+ *
+ *   · `agenda-empty` — pressing a trailing day of the previous month re-pages
+ *     the whole month grid, so the cell moves 180px and another day lands under
+ *     the finger, already `:hover`. 7 of 62 controls move, at both sizes. The
+ *     gesture is reversible — it selects a day, it does not act — and that
+ *     stage's own docblock records the re-paging as the grid's designed
+ *     behaviour, so changing it is a decision about the calendar and not a hunk
+ *     in this one.
+ *
+ * A second candidate was **refuted rather than tolerated**. `review-garde-sources`
+ * at 960×600 reported the gate's document displaced 137px with the next row's
+ * `source ▸` on the pointer — on 1 parallel run in 4, and on none of three
+ * serial ones. The provenance panel pushes the column and the scroll puts it
+ * back inside the same press, so there was never a resting frame to judge: the
+ * entry that had already been written for it is gone, and the reader waits for
+ * three agreeing samples instead. A tolerance for a transient would have
+ * written a stall into this file as a product defect.
+ *
+ * An entry cannot go stale in the silent direction: one whose finding stops
+ * reproducing fails this pass until it is deleted, and one is granted nothing
+ * outside the sizes it was measured at.
+ */
+const PRESS_TOLERATED = [
+  {
+    screen: 'agenda-empty',
+    at: ['1280x800', '960x600'],
+    pressed: /aucune réunion$/,
+    arrived: /aucune réunion$/,
+    what: 'une cellule de jour qui repagine la grille du mois',
+    why: 'la grille change de mois sous le doigt — geste réversible, décision calendrier',
+  },
+]
+
+/**
+ * The press reader, attacked — see `PRESS_TOLERATED` above for what it lets
+ * through and `pressWatch` below for what it asks.
+ *
+ * Four probes, and two of them must stay silent: a block inserted *above* the
+ * pressed control (the agenda's own defect), an overlay landing on top of it
+ * (the same harm reached without moving anything), a press that takes its own
+ * container away (a navigation promises nothing under the pointer), and a block
+ * inserted *below* (nothing arrives under the finger). A reader that fires on
+ * the last two is a reader whose findings get waved through.
+ *
+ * They are pressed with the **real mouse**, because the whole reader hangs on
+ * `event.clientX/Y` and on `elementFromPoint`: a `dispatchEvent` carrying
+ * coordinates nobody moved to would test the arithmetic and nothing else.
+ *
+ *   SILLAGE_PRESS_ATTACK=1 node scripts/harness/shot.mjs agenda /dev/null \
+ *     --no-png --press --viewport 1280x800
+ */
+async function pressAttack(page) {
+  await page.evaluate(() => {
+    const panel = document.createElement('div')
+    panel.id = 'sillage-press-attack'
+    panel.style.cssText =
+      'position:fixed;inset:0;background:#fff;z-index:99999;padding:20px;' +
+      'display:flex;flex-direction:column;gap:24px;align-items:flex-start'
+    document.body.append(panel)
+
+    const button = (probe, label, height) => {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.setAttribute('data-press-probe', probe)
+      el.textContent = label
+      el.style.cssText = `display:block;width:200px;height:${height}px`
+      return el
+    }
+    const block = (height) => {
+      const el = document.createElement('div')
+      el.style.cssText = `height:${height}px;width:200px;background:#eee`
+      return el
+    }
+
+    /*
+     * One: a block inserted **above** the pressed control, which is the agenda's
+     * refusal exactly. 50px of insertion moves the 60px button above it down
+     * onto the 40px button's centre, so a *different* control takes the pointer.
+     */
+    const bouge = document.createElement('div')
+    bouge.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start'
+    const voisin = button('voisin', 'attaque-voisin', 60)
+    const pousse = button('pousse', 'attaque-pousse', 40)
+    bouge.append(voisin, pousse)
+    pousse.addEventListener('click', () => bouge.prepend(block(50)))
+    panel.append(bouge)
+
+    /* Two: nothing moves and a control still arrives — an overlay over the press. */
+    const dessus = button('dessus', 'attaque-dessus', 40)
+    dessus.addEventListener('click', () => {
+      const r = dessus.getBoundingClientRect()
+      const over = button('couvre', 'attaque-couvre', Math.round(r.height))
+      over.style.cssText += `;position:fixed;left:${r.x}px;top:${r.y}px;width:${r.width}px`
+      panel.append(over)
+    })
+    panel.append(dessus)
+
+    /* Three, silent: the press takes its own container away — a navigation. */
+    const parti = document.createElement('div')
+    parti.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start'
+    const remplace = button('remplace', 'attaque-remplace', 40)
+    parti.append(remplace)
+    remplace.addEventListener('click', () => {
+      const r = remplace.getBoundingClientRect()
+      remplace.remove()
+      const heir = button('heritier', 'attaque-heritier', Math.round(r.height))
+      heir.style.cssText += `;position:fixed;left:${r.x}px;top:${r.y}px;width:${r.width}px`
+      panel.append(heir)
+    })
+    panel.append(parti)
+
+    /* Four, silent: a block inserted **below** the press moves nothing onto it. */
+    const dessous = document.createElement('div')
+    dessous.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start'
+    const stable = button('stable', 'attaque-stable', 40)
+    dessous.append(stable)
+    stable.addEventListener('click', () => dessous.append(block(50)))
+    panel.append(dessous)
+  })
+
+  /*
+   * Sequential, far enough apart that no probe cuts the one before it — a
+   * `recouvert` verdict would make the self-test prove nothing — and each
+   * centre is read **at the moment of the press**. The first version read all
+   * four up front; the first probe then moved the other three 50px down, three
+   * of the four clicks landed on the wrong button, and the self-test reported
+   * the reader as broken when it was the attack that had missed.
+   */
+  for (const probe of ['pousse', 'dessus', 'remplace', 'stable']) {
+    const [x, y] = await page.evaluate((name) => {
+      const el = document.querySelector(`[data-press-probe="${name}"]`)
+      const r = el.getBoundingClientRect()
+      return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]
+    }, probe)
+    await page.mouse.click(x, y)
+    await page.waitForTimeout(500)
+  }
+}
+
+/**
+ * **What is under the pointer after a press, compared with what was under it
+ * before — the first thing in this harness that measures two frames.**
+ *
+ * Every other pass in `shot.mjs` measures one settled frame. That is the right
+ * shape for a colour, a box, a measure or a target; it cannot see a defect that
+ * exists *only in the transition between two rested states*, and this product
+ * shipped one. The agenda's arming refusal was a `role="alert"` in flow above
+ * the day list, so pressing *Préparer* beside a live recording inserted 71.2px
+ * of banner above the list, the list dropped by exactly that, and the rectangle
+ * that arrived under the unmoved pointer was « Ouvrir » on the live call — a
+ * *navigating* control whose hit area is the whole row, already `:hover`, its
+ * fill stepped to `brand-900`. Measured at both smoke sizes; twelve of 69
+ * controls moved on each. `--geometry` measures at rest and both rested states
+ * are impeccable; `--motion` reads declarations and prints « mesure vide »
+ * there; `--cells` measures width.
+ *
+ * So: a capture-phase watch on `pointerdown`, installed before the app loads,
+ * that snapshots every control's rectangle and the pointer's position, waits for
+ * the layout to stop moving, and asks one question — **is the control under the
+ * pointer still the control the rep aimed at?**
+ *
+ * Four verdicts, and three of them are exemptions that say what they stopped
+ * measuring:
+ *
+ *   · `remplacé` — the pressed control is no longer in the document. A press
+ *     that navigates, or that removes its own row, replaces the page under the
+ *     pointer by construction and there is no promise to keep. Counted, never
+ *     failed on.
+ *   · `recouvert` — no resting frame: a second press began before this one's
+ *     layout had settled, or the layout never settled inside the window. It is
+ *     counted, named and never failed on, and it is the verdict that keeps a
+ *     stall from being reported as a finding — see `judge` for the 137px it
+ *     already refused to believe.
+ *   · `libéré` — the pressed control moved and *no* control took its place.
+ *     Counted and printed, not failed: the rule's subject is a control arriving
+ *     under the finger, and a press cannot misfire onto prose.
+ *   · `tenu` — the rectangle the rep pressed is still theirs. The green one.
+ *
+ * What it does **not** reach, stated rather than implied: a press that is not a
+ * pointer press — a `Ctrl/⌘ Entrée`, a `Tab` then `Enter` — carries no client
+ * coordinates, so there is no pointer to be under and it is not watched at all;
+ * and a press no stage drives is a press nobody measures. The reach is « every
+ * pointer press the 88 stages perform at two sizes », which is 665, and the
+ * census line prints it stage by stage so a zero reads as a zero.
+ */
+function pressWatch() {
+  const CONTROL =
+    'button, a[href], [role="button"], [role="tab"], [role="switch"], [role="menuitem"], ' +
+    'input, select, textarea, summary'
+
+  const records = []
+  let pending = 0
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const moving = () =>
+    document
+      .getAnimations()
+      .some((a) => a.playState === 'running' && a.effect?.getComputedTiming?.().iterations !== Infinity)
+
+  const round = (n) => Math.round(n * 10) / 10
+  const rect = (el) => {
+    const r = el.getBoundingClientRect()
+    return { x: round(r.x), y: round(r.y), w: round(r.width), h: round(r.height) }
+  }
+
+  const named = (el) => {
+    if (!el) return null
+    const label =
+      el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.value || ''
+    return {
+      tag: el.tagName.toLowerCase(),
+      name: String(label).replace(/\s+/g, ' ').trim().slice(0, 48),
+      klass: (el.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 3).join('.'),
+      row: (el.closest('li, tr')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 44),
+      probe: el.getAttribute('data-press-probe'),
+    }
+  }
+
+  const painted = () =>
+    [...document.querySelectorAll(CONTROL)].filter((el) => {
+      const r = el.getBoundingClientRect()
+      return r.width >= 1 && r.height >= 1
+    })
+
+  const controlAt = (x, y) => {
+    const el = document.elementFromPoint(x, y)
+    return el ? (el.closest(CONTROL) ?? null) : null
+  }
+
+  /** The pressed control and whatever is under the pointer, read in one frame. */
+  const probe = (record) => {
+    const el = record.el
+    const under = controlAt(record.x, record.y)
+    return {
+      connected: el.isConnected,
+      box: el.isConnected ? rect(el) : null,
+      under,
+      key: `${el.isConnected ? JSON.stringify(rect(el)) : 'parti'}|${
+        under ? `${under.tagName}@${Math.round(under.getBoundingClientRect().y)}` : 'rien'
+      }`,
+    }
+  }
+
+  /**
+   * **Only a rested frame is judged, and « rested » is three samples that agree
+   * with nothing running — never a timeout.**
+   *
+   * The first version broke on the first *two* that agreed, which is a reading
+   * of a stall rather than of a resting state: under `smoke.mjs`'s four parallel
+   * lanes `review-garde-sources` reported the gate's document displaced 137px on
+   * 1 run in 4 and 0px on every serial run, because the provenance panel pushes
+   * the column and the scroll puts it back one frame later. An intermittent
+   * failure on a stage that has nothing to do with the feature under review is
+   * the worst shape a check can have — `widget-ouvert` cost a round to exactly
+   * that. A press with no resting frame inside the window is declared
+   * (`recouvert`), never guessed at.
+   */
+  const judge = async (record) => {
+    pending += 1
+    let last = null
+    let agreed = 0
+    let rested = false
+    for (let n = 0; n < 20; n += 1) {
+      await wait(50)
+      const now = probe(record)
+      agreed = last !== null && now.key === last.key ? agreed + 1 : 0
+      last = now
+      if (record.cut) break
+      if (agreed >= 2 && !moving()) {
+        rested = true
+        break
+      }
+    }
+    const now = last ?? probe(record)
+    const el = record.el
+    const under = now.under
+    const same = under !== null && (under === el || under.contains(el) || el.contains(under))
+    const moved = record.before.filter((entry) => {
+      if (!entry.el.isConnected) return false
+      const r = rect(entry.el)
+      return Math.abs(r.y - entry.box.y) >= 1 || Math.abs(r.x - entry.box.x) >= 1
+    }).length
+
+    record.after = {
+      connected: now.connected,
+      dy: now.box ? round(now.box.y - record.box.y) : null,
+      dx: now.box ? round(now.box.x - record.box.x) : null,
+      under: named(under),
+      hovered: under ? under.matches(':hover') : false,
+      fill: under ? getComputedStyle(under).backgroundColor : null,
+      moved,
+      population: record.before.length,
+      rested,
+    }
+    record.verdict = !now.connected
+      ? 'remplacé'
+      : !rested
+        ? 'recouvert'
+        : under === null
+          ? 'libéré'
+          : same
+            ? 'tenu'
+            : 'arrivé'
+    pending -= 1
+  }
+
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const el = event.target instanceof Element ? event.target.closest(CONTROL) : null
+      if (el === null) return
+      // A keyboard-synthesised click carries no coordinates: there is no pointer
+      // to be under, so there is nothing here to measure.
+      if (event.clientX === 0 && event.clientY === 0) return
+      for (const other of records) if (other.verdict === undefined) other.cut = true
+      const record = {
+        el,
+        x: round(event.clientX),
+        y: round(event.clientY),
+        what: named(el),
+        box: rect(el),
+        before: painted().map((node) => ({ el: node, box: rect(node) })),
+        cut: false,
+        verdict: undefined,
+      }
+      records.push(record)
+      void judge(record)
+    },
+    true,
+  )
+
+  window.__press = {
+    async report() {
+      for (let n = 0; n < 30 && pending > 0; n += 1) await wait(50)
+      const judged = records.filter((r) => r.verdict !== undefined)
+      return {
+        watched: records.length,
+        unjudged: records.length - judged.length,
+        records: judged.map((r) => ({ what: r.what, at: [r.x, r.y], verdict: r.verdict, ...r.after })),
+      }
+    },
+  }
 }
 
 function motionReader() {

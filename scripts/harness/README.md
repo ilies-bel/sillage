@@ -13,7 +13,7 @@ client's CRM. A defect lives in one or the other, rarely in both, and each was
 introduced after something shipped that the other could not have caught.
 
 ```
-node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--no-png] [--sans-entra]
+node scripts/harness/shot.mjs <screen> <out.png> [--viewport WxH] [--expand|--no-expand] [--scan [out.json]] [--geometry] [--targets] [--prose] [--echo] [--a11y] [--contrast] [--marks] [--scrollers] [--motion] [--fade] [--census] [--rhythm] [--cells] [--press] [--no-png] [--sans-entra]
 node scripts/harness/smoke.mjs                 # every stage × two sizes, with all twelve passes
 node scripts/harness/serve.mjs                 # the same app at a URL, for tools that only take one
 ```
@@ -44,11 +44,11 @@ strings, so renaming a button breaks stages silently — nothing runs them but a
 person deciding to look at a screen. It has happened twice, and the second time
 it broke six at once, including both of the features under review.
 
-**Thirteen measured checks, and each exists because something shipped past a
+**Fourteen measured checks, and each exists because something shipped past a
 screenshot.** The list is not prose — it is `PASSES` in `smoke.mjs`, and
 `scripts/__tests__/harnessPasses.test.mjs` holds this line to it:
 
-    --geometry --targets --prose --echo --a11y --contrast --marks --scrollers --motion --fade --census --rhythm --cells
+    --geometry --targets --prose --echo --a11y --contrast --marks --scrollers --motion --fade --census --rhythm --cells --press
 
 This sentence said « six » for three rounds, then « nine » for one, while the
 paragraph it sits in ended « All eight run on every stage » — three counts, none
@@ -79,8 +79,9 @@ nothing else. That zero was read as a product finding in three separate rounds a
 a false premise in a fourth. A stage that stages a departure declares `departs: N` on its
 own plan and the pass refuses it when the count is not met; a stage that stages none prints
 what its watch looked at, so a zero cannot be mistaken for a verdict), `--fade`,
-`--scrollers`, `--census`, `--rhythm`, `--cells` and `--marks` — the last being the only
-one that compares two elements rather than judging one — below. All thirteen run on every
+`--scrollers`, `--census`, `--rhythm`, `--cells`, `--marks` — the only one that compares two
+elements rather than judging one — and `--press`, the only one that reads two *frames*,
+below. All fourteen run on every
 stage at 1280×800 *and* at 960×600 —
 the size `main.ts` declares as the minimum, where a text field was crushed to
 fourteen pixels while every check at the comfortable size passed.
@@ -323,6 +324,42 @@ painted and how many pairs were compared. A screen with one mark must not be
 able to print what the agenda's six pairs print.
 `SILLAGE_MARKS_ATTACK=1` injects nine probes, three that must be reported and six
 that must stay silent, and exits 21.
+
+**`--press` asks the only question in this file that needs two frames.** Every
+other pass measures one settled frame, and all thirteen of them were green over
+this: at both sizes, pressing *Préparer* on the agenda beside a live recording
+inserted the arming refusal above the day list, the list fell **71.2 px**, and
+the rectangle that arrived under a pointer that had not moved was *Ouvrir* on
+the **live call** — `:hover` already true, fill stepped to `brand-900`, hit area
+the whole 1050 px row. Twelve of 69 controls moved. `--geometry` reads both
+rested states and both are impeccable; `--motion` reads declarations and printed
+« mesure vide » on that stage; `--cells` measures width.
+
+It installs a capture-phase watch on `pointerdown` **before** the app loads,
+snapshots every control's rectangle with the pointer's position, waits for a
+resting frame, and asks whether the control under the pointer is still the one
+the rep aimed at. Four verdicts, and three are exemptions that say what they
+stopped measuring: `remplacé` (the pressed control has left the document — a
+navigation promises nothing under the pointer), `recouvert` (no resting frame,
+because a second press began first or the layout never settled), `libéré` (the
+control moved and nothing took its place — a press cannot misfire onto prose),
+and `tenu`, the green one. Only « another control now occupies the rectangle »
+fails.
+
+**What it does not reach, stated.** A press with no pointer — `Ctrl/⌘ Entrée`, a
+`Tab` then `Enter` — has no coordinates and is not watched at all; and a press no
+stage drives is a press nobody measures. Swept over the whole list, that is
+**665 pointer presses across 176 stagings**, printed stage by stage so a zero
+reads as a zero. « Rested » is three agreeing samples with nothing running, and
+that is not fussiness: with two, `review-garde-sources` reported the gate's
+document displaced 137 px on 1 parallel run in 4 and 0 px on every serial one —
+the provenance panel pushes the column and the scroll puts it back inside the
+same press. The tolerance that had already been written for it was deleted
+instead. `PRESS_TOLERATED` in `shot.mjs` holds what is left (one entry: the month
+grid re-paging under `agenda-empty`, 180 px, at both sizes) and cannot rot — an
+entry whose finding stops reproducing fails the pass until it is removed, and it
+grants nothing at a size it was not measured at. `SILLAGE_PRESS_ATTACK=1` injects
+four probes, two that must be reported and two that must stay silent, and exits 21.
 
 **Two instruments were answering a narrower question than they appeared to, and
 both are fixed here.** `--census` read its radius ladder from a hand-written

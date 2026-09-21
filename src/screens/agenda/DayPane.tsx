@@ -21,7 +21,7 @@
  *    a line in this pane, not a banner over the product.
  */
 import { CalendarDays } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { formatAgo, formatRange, formatTime, formatDayMedium, upperFirst } from '../../app/format.ts'
 import { noonOf, type DayKey } from '../../app/calendar.ts'
 import { useLeaving } from '../../app/useLeaving.ts'
@@ -133,6 +133,39 @@ interface DayPaneProps {
    * places in this product and neither of them is a day row.
    */
   onArm: (eventId: string) => void
+  /**
+   * **What `onArm` answered, drawn under the row it answered about.**
+   *
+   * The refusal used to be a `role="alert"` in flow *above* this list, and that
+   * position is what made it a defect rather than a sentence. Driven on the
+   * shipped renderer at both smoke sizes: pressing *Préparer* beside a live
+   * recording inserted 71.2px of banner at the top of the day column, the list
+   * fell by exactly that, and the rectangle that arrived under the rep's
+   * unmoved pointer was *Ouvrir* on the **live call** — a navigating control
+   * whose hit area is this row's whole 1050px (`after:inset-0` below), already
+   * `:hover`, its fill stepped to `brand-900`. Twelve of 69 controls moved. A
+   * rep who presses twice, which is what a person does when a button seems not
+   * to have worked, leaves the calendar for a call they did not ask to open.
+   *
+   * And the same banner was **invisible** whenever the column had been
+   * scrolled: at 1280×800 with `scrollTop` 300 it landed at y −191 against a
+   * column whose top edge is 118, and at 960×600 at −166 against 102 — so the
+   * one refusal a rep meets weekly was painted off screen while Chromium's
+   * scroll anchoring quietly absorbed the shift. The press read as « rien ne se
+   * passe », which is the dead control DEC-26 forbids, arrived at by geometry.
+   *
+   * Anchored here it costs neither: nothing above the pressed row moves, so
+   * *Préparer* stays exactly where the rep put their finger, and the sentence is
+   * drawn immediately under the row they pressed — where they are already
+   * looking. The rows *below* move, and that is the half that is allowed: the
+   * pointer is not on them.
+   *
+   * **What it does not do, stated.** If the event leaves this list — the rep
+   * changes the period, the calendar re-syncs it away — the sentence goes with
+   * it, because it is a sentence about a row and is never left standing on a
+   * screen that no longer shows what it is about.
+   */
+  refusal?: { eventId: string; notice: ReactNode } | null
 }
 
 /** Declared once: a new lambda each render would re-fire `useLeaving`'s effect. */
@@ -160,6 +193,7 @@ export function DayPane({
   refreshing = false,
   onOpen,
   onArm,
+  refusal = null,
 }: DayPaneProps) {
   const upcoming = entries.filter((entry) => !entry.past)
   // Newest first: the call a rep wants after a meeting is the one that just
@@ -201,15 +235,26 @@ export function DayPane({
       {upcoming.length > 0 || leavingUpcoming.length > upcoming.length ? (
         <List bare>
           {leavingUpcoming.map((entry) => (
-            <EntryRow
-              key={entry.key}
-              entry={entry}
-              showDay={showDay}
-              filled={entry.meetingId !== null && entry.meetingId === emphasis}
-              onOpen={onOpen}
-              onArm={onArm}
-              leaving={entry.leaving}
-            />
+            <Fragment key={entry.key}>
+              <EntryRow
+                entry={entry}
+                showDay={showDay}
+                filled={entry.meetingId !== null && entry.meetingId === emphasis}
+                onOpen={onOpen}
+                onArm={onArm}
+                leaving={entry.leaving}
+              />
+              {/*
+                An `li`, because this is a `ul` and the answer belongs to the row
+                above it: `List` puts its hairline and its flush edge on its own
+                children, so a `div` here would be a row the list does not know
+                it has. `DayPaneProps.refusal` holds the 71.2px that decided the
+                position.
+              */}
+              {refusal !== null && entry.eventId === refusal.eventId ? (
+                <li className="py-inline">{refusal.notice}</li>
+              ) : null}
+            </Fragment>
           ))}
         </List>
       ) : suppressed ? null : (

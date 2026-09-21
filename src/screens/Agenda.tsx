@@ -417,8 +417,15 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
     }
   }, [agenda])
 
-  /** The last refusal from `agenda:arm`, shown on the page — see `armNow`. */
-  const [refusal, setRefusal] = useState<string | null>(null)
+  /**
+   * The last refusal from `agenda:arm`, shown on the page — see `armNow`.
+   *
+   * **It carries the event it is about, and that is what puts it in its place.**
+   * The sentence on its own could only be drawn somewhere general, and the
+   * general place — in flow above the day list — moved that list 71.2px under a
+   * pointer that had not moved. `DayPaneProps.refusal` holds the measurement.
+   */
+  const [refusal, setRefusal] = useState<{ eventId: string; sentence: string } | null>(null)
 
   /*
    * **The banner has to outlive its own sentence by one `--motion`.**
@@ -432,9 +439,80 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    * `useDeparture` makes for its own `was` ref one file over.
    */
   const { shown: refusalShown, leaving: refusalLeaving } = useDeparture(refusal !== null)
-  const lastRefusal = useRef<string | null>(null)
+  const lastRefusal = useRef<{ eventId: string; sentence: string } | null>(null)
   if (refusal !== null) lastRefusal.current = refusal
   const said = refusal ?? lastRefusal.current
+
+  /**
+   * The refusal itself, composed here and **placed** by `DayPane` — the prop's
+   * own docblock holds the 71.2px that decided where it goes. `mb-row` is gone
+   * with the move: the list row it now lives in carries the rhythm.
+   */
+  const refusalNotice =
+    said === null ? null : (
+      /*
+        `role="alert"`, so it reaches a screen reader as well as an eye —
+        the agenda had no live region anywhere, and this is the one thing
+        on it that appears without a press and has to be read.
+
+        **And the one thing on this screen that appears without a press
+        had neither an arrival nor an exit.** Measured on the shipped
+        banner at both smoke sizes before this round:
+        `animationName: none`, `transitionDuration: 0s`. It arrived
+        between two frames and was torn off the page between two more,
+        under « ease-out on the way in, ease-in on the way out » — the
+        rule every other appearing surface in this product is held to and
+        frame-sampled for. `useDeparture` + `animate-rise-in`/`.leaving`
+        is the shipped ladder (`Review.tsx`'s provenance panel), reused
+        rather than re-invented, and `agenda-preparer-refus-sortie`
+        frame-samples it the way `review-source-sortie` does.
+
+        `useDeparture` and not `useDismiss`, although *Fermer* is a press:
+        the sentence is also cleared by `armNow` on the **next** attempt,
+        which no gesture here intercepts. The condition is what leaves,
+        so the hook that holds a condition is the right rung.
+      */
+      <div
+        role="alert"
+        className={cn(
+          /*
+            **`w-fit`: a box that draws its own edge has to fit what it
+            holds.** The round that put `.measure` on the span below
+            capped it at 439.078px inside a row that was still as wide as
+            the day column, so at 1280×800 the banner painted a 672px
+            stroked, rounded box whose last control — *Fermer* — ended at
+            1080.4 with the box's own right edge at 1235: **154.6px, 23%
+            of the banner, empty past everything in it**, a drawn corner
+            and a stroke with nothing behind them. Both halves were
+            individually right — 58ch is this repo's one reading rule and
+            `min-w-0 flex-1` is right for a growing cell — and together
+            they aligned the box to nothing it contained. The prose keeps
+            its measure; the *box* is what changes. `fit-content` is
+            already `min(max-content, available)`, so at 960×600, where
+            the row was never wider than its contents, nothing moves.
+
+            `shot.mjs --cells` measures it now, on every stage and at both
+            sizes: a closed box whose growing cell is pinned at a cap while
+            the box keeps space nothing can take.
+          */
+          'border-warn bg-card text-body flex w-fit items-start gap-inline rounded-sm border px-inline py-snug text-ui',
+          refusalLeaving ? 'leaving' : 'animate-rise-in',
+        )}
+      >
+        {/*
+          `measure` on the span, not on the row: the row also holds
+          *Fermer*, and a reading measure belongs to the element holding
+          the prose. Without it this sentence ran 96 characters a line at
+          1280×800 — the `--prose` ceiling is 75 — and it passed unseen
+          because nothing had ever pressed the control that raises it.
+          `agenda-preparer-refus` presses it now.
+        */}
+        <span className="measure min-w-0 flex-1">{said.sentence}</span>
+        <Button variant="text" className="shrink-0" onClick={() => setRefusal(null)}>
+          Fermer
+        </Button>
+      </div>
+    )
 
   const armNow = useCallback(
     async (eventId: string) => {
@@ -465,9 +543,11 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
           had no live region at all, so the one refusal a rep meets weekly was
           announced by nothing.
         */
-        setRefusal(
-          error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.',
-        )
+        setRefusal({
+          eventId,
+          sentence:
+            error instanceof Error ? error.message : 'Impossible de démarrer cette réunion.',
+        })
       } finally {
         setBusy(false)
       }
@@ -825,72 +905,37 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
             />
           ) : (
             <>
-            {refusalShown && said !== null ? (
-              /*
-                `role="alert"`, so it reaches a screen reader as well as an eye —
-                the agenda had no live region anywhere, and this is the one thing
-                on it that appears without a press and has to be read.
-
-                **And the one thing on this screen that appears without a press
-                had neither an arrival nor an exit.** Measured on the shipped
-                banner at both smoke sizes before this round:
-                `animationName: none`, `transitionDuration: 0s`. It arrived
-                between two frames and was torn off the page between two more,
-                under « ease-out on the way in, ease-in on the way out » — the
-                rule every other appearing surface in this product is held to and
-                frame-sampled for. `useDeparture` + `animate-rise-in`/`.leaving`
-                is the shipped ladder (`Review.tsx`'s provenance panel), reused
-                rather than re-invented, and `agenda-preparer-refus-sortie`
-                frame-samples it the way `review-source-sortie` does.
-
-                `useDeparture` and not `useDismiss`, although *Fermer* is a press:
-                the sentence is also cleared by `armNow` on the **next** attempt,
-                which no gesture here intercepts. The condition is what leaves,
-                so the hook that holds a condition is the right rung.
-              */
-              <div
-                role="alert"
-                className={cn(
-                  /*
-                    **`w-fit`: a box that draws its own edge has to fit what it
-                    holds.** The round that put `.measure` on the span below
-                    capped it at 439.078px inside a row that was still as wide as
-                    the day column, so at 1280×800 the banner painted a 672px
-                    stroked, rounded box whose last control — *Fermer* — ended at
-                    1080.4 with the box's own right edge at 1235: **154.6px, 23%
-                    of the banner, empty past everything in it**, a drawn corner
-                    and a stroke with nothing behind them. Both halves were
-                    individually right — 58ch is this repo's one reading rule and
-                    `min-w-0 flex-1` is right for a growing cell — and together
-                    they aligned the box to nothing it contained. The prose keeps
-                    its measure; the *box* is what changes. `fit-content` is
-                    already `min(max-content, available)`, so at 960×600, where
-                    the row was never wider than its contents, nothing moves.
-
-                    `shot.mjs --cells` measures it now, on every stage and at both
-                    sizes: a closed box whose growing cell is pinned at a cap while
-                    the box keeps space nothing can take.
-                  */
-                  'border-warn bg-card text-body mb-row flex w-fit items-start gap-inline rounded-sm border px-inline py-snug text-ui',
-                  refusalLeaving ? 'leaving' : 'animate-rise-in',
-                )}
-              >
-                {/*
-                  `measure` on the span, not on the row: the row also holds
-                  *Fermer*, and a reading measure belongs to the element holding
-                  the prose. Without it this sentence ran 96 characters a line at
-                  1280×800 — the `--prose` ceiling is 75 — and it passed unseen
-                  because nothing had ever pressed the control that raises it.
-                  `agenda-preparer-refus` presses it now.
-                */}
-                <span className="measure min-w-0 flex-1">{said}</span>
-                <Button variant="text" className="shrink-0" onClick={() => setRefusal(null)}>
-                  Fermer
-                </Button>
-              </div>
-            ) : null}
             <DayPane
               onArm={armNow}
+              /*
+                **Where the refusal is drawn is a measurement, not a preference.**
+
+                It was a `role="alert"` in flow above this list. Driven on the
+                shipped renderer at 1280×800 and at 960×600, the press inserted
+                71.2px of banner at the top of the day column and the list fell
+                by exactly that — first *Ouvrir* 200 → 271.2, first *Préparer*
+                273.3 → 344.5, twelve of 69 controls moved — and the rectangle
+                that arrived under the pointer, which had not moved, was *Ouvrir*
+                on the **live recording**: `:hover` already true, fill stepped to
+                `rgb(2, 51, 75)`, hit area the whole row. That is the review
+                gate's own rule — « the one control that ships is never the
+                rectangle the rep just pressed » — broken on the calendar, which
+                had no equivalent.
+
+                On a column the rep had scrolled it was worse: `scrollTop` 300
+                put the banner at y −191 against a column whose top edge is 118,
+                and at −166 against 102 at 960×600. The rep pressed, the app
+                refused, and nothing appeared.
+
+                `shot.mjs --press` is the instrument, and it is new: the thirteen
+                other passes each measure one settled frame, and this defect
+                lives only between two of them.
+              */
+              refusal={
+                refusalShown && said !== null
+                  ? { eventId: said.eventId, notice: refusalNotice }
+                  : null
+              }
               entries={inRange}
               /* The screen's one filled control, decided once, above. */
               emphasis={emphasis}
