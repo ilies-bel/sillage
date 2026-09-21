@@ -4498,6 +4498,80 @@ const SCREENS = {
     },
   },
 
+  /**
+   * **Two required channels in trouble at once, and one of them recovering —
+   * the state no stage could stage, on the surface whose job is to report it.**
+   *
+   * Every health in this harness came from a static table read once by
+   * `health:snapshot`, plus exactly one broadcast anywhere in the stub. So a
+   * *second* health edge had never existed here, and the widget held one
+   * `string` written by two handlers that were answering different questions:
+   * the snapshot took the first non-`ok` of `['capture', 'transcribe']` under a
+   * variable named `worst`, the edge took the latest whatever it said. Driven
+   * here before the fix, reading every `.text-warn` on the card, identically at
+   * 1280×800 and 960×600: « La sortie audio de l’ordinateur a changé … » →
+   * « aucun fournisseur de transcription disponible » → **`[]`**. A
+   * WASAPI loopback blip that recovers (HR-2: the primary platform, where the
+   * route change this scenario stages comes from) erased the report that no
+   * transcription was happening, and the rep finished the call believing notes
+   * were taken.
+   *
+   * Three assertions, in the order the rep meets them, because the last one is
+   * the only one that failed and the first two are what stop it passing
+   * vacuously — a strip that never drew the transcription sentence at all would
+   * satisfy « it is still there » by never having been there.
+   *
+   * It also asserts the edge was *heard*: `__harness.health` answers how many
+   * listeners it reached, and a stage driving a broadcast nobody subscribes to
+   * is a check measuring nothing. The session screen taught this repo that once
+   * already — `transcript:appended` was emitted for every segment of every
+   * meeting and read by no window.
+   */
+  'widget-deux-pannes': {
+    scenario: 'widget-ennui',
+    query: 'window=widget',
+    async drive(page) {
+      await page.getByLabel('Durée d’enregistrement').waitFor()
+      await page.evaluate(() => window.__harness.replayWidget())
+      await page.getByRole('button', { name: /le panneau/ }).click()
+      await page.getByPlaceholder('Noter ce moment…').waitFor()
+
+      // One: the snapshot's own state — capture `degraded`, DEC-32's « one
+      // missing channel », with the side named in the sentence.
+      const route = page.getByText('La sortie audio de l’ordinateur a changé', { exact: false })
+      await route.waitFor()
+
+      // Two: the local engine dies while the route is still wrong. `down`
+      // outranks `degraded`, so the strip changes hands — the *worst* live
+      // channel speaks, not the first one in an array.
+      const heard = await page.evaluate(() =>
+        window.__harness.health('transcribe', 'transcribe-down'),
+      )
+      if (heard === 0) {
+        throw new Error('personne n’écoute health:changed — la fenêtre ne collecte plus la santé')
+      }
+      const dead = page.getByText('aucun fournisseur de transcription', { exact: false })
+      await dead.waitFor()
+      if ((await route.count()) > 0) {
+        throw new Error(
+          'la capture dégradée parle encore alors que la transcription est à l’arrêt — ' +
+            'le canal le plus atteint n’a pas la parole',
+        )
+      }
+
+      // Three: the capture recovers and the transcription is still dead. This
+      // is the one that was red.
+      await page.evaluate(() => window.__harness.health('capture', 'ok'))
+      await settled(page)
+      if ((await dead.count()) === 0) {
+        throw new Error(
+          'le rétablissement de la capture a effacé l’arrêt de la transcription — ' +
+            'la fenêtre ne signale plus rien pour le reste de l’appel',
+        )
+      }
+    },
+  },
+
   /*
    * **Nothing in this harness had ever moved a pointer.**
    *

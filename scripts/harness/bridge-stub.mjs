@@ -34,6 +34,7 @@
  *   · `emit(channel, payload)`  push a broadcast, as the main process would
  *   · `calls`                   every invoke, for debugging
  *   · `unanswered`              channels asked for that the stub had no answer to
+ *   · `health(connector, state)` publish a health edge, and move the table with it
  */
 
 export function installAppBridge(config) {
@@ -3641,6 +3642,41 @@ let RECORDING_STOPPED = false
         still live and this channel must keep saying so.
       */
       RECORDING_STOPPED = reason === undefined
+    },
+    /**
+     * **A second health edge, which nothing in this harness could produce.**
+     *
+     * Every staged health came from a *static* table read once by
+     * `health:snapshot`, plus exactly one broadcast — the dry run's, on
+     * `capture`. So no stage had ever put two connectors in trouble at once, and
+     * no stage had ever watched one of them recover while the other stayed down:
+     * the state in which the widget's two writers disagreed. `widget-deux-pannes`
+     * drives it, and this is the verb.
+     *
+     * The table moves with the broadcast, for the reason `refuseMarks` moves
+     * `RECORDING_STOPPED`: a `health:snapshot` re-read after an edge must answer
+     * what the edge said, or the fixture stages a main process that contradicts
+     * itself.
+     *
+     * The sentences are the product's own — `HEALTH` above carries
+     * `capture/index.ts`'s route-change line word for word, and `TRANSCRIBE` here
+     * is `Orchestrator.#startRecording`'s, which is the transcription failure a
+     * rep can actually meet mid-call.
+     */
+    health(connector, state) {
+      const next =
+        state === 'ok'
+          ? { state: 'ok' }
+          : state === 'transcribe-down'
+            ? {
+                state: 'down',
+                reason: 'aucun fournisseur de transcription disponible',
+                since: Date.now(),
+                retryable: true,
+              }
+            : state
+      healthBase()[connector] = next
+      return harness.emit('health:changed', { connector, health: next, at: Date.now() })
     },
     replaySession(meetingId) {
       const id = meetingId || 'm-neovia-cadrage'
