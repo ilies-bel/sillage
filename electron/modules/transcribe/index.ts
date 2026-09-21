@@ -352,11 +352,25 @@ export class TranscribeSession extends EventEmitter {
   /**
    * Stamps a provider result with the meeting clock and the channel.
    *
-   * The timing is the arrival time of a batch, not the acoustic time of the
-   * words in it — a batch provider cannot tell us the latter. That is why
-   * `TranscriptSpan.quote` is the load-bearing field for verification and the
-   * timings are documented as hints (DEC-21): a span is checked by finding the
-   * text, never by trusting the range.
+   * This used to read « the timing is the arrival time of a batch, not the
+   * acoustic time of the words in it — **a batch provider cannot tell us the
+   * latter** ». The first half was true and the second was false for the
+   * provider DEC-30 makes the default: `LocalWhisperSession` owns its own
+   * `Vad`, and a `Vad` knows the stream position of every frame it kept. The
+   * information was one counter away and the sentence said it was unavailable,
+   * so nobody went looking — for as long as that held, every local segment was
+   * stored with `startMs === endMs`, both equal to the moment an inference
+   * happened to finish.
+   *
+   * It is still true of a cloud REST provider, which is handed an upload and
+   * answers with a string, hence the fallback below rather than a required
+   * field.
+   *
+   * `TranscriptSpan.quote` stays the load-bearing field for verification and
+   * the timings stay hints (DEC-21): a span is checked by finding the text,
+   * never by trusting the range. Nothing here changes that. What it changes is
+   * *ordering*, which is not a hint — `byStartMs` sorts the record a rep reads
+   * and a recipe is given.
    */
   #onTranscript(channel: Channel, result: SttTranscript): void {
     // A result is the only proof the provider is alive, so it is what clears the
@@ -365,12 +379,20 @@ export class TranscribeSession extends EventEmitter {
 
     const receivedAt = this.#clock()
     const elapsed = Math.max(0, receivedAt - this.#options.startedAt)
+    // Acoustic time when the provider reports it, arrival time when it cannot.
+    // Both are "milliseconds since the recording started", which is why they
+    // can share the field — but only the first can order two channels against
+    // each other, because arrival is a property of the queue, not of the
+    // conversation.
+    const acoustic = result.startMs !== undefined && result.endMs !== undefined
+    const startMs = acoustic ? Math.max(0, Math.round(result.startMs as number)) : elapsed
+    const endMs = acoustic ? Math.max(startMs, Math.round(result.endMs as number)) : elapsed
     const segment: TranscriptSegment = {
       id: `${channel}-${++this.#counter}`,
       channel,
       text: result.text,
-      startMs: elapsed,
-      endMs: elapsed,
+      startMs,
+      endMs,
       isFinal: result.isFinal,
       // The engine that produced *this* segment, which after a failover is not
       // the one the meeting started on. Historique shows it per segment for

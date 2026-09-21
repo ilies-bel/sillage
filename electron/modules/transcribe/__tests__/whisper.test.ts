@@ -140,6 +140,56 @@ test('flush closes whatever is open and forgets the remainder', () => {
   assert.equal(vad.flush().length, 0, 'nothing left to flush')
 })
 
+test('a packet is dated from its first word and spans the pauses it dropped', () => {
+  /*
+   * The distinction the record had no way to express. Packing keeps the buffer
+   * across a pause and drops the pause itself, so `durationMs` — speech content
+   * — is shorter than the stretch of conversation the packet covers. Dating a
+   * packet by when its inference finished collapsed both into one number.
+   */
+  const vad = new Vad()
+  vad.push(loud(80)) // 2.4 s: clears FIRST_SEGMENT_MS, emits, resets
+  vad.push(quiet(20)) // 0.6 s of nothing — past the hangover, the run ends
+
+  const at = 100 * 30 // where the next word starts, in ms
+  vad.push(loud(150))
+  vad.push(quiet(20)) // dropped: below the 8 s target, the buffer is kept
+  vad.push(loud(150))
+  const [packet] = vad.flush()
+
+  assert.ok(packet, 'the packed utterance closed')
+  assert.equal(packet.startMs, at, 'dated from the first word, not the resume')
+  assert.ok(
+    packet.endMs - packet.startMs > packet.durationMs,
+    `a dropped pause must widen the span: ${packet.endMs - packet.startMs} <= ${packet.durationMs}`,
+  )
+})
+
+test('no packet is an instant, and packets never go backwards', () => {
+  /*
+   * `startMs === endMs` on every segment for the life of the local engine is
+   * what let two channels sort by whichever finished first. Both halves matter:
+   * a real interval, and one that advances.
+   */
+  // A packet closes on the hangover expiring, never on speech alone, so each
+  // one needs its own trailing silence to be emitted at all.
+  const vad = new Vad()
+  const packets = [
+    ...vad.push(loud(80)), // 2.4 s clears FIRST_SEGMENT_MS
+    ...vad.push(quiet(20)), // hangover expires: packet one closes
+    ...vad.push(loud(300)), // 9 s clears TARGET_SEGMENT_MS
+    ...vad.push(quiet(20)), // packet two closes
+  ]
+  assert.equal(packets.length, 2, 'need more than one to compare')
+
+  let previous = -1
+  for (const p of packets) {
+    assert.ok(p.endMs > p.startMs, `an utterance with no duration: ${p.startMs}..${p.endMs}`)
+    assert.ok(p.startMs >= previous, 'packets are emitted in the order they were spoken')
+    previous = p.startMs
+  }
+})
+
 // ── Resampling ────────────────────────────────────────────────────────────
 
 test('48 kHz becomes 16 kHz and 16 kHz is left alone', () => {

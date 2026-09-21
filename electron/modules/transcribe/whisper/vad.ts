@@ -20,6 +20,27 @@
 export interface SpeechSegment {
   samples: Float32Array
   durationMs: number
+  /**
+   * Where this utterance sits in the stream, in milliseconds since the first
+   * sample this `Vad` was ever fed — which is when the recording started, so
+   * it is the meeting clock.
+   *
+   * Distinct from `durationMs`, and the distinction is the point. `durationMs`
+   * counts *speech content*: the packing below drops the pauses inside an
+   * utterance, so a packet holding 8 s of speech may span thirty seconds of
+   * conversation. `startMs`/`endMs` are the two ends of that thirty seconds.
+   *
+   * Without this the only time a segment had was the moment its inference
+   * finished, and segments are ordered by `startMs` (`byStartMs`,
+   * `core/contracts/transcript.ts`). Two channels packing independently then
+   * order the meeting by whichever channel Whisper happened to finish first:
+   * measured on a real two-channel replay, the client's answer was stored at
+   * 36 363 ms and the rep's question at 43 811 ms, so the record had the
+   * answer seven seconds before the question.
+   */
+  startMs: number
+  /** End of the last frame in the packet, same clock. Never equal to `startMs`. */
+  endMs: number
 }
 
 const WINDOW_SIZE = 480
@@ -147,6 +168,14 @@ export class Vad {
    * one", and `#reset()` deliberately does not clear it.
    */
   #emitted = 0
+  /**
+   * Whole windows consumed since this `Vad` was constructed, as milliseconds.
+   * Advances on every frame — silence included — because it is a position in
+   * the stream, not a measure of speech. `#reset()` must never clear it.
+   */
+  #streamMs = 0
+  /** Stream position of the first frame in `#speech`. Meaningless while empty. */
+  #startMs = 0
 
   /** Returns every utterance that closed inside this chunk. Usually none. */
   push(samples: Float32Array): SpeechSegment[] {
@@ -162,6 +191,12 @@ export class Vad {
     while (offset + WINDOW_SIZE <= input.length) {
       const window = input.subarray(offset, offset + WINDOW_SIZE)
       offset += WINDOW_SIZE
+      // Taken before the frame is classified, so it is this frame's own start.
+      // Advanced here rather than where the frame is kept: a frame dropped as
+      // silence still happened, and an utterance after it must not be dated as
+      // though it had not.
+      const frameStartMs = this.#streamMs
+      this.#streamMs += WINDOW_MS
 
       const isSpeech = rms(window) >= RMS_THRESHOLD
 
@@ -181,6 +216,10 @@ export class Vad {
 
       if (!this.#inSpeech) continue
 
+      // The first frame of a packet dates the packet. Set here and not where
+      // `#inSpeech` flips, because a packet resumed after a dropped pause keeps
+      // the buffer and must keep the time it started, not the time it resumed.
+      if (this.#speech.length === 0) this.#startMs = frameStartMs
       this.#speech.push(window.slice())
       this.#durationMs += WINDOW_MS
       if (isSpeech) this.#voiced++
@@ -261,6 +300,10 @@ export class Vad {
       this.#speech = tail
       this.#voiced = tail.length
       this.#durationMs = tail.length * WINDOW_MS
+      // The carried frames are the ones just consumed, so the new packet starts
+      // where they did — not at the cut. The two inferences overlap in audio,
+      // and their timings overlap by the same 300 ms, which is honest.
+      this.#startMs = this.#streamMs - tail.length * WINDOW_MS
       this.#hangover = HANGOVER_FRAMES
     }
     return seg
@@ -268,7 +311,15 @@ export class Vad {
 
   #build(): SpeechSegment | null {
     if (this.#speech.length === 0) return null
-    return { samples: concat(this.#speech), durationMs: this.#durationMs }
+    // `#streamMs` already points past the frame just consumed, so it is the end
+    // of the last frame held — both when `push` closes a packet mid-chunk and
+    // when `flush` closes one after the loop.
+    return {
+      samples: concat(this.#speech),
+      durationMs: this.#durationMs,
+      startMs: this.#startMs,
+      endMs: this.#streamMs,
+    }
   }
 
   #reset(): void {

@@ -103,6 +103,64 @@ test('a segment carries the channel, the provider and the meeting clock', () => 
   })
 })
 
+test('acoustic time outranks arrival, and orders two channels by who spoke first', () => {
+  /*
+   * The defect, in the smallest shape that still contains it. Two channels are
+   * packed independently, so the channel that finishes an inference first is
+   * not the channel that spoke first. Stamping arrival made the *record* say
+   * otherwise: replayed against real two-channel audio, the client's reply was
+   * stored at 36 363 ms and the rep's question at 43 811 ms — `byStartMs`
+   * handed a reader, and a recipe, the answer before the question.
+   *
+   * So the far channel answers *first* here, as it did there, and must still
+   * sort second.
+   */
+  const { session, made, tick } = build()
+  const segments: Array<{ channel: Channel; startMs: number; endMs: number }> = []
+  session.on('segment', (s) => segments.push(s))
+  session.start()
+
+  tick(44_000)
+  made.get('far')?.emit('transcript', { text: 'Snowflake et dbt', isFinal: true, startMs: 17_850, endMs: 33_150 })
+  made.get('rep')?.emit('transcript', { text: 'quelle technologie ?', isFinal: true, startMs: 13_950, endMs: 40_740 })
+
+  assert.deepEqual(
+    [...segments].sort((a, b) => a.startMs - b.startMs).map((s) => s.channel),
+    ['rep', 'far'],
+    'the question is asked before it is answered',
+  )
+  assert.ok(
+    segments.every((s) => s.endMs > s.startMs),
+    'a reported span is an interval, never a point',
+  )
+  assert.ok(
+    segments.every((s) => s.startMs !== 44_000),
+    'arrival time was used where the provider reported acoustic time',
+  )
+})
+
+test('a provider that reports no acoustic time still gets the meeting clock', () => {
+  // The fallback is not a regression, it is the honest answer for a REST
+  // upload: nothing in that round trip knows where the audio sat. Half a
+  // report is refused too — a `startMs` with no `endMs` is not an interval.
+  const { session, made, tick } = build()
+  const segments: Array<{ startMs: number; endMs: number }> = []
+  session.on('segment', (s) => segments.push(s))
+  session.start()
+
+  tick(4_500)
+  made.get('far')?.emit('transcript', { text: 'sans horloge', isFinal: true })
+  made.get('far')?.emit('transcript', { text: 'moitié', isFinal: true, startMs: 10 })
+
+  assert.deepEqual(
+    segments.map((s) => [s.startMs, s.endMs]),
+    [
+      [4_500, 4_500],
+      [4_500, 4_500],
+    ],
+  )
+})
+
 test('segment ids are unique across both channels', () => {
   const { session, made } = build()
   const ids: string[] = []

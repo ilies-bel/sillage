@@ -29,7 +29,7 @@ import { EventEmitter } from 'node:events'
 import type { SttSession, SttSessionOptions } from './SttSession.ts'
 import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
-import { Vad } from './whisper/vad.ts'
+import { Vad, type SpeechSegment } from './whisper/vad.ts'
 import { resampleToF32 } from './whisper/resample.ts'
 import { filterHallucination } from './whisper/hallucinations.ts'
 import { DEFAULT_MODEL_ID } from './whisper/catalog.ts'
@@ -93,7 +93,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
   #engine: WhisperEngine | null = null
   #active = false
   #inFlight = 0
-  #pending: Float32Array[] = []
+  #pending: SpeechSegment[] = []
   #drainWaiters: Array<() => void> = []
   #gapTimer: NodeJS.Timeout | null = null
   #stopping: Promise<void> | null = null
@@ -174,7 +174,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
     if (!this.#active || !this.#vad) return
 
     for (const segment of this.#vad.push(resampleToF32(chunk, sampleRate))) {
-      this.#dispatch(segment.samples)
+      this.#dispatch(segment)
     }
 
     this.#armGapFlush()
@@ -216,7 +216,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
       this.#gapTimer = null
     }
     if (this.#vad) {
-      for (const segment of this.#vad.flush()) this.#dispatch(segment.samples)
+      for (const segment of this.#vad.flush()) this.#dispatch(segment)
       this.#vad = null
     }
     await this.#drain()
@@ -265,16 +265,16 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
 
   #flushVad(): void {
     if (!this.#vad) return
-    for (const segment of this.#vad.flush()) this.#dispatch(segment.samples)
+    for (const segment of this.#vad.flush()) this.#dispatch(segment)
   }
 
   #flushPending(): void {
     const queued = this.#pending.splice(0)
-    for (const audio of queued) this.#post(audio)
+    for (const segment of queued) this.#post(segment)
     this.#settle()
   }
 
-  #dispatch(audio: Float32Array): void {
+  #dispatch(segment: SpeechSegment): void {
     const engine = this.#engine
     if (!engine) {
       this.#diagnostics.record({
@@ -282,7 +282,7 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
         code: 'transcribe.local.dropped',
         module: 'transcribe',
         message: 'segment perdu — aucun moteur local actif',
-        detail: { samples: audio.length },
+        detail: { samples: segment.samples.length },
       })
       return
     }
@@ -301,24 +301,30 @@ export class LocalWhisperSession extends EventEmitter implements SttSession {
           detail: { pending: this.#pending.length },
         })
       }
-      this.#pending.push(audio)
+      this.#pending.push(segment)
       return
     }
 
-    this.#post(audio)
+    this.#post(segment)
   }
 
-  #post(audio: Float32Array): void {
+  #post(segment: SpeechSegment): void {
     const engine = this.#engine
     if (!engine) return
     this.#inFlight++
-    engine.transcribe(audio, this.#language).then(
+    engine.transcribe(segment.samples, this.#language).then(
       (raw) => {
         this.#inFlight = Math.max(0, this.#inFlight - 1)
         const text = filterHallucination(raw)
         // Whisper answers a silent window with subtitle boilerplate rather than
         // with nothing, and that text would verify as a span perfectly well.
-        if (text) this.emit('transcript', { text, isFinal: true })
+        if (text)
+          this.emit('transcript', {
+            text,
+            isFinal: true,
+            startMs: segment.startMs,
+            endMs: segment.endMs,
+          })
         this.#settle()
       },
       (error: unknown) => {

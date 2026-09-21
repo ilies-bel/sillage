@@ -18,8 +18,8 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 
 /**
  * One result from a provider. Not a `TranscriptSegment` yet: the provider knows
- * nothing about the meeting clock or the channel it was fed from, so stamping
- * those is `TranscribeSession`'s job.
+ * nothing about the channel it was fed from, so stamping that is
+ * `TranscribeSession`'s job.
  */
 export interface SttTranscript {
   text: string
@@ -29,6 +29,26 @@ export interface SttTranscript {
    * produces finals.
    */
   isFinal: boolean
+  /**
+   * When the words were *said*, in milliseconds since this session began being
+   * fed — which is when the recording started. Optional because it is a
+   * capability, not a guarantee, and it is declared the same way `boost` is:
+   * a provider that cannot report acoustic time must not pretend to.
+   *
+   * A cloud REST provider genuinely cannot. It is handed an upload and answers
+   * with a string; nothing in that round trip knows where the upload sat in
+   * the meeting. `TranscribeSession` falls back to arrival time for those, and
+   * that fallback was for a long time the *only* path — including for the
+   * local engine, which can tell us exactly, because `Vad` cuts the packets
+   * itself and knows the stream position of every frame it kept.
+   *
+   * Leaving it on arrival cost the record its chronology: segments are ordered
+   * by `startMs`, two channels pack independently, and the slower channel's
+   * reply therefore sorted ahead of the question it answered.
+   */
+  startMs?: number
+  /** End of the same span, same clock. Only meaningful beside `startMs`. */
+  endMs?: number
 }
 
 export interface SttSessionOptions {
