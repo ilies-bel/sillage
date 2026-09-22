@@ -1,0 +1,59 @@
+{
+  "_": [
+    "Every row of MODELS (transcribe/whisper/catalog.ts) and whether the engine can honour it.",
+    "Checked by scripts/check-models.mjs. A catalogue row with no entry here fails that check:",
+    "'offered and never run' is the defect turbo shipped, and it belongs in the diff that adds",
+    "the row rather than in a rep's empty transcript.",
+    "",
+    "verdict:  runs        one real inference returned a string",
+    "          throws      the engine cannot honour this row — FAILS the check",
+    "          unverified  nobody has run it; needs `reason` and `cost`",
+    "",
+    "`where` says who measured it. `transformers` is the installed version it was measured",
+    "against, because a graph-signature failure is a version fact: an entry measured against",
+    "another version is a verdict about another product, and the check says so."
+  ],
+  "transformers": "3.8.1",
+  "models": {
+    "Xenova/whisper-tiny": {
+      "verdict": "unverified",
+      "transformers": "3.8.1",
+      "at": "2026-09-22",
+      "where": "scripts/check-models.mjs — weights not on this machine",
+      "reason": "huggingface.co is unreachable from the network this was written on, so the weights could not be fetched to run once",
+      "cost": "61 MB and one inference away from being a fact. Until then the row is an offer nobody has confirmed the engine can load — the same shape turbo shipped in, at a tenth the download."
+    },
+    "Xenova/whisper-base": {
+      "verdict": "unverified",
+      "transformers": "3.8.1",
+      "at": "2026-09-22",
+      "where": "scripts/check-models.mjs — weights not on this machine",
+      "reason": "same unreachable Hub",
+      "cost": "130 MB. The catalogue already argues base is too weak for French proper nouns, but that is a quality claim and this is a load claim; they are not the same question and only one of them has been asked."
+    },
+    "Xenova/whisper-small": {
+      "verdict": "runs",
+      "transformers": "3.8.1",
+      "dtype": "per-file",
+      "at": "2026-09-22",
+      "where": "mesuré par scripts/check-models.mjs",
+      "note": "The default (DEFAULT_MODEL_ID) and the only checkpoint bundled in resources/whisper-models."
+    },
+    "onnx-community/whisper-large-v3-turbo-ONNX": {
+      "verdict": "throws",
+      "error": "Missing the following inputs: cache_position",
+      "transformers": "3.8.1",
+      "at": "2026-09-21",
+      "where": "commit 4780bc4 — measured against the real engine before the weights were removed from this machine",
+      "note": "Every utterance, not the first. The merged decoder is exported against a newer graph signature than transformers 3.8.1 builds a feed for. The throw is caught per segment, so selecting this row in Réglages transcribes a whole meeting to nothing behind « transcription de l'audio système dégradée ». Kept in the catalogue rather than deleted because it is the only user of externalDataFormat and two whisper.test.ts tests reach that loader path through its id."
+    },
+    "Xenova/whisper-medium": {
+      "verdict": "unverified",
+      "transformers": "3.8.1",
+      "at": "2026-09-22",
+      "where": "scripts/check-models.mjs — weights not on this machine",
+      "reason": "same unreachable Hub",
+      "cost": "1614 MB. The largest row that is not turbo, and the one most likely to hit the same export-vintage problem turbo hit, since the risk scales with how recently a checkpoint was converted."
+    }
+  }
+}

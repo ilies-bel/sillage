@@ -16,6 +16,12 @@
  * `.onnx` graph stub arrives, the weights do not, and ONNX Runtime aborts at
  * load with a `file_size` error — mid-meeting, on the provider that exists to
  * be the thing that cannot fail.
+ *
+ * **Every row here is held to one real inference** by `npm run check:models`,
+ * against `scripts/whisper-models.verified.json`. Adding a row without an entry
+ * in that ledger fails the check. That guard did not exist while turbo shipped
+ * broken, which is why turbo shipped broken; it is not in `npm run check`
+ * because its subject is gigabytes of weights rather than source.
  */
 import fs from 'node:fs'
 import path from 'node:path'

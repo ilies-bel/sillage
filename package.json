@@ -46,7 +46,8 @@
     "check:platform": "node scripts/check-platform.mjs",
     "check:french": "node scripts/check-french.mjs",
     "make-brand": "node scripts/make-brand.mjs",
-    "check:motion": "node scripts/check-motion.mjs"
+    "check:motion": "node scripts/check-motion.mjs",
+    "check:models": "node scripts/check-models.mjs"
   },
   "build": {
     "appId": "fr.ilies-bel.sillage",
