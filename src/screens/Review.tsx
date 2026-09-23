@@ -564,6 +564,9 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   const [below, setBelow] = useState<'document' | 'rail' | null>(null)
   const railRef = useRef<HTMLDivElement>(null)
   const docRef = useRef<HTMLElement>(null)
+  /** The rows a tick moves, and where they were when it was pressed — see `holdRows`. */
+  const rowsRef = useRef<HTMLFieldSetElement>(null)
+  const rowsWere = useRef<number | null>(null)
   /*
    * Once, and then it stays read.
    *
@@ -1171,6 +1174,71 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
     return () => observer.disconnect()
   }, [measure, staged])
 
+  /**
+   * **A tick does not move the other ticks out from under the finger.**
+   *
+   * Unchecking « Opportunité » is correct in every way but one. Nine rows go
+   * read-only, a warn paragraph arrives above them saying their corrections
+   * will not travel, the rail's view key changes, the coverage for that payload
+   * is dropped and *Valider* is withdrawn for « Remonter dans ce qui part » —
+   * all of that is `railPayload` and `covered` working exactly as written.
+   *
+   * What none of it accounts for is that the paragraph is inserted **above the
+   * rows**, in the same scroller, so every row below it slides down. Measured
+   * on the shipped gate at 1280×800, at rest, two agreeing readings:
+   *
+   *     checkbox y   465.8 → 529.6   (+63.8)
+   *     checkbox y   514.9 → 578.6   (+63.7)
+   *     checkbox y   581.0 → 644.7   (+63.7)
+   *     scrollTop      651 → 651     (uncompensated)
+   *
+   * The pointer does not move, so the checkbox that lands under it is a
+   * *different intent's*. A second press — the reflex double-tap, the rep
+   * correcting themselves — toggles something they did not aim at, at the one
+   * human gate in the product, in front of a `POST /v1/crm/tasks` with no
+   * idempotency key and a `CrmPort` with no delete verb. `--press` is the only
+   * pass that can see this at all: both rested frames are impeccable and the
+   * defect exists only in the transition between them.
+   *
+   * **Chromium's own scroll anchoring should have absorbed it.**
+   * `overflow-anchor` is `auto` the whole way up from the checkbox. It did not,
+   * because the footer changes height in the same frame — 108.6 → 72.6 px, as
+   * *Valider* is withdrawn — and a scroller resize is itself an anchoring
+   * suppression trigger. The browser's remedy is disabled by the other half of
+   * the very change it would have been correcting.
+   *
+   * So the rows are put back by hand. Not the notice's height, which is a proxy
+   * that misses the read-only rows changing size and can be wrong about a
+   * collapsed margin: the **rows' own position**, snapshotted by `holdRows` at
+   * the instant of the press, when the layout is still the one the rep aimed
+   * at, and restored here after the commit. Whatever moved above them, they end
+   * where they started.
+   *
+   * Keyed on `checked` rather than on `railPayload` so it clears its own
+   * snapshot on *every* tick. Unchecking the Outlook draft does not change
+   * `railPayload` — measured, it moves this column not at all — and an effect
+   * that only ran on the rail's own payload would leave that press's snapshot
+   * behind to be spent on the next one.
+   *
+   * It cannot corrupt the coverage record. `read` drops `seen` for the rail the
+   * moment the view key changes and re-bases it on wherever the scroller is, so
+   * moving the scroller first simply means it re-bases on the honest position —
+   * the band the rep is actually looking at. The notice itself is new content
+   * above that band, so it stays unread and the gate stays shut until they go
+   * up and read it, which is the behaviour the withdrawal is asking for.
+   */
+  useLayoutEffect(() => {
+    const scroller = railRef.current
+    const rows = rowsRef.current
+    const was = rowsWere.current
+    rowsWere.current = null
+    if (scroller === null || rows === null || was === null) return
+    const drift = rows.getBoundingClientRect().top - was
+    // Sub-pixel drift is a fractional layout, not a displacement.
+    if (Math.abs(drift) < 1) return
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + drift)
+  }, [checked])
+
   /*
    * The gate opens on the doubt.
    *
@@ -1361,6 +1429,13 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
   )
 
   const toggle = useCallback((id: string) => {
+    /*
+     * Where the rows are *before* React is told anything — the only moment the
+     * layout is still the one the rep pressed against. Spent by the layout
+     * effect above; see its docblock for what moves and why the browser's own
+     * remedy does not fire.
+     */
+    rowsWere.current = rowsRef.current?.getBoundingClientRect().top ?? null
     setChecked((previous) =>
       previous === null
         ? previous
@@ -2825,7 +2900,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             scroll. Fields scroll, and the three boxes that choose what ships are
             fields.
           */}
-          <fieldset className="mt-block">
+          <fieldset ref={rowsRef} className="mt-block">
             <SectionHeader as="legend" className="mb-snug">
               Ce qui sera créé
             </SectionHeader>
