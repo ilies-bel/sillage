@@ -1122,17 +1122,6 @@ async function pile(page, subject = 'notice') {
     page.evaluate((which) => {
       const pill = document.querySelector('[data-pill]')
       /*
-       * Whichever card is in the one card slot, and not `[role="alert"]`: the slot
-       * holds a refusal *or* a mention, and a parameter defaulted to the one the
-       * first caller wanted is a parameter with one value. Direct children only —
-       * the *panel* carries `data-above` too and holds a `role="status"` of its
-       * own several bands down, and `closest('[data-card]')` from that one would
-       * measure the panel while reporting a card.
-       */
-      const notice = document
-        .querySelector('[data-card] > [role="alert"], [data-card] > [role="status"]')
-        ?.closest('[data-card]')
-      /*
        * The panel is named by the class that carries its own arrival, which is
        * the same element `data-card` is on — and both ends of it, because a panel
        * on its way out is still a box at a distance from the pill.
@@ -1140,6 +1129,36 @@ async function pile(page, subject = 'notice') {
       const panel = document.querySelector(
         '[data-card].widget-panel-arrive, [data-card].widget-panel-leaving',
       )
+      /*
+       * Whichever card is in the one card slot, and not `[role="alert"]`: the slot
+       * holds a refusal *or* a mention, and a parameter defaulted to the one the
+       * first caller wanted is a parameter with one value.
+       *
+       * **The panel is excluded by identity, not by depth.** This asked for a
+       * `[data-card] > [role=…]` and leaned on the panel's own status being
+       * nested « several bands down », which it was when the line was written.
+       * The panel's health region — `data-health`, an empty live region while
+       * nothing is wrong — is a *direct* child, so the selector matched the
+       * panel, `closest('[data-card]')` returned the panel, and `crowded`
+       * reported three boxes on a window holding two. `pile(page, 'panneau')`
+       * threw on every run of `widget-ouvert` and `widget-dessous`, at both
+       * sizes, and the fourteen passes behind the stage never ran on either
+       * screen — the seam it was built to measure reads a correct 16 px.
+       *
+       * That region's own comment predicted this: « a test that asked the page
+       * for the status would have got whichever one React rendered first ».
+       * Asking which card is *not the panel* cannot rot the same way, whatever
+       * the panel grows next. The `>` stays: both real cards put their live
+       * region at the top level, and a nested one belongs to something else.
+       */
+      const notice =
+        [
+          ...document.querySelectorAll(
+            '[data-card] > [role="alert"], [data-card] > [role="status"]',
+          ),
+        ]
+          .map((live) => live.closest('[data-card]'))
+          .find((found) => found !== null && found !== panel) ?? null
       const card = which === 'panneau' ? panel : notice
       if (!pill || !card) return null
       // See the docblock: three boxes are not a seam.
@@ -4069,16 +4088,44 @@ const SCREENS = {
       const primary = page.getByRole('button', { name: /^Valider/ })
 
       /*
-       * The decision band, which is the `<fieldset>`'s parent: the rows, the
-       * one control, and the sub-line. Anything filled in here is a candidate
-       * for « looks like the control that ships », which is why the comparison
-       * is scoped to it and not to the whole page.
+       * The decision band is the **gate** — the `<aside>` the fieldset lives in,
+       * holding the rows, the one control and the sub-line. Anything filled in
+       * here is a candidate for « looks like the control that ships », which is
+       * why the comparison is scoped to the gate and not to the whole page.
+       *
+       * It was `field.parentElement`, and that was the band for as long as the
+       * button was a sibling of the fieldset. The gate has since split in two —
+       * a scrolling body holding the rows, and a pinned footer holding the
+       * control that writes — so the fieldset's parent became the *body*, and
+       * the band stopped containing the one thing this stage exists to measure.
+       * It did not report a weaker result: it threw « le contrôle qui écrit est
+       * introuvable dans la bande de décision » before asking a single one of
+       * its questions, at both sizes, taking the fourteen passes on this screen
+       * down with it.
+       *
+       * Reading the `<aside>` is also strictly **wider** than what was asked
+       * before: an impostor in the body is as dangerous as one in the footer,
+       * and the old band could not see the footer at all. Measured on the
+       * shipped gate with nothing ticked — no button anywhere in it wears the
+       * paint of the control that writes.
+       *
+       * The two halves are told apart by *structure*, not by class: the footer
+       * is the child that does not contain the fieldset. Naming it by
+       * `shrink-0 border-t` would be the same literal selector that just rotted,
+       * one restyle away from rotting again.
        */
       const slot = async () =>
         page.evaluate(() => {
           const field = document.querySelector('fieldset')
-          const band = field?.parentElement ?? null
+          const band = field?.closest('aside') ?? null
           if (!band) return null
+          /*
+           * The sub-line is the footer's, because it is the sentence standing
+           * where the control was. The body's last paragraph is whatever prose
+           * happens to end the scroller, and reading that one would compare the
+           * refusal against a line nobody wrote for this purpose.
+           */
+          const foot = [...band.children].find((child) => !child.contains(field)) ?? band
           const controls = [...band.querySelectorAll('button')].map((b) => {
             const r = b.getBoundingClientRect()
             const s = getComputedStyle(b)
@@ -4091,7 +4138,7 @@ const SCREENS = {
               h: +r.height.toFixed(1),
             }
           })
-          const line = [...band.querySelectorAll('p')].pop()
+          const line = [...foot.querySelectorAll('p')].pop()
           return { controls, line: (line?.innerText || '').replace(/\s+/g, ' ').trim() }
         })
 
