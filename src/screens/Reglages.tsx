@@ -2097,6 +2097,14 @@ function UpdatePanel() {
     void act(async () => {
       status.set(await invoke('update:download', {}))
     })
+  const openReleases = () =>
+    void act(async () => {
+      // `opened: false` is the honest answer on a host with no browser, and it
+      // is said rather than swallowed — otherwise the press looks like it
+      // worked and the rep waits for a window that is never coming.
+      const { opened } = await invoke('update:releases:open', {})
+      if (!opened) setFailure('la page des versions n’a pas pu être ouverte')
+    })
 
   return (
     <section>
@@ -2107,12 +2115,31 @@ function UpdatePanel() {
       </Lede>
 
       {update.phase === 'disabled' ? (
-        // Stated, not hidden. A tester on a build that cannot update itself
-        // needs to know that checking again will never change anything.
-        <p className="text-muted text-ui">
-          {update.reason ?? 'Cette version ne se met pas à jour automatiquement.'} Les nouvelles
-          versions se téléchargent depuis la page des versions du projet.
-        </p>
+        /*
+          Stated, not hidden. A tester on a build that cannot update itself needs
+          to know that checking again will never change anything.
+
+          **And the remedy is a control, not a noun phrase.** This branch is not
+          the exotic one: `build.win` declares neither `publisherName` nor
+          `certificateFile`, so `updateTrust` returns `ok: false` and every
+          Windows build shipping today — the primary platform (HR-2), for the
+          first deliverable (DEC-28) — lands here. It read « Les nouvelles
+          versions se téléchargent depuis la page des versions du projet » and
+          then held zero links and zero buttons at both sizes: the page was
+          never named and could not be reached, which is the dead end with a
+          sentence in it that DEC-26 forbids. Two consecutive sentences also
+          opened on the same three words in opposite registers — « à installer à
+          la main » and « se téléchargent depuis ».
+        */
+        <div className="flex flex-col items-start gap-tight">
+          <p className="text-muted text-ui">
+            {update.reason ?? 'Cette version ne se met pas à jour automatiquement.'} Les nouvelles
+            versions sont publiées sur GitHub.
+          </p>
+          <Button onClick={openReleases} {...unavailable(busy, 'Ouverture en cours…')}>
+            Voir les versions publiées
+          </Button>
+        </div>
       ) : null}
 
       {update.phase === 'idle' ? (

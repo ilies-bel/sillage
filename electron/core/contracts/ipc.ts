@@ -1089,6 +1089,25 @@ export const invokeChannels = {
     request: z.object({}),
     response: z.object({ started: z.boolean(), reason: z.string().nullable() }),
   },
+  /**
+   * The releases page, for a build that cannot update itself.
+   *
+   * `phase: 'disabled'` is the branch every Windows build takes today —
+   * `build.win` declares neither `publisherName` nor `certificateFile`, so
+   * `updateTrust` returns `ok: false` on the primary platform (HR-2) for the
+   * first deliverable (DEC-28). The panel told the rep that new versions « se
+   * téléchargent depuis la page des versions du projet » and then held zero
+   * links and zero buttons: a remedy named in the abstract is the dead end with
+   * a sentence in it that DEC-26 forbids.
+   *
+   * `opened: false` is the honest answer where no browser can be reached, and
+   * is reported rather than swallowed — the same shape as
+   * `capture:permission:open`, and for the same reason.
+   */
+  'update:releases:open': {
+    request: z.object({}),
+    response: z.object({ opened: z.boolean() }),
+  },
 } as const
 
 export type InvokeChannel = keyof typeof invokeChannels

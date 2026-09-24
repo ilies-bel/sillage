@@ -851,6 +851,26 @@ const openCapturePane = async (): Promise<boolean> => {
 }
 
 /**
+ * Where a build that cannot update itself sends the rep.
+ *
+ * The same shape as `openCapturePane` above and for the same reason: this file
+ * is the only one that knows a page is a URL and which URL, and the renderer is
+ * handed a capability rather than an address. `false` where the browser cannot
+ * be reached, so the panel can say so instead of appearing to have worked.
+ *
+ * The address is `build.publish` in `package.json` — the feed the updater reads
+ * when it *is* trusted — so the page a rep is sent to by hand is the page the
+ * app would have downloaded from itself.
+ */
+const RELEASES_URL = 'https://github.com/ilies-bel/sillage/releases'
+
+const openReleasesPage = async (): Promise<boolean> =>
+  shell
+    .openExternal(RELEASES_URL)
+    .then(() => true)
+    .catch(() => false)
+
+/**
  * **The 14:30 starts and nothing happens.**
  *
  * The agenda knew the meeting, labelled it « PRÊT », and drew *Enregistrer* —
@@ -2667,6 +2687,7 @@ const boot = async (): Promise<void> => {
     // Consent, measured on demand. `main.ts` is the only file that knows a
     // privacy pane is a URL, and it hands the renderer a capability instead.
     capturePermission: { read: capturePermissionNow, openSettings: openCapturePane },
+    openReleases: openReleasesPage,
     capabilities: () => ({ report: probe, reason: probeReason }),
     // Read lazily: `boot:changed` and this channel must never disagree, and a
     // value captured here would freeze the state at registration time.

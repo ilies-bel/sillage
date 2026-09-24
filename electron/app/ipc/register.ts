@@ -237,6 +237,15 @@ export interface IpcDeps {
    */
   capturePermission?: CapturePermissionPort | null
   /**
+   * Opens the project's releases page in the rep's own browser.
+   *
+   * Implemented in `main.ts` for the reason `capturePermission` is: this is the
+   * one file allowed to know that a page is a URL and which URL. Absent leaves
+   * the channel refusing with a stated reason and the panel showing its
+   * sentence with no control beside it.
+   */
+  openReleases?: () => Promise<boolean>
+  /**
    * The DEC-24 capability diff, or why there is none. Read lazily so a probe
    * that is still in flight at boot shows as "en cours" rather than as absent.
    */
@@ -1605,6 +1614,16 @@ export const handlers: Handlers = {
   'boot:state': (_request, { bootState }) => bootState?.() ?? NO_BOOT_STATE,
 
   'update:status': (_request, deps) => statusOf(deps),
+
+  'update:releases:open': async (_request, { openReleases }) => {
+    // Absent in a test and on any host with no browser to reach: the panel then
+    // keeps the sentence and draws no control, rather than one that does
+    // nothing (DEC-26).
+    if (!openReleases) {
+      throw refuse('La page des versions n’est pas accessible depuis cette configuration.')
+    }
+    return { opened: await openReleases() }
+  },
 
   'update:check': async (_request, deps) => {
     // `check()` never rejects (DEC-26), so there is nothing to catch: an

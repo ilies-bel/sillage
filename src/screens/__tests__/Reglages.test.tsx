@@ -1033,6 +1033,53 @@ describe('mise à jour', () => {
     expect(pane().queryByText(/est à jour/)).toBeNull()
   })
 
+  /**
+   * **The branch every Windows build takes today, and its remedy was a noun.**
+   *
+   * `build.win` declares neither `publisherName` nor `certificateFile`, so
+   * `updateTrust` returns `ok: false` and the primary platform (HR-2) lands
+   * here for the first deliverable (DEC-28). The panel said new versions « se
+   * téléchargent depuis la page des versions du projet » and held **zero links
+   * and zero buttons** at both sizes: a destination named in the abstract that
+   * a rep has no way to reach from the screen telling them to reach it, which
+   * is the dead end with a sentence in it DEC-26 forbids.
+   *
+   * Asked of the *control* and of the *call*, not of the copy — a sentence
+   * naming GitHub with nothing behind it would be the same defect with better
+   * wording.
+   */
+  test('the build that cannot update itself can still reach the versions', async () => {
+    let opened = 0
+    mount()
+    bridge.when('update:releases:open', () => {
+      opened += 1
+      return { opened: true }
+    })
+    await openWith({
+      phase: 'disabled',
+      reason: 'cette version n’est pas signée',
+    })
+
+    const control = pane().getByRole('button', { name: 'Voir les versions publiées' })
+    expect(control).toBeTruthy()
+
+    fireEvent.click(control)
+    await waitFor(() => expect(opened).toBe(1))
+  })
+
+  /**
+   * A press that reached no browser must say so. Swallowed, it looks like it
+   * worked and the rep waits for a window that is never coming.
+   */
+  test('a releases page that will not open is said, not swallowed', async () => {
+    mount()
+    bridge.when('update:releases:open', () => ({ opened: false }))
+    await openWith({ phase: 'disabled', reason: 'cette version n’est pas signée' })
+
+    fireEvent.click(pane().getByRole('button', { name: 'Voir les versions publiées' }))
+    await waitFor(() => expect(pane().getByText(/n’a pas pu être ouverte/)).toBeTruthy())
+  })
+
   test('an available version is not downloaded silently, and says what it will cost', async () => {
     mount()
     await openWith({ phase: 'available', availableVersion: '0.2.0' })
