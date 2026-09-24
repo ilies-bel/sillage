@@ -238,7 +238,61 @@ export function CompteRenduDocument({
           return (
             <div key={key} className="relative">
               <Marker>{line.marker}</Marker>
-              <div className={HEADING_CLASS[line.level]}>
+              {/*
+                **A `<div>` for the face, a heading for the tree.**
+
+                `HEADING_CLASS`' own docblock argues at length that these are
+                `<div>`s « because this is a typesetter and not a markdown
+                renderer » — a rendering argument, about which tag rule sets the
+                face. It was read as settling the *semantics* too, and nothing
+                asked. Measured on the shipped renderer, both smoke sizes, three
+                surfaces:
+
+                    screen                    h1–h6 seen   set as a heading
+                    session-compte-rendu      2            0 of 11
+                    review-rail               3            0 of 11
+                    historique (un dossier)   1            0 of 3
+
+                On `session-compte-rendu`@1280×800 the two headings the screen
+                does report are both the **notepad's** — the rep's own scratch
+                lines — so the document the product exists to produce was the one
+                thing on the screen that could not be navigated; at 960×600,
+                where the notepad is behind a press, that screen had no heading
+                of any level at all while drawing eleven of them. The gate is the
+                same document, and it is the screen a rep reads before the single
+                confirmation DEC-4 allows.
+
+                `role` + `aria-level` rather than `<h1>`/`<h2>`/`<h3>`: the tag
+                would pull `index.css`'s base-layer heading rule and re-decide
+                the face at a fourth site, which is the defect that docblock is
+                about. The role says what it is and changes no pixel.
+
+                **One level down from the markdown, because a document sits
+                inside a page that has already named itself.** Measured, the
+                whole heading sequence on the gate at 1280×800 with the levels
+                mirrored straight across:
+
+                    1   Néovia Santé — cadrage renfort data   (the page)
+                    1*  Néovia Santé — cadrage renfort data   (the document)
+                    2*  Résumé …
+
+                — two level-1 headings carrying the *same string*, on the screen
+                whose own test asserts « open, the one h1 is the meeting ». The
+                `#` line is the compte-rendu's title and not the window's, so it
+                is a level 2 and its `##` sections are level 3. Checked against
+                the other two surfaces rather than assumed: `historique` draws a
+                record whose document opens on `##` and sits after the pane's own
+                « Mes notes » at level 2, so the offset lands it at 3 with no rung
+                skipped; and on the session screen the notepad keeps its own tag
+                headings, so the offset only moves the compte-rendu underneath
+                them. The ladder is printed by `--a11y` on every run, at both
+                sizes, which is what makes that a measurement and not a hope.
+              */}
+              <div
+                role="heading"
+                aria-level={line.level + 1}
+                className={HEADING_CLASS[line.level]}
+              >
                 <Prose text={line.text} onQuote={onQuote} />
               </div>
             </div>

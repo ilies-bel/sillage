@@ -36,6 +36,40 @@ describe('CompteRenduDocument', () => {
   })
 
   /*
+   * **And « as headings » means to the accessibility tree, which for the life of
+   * this component it did not.**
+   *
+   * `HEADING_CLASS`' docblock argues these are `<div>`s because the component is
+   * a typesetter and not a markdown renderer — a rendering argument that was
+   * read as settling the semantics too. Measured on the shipped renderer, both
+   * smoke sizes: eleven headings drawn on `session-compte-rendu` and at the
+   * gate, three on a record, and **none** of them a heading to a screen reader.
+   * The two the session screen did report were the rep's own notepad lines.
+   *
+   * jsdom cannot see the face — `--census` owns that, on a real browser — but
+   * `role` and `aria-level` are attributes, so the direction that fails is here:
+   * revert either and this goes red. The level is one below the markdown's,
+   * because the document sits inside a page that has already named itself; the
+   * ladder that follows from that is measured by `--a11y`, on three surfaces at
+   * two sizes.
+   */
+  it('announces each rung as a heading, one level under the page', () => {
+    render(
+      <CompteRenduDocument text={'# Titre\n\n## Section\n\n### Sous-section\n\nUne phrase.'} />,
+    )
+    for (const [text, level] of [
+      ['Titre', 2],
+      ['Section', 3],
+      ['Sous-section', 4],
+    ] as const) {
+      const found = screen.getByRole('heading', { level, name: text })
+      expect(found, `« ${text} » must be a heading at level ${level}`).toBeTruthy()
+    }
+    // The prose beside them is not one, or every line would be a rung.
+    expect(screen.queryByRole('heading', { name: 'Une phrase.' })).toBeNull()
+  })
+
+  /*
    * The vocabulary is closed on purpose. A table the recipe never writes lands
    * as literal pipes here *and* in the CRM — which is the point: the pane is
    * where a rep finds that out, before pressing the one button.

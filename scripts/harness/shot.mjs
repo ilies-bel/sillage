@@ -8866,10 +8866,27 @@ async function main() {
           ? 'aucune prose à mesurer'
           : `pas de h1, prose à ${ladder.body}px`
         : `titre ${ladder.top}px sur prose ${ladder.body}px (${ladder.step}×)`
+    /*
+     * The documents, named with their own rung and their own count of runs above
+     * it — « 0 titre(s) de document » on a screen drawing eleven is the sentence
+     * this pass printed for the life of the harness, and it printed it as a
+     * success. A document present and silent now reads differently from no
+     * document at all.
+     */
+    const papers =
+      tree.docs.length === 0
+        ? 'aucun document'
+        : tree.docs
+            .map((d) =>
+              d.rung === null
+                ? `${d.which} non dessiné`
+                : `${d.which} ${d.above} titre(s) sur prose ${d.rung}px`,
+            )
+            .join(', ')
     if (unnamed.length === 0) {
       console.log(
         `  arbre: ${tree.controls} contrôle(s) et ${tree.fields} champ(s) nommés, ` +
-          `${tree.headings} titre(s) dans l’échelle, ${rung}`,
+          `${tree.headings} titre(s) dans l’échelle, ${rung} — ${papers}`,
       )
     }
     else {
@@ -10887,11 +10904,35 @@ async function a11y(page) {
       if (!named) out.push({ why: 'champ sans étiquette (le placeholder n’en est pas une)', what: describe(el) })
     }
 
+    /*
+     * **A heading is a role, and this pass was the one asking for a tag.**
+     *
+     * `--rhythm` has read `h1…h6, [role="heading"]` since it landed; this pass —
+     * the one whose whole subject is the accessibility tree — read the six tags
+     * only, so the two halves of the harness disagreed about what a heading is
+     * and the *accessibility* half held the narrower definition. Measured on the
+     * shipped renderer at both smoke sizes, the population that answered to the
+     * wider one and not to this: eleven per compte-rendu on the session screen
+     * and at the gate, three on a record — against the 1–3 tags those same
+     * screens reported. « ${n} titre(s) dans l'échelle » was a denominator over
+     * the smaller number, which is the shape this file's own docblocks call a
+     * verdict over an unstated population.
+     *
+     * The level comes from whichever the element declared. A `role="heading"`
+     * with no `aria-level` is level 2 — the platform's default, not a guess.
+     */
+    const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]'
+    const levelOf = (el) => {
+      if (/^H[1-6]$/.test(el.tagName)) return Number(el.tagName.slice(1))
+      const said = Number(el.getAttribute('aria-level'))
+      return Number.isInteger(said) && said >= 1 && said <= 6 ? said : 2
+    }
+
     let previous = 0
-    for (const el of document.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+    for (const el of document.querySelectorAll(HEADINGS)) {
       if (!drawn(el)) continue
       headings += 1
-      const level = Number(el.tagName.slice(1))
+      const level = levelOf(el)
       if (previous !== 0 && level > previous + 1) {
         out.push({ why: `niveau de titre sauté (h${previous} → h${level})`, what: text(el).slice(0, 40) })
       }
@@ -10940,12 +10981,17 @@ async function a11y(page) {
     const byChars = new Map()
     for (const el of document.querySelectorAll('body *')) {
       const own = ownChars(el)
-      if (own < 20 || !shown(el) || el.closest('h1, h2, h3, h4, h5, h6')) continue
+      // `HEADINGS`, not the six tags: a document's headings are roles, and
+      // « Échanges et points techniques » at 19px is thirty characters of
+      // not-prose that was being weighed against the prose it heads.
+      if (own < 20 || !shown(el) || el.closest(HEADINGS)) continue
       const px = Math.round(parseFloat(getComputedStyle(el).fontSize) * 10) / 10
       byChars.set(px, (byChars.get(px) ?? 0) + own)
     }
     const body = [...byChars].sort((a, b) => b[1] - a[1])[0] ?? null
-    const top = [...document.querySelectorAll('h1')].filter(shown)[0] ?? null
+    const top =
+      [...document.querySelectorAll(HEADINGS)].filter((el) => shown(el) && levelOf(el) === 1)[0] ??
+      null
     let ladder = { body: body?.[0] ?? null, top: null, step: null }
     if (top !== null && body !== null) {
       const px = Math.round(parseFloat(getComputedStyle(top).fontSize) * 10) / 10
@@ -10958,7 +11004,69 @@ async function a11y(page) {
       }
     }
 
-    return { problems: out, ladder, controls, fields, headings }
+    /*
+     * **The ladder a document draws is a ladder or it is decoration.**
+     *
+     * The three checks above ask about the *screen*. This one asks about the two
+     * things on it that are documents — `[data-document]`, the attribute
+     * `CompteRenduDocument` and `Notepad` both declare and the subject `--census`
+     * already holds to one display face. `--census` asks what face those headings
+     * are set in; this asks whether they are headings at all. One subject, two
+     * questions, and the second had no asker: every run on the compte-rendu was a
+     * `<div>` and a `<span>`, so a rep on a screen reader got eleven sizes of the
+     * same undifferentiated paragraph on the screen the product exists to fill.
+     *
+     * « A heading » is a run set above the document's **own** body rung, which is
+     * the same discriminator `--census` uses and is read at runtime rather than
+     * typed here — a hand-written size list is the defect `--census`' radius
+     * ladder already had once. The rung is elected by characters of own text, the
+     * way the page ladder above elects its prose size, because a document has one
+     * column of prose and a dozen short headings and counting elements would
+     * elect the headings. It cannot exclude headings from that count the way the
+     * page ladder does — whether they *are* headings is the question — so it
+     * leans on volume, and the rung is printed on every run so an implausible one
+     * is visible rather than silently quieting the claim. Measured: 15px on all
+     * six readings (three surfaces × two sizes).
+     *
+     * Below the rung is unasked, for `--census`' reason: the gutter's `#`/`##`
+     * markers are `--type-meta` in the mono face on purpose.
+     */
+    const docs = []
+    for (const doc of document.querySelectorAll('[data-document]')) {
+      const which = doc.getAttribute('data-document') || '?'
+      const runs = [...doc.querySelectorAll('*')].filter((el) => ownChars(el) > 0 && shown(el))
+      const sizeOf = (el) => Math.round(parseFloat(getComputedStyle(el).fontSize) * 10) / 10
+      const weight = new Map()
+      for (const el of runs) {
+        const own = ownChars(el)
+        if (own < 12) continue
+        weight.set(sizeOf(el), (weight.get(sizeOf(el)) ?? 0) + own)
+      }
+      const rung = [...weight].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+      if (rung === null) {
+        // A document with no prose drawn — the notepad behind a press at 960×600.
+        docs.push({ which, rung: null, above: 0, mute: 0 })
+        continue
+      }
+      let above = 0
+      let mute = 0
+      for (const el of runs) {
+        const px = sizeOf(el)
+        if (px <= rung + 0.5) continue
+        above += 1
+        if (el.closest(HEADINGS) !== null) continue
+        mute += 1
+        if (mute <= 4) {
+          out.push({
+            why: `titre de document non annoncé (${px}px sur une prose à ${rung}px)`,
+            what: `[data-document="${which}"] « ${text(el).slice(0, 34)} »`,
+          })
+        }
+      }
+      docs.push({ which, rung, above, mute })
+    }
+
+    return { problems: out, ladder, controls, fields, headings, docs }
   })
 }
 
