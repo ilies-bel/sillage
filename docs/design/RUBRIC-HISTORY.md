@@ -138,6 +138,7 @@ round 5 did not.
 | 23 | widget | `4e3da8a` | 8.5 | 7.5 | 6 | 7.5 | 8 | 8.5 | 8.5 | 7.5 | 8 | **70** |
 | 23 | main | `4e3da8a` | 7 | 7.5 | 8.5 | 7 | 8.5 | 7.5 | 8 | 7.5 | 7.5 | **69** ¶ |
 | 23 | detection | `4e3da8a` | 7.5 | 8 | 8.5 | 6.5 | 7 | 6.5 | 6 | 6 | 6.5 | **62.5** |
+| 24 | main | `5eb4b16` | 7 | 8 | 8 | 6.5 | 7 | 8.5 | 7.5 | 7 | 7.5 | **67** ※ |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -1457,3 +1458,139 @@ flow is the next defect in the same element.
   `role` and no `aria-live`: one stage shows a designed sentence with a remedy, the
   next shows « aucun fournisseur de transcription disponible » — lowercase, no
   terminal period, no remedy. Round 23 fixed which connector speaks, not how.
+
+## Round 24: six waves merged, none scored — ※ the gap this row closes
+
+**The last row before this one is round 23 at `4e3da8a`. This one is `5eb4b16`,
+twenty-nine commits and three days later.** Rounds 24 through 29 shipped —
+`--marks`, `--press`, `--census`'s radius discovery, `--rhythm`, `--cells`, the
+heading roles, the widget's arrival frame — and not one of them was transcribed
+here. The scorer found the gap itself, unprompted, and said so: the Movement
+section it wrote is against a stale baseline and reads as such.
+
+That is this file committing the defect `CLAUDE.md` names about findings lists:
+*a list goes stale the round after it is written*, and the remedy is to mark an
+entry in the same commit that closes it. Six rounds of work went unmarked, so
+the only honest thing the twenty-fourth row can say about its own delta is that
+the denominator is wrong.
+
+**Read −2 against round 23 as noise, not decline.** Round 21's controlled
+experiment put two blind scorers on one commit and got **66 and 68**. A −2 across
+nine axes, with three of the moving axes moving on findings round 23 itself
+named, sits inside that floor.
+
+### What moved, and why
+
+| axis | r23 | r24 | Δ | cause |
+|---|---|---|---|---|
+| 2 Typography | 7.5 | **8** | +0.5 | **closes** round 23's « the 19px document rung is two typefaces ». `--census` now reads `bloc-notes 19px/500/Fraunces ×1 · compte-rendu 19px/500/Fraunces ×7` on one screen. One rung, one face. |
+| 6 Motion | 7.5 | **8.5** | +1 | round 23 fixed `--motion`'s blindness (85 stages → 37 driven, 93 departures). The departures were always there; they are measured now, and correct on every stage driven. |
+| 8 Craft | 7.5 | 7 | −0.5 | **closes** round 23's « `--radius` (12px) worn by 0 corners » — the ladder is two rungs and the dead token is gone. What replaces it as the craft cost is six author-decided control heights on the DEC-4 gate: 24 ×15, 26.59 ×9, 28.59 ×7, **13 ×3**, 32.59 ×2, 36.59 ×1. |
+| 5 Colour | 8.5 | 7 | −1.5 | the largest move and mostly instrument — but the pair survives on the shipped screen. |
+| 7 States | 8 | 7.5 | −0.5 | the `focus-visible`-to-`hover` ratio, which no round had priced before. |
+| 3 Spacing | 8.5 | 8 | −0.5 | not the ladder — 100% on the 7 declared steps on four of six stages. The 960 allocation, which round 23 priced under axis 9. |
+| 4 Density | 7 | 6.5 | −0.5 | the lowest axis for the nineteenth consecutive round. |
+
+**Two round-23 open items are closed and neither was recorded as closed when it
+closed** — the same defect, one layer down:
+- *« Pressing Préparer inserts the refusal in flow, the list drops 72px, and the
+  rectangle arriving under the unmoved cursor is Ouvrir on the live recording. »*
+  `--press` on `agenda-preparer-refus` now reports **2 of 2 presses held under the
+  pointer, 0 replaced, 0 moved by their own press**, at both sizes.
+- *« `--radius` (12px) worn by 0 corners on six screens. »* `--census` reads two
+  declared rungs and no 12px.
+
+### The one thing
+
+**Give the document the window at 960×600.** `session-compte-rendu@960` renders
+the title block, **one line of Résumé prose**, then the fade and the page turn:
+the ask-block below takes **130 of 600px** and the header **95**. The product's
+own output gets less of the window than the furniture around it. `agenda@960`
+does it horizontally — **50.0% of the width** to a month grid showing 3 day rows.
+It lifts axes 3, 9 and most of 1's spend at once, and it is the only finding on
+the list a rep on a Windows laptop meets on their first day.
+
+### The finding that did not survive checking
+
+The scorer ranked second **« two calendar marks are one ink »**: « enregistrement
+en cours » and « réunion prête » both `rgb(215, 112, 0)`, ΔL\* **0.000**, 6px
+apart in the legend, separated only by fill-versus-hollow — « the product's
+central safety claim rides on 6px of annulus ».
+
+The observation is correct and the verdict is not. `CalendarGrid.tsx:357-392`
+argues that exact pair, with numbers: the two inks **cannot move** — `--accent`
+is pinned at 3.38:1 on white as a mark and sits 1.76:1 from `--warn`, which was
+itself moved to hue 42° after three filled shapes collided at 1.48:1, and
+`--brand-500` has 0.005 of margin on `--bg-subtle`. Both are locked into one
+lightness band, which is *why* they measure 1.0077:1. The second channel is
+therefore shape by construction, and the round-mark/square-mark split is the fix
+round 22 landed for it: « enregistrée » against « en cours » went 0.0000 →
+**0.5605**, « prévue » against « prête » 0.0000 → **1.0000**, against a 0.30
+floor. The filled orange circle is also the glyph `Widget.tsx` draws over the
+client's video, so « en cours » has one mark on both surfaces.
+
+What the scorer found is the one pair the docblock does not quote a number for —
+**0.4447**, recording against armed, same ink, same 6px size, fill against
+hollow. It clears the floor by 0.14. So the live question is not « two marks are
+one ink », which is answered; it is **whether 0.30 is the right floor for a 6px
+mark**, since the floor was set against larger ones. That is a threshold
+decision with a measurement behind it, not a defect, and it is recorded here as
+one.
+
+**This is the fourth shape on `CLAUDE.md`'s prose list, caught before it
+shipped:** a number that was computed and about to be written down as a number
+that was observed. The scorer measured honestly and read a deliberate,
+documented, already-fixed design decision as an oversight, because the docblock
+that argues it quotes every pair's number except the one the scorer measured.
+
+### The adversarial half of the round
+
+Scored blind by one agent; hunted by another, against a detached worktree pinned
+to `5eb4b16` with its own Vite, so neither touched the other's baseline. The
+split is `RUBRIC.md`'s own instruction — « the agent that hunted the defects does
+not assign the score », because every measurement a hunter holds is a fault. It
+was violated once at the top of this round and corrected before either agent
+wrote a number.
+
+Landed from it:
+
+- **A reason the rep reads was forwarded, not framed** — three sites, two of
+  which declared the same string `origin: 'foreign'` to the recorder and handed
+  it to the rep unframed a few lines later. `check-reasons.mjs`, the check named
+  for this defect, was green over both shipped instances: ES6 shorthand
+  `reason,` has no colon for its `/\breason:\s*…/` extractor, and its quote test
+  excused a leaking branch because the *other* branch of the same ternary held a
+  French string.
+- **The ⚠ faible that teaches the mark** was the one drawn at weight 400.
+- **The scheduling form's two fields had no accessible name** — the only two in
+  the renderer, in the one form no stage opens.
+
+Open, measured, not landed:
+
+- **`Réglages › Mise à jour` names no page and offers no link** on the `disabled`
+  branch — which is the branch every Windows build takes today, since `build.win`
+  declares neither `publisherName` nor `certificateFile`. The section holds
+  `links: 0, buttons: 0` at both sizes while `build.publish` already names the
+  repository and `shell.openExternal` is already wired.
+- **The widget says nothing when the client's side stops being captured**: panel
+  closed, `document.body.innerText` is « Enregistrement en cours / 00:05:00 / 2 »,
+  zero elements in `--warn`, and `[data-health]` is *unmounted* rather than
+  hidden, so a screen-reader rep is told nothing either. Needs a product
+  decision — the pill would have to carry a mark on a surface DEC-49 says must
+  not take the call.
+- **The session header prints the account twice at 960×600** and throws away the
+  half of the title that identifies the call: the objet gets 154px for 259px of
+  text, the client 62px for 87px, and the 62px spent on the duplicate is 40% of
+  what the objet gets. The review gate decided this exact question the other way
+  400 lines away — « the account, *unless the title already says it* » — and the
+  session header applies no such test. Needs a product decision: the gate hides a
+  suffix it composes, while this client is an editable field and the only editor
+  `meeting:rename` has.
+- **The document gets less of the window than the furniture around it.** At
+  960×600 the compte-rendu's reading band is 268 of 600px, and 188 of those 268
+  (70%) are spent before the first section heading — title, then metadata — so
+  the Résumé gets 27px: one line, cut mid-sentence. The account name is drawn
+  **five times** above the fold, four before the first word of summary, and the
+  document title twice, 85px apart, in two faces and two sizes. Needs a product
+  decision, because DEC-44 means VerySwing receives the string the rep read, so
+  the metadata cannot simply be dropped from the document.
