@@ -186,12 +186,38 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * the header row still ending at x=1248 of 1280 and x=928 of 960, as it
          * did before.
          *
-         * **Not measured by any pass, and that is recorded rather than excused.**
-         * `--cells` is the check whose subject this is, and it is blind to it by
-         * construction: it reads what a cell's contents *want* through a `Range`
-         * over its child nodes, and an `<input>` has none — its value is not in
-         * the DOM. It reports « 0 à l’étroit » on this screen with the objet
-         * visibly cut. Widening it belongs to the `harness` lane.
+         * **Not measured by any pass — closed.** `--cells` is the check whose
+         * subject this is, and it was blind to it by three separate
+         * constructions: it read what a cell's contents *want* through a `Range`
+         * over its child nodes and an `<input>` has none; it took a flex row's
+         * want to be its widest cell rather than the sum of them, and the cell
+         * that is short here is the group holding these two fields; and it
+         * skipped any cell whose `textContent` was empty, which a group of
+         * fields is. It reported « 0 à l’étroit » on this screen with the objet
+         * visibly cut. All three are widened now, and this line is marked in the
+         * commit that closes it rather than left standing in the present tense.
+         *
+         * What it measures here, at 960×600 — the minimum `main.ts` declares:
+         *
+         *     « Objet de la réunion »   boîte 156.3   veut 261   ← 105px coupés
+         *     « Client »                boîte  64     veut  89   ←  25px coupés
+         *     le groupe                 boîte 228.3   veut 358
+         *
+         * — « Néovia Santé — ca… » beside « Néovia… ». Both fields carry
+         * `field-sizing: content`, which sets a *preferred* size and does not
+         * stop a flex parent from shrinking past it, so the declaration this
+         * repo's invariants name as « nothing hides inside a field » reads as
+         * kept and is not.
+         *
+         * **And the pass says it is the window and not this row**, which is the
+         * honest reading and the reason nothing here changed: the header's fixed
+         * neighbours hold **6px** between them against a 129.7px shortfall, so
+         * no redistribution inside this row can fix it — at 960 the header
+         * carries more than the window holds. Dropping the client field would
+         * buy the objet 72px and leave it 33 short of the same fixture's title;
+         * the room would have to come from the meter (DEC-38) or the recipe
+         * picker (DEC-43), and neither is a layout decision. The pass counts it
+         * on every run at both sizes, so the next attempt starts from a number.
          */
         className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-full shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-tight font-sans text-copy font-medium outline-none [field-sizing:content]"
       />

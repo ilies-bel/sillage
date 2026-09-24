@@ -9607,7 +9607,7 @@ async function main() {
      */
     console.log(
       `  cellules: ${starved.flexible} cellule(s) extensible(s) dans ${starved.rows} rangée(s), ` +
-        `${starved.starved.length} à l’étroit · ${starved.boxes} boîte(s) fermée(s), ` +
+        `${starved.starved.length} à l’étroit${starved.cramped > 0 ? `, ${starved.cramped} trop à l’étroit pour la fenêtre` : ''} · ${starved.boxes} boîte(s) fermée(s), ` +
         `${starved.loose.length} trop large(s) · ${starved.columns} colonne(s) à la mesure, ` +
         `${starved.padded.length} rembourrée(s)`,
     )
@@ -15622,15 +15622,121 @@ async function cells(page) {
     /**
      * The widest line box this element's contents produce — a `Range`, never
      * `scrollWidth`, which a block-direction clamp defeats by construction.
+     *
+     * **Except over a field, whose value is not in the DOM at all.** A `Range`
+     * over an `<input>` selects nothing, so this returned 0 for every one of
+     * them and the arithmetic below read « wants nothing » as « fits ».
+     * `MeetingTitle.tsx` records that in as many words — « `--cells` is the
+     * check whose subject this is, and it is blind to it by construction … it
+     * reports 0 à l'étroit on this screen with the objet visibly cut. Widening
+     * it belongs to the harness lane » — written by the lane that could not fix
+     * it, and open ever since.
+     *
+     * `scrollWidth` is the right metric here and the wrong one above: the
+     * block-direction clamp that defeats it cannot happen on a single-line
+     * field, and the value the browser laid out is the only honest answer. Plus
+     * the borders, because `got` is a border-box rectangle and these two numbers
+     * are subtracted from each other. Verified against a field that fits:
+     * `session`@1280×800 reports the objet at 261px wanted against 261.4 got.
+     *
+     * A checkbox, a radio and a colour well carry no text to be short of, and a
+     * `<select>`'s `scrollWidth` is its own furniture rather than its option's.
+     */
+    const FIELD = 'textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"])'
+    /*
+     * **And a row of cells wants the sum of them, not the widest of them.**
+     *
+     * `Math.max` over the `Range`'s rects is the right question for a paragraph,
+     * where the rects are its line boxes; on a flex row the rects are its
+     * *cells*, and the widest cell is not what the row needs. That is what put
+     * the session header out of reach even with the field branch above: the
+     * starved cell is not a field, it is the `flex-1` group holding two, and the
+     * two fields inside it have no slack to take from each other — the slack is
+     * one level up, in the header. Measured on `session`@960×600, the group:
+     *
+     *     veut 261 + 89 + 8 d'écart = 358   ·   obtient 228.3
+     *
+     * Recursive on purpose, and only along the inline axis: a column lays its
+     * children on top of each other and the widest one is the honest answer,
+     * which is what the `Range` already gives.
      */
     const wants = (el) => {
+      if (el.matches(FIELD)) {
+        const own = getComputedStyle(el)
+        const edge =
+          (Number.parseFloat(own.borderLeftWidth) || 0) + (Number.parseFloat(own.borderRightWidth) || 0)
+        return round(el.scrollWidth + edge)
+      }
+      const own = getComputedStyle(el)
+      if (own.display.includes('flex') && !own.flexDirection.startsWith('column')) {
+        const inside = [...el.children].filter(shown)
+        if (inside.length > 0) {
+          const gaps = (Number.parseFloat(own.columnGap) || 0) * (inside.length - 1)
+          const edges =
+            (Number.parseFloat(own.paddingLeft) || 0) +
+            (Number.parseFloat(own.paddingRight) || 0) +
+            (Number.parseFloat(own.borderLeftWidth) || 0) +
+            (Number.parseFloat(own.borderRightWidth) || 0)
+          /*
+           * **A scroller contributes its box and not its contents.** The chip
+           * rail on `agenda-client` holds 1 066px of filters in 573.5 and offers
+           * the rest by scrolling, which is the whole point of it; without this
+           * the recursion carried that overflow up into every ancestor and
+           * reported the row around it as 461px short at *both* sizes. `auto`
+           * and `scroll` only — `overflow-hidden` is a backstop against painting
+           * outside a box, not an offer of another way to read it, and the
+           * session header's title group wears exactly that.
+           */
+          return round(
+            inside.reduce((total, kid) => total + (scrolls(kid) ? kid.getBoundingClientRect().width : wants(kid)), 0) +
+              gaps +
+              edges,
+          )
+        }
+      }
       const range = document.createRange()
       range.selectNodeContents(el)
       const rects = [...range.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5)
-      return rects.length === 0 ? 0 : round(Math.max(...rects.map((r) => r.width)))
+      if (rects.length === 0) return 0
+      /*
+       * **Plus its own inset, because a control's padding is not slack.**
+       *
+       * The flex branch above has always added the element's own edges; this one
+       * did not, so one cell's want meant « the box it needs » and another's
+       * meant « the ink in it », and the two were then subtracted from each
+       * other. What that made of « slack » is every button in the product: the
+       * session header's *Terminer* is 77.3px of box around 51.3px of word, and
+       * 26 of those px were being counted as room the row was holding for
+       * nobody. Measured at 1080×800, the claim fired on a title one character
+       * short against 32px of « slack » that was a button's padding and a status
+       * chip's — a finding no layout could act on.
+       */
+      const inset =
+        (Number.parseFloat(own.paddingLeft) || 0) +
+        (Number.parseFloat(own.paddingRight) || 0) +
+        (Number.parseFloat(own.borderLeftWidth) || 0) +
+        (Number.parseFloat(own.borderRightWidth) || 0)
+      return round(Math.max(...rects.map((r) => r.width)) + inset)
+    }
+    /**
+     * What the cell has to show — the guard that stops this claim being made
+     * about a spacer or a rule.
+     *
+     * A field's ink is its **value**, which is not in the DOM, and a cell whose
+     * whole content is fields therefore reported an empty `textContent` and was
+     * skipped. That is the third of the three constructions that kept this claim
+     * away from the session header, after the `Range` and the `grow > 0`
+     * candidate: the cell it had to name holds two `<input>`s and nothing else.
+     */
+    const ink = (el) => {
+      const own = ((el.matches(FIELD) ? el.value : el.textContent) ?? '').trim()
+      if (own !== '') return own
+      return [...el.querySelectorAll(FIELD)].map((f) => f.value ?? '').join('').trim()
     }
     const near = (el) =>
-      ((el.getAttribute('aria-label') || el.textContent || '').trim() || el.tagName)
+      // `ink`, not `textContent`: a cell whose content is fields named itself
+      // « DIV » in the one finding this pass was widened to make.
+      ((el.getAttribute('aria-label') || ink(el) || '').trim() || el.tagName)
         .replace(/\s+/g, ' ')
         .slice(0, 34)
     const where = (el) => {
@@ -15679,6 +15785,14 @@ async function cells(page) {
     let rows = 0
     let flexible = 0
     let boxes = 0
+    /*
+     * Short of its text with no sibling able to cover it — the window, not the
+     * row. Counted and printed rather than dropped: « 0 à l'étroit » over a
+     * screen with a cut title is the silence this pass was widened out of, and a
+     * finding moved out of a claim without a number left behind is the same
+     * silence one door along.
+     */
+    let cramped = 0
 
     // ── claim 3 ──────────────────────────────────────────────────────────────
     /*
@@ -15758,6 +15872,7 @@ async function cells(page) {
       const cells = kids.map((el) => ({
         el,
         grow: Number.parseFloat(getComputedStyle(el).flexGrow) || 0,
+        shrink: Number.parseFloat(getComputedStyle(el).flexShrink) || 0,
         got: round(el.getBoundingClientRect().width),
         want: wants(el),
       }))
@@ -15766,13 +15881,84 @@ async function cells(page) {
       const slack = round(
         cells.filter((c) => c.grow === 0).reduce((total, c) => total + Math.max(0, c.got - c.want), 0),
       )
-      for (const cell of cells.filter((c) => c.grow > 0)) {
-        if ((cell.el.textContent ?? '').trim() === '') continue
+      /*
+       * **A cell that yields, not only a cell that grows.**
+       *
+       * The rule this claim states is « starved by its fixed siblings », and it
+       * was written from a row whose starved cell was the `flex-1` one — so the
+       * candidate set was `grow > 0`, which is one of the two ways a flex child
+       * gives ground. The other is the default: `flex-shrink: 1`. Measured on
+       * `session`@960×600, the window's own declared minimum, where the header
+       * holds two fields that shrink beside five siblings that are `shrink-0`:
+       *
+       *     « Objet de la réunion »   boîte 156.3   veut 261   ← 105px coupés
+       *     « Client »                boîte  64     veut  89   ←  25px coupés
+       *
+       * — « Néovia Santé — ca… » beside « Néovia… », the same account twice, the
+       * second one costing the first 64 pixels to say nothing the rep cannot
+       * read four centimetres to its left. Both wear `field-sizing: content`,
+       * the declaration this repo's invariants name as the guarantee that
+       * nothing hides in a field; it sets a *preferred* size and does not stop a
+       * flex parent from shrinking past it, so the guarantee reads as kept and
+       * is not.
+       *
+       * A cell that can do neither — `shrink-0` and `grow-0` — and is still
+       * short of its text is not starved by anybody: it was given a width and it
+       * is the wrong one. That is a different finding and stays out.
+       */
+      for (const cell of cells.filter((c) => c.grow > 0 || c.shrink > 0)) {
+        if (ink(cell.el) === '') continue
         flexible += 1
         if (scrolls(cell.el)) continue
         const short = round(cell.want - cell.got)
         if (short <= advance(cell.el)) continue
-        if (slack <= 0) continue
+        /*
+         * **The siblings have to be holding what the cell needs**, not merely
+         * holding something.
+         *
+         * `slack > 0` was the test, and « starved by its fixed siblings » is the
+         * claim; between them sits every row whose fixed cells hold a button's
+         * padding while the growing cell is short by a paragraph. Widening
+         * `wants` to see fields walked straight into one: the session header at
+         * 960×600 is **129.7px** short of its two fields and its fixed
+         * neighbours hold **32** — six pixels inside a status chip and
+         * twenty-six inside *Terminer*. Nothing in that row could have fixed it;
+         * the header carries more than the app's own minimum window holds, which
+         * this docblock already names as « a different finding and not this one »
+         * — it was simply not being told apart.
+         *
+         * The founding defect is unaffected, driven rather than argued: with
+         * `src/screens/search/Results.tsx` reverted to its pre-`87511ac` form,
+         * `agenda-search`@960×600 still reports all five rows, the first at
+         * 98.8px short against 164.7px of slack. The threshold is not a number
+         * chosen after the fact — it is the claim's own sentence, arithmetic.
+         */
+        /*
+         * **The siblings have to be holding something a reader would notice**,
+         * and the floor is the one this claim already uses for the shortfall:
+         * one character of the cell's own font, never a pixel count chosen after
+         * the fact.
+         *
+         * `slack > 0` was the test, and with a control's padding miscounted as
+         * slack (see `wants`) that made every row in the product a candidate:
+         * the session header at 960×600 is 129.7px short of its two fields while
+         * its fixed neighbours hold **6** — a status chip's rounding, and
+         * nothing else. Six pixels are not what a title lost eighteen characters
+         * to. That row is the case this docblock already names as « a window too
+         * narrow, which is a different finding and not this one »; it is now
+         * told apart and counted rather than claimed.
+         *
+         * Driven rather than argued, on the defect this claim was written for:
+         * with `src/screens/search/Results.tsx` reverted to its pre-`87511ac`
+         * form, `agenda-search`@960×600 still fails on all five of its cells,
+         * still naming every row it named before — « Sodexia » 98.8px short
+         * against 74.7px held, « Groupe Maréchal » 48.1 against 66.9, « Banque
+         * Delcourt » 42.3 against 89.8.
+         */
+        if (slack <= advance(cell.el)) {
+          cramped += 1
+          continue
+        }
         const own = getComputedStyle(cell.el)
         starved.push({
           at: where(cell.el), near: near(cell.el),
@@ -15824,7 +16010,7 @@ async function cells(page) {
         widths: cells.map((c) => `${c.got}${c.grow > 0 ? '↔' : ''}/${c.want}`).join(' '),
       })
     }
-    return { rows, flexible, starved, boxes, loose, columns, padded }
+    return { rows, flexible, starved, cramped, boxes, loose, columns, padded }
   })
 }
 
