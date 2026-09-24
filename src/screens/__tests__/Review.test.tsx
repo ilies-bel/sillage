@@ -256,6 +256,47 @@ describe('DEC-23 — nothing from the gate surfaces during a call', () => {
 })
 
 describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
+  /**
+   * **The mark is never colour alone — including where the mark is a picture of
+   * itself.**
+   *
+   * `--warn` against `--text-muted` is 1.0:1 in luminance, so a deuteranope and
+   * a greyscale screenshot both read an unweighted `⚠ faible` as ordinary
+   * prose. `Widget.tsx` states the rule and CLAUDE.md carries it as an
+   * invariant: « `⚠ faible` is a mark everywhere it appears, `font-semibold` as
+   * well as coloured ».
+   *
+   * The site that broke it was the sentence *teaching* the mark — « s'il porte
+   * un ⚠ faible que vous avez levé, corrigez-le dans « Modifier » » — drawn at
+   * weight 400 while the three real marks on the same screen were 600. The one
+   * occurrence that is a specimen for a rep about to go hunting was the one
+   * that did not look like the thing they were sent to find.
+   *
+   * Asked of every occurrence rather than of that one, because the defect was
+   * that a second site existed at all.
+   */
+  test('every ⚠ faible on the gate carries the weight, not just the colour', async () => {
+    bridge.when('review:get', () =>
+      openGate({
+        fields: panel().fields.map((f) =>
+          f.key === 'account' ? { ...f, confidence: 'faible' as const } : f,
+        ),
+      }),
+    )
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const marks = screen.getAllByText('⚠ faible', { selector: 'span' })
+    expect(marks.length, 'the gate draws the mark at all').toBeGreaterThan(0)
+    for (const mark of marks) {
+      expect(
+        mark.className,
+        `« ${mark.textContent} » is coloured but not weighted — 1.0:1 in luminance`,
+      ).toContain('font-semibold')
+    }
+  })
+
   test('a weak account wears the marker, and its candidate is still pre-filled', async () => {
     bridge.when('review:get', () =>
       openGate({

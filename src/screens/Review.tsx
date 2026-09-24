@@ -2449,7 +2449,8 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
                     {taskShips ? (
                       <>
                         Ce texte-ci part dans la tâche VerySwing tel qu’il est affiché — s’il porte
-                        un <span className="text-warn">{FAIBLE}</span> que vous avez levé,
+                        un <span className="text-warn font-semibold">{FAIBLE}</span> que vous
+                        avez levé,
                         corrigez-le dans « Modifier ».
                       </>
                     ) : (
