@@ -15669,7 +15669,19 @@ async function cells(page) {
       }
       const own = getComputedStyle(el)
       if (own.display.includes('flex') && !own.flexDirection.startsWith('column')) {
-        const inside = [...el.children].filter(shown)
+        /*
+         * **A bare text node is a flex item too**, and leaving it out is how the
+         * « FR » legend came to want 25px inside a 49.6px box. Its children are
+         * an `<svg>` and the word; summing only the element gave a badge 24.6px
+         * of phantom slack, and the title beside it was then reported one
+         * character starved at 1180×800 — a red on the shipped product, from a
+         * sum that had dropped half of what it was summing.
+         */
+        const inside = [...el.childNodes]
+          .filter((node) => {
+            if (node.nodeType === 1) return shown(node)
+            return node.nodeType === 3 && (node.textContent ?? '').trim() !== ''
+          })
         if (inside.length > 0) {
           const gaps = (Number.parseFloat(own.columnGap) || 0) * (inside.length - 1)
           const edges =
@@ -15687,11 +15699,16 @@ async function cells(page) {
            * outside a box, not an offer of another way to read it, and the
            * session header's title group wears exactly that.
            */
-          return round(
-            inside.reduce((total, kid) => total + (scrolls(kid) ? kid.getBoundingClientRect().width : wants(kid)), 0) +
-              gaps +
-              edges,
-          )
+          const item = (kid) => {
+            if (kid.nodeType === 3) {
+              const span = document.createRange()
+              span.selectNode(kid)
+              const rects = [...span.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5)
+              return rects.length === 0 ? 0 : Math.max(...rects.map((r) => r.width))
+            }
+            return scrolls(kid) ? kid.getBoundingClientRect().width : wants(kid)
+          }
+          return round(inside.reduce((total, kid) => total + item(kid), 0) + gaps + edges)
         }
       }
       const range = document.createRange()
@@ -15876,10 +15893,24 @@ async function cells(page) {
         got: round(el.getBoundingClientRect().width),
         want: wants(el),
       }))
-      // What the cells that cannot grow are holding and not using. A fixed cell
-      // that itself overflows contributes nothing — it is not hoarding.
+      /*
+       * What the cells that cannot grow are holding and not using. A fixed cell
+       * that itself overflows contributes nothing — it is not hoarding.
+       *
+       * **And a cell is only holding room if it is holding a character of it.**
+       * Summed raw, a row's slack is mostly the rounding of its own flex
+       * arithmetic: at 1180×800 the session header added a 5px remainder on the
+       * « FR » legend to a 6px one on the status chip and called 11px of it room
+       * a title one character short could have had. Neither cell has a character
+       * to give. The floor is the one both other numbers in this claim use —
+       * one character of the cell's own font — applied per cell, which is what
+       * « holding room it does not use » means when it is read rather than
+       * summed.
+       */
       const slack = round(
-        cells.filter((c) => c.grow === 0).reduce((total, c) => total + Math.max(0, c.got - c.want), 0),
+        cells
+          .filter((c) => c.grow === 0)
+          .reduce((total, c) => total + (c.got - c.want > advance(c.el) ? c.got - c.want : 0), 0),
       )
       /*
        * **A cell that yields, not only a cell that grows.**

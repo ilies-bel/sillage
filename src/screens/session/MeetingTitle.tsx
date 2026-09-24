@@ -210,9 +210,10 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * kept and is not.
          *
          * **And the pass says it is the window and not this row**, which is the
-         * honest reading and the reason nothing here changed: the header's fixed
-         * neighbours hold **6px** between them against a 129.7px shortfall, so
-         * no redistribution inside this row can fix it — at 960 the header
+         * honest reading and the reason nothing here changed: against a 129.7px
+         * shortfall the header's fixed neighbours hold **nothing a character
+         * wide** — six pixels of a status chip's rounding, which the claim's own
+         * floor refuses — so no redistribution inside this row can fix it. At 960 the header
          * carries more than the window holds. Dropping the client field would
          * buy the objet 72px and leave it 33 short of the same fixture's title;
          * the room would have to come from the meter (DEC-38) or the recipe
