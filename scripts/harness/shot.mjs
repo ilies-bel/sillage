@@ -156,6 +156,32 @@ async function servingThisRepo(base) {
  * for the state (`widget-panel-leaving`, `widget-card-leaving`, `.leaving`), and
  * `useDeparture` removes the element rather than the class, so waiting for it to
  * go is waiting for the hold to end.
+ *
+ * **And `-arriving` counts, for the mirror reason, which took a round longer to
+ * find because the frame it produces looks settled.** `.widget-arriving` is the
+ * renderer's name for « laid out, not drawn »: `index.css` gives it
+ * `opacity: 0` and deliberately no duration and no transform, so the window can
+ * be sized off an untransformed box (DEC-50). Nothing here could see it — it
+ * runs no animation, it holds no `-leaving` class, and its boxes do not move, so
+ * every predicate in this file called it rest. Measured on `widget-attente`
+ * @1440×900, ten runs with the machine loaded the way `smoke.mjs`' four lanes
+ * load it:
+ *
+ *     8 of 10   every pass measured, and the PNG photographed, a pill at opacity 0
+ *     1 of 10   the arrival started just after rest was declared — `--targets`
+ *               read « Ouvrir le panneau » at 22.08×22.08 against the 24 px floor
+ *               (22.08 = 24 × 0.92, `widget-arrive`'s own opening scale)
+ *     1 of 10   the settled pill, 24.00×24.00
+ *
+ * The resting chevron is 24.00 exactly, so this stage is where the race shows:
+ * any transform at all puts it under the floor. Whether the stage was red was
+ * decided by how loaded the machine was, which is the sentence `atRest`'s
+ * docblock below already writes about the half of this defect that *does* move.
+ *
+ * `widget-entree` has waited for `[data-pill].widget-arrived` since it landed —
+ * « waited for rather than assumed, the `widget-sortie` lesson » — so one stage
+ * knew and six did not. It belongs here rather than in each of them: a stage
+ * that has to remember is a stage the next one will be written without.
  */
 const settled = (page) =>
   page
@@ -165,7 +191,7 @@ const settled = (page) =>
           .getAnimations()
           .filter((a) => a.effect?.getComputedTiming?.().iterations !== Infinity)
           .every((a) => a.playState !== 'running') &&
-        document.querySelector('[class*="-leaving"], .leaving') === null,
+        document.querySelector('[class*="-leaving"], .leaving, [class*="-arriving"]') === null,
       undefined,
       { timeout: 2_000 },
     )
@@ -274,8 +300,16 @@ const RESTING = () => {
     if (!target || !timing) continue
     if (timing.iterations === Infinity || animation.playState === 'running') flying.push(target)
   }
-  for (const el of document.querySelectorAll('[class*="-leaving"], .leaving')) flying.push(el)
+  for (const el of document.querySelectorAll('[class*="-leaving"], .leaving, [class*="-arriving"]'))
+    flying.push(el)
   const declared = (el) => flying.some((node) => node === el || node.contains(el))
+  /*
+   * Counted as well as flown, and printed: an element the renderer says is not
+   * drawn yet does not move, so nothing below would notice it — see `settled()`,
+   * which waits this out, and the eight runs in ten that photographed a pill at
+   * `opacity: 0` before it did.
+   */
+  const arriving = document.querySelectorAll('[class*="-arriving"]').length
 
   const all = [...document.querySelectorAll('body *')]
   const boxes = all.map((el) => {
@@ -303,7 +337,7 @@ const RESTING = () => {
    * readings are not comparable and the loop takes another one.
    */
   if (before === null || before.length !== boxes.length) {
-    return { moved: null, total: boxes.length, undeclared: [] }
+    return { moved: null, total: boxes.length, undeclared: [], arriving }
   }
   let moved = 0
   let under = 0
@@ -321,7 +355,7 @@ const RESTING = () => {
       )
     }
   }
-  return { moved, total: boxes.length, under, running: flying.length, who }
+  return { moved, total: boxes.length, under, running: flying.length, who, arriving }
 }
 
 /**
@@ -8026,7 +8060,21 @@ async function main() {
    * first. The number of readings is the evidence that rest was established
    * rather than assumed.
    */
-  if (rest.rest) {
+  if (rest.rest && rest.arriving > 0) {
+    /*
+     * Immobile and **not drawn**, which is not the same statement and was being
+     * printed as if it were. `settled()` waits `-arriving` out, so reaching here
+     * means that wait hit its own 2 s bound: the page is measurable and every
+     * number under this line was read off a surface the renderer says has not
+     * been placed. Named rather than tolerated, the rule this file already keeps
+     * for a departure that will not finish.
+     */
+    console.log(
+      `  ✗ repos: immobile à la ${rest.reads}ᵉ lecture mais ${rest.arriving} surface(s) ` +
+        'encore « -arriving » — le rendu dit qu’elles ne sont pas dessinées',
+    )
+    process.exitCode = 18
+  } else if (rest.rest) {
     console.log(`  repos: immobile à la ${rest.reads}ᵉ lecture — ${rest.total} boîte(s)`)
   } else if (rest.running > 0) {
     console.log(
