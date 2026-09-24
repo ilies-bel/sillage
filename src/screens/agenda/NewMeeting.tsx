@@ -318,10 +318,20 @@ export function NewMeeting({
         honest than a required field the rep fills with "point client" to get
         past it.
       */}
+      {/*
+        **Named, because the placeholder is gone the moment a rep types.**
+        `--a11y` has carried this rule since it was written — « champ sans
+        étiquette (le placeholder n'en est pas une) » — and was green over these
+        two for the life of the form, because no stage opens it: the only two
+        unnamed fields in the renderer are the two no screenshot reaches. The
+        session header names the identical pair (`MeetingTitle.tsx`), so the
+        tree disagreed with itself about the same two fields at two sites.
+      */}
       <input
         ref={titleRef}
         value={title}
         onChange={(event) => setTitle(event.target.value)}
+        aria-label="Objet de la réunion"
         placeholder="Objet (facultatif)"
         maxLength={200}
         className="bg-inner border-card text-strong placeholder:text-muted w-52 rounded-sm border px-snug py-tight text-ui"
@@ -329,6 +339,7 @@ export function NewMeeting({
       <input
         value={client}
         onChange={(event) => setClient(event.target.value)}
+        aria-label="Client"
         placeholder="Client (facultatif)"
         maxLength={200}
         className="bg-inner border-card text-strong placeholder:text-muted w-40 rounded-sm border px-snug py-tight text-ui"
