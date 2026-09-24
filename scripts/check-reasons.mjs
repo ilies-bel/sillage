@@ -49,6 +49,44 @@ const strip = (text) =>
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1')
 
+/**
+ * A bare `reason` resolved back to the `const` that set it, within the lines
+ * above it. Without this the shorthand branch reads the identifier and calls
+ * every local decision a forward.
+ */
+const resolve = (expression, lines, at) => {
+  if (!/^[A-Za-z_$][\w$]*$/.test(expression)) return expression
+  for (let i = at; i >= 0 && i > at - 40; i -= 1) {
+    const set = new RegExp(`\\b(?:const|let|var)\\s+${expression}\\s*=\\s*(.+?)\\s*$`).exec(lines[i])
+    if (set) return set[1].replace(/[;,]$/, '').replace(/\s+/g, ' ').trim()
+  }
+  return expression
+}
+
+/** `composeSentence(err)` states its French where it is declared, not here. */
+const NAMED_CALL = /^(?!String\b|Number\b)[A-Za-z_$][\w$]*\s*\([\s\S]*\)$/
+
+/**
+ * Whether the error's own words can reach the field with none of ours attached.
+ *
+ * The old test was `if (/['"`]/.test(expression)) return` — a quote *anywhere*
+ * waved the whole expression through, and `err instanceof Error ? err.message :
+ * 'indisponible'` always has one. So the branch that carries English was
+ * excused by the branch that does not. This reads the branches instead: a
+ * template literal with prose of ours in it is a frame and is spent, a string
+ * literal is ours, an `instanceof` is a guard and not a read — and whatever
+ * still names the error after all three are gone is unmediated.
+ */
+const leaks = (expression) => {
+  const spent = expression
+    .replace(/\b(err|error)\b\s+instanceof\s+[\w.$]+/g, 'GUARD')
+    .replace(/`(?:[^`\\]|\\.)*`/g, (lit) =>
+      /\S/.test(lit.slice(1, -1).replace(/\$\{[^}]*\}/g, '')) ? "''" : lit,
+    )
+    .replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''")
+  return /\b(err|error)\b/.test(spent)
+}
+
 const findings = []
 let scanned = 0
 let literals = 0
@@ -66,18 +104,27 @@ for (const file of walk(join(ROOT, 'electron'))) {
     const window = lines.slice(index, index + 7)
     const stop = window.findIndex((l, i) => i > 0 && /\bstate:\s*'/.test(l))
     const body = (stop === -1 ? window : window.slice(0, stop)).join('\n')
-    const reason = /\breason:\s*([\s\S]*?)(?:,\s*\n|\n\s*\})/.exec(body)
-    if (!reason) return
+    // `reason:` and the ES6 shorthand `reason,` are the same field. Only the
+    // first was matched for as long as this check existed, and both shipped
+    // leaks were written in the second — the colon the regex required is the
+    // one character a hoist into a `const` removes.
+    const written = /\breason:\s*([\s\S]*?)(?:,\s*\n|\n\s*\})/.exec(body)
+    const shorthand = /^\s*reason\s*,\s*$/m.test(body)
+    if (!written && !shorthand) return
     literals += 1
-    const expression = reason[1].replace(/\s+/g, ' ').trim()
-    // A forwarded reason was written where it was decided; this measures
-    // compositions, and a pass-through composes nothing.
-    if (/^[\w.#$?![\]]*\breason\b[\w.#$?![\]]*$/.test(expression)) return
+    const expression = written ? written[1].replace(/\s+/g, ' ').trim() : 'reason'
+    // A forwarded reason was decided elsewhere and is not a composition — but
+    // only when it really was elsewhere. A bare identifier is resolved back to
+    // the `const` that set it in this same function first, because
+    // `const reason = err.message` two lines above is a decision taken *here*.
+    const composed = resolve(expression, lines, index)
+    if (/^[\w.#$?![\]]*\breason\b[\w.#$?![\]]*$/.test(composed)) return
     // A named call composes its sentence where it is declared; only a caught
     // error reaching the field unmediated is what this measures.
-    if (!/\b(error|err)\b/.test(expression)) return
-    if (/['"`]/.test(expression)) return
-    findings.push({ rel, line: index + 1, expression })
+    if (NAMED_CALL.test(composed)) return
+    if (!/\b(error|err)\b/.test(composed)) return
+    if (!leaks(composed)) return
+    findings.push({ rel, line: index + 1, expression: composed })
   })
 }
 

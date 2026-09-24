@@ -121,6 +121,16 @@ export const isRetryableDownloadFailure = (error: unknown): boolean => {
  * text that must not reach a French UI. Three cases are worth naming; the rest
  * keeps the original, because an unrecognised failure with its real message is
  * more useful to a support conversation than a generic one.
+ *
+ * **Kept, and declared.** This string has two destinations and `#fail` sends it
+ * to both: the diagnostic, where it is stamped `origin: 'foreign'` and withheld
+ * from the redacted bundle, and `UpdateState.reason`, which the schema calls
+ * « French » and Réglages renders verbatim as a sentence of ours. The default
+ * branch returned the library's English to both — so the module declared the
+ * text was not its own on the channel nobody reads, and presented it as its own
+ * on the channel a rep does, four lines apart. The original is still here, in
+ * full, because « EPERM: operation not permitted » is what tells support what
+ * happened; what it no longer does is arrive unannounced in a French panel.
  */
 export const updateFailureReason = (error: unknown): string => {
   const raw = messageOf(error)
@@ -135,7 +145,10 @@ export const updateFailureReason = (error: unknown): string => {
   if (/sha512|checksum|integrity/i.test(raw)) {
     return 'téléchargement corrompu — nouvelle tentative au prochain démarrage'
   }
-  return raw
+  // `messageOf`'s own fallback is already ours; framing it would quote the
+  // product to the rep as though the system had said it.
+  if (!(error instanceof Error) || !error.message) return raw
+  return `mise à jour impossible — le système a répondu « ${raw} »`
 }
 
 export class AutoUpdate implements UpdatePort {

@@ -404,7 +404,34 @@ test('unsubscribing stops delivery', async () => {
   assert.equal(calls, before)
 })
 
-test('an unrecognised failure keeps its own message rather than a generic one', () => {
-  assert.equal(updateFailureReason(new Error('EPERM: operation not permitted')), 'EPERM: operation not permitted')
+test('an unrecognised failure keeps its own message, inside a sentence of ours', () => {
+  // Kept in full — it is what tells support what happened — but announced, so
+  // the rep reads a French sentence that quotes the system rather than an
+  // English one the panel appears to have written itself.
+  const shown = updateFailureReason(new Error('EPERM: operation not permitted'))
+  assert.match(shown, /^mise à jour impossible — /)
+  assert.ok(
+    shown.includes('EPERM: operation not permitted'),
+    'the original message survives, or support loses the only thing that names the failure',
+  )
   assert.equal(updateFailureReason('not an error'), 'erreur inconnue')
+})
+
+test('every branch a rep can reach opens in French', () => {
+  // The three named branches were always French and the fourth was not, which
+  // is the branch every unforeseen failure takes. `UpdateState.reason` is
+  // rendered verbatim by Réglages and the schema calls it French.
+  for (const thrown of [
+    'Cannot find latest.yml in the latest release artifacts',
+    'net::ERR_INTERNET_DISCONNECTED',
+    'sha512 checksum mismatch',
+    'EPERM: operation not permitted',
+    'The stub received bad data.',
+  ]) {
+    const shown = updateFailureReason(new Error(thrown))
+    assert.ok(
+      /^[a-zàâçéèêëîïôûùüÿñæœ]/.test(shown) && !shown.startsWith(thrown),
+      `« ${shown} » must open with our words, not the library's`,
+    )
+  }
 })

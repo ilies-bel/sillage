@@ -517,14 +517,20 @@ export class Orchestrator {
   #strandedStart(meetingId: MeetingId, err: unknown): void {
     if (this.#recordings.has(meetingId)) return
     if (this.stateOf(meetingId) !== 'recording') return
-    const reason = err instanceof Error ? err.message : 'capture indisponible'
+    // The native module's own text is English, and this sentence is read at the
+    // moment the product has just failed at the one thing it exists to do. It
+    // follows ours rather than replacing it — the same framing as the `catch`
+    // 200 lines below, which is where this shape was fixed the first time and
+    // where it was left unfixed here.
+    const reason =
+      err instanceof Error ? `capture indisponible — ${err.message}` : 'capture indisponible'
     this.setHealth('capture', {
       state: 'down',
       reason,
       since: this.#clock(),
       retryable: true,
     })
-    this.dispatch(meetingId, 'abort', reason)
+    this.dispatch(meetingId, 'abort', 'capture indisponible')
   }
 
   /** Stops the devices, then runs the recipe. Never throws into `dispatch`. */

@@ -170,7 +170,14 @@ export class Recording {
     try {
       transcribe.start()
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'transcription indisponible'
+      // Declared `origin: 'foreign'` to the recorder eight lines below and
+      // handed to the rep unframed here — the module already knew the string
+      // was not its own and dropped that knowledge on the one channel a rep
+      // reads.
+      const reason =
+        error instanceof Error
+          ? `transcription indisponible — ${error.message}`
+          : 'transcription indisponible'
       deps.onHealth?.('transcribe', {
         state: 'down',
         reason,
