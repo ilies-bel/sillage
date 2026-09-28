@@ -727,6 +727,36 @@ try {
    * and would never re-read it.
    */
   await step('a meeting that reached the gate is written into the closed store', async () => {
+    /*
+     * **Let the extraction finish failing before closing the app.**
+     *
+     * `end` is followed automatically by `extract` (`MeetingSession.TRANSITIONS`),
+     * and on a clean profile there is no model, so the run is `extracting` until
+     * the call fails and `extractionFailed` puts it back to `ended`. Both of
+     * those are a few milliseconds apart and neither is synchronous with the
+     * *Terminer* press twenty-odd steps above — so whether the row read below
+     * says `ended` was a coin flip on how fast this machine got here.
+     *
+     * Measured: the seeding read found « man-… extracting » and threw, and every
+     * later step then died on a closed context — eleven failures naming the
+     * state of nothing. That is the whole of what made this gate look
+     * non-deterministic at HEAD.
+     *
+     * The wait is the product's own channel rather than a sleep, and it is *not*
+     * a tolerance for a stranded meeting: `Enhancement.reconcile` reclaims one
+     * the previous process left `extracting`, and the second launch further down
+     * is where that is asserted. Here the question is only whether this launch
+     * has finished with it yet.
+     */
+    const settled = await waitFor(
+      async () =>
+        (
+          await page.evaluate(() => window.app.invoke('history:search', { query: '', limit: 50 }))
+        ).rows.every((row) => row.meeting.state !== 'extracting'),
+      45_000,
+    )
+    if (!settled) throw new Error('une analyse est restée en cours pendant 45 s')
+
     await app.close()
     app = null
 
@@ -737,7 +767,25 @@ try {
       const rows = store.log.db
         .prepare("SELECT id FROM meetings WHERE state = 'ended' ORDER BY updated_at DESC LIMIT 1")
         .all()
-      if (rows.length === 0) throw new Error('aucune réunion terminée dans la base')
+      if (rows.length === 0) {
+        /*
+         * **What the gate says when it cannot start.** This threw
+         * « aucune réunion terminée dans la base » and nothing else for as long
+         * as it existed, and that sentence is true of three different trees: a
+         * meeting that never ended, one the product moved past `ended`, and no
+         * meeting at all. Every later step dies on a closed context once this
+         * one throws, so the run reports eleven failures and names none of them,
+         * which is how this gate spent a round being non-deterministic with
+         * nobody able to say about what.
+         */
+        const all = store.log.db
+          .prepare('SELECT id, state, updated_at FROM meetings ORDER BY updated_at DESC')
+          .all()
+        throw new Error(
+          `aucune réunion terminée dans la base — ${all.length} réunion(s) : ` +
+            (all.map((r) => `${r.id} ${r.state} @${r.updated_at}`).join(' · ') || '(aucune)'),
+        )
+      }
       gated = rows[0].id
 
       /*
