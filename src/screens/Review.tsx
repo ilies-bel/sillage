@@ -3685,6 +3685,38 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
 
   return (
     <div
+      /*
+        **The gap belongs to the label, not to the row.**
+
+        This was `gap-snug` on the flex row, which put eight pixels of nothing
+        between a 13×13 checkbox and the label that is its only real target.
+        Measured on the shipped gate at both smoke sizes, sampling
+        `elementFromPoint` across the corridor at the box's own vertical centre:
+        the box is 13×13, the label 483.6×24 at 1280 and 349.2×24 at 960,
+        `for`-linked and not wrapping — and every sample at 1, 3, 5 and 7 px to
+        the right of the box returned the row `<div>`, which toggles nothing. A
+        rep aiming just right of a thirteen-pixel box, which is the natural miss,
+        hits a hole; and this is the gate where each of these three decides
+        whether a record is created in a client's CRM on an endpoint with no
+        idempotency key.
+
+        `--targets` is right to pass this and always was: WCAG measures the
+        affordance, the label *is* 24 tall and wide, and reporting the 13×13 box
+        would imply a giant checkbox nobody wants. What it does not ask — no
+        intrinsic check can — is whether the affordance is *contiguous* with the
+        thing it belongs to.
+
+        So the label reaches back over the gap with a box that is not in the
+        layout: `before:` gives it an eight-pixel strip to its own left, which is
+        hit-tested as the label and changes nobody's geometry.
+
+        **Both the layout ways of doing this are wrong, and `--cells` says so.**
+        Moving the eight pixels into the growing column as `pl-snug` costs that
+        column eight of its own pixels; giving the label `-ml-snug pl-snug` makes
+        it overflow that column by eight. Either way the cell holds 8px less than
+        the text in it, and the pass reported « 3 cellule(s) qui s'étendent
+        manquent de place » on **44 of the 180** stages — correctly, both times.
+      */
       className={`flex items-start gap-snug py-hair text-ui ${
         intent.available && !degraded ? 'text-body' : 'text-muted'
       }`}
@@ -3713,13 +3745,20 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
         /*
           `mt-hair` and not `mt-0.5`. Two pixels is on no rung of this product's
           scale (`tokens.css`), and here it was not even buying the alignment it
-          was there for: measured on the shipped gate at both smoke sizes, the
-          box is 13px tall beside a `min-h-[24px]` label, so two pixels of offset
-          put its centre **3.5px above** the label's on all three intents. Four
-          puts it 1.5px above — nearer the line it belongs to, on the rung
-          `--space-hair` is declared for.
+          was there for: with the box at the 13px the OS draws by default, beside
+          a `min-h-[24px]` label, two pixels of offset put its centre **3.5px
+          above** the label's on all three intents, and four put it 1.5px above.
+
+          **And the box is sized, because the product has one checkbox size and
+          this was not it.** Réglages' « Cette machine uniquement » — the only
+          other checkbox that ships — pins `h-4 w-4`; these three carried no size
+          at all and drew whatever the host does, measured at **13×13** on macOS
+          against that 16×16. Pinning it is worth two things beyond the two of
+          them agreeing: the box stops depending on the host, and `mt-hair` now
+          lands the centres **exactly** together (4 + 8 = 12, against a 24px
+          label's 12) rather than 1.5px apart.
         */
-        className="accent-brand-700 mt-hair shrink-0"
+        className="accent-brand-700 mt-hair h-4 w-4 shrink-0"
       />
       <span className="min-w-0 flex-1">
         {/*
@@ -3727,8 +3766,14 @@ function IntentRow({ intent, checked, onToggle, connector, onRetry }: IntentRowP
           the box, and a 13×13 checkbox is not something a trackpad hits.
           `min-h-[24px]` on the label rather than a chunky checkbox: the thing a
           rep aims at is the sentence, and WCAG 2.2 measures what they aim at.
+
+          And it reaches all the way back to the box — see the row's docblock for
+          the eight pixels that used to sit between them and answer to nothing.
         */}
-        <label htmlFor={intent.id} className="flex min-h-[24px] items-center">
+        <label
+          htmlFor={intent.id}
+          className="relative flex min-h-[24px] items-center before:absolute before:-left-snug before:top-0 before:h-full before:w-snug before:content-['']"
+        >
           {intent.label}
         </label>
         {/*

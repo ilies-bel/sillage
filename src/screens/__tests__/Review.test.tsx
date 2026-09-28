@@ -649,6 +649,46 @@ describe('DEC-20 / DEC-4 — three intents, one button', () => {
    * measured column, and *Valider* is **outside** it. Swap either and this goes
    * red.
    */
+  /*
+   * **The three boxes and the corridor beside them, structurally.**
+   *
+   * jsdom has no layout, so the geometry is the probe's and it is in the commit:
+   * on the shipped gate at both smoke sizes the box drew **13×13** — no size
+   * class, so whatever the host draws, against the 16×16 Réglages' « Cette
+   * machine uniquement » pins — and `elementFromPoint` at 1, 3, 5 and 7 px to its
+   * right returned the row `<div>` on all three intents. A real mouse press four
+   * pixels right of the box left `checked` unchanged; with the strip it toggles.
+   *
+   * What is asserted here is what that rests on and what a screenshot cannot
+   * state: the box carries its own size, and the label carries a box reaching
+   * back over the gap to meet it. `--targets` cannot ask this — it is right that
+   * the label is a 24×24 affordance, and no intrinsic check asks whether the
+   * affordance is *contiguous* with the control it belongs to.
+   */
+  test('each intent’s box is sized, and its label reaches back to it', async () => {
+    bridge.when('review:get', () => openGate())
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    const names = [
+      'Tâche compte-rendu (VerySwing)',
+      'Opportunité (VerySwing)',
+      'Brouillon de relance (Outlook)',
+    ]
+    for (const name of names) {
+      const box = screen.getByLabelText(name)
+      expect(box.className, `« ${name} » draws whatever the host draws`).toContain('h-4 w-4')
+
+      const label = document.querySelector(`label[for="${box.id}"]`)
+      expect(label, `« ${name} » has no label to aim at`).toBeTruthy()
+      expect(
+        label?.className,
+        `« ${name} »'s label stops short of its box — the gap answers to nothing`,
+      ).toContain('before:-left-snug')
+    }
+  })
+
   test('the manifest is inside the measured rail; the button is not', async () => {
     bridge.when('review:get', () => openGate())
 
