@@ -77,7 +77,7 @@ import {
 import type { ModelRow, ModelSection } from '../../electron/core/contracts/models.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
 import { cn } from '../lib/utils.ts'
-import { SHORTCUTS } from '../app/shortcuts.ts'
+import { SHORTCUTS, typingExceptionKeys } from '../app/shortcuts.ts'
 import { NOTE_SHORTCUTS } from '../editor/note/keymap.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
 import { formatAgo } from '../app/format.ts'
@@ -788,9 +788,26 @@ function Sheet({
 function Raccourcis() {
   return (
     <section>
+      {/*
+        **The exceptions are read off the table, never restated beside it.**
+
+        This sentence said « sauf Échap et Ctrl Entrée » — two exceptions, where
+        `ALLOWED_WHILE_TYPING` has one. The second one it named was `valider`,
+        the accelerator for `review:confirm`: the write with no idempotency key
+        and no delete verb. `shortcuts.ts` removed `Ctrl Entrée` from that list
+        deliberately, and its docblock calls having it there « the most dangerous
+        line in this file », because two of the things a rep types at the gate
+        are the follow-up mail's subject and its body and that chord sends mail
+        in every mail client they have ever used. The table went on promising it
+        anyway — four rows above its own `valider` row, which says « hors
+        saisie ». One screen, read once and believed, disagreeing with itself.
+
+        So it is a view of the array, for the reason the docblock above gives for
+        the rows: a key that moves cannot leave a line here claiming otherwise.
+      */}
       <Lede>
         Ctrl sur Windows, ⌘ sur Mac — les deux fonctionnent partout. Ils sont ignorés pendant
-        que vous écrivez, sauf Échap et Ctrl&nbsp;Entrée.
+        que vous écrivez, sauf&nbsp;{typingExceptionKeys().join(' et ')}.
       </Lede>
 
       <List as="div" bare>

@@ -7,7 +7,13 @@
  *  · **it does not fire while a rep is typing**, because most of this product's
  *    surface is a field, a textarea or the rep's own `contenteditable` notepad,
  *    and `Ctrl N` inside a compte-rendu being corrected must not start a
- *    recording — with the two exceptions that mean something while typing;
+ *    recording — with the one exception that means something while typing,
+ *    `Échap`. This line said « the **two** exceptions » for as long as it
+ *    existed, and Réglages printed the same claim to the rep: the second one
+ *    both named was `valider`, which `ALLOWED_WHILE_TYPING` has never held and
+ *    which the docblock over `EDITABLE` records removing as « the most dangerous
+ *    line in this file ». The file asserted the behaviour correctly below and
+ *    was wrong about it in prose at the top — shape nine on `CLAUDE.md`'s list;
  *  · **an unclaimed key is left alone** (no `preventDefault`), so a screen with
  *    no search does not eat `Ctrl K` from the browser and the OS;
  *  · **both modifiers work**, always, because Windows is the primary platform

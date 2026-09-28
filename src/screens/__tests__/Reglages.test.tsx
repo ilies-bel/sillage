@@ -32,6 +32,11 @@ import type { SettingsSnapshot } from '../../../electron/core/contracts/settings
 import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Reglages } from '../Reglages.tsx'
+import {
+  ALLOWED_WHILE_TYPING,
+  SHORTCUTS,
+  typingExceptionKeys,
+} from '../../app/shortcuts.ts'
 
 let bridge: FakeBridge
 let uninstall: () => void
@@ -344,6 +349,57 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
       '« Fermer les réglages » scrolls away with the section it closes',
     ).toBeNull()
     expect(scrollerOver(title), 'the pane’s own title scrolls away with its section').toBeNull()
+  })
+})
+
+describe('the printed keyboard is a view of the table the matcher uses', () => {
+  /*
+    **The one line on this pane that was restated instead of read.**
+
+    The rows are built from `SHORTCUTS`, and the docblock over `Raccourcis` gives
+    the reason: a key that is added, moved or dropped cannot leave a row claiming
+    otherwise. The sentence above the rows was written by hand and drifted —
+    « ignorés pendant que vous écrivez, sauf Échap et Ctrl Entrée », two
+    exceptions where `ALLOWED_WHILE_TYPING` holds one.
+
+    The one it invented is the expensive one. `valider` is the accelerator for
+    `review:confirm` — `POST /v1/crm/tasks`, no idempotency key, `CrmPort` with
+    no delete verb — and `shortcuts.ts` took it off that list on purpose, its
+    docblock calling the alternative « the most dangerous line in this file »:
+    two of the fields a rep types in at the gate are the follow-up mail's subject
+    and its body, and `Ctrl Entrée` in a mail body sends the mail in every client
+    they have used. Driven on the shipped gate, all six editables, both
+    modifiers: `review:confirm` is not called from any of them, and is called
+    once from outside — the behaviour is right and has always been right. Only
+    the sentence a rep reads was wrong, on the screen whose whole purpose is to
+    be read once and believed.
+
+    Asserted against `typingExceptionKeys()` rather than against the literal
+    « Échap », so this test cannot be the third place that has to be remembered.
+  */
+  test('the sentence names exactly the keys that survive an editable', async () => {
+    mount()
+    await open('Raccourcis clavier')
+
+    const lede = pane().getByText(/ignorés pendant que vous écrivez/)
+    const keys = typingExceptionKeys()
+    expect(keys.length, 'no exception left to name — the sentence would be a lie either way').
+      toBeGreaterThan(0)
+
+    for (const key of keys) {
+      expect(lede.textContent, `« ${key} » survives an editable and the pane does not say so`)
+        .toContain(key)
+    }
+
+    // The other side, and the one that was broken: a key the matcher drops while
+    // typing must not be promised here.
+    const promised = SHORTCUTS.filter((s) => !ALLOWED_WHILE_TYPING.includes(s.id)).filter((s) =>
+      (lede.textContent ?? '').includes(s.keys.replace('Ctrl/⌘ ', 'Ctrl ')),
+    )
+    expect(
+      promised.map((s) => s.id),
+      'the pane promises a shortcut the matcher refuses while typing',
+    ).toEqual([])
   })
 })
 

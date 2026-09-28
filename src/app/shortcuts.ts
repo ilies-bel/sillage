@@ -139,7 +139,33 @@ const typing = (target: EventTarget | null): boolean => {
   return typeof el?.closest === 'function' && el.closest(EDITABLE) !== null
 }
 
-const ALLOWED_WHILE_TYPING: readonly ShortcutId[] = ['retour']
+export const ALLOWED_WHILE_TYPING: readonly ShortcutId[] = ['retour']
+
+/**
+ * **The exceptions, in the keys the table prints, for the pane that prints it.**
+ *
+ * Réglages restated this list in prose instead of reading it, and the prose was
+ * wrong in the direction that costs the most: « ignorés pendant que vous
+ * écrivez, sauf Échap et Ctrl Entrée » named *two* exceptions where the array
+ * above has one, and the second one it named was `valider` — the accelerator for
+ * `review:confirm`, whose POST has no idempotency key and whose port has no
+ * delete verb.
+ *
+ * `Ctrl Entrée` while typing is precisely the line the docblock over `EDITABLE`
+ * calls « the most dangerous line in this file » and records removing, because
+ * two of the things a rep types at the gate are a mail's subject and its body
+ * and that chord sends mail everywhere else they have ever used it. The table
+ * went on promising it for as long as it existed, four rows above its own
+ * `valider` row, which says « hors saisie ».
+ *
+ * So the sentence is a *view* of the array, exactly as the rows below it are a
+ * view of `SHORTCUTS` — the reason that pane gives for reading the table rather
+ * than restating it, applied to the one line on it that was restated.
+ */
+export const typingExceptionKeys = (): readonly string[] =>
+  SHORTCUTS.filter((shortcut) => ALLOWED_WHILE_TYPING.includes(shortcut.id)).map(
+    (shortcut) => shortcut.keys,
+  )
 
 /**
  * Install the ones this screen answers, for as long as it is mounted.
