@@ -293,6 +293,58 @@ describe('two panes: the section list left, its content right (VISION.md §6)', 
     expect(container.querySelector('dialog')).toBeNull()
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
   })
+
+  test('the pane’s title and its way out do not scroll away with the section', async () => {
+    /*
+      **The sheet's only visible exit left the window under the sheet's own
+      control.**
+
+      `ReadingColumn` gave this pane the mask and the page turn it was the last
+      scroller in the product to have. The title row went inside it — the `h2`
+      that says which section a rep is in, and the ✕ that is the only way out
+      they can see. So pressing « Lire la suite de la section », the product's
+      own control, to the end of *Connecteurs* put both off screen:
+
+          1280×800   titre y −537 · ✕ y −536   clipped: true
+          960×600    titre y −709 · ✕ y −708   clipped: true
+
+      (`scratch/probe-reglages-turn.mjs`, both sizes, pressing the product's own
+      page turn until it stops offering.) The pane then draws no title, no ✕,
+      and one control saying « Remonter dans la section ». Échap and the veil
+      still close it — neither is visible, and a rep who has just read to the
+      bottom of a settings section has no reason to know either exists.
+
+      The reasoning was already in this file, twenty lines above the column, and
+      applied to the wrong element: the `notice` strip is outside the column
+      « so the pane can be scrolled anywhere and the sentence is still on
+      screen ». That is exactly the property a title and a close button need and
+      the alert did not need more.
+
+      Asserted on the class that makes the ancestor a scroller rather than on a
+      measured offset, because jsdom lays nothing out: `overflow-y-auto` is what
+      `ReadingColumn` puts on the element it scrolls, so an ancestor carrying it
+      *is* the defect. `--fade` and `--scrollers` were both green over this for
+      the life of the component — each asks an intrinsic question about one
+      element, and this is a question about two.
+    */
+    mount()
+    const close = await screen.findByRole('button', { name: 'Fermer les réglages' })
+    const title = screen.getByRole('heading', { name: 'Connecteurs', level: 2 })
+
+    const scrollerOver = (node: Element): Element | null => {
+      for (let n = node.parentElement; n; n = n.parentElement) {
+        if (n.classList.contains('overflow-y-auto')) return n
+        if (n.getAttribute('role') === 'dialog') break
+      }
+      return null
+    }
+
+    expect(
+      scrollerOver(close),
+      '« Fermer les réglages » scrolls away with the section it closes',
+    ).toBeNull()
+    expect(scrollerOver(title), 'the pane’s own title scrolls away with its section').toBeNull()
+  })
 })
 
 describe('DEC-32: Requis / Facultatifs, from the contract the header aggregates over', () => {

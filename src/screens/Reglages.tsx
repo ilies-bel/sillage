@@ -695,45 +695,76 @@ function Sheet({
             </div>
           ) : null}
           {/*
-            **`p-gutter`, and the top of it is what the pane title stands on.**
+            **The title row is chrome, and chrome does not scroll.**
 
-            Was `px-gutter pb-10 pt-row`: 40 at the foot is off the ladder, and
-            16 at the head put the pane's own `h2` **13px under the drag region
-            and 24.3px above its first paragraph** — measured at 960×600, where
-            `max-h-full` takes the sheet to the window's edge and the title has
-            the title bar directly over it. A heading with more room below than
-            above is the third of `--rhythm`'s three claims, and it was red on
-            eight stagings of this one component. 32 above, 20.3 below.
+            It lived inside the column below, which is the one scroller on this
+            pane, so the product's own page turn carried the pane's `h2` and its
+            ✕ out of the window: pressing « Lire la suite de la section » to the
+            end of *Connecteurs* put the title at y **−537** and the close at
+            **−536** at 1280×800, **−709** and **−708** at 960×600, clipped by
+            the scroller both times (`scratch/probe-reglages-turn.mjs`). What
+            was left was a pane with no name, no visible way out, and one
+            control offering to take the rep back up. Échap and the veil still
+            closed it; neither is visible, and neither is something a rep who
+            has just read to the bottom of a section knows about.
+
+            The reasoning is the `notice` strip's, thirty lines above, applied
+            to the element that needed it more: *above the column and outside
+            it, so the pane can be scrolled anywhere and it is still on screen.*
+            `shrink-0` for the same reason — the column is the thing that gives.
+
+            **The rhythm the old `p-gutter` bought is kept, and that is
+            measured, not reasoned.** `--rhythm`'s third claim is more room above
+            a heading than below, and it was red on eight stagings of this
+            component before the padding was set. Driving the shipped pane on
+            both trees (`scratch/probe-title-rhythm.mjs`, `h2` to the `h3` under
+            it — the pair `--rhythm` itself compares): **32 above / 17 below, at
+            1280×800 and at 960×600, identical before and after this move.**
+
+            The 32 is `pt-gutter` here instead of `p-gutter`'s top. The 17 is the
+            column's `pt-row`, and it has to live *there* rather than as a margin
+            on the row above: with the title outside, the column's first child is
+            « Requis », and a scroller with no top padding gave that `h3` **0px
+            above against 12px below** on six stagings — the same `--rhythm`
+            claim, broken one element further down by the fix for it. Measured,
+            not predicted: the first attempt shipped `px-gutter pb-gutter` and
+            the harness said so.
+
+            The docblock this replaces said « 32 above, 20.3 below ». The 32 is
+            confirmed; 20.3 is not this measurement's number, and the two are not
+            measuring the same thing — that one was taken to the first paragraph.
+            Neither is the other's evidence, so this one names its own target.
           */}
+          <div className="shrink-0 px-gutter pt-gutter">
+            {/*
+              The ✕ is at the right of it, on the baseline of the heading, and it
+              is a `nav` button rather than an icon-only rectangle with a
+              tooltip: it clears 24×24 and it carries a French name.
+            */}
+            <div className="flex items-baseline gap-row">
+              <h2 className="font-display text-strong min-w-0 flex-1 truncate text-title leading-none">
+                {title}
+              </h2>
+              {/* `min-w-[24px]`, like the calendar's month pager: a glyph this
+                  narrow is 9px of target otherwise (WCAG 2.2, 24×24). */}
+              {/* Drawn, not typed. « ✕ » is U+2715 and Inter 4.1 does not carry
+                  it, so this close was painted by whatever the OS substituted —
+                  Segoe UI Symbol on Windows (HR-2), at its own size. */}
+              <Button
+                variant="nav"
+                className="min-w-[24px]"
+                aria-label="Fermer les réglages"
+                onClick={onClose}
+              >
+                <X aria-hidden size={14} strokeWidth={2} />
+              </Button>
+            </div>
+          </div>
           <ReadingColumn
             subject={{ determiner: 'la', noun: 'section' }}
-            className="p-gutter"
+            className="px-gutter pb-gutter pt-row"
           >
-          {/*
-            The pane's own title row. The ✕ is at the right of it, on the
-            baseline of the heading, and it is a `nav` button rather than an
-            icon-only rectangle with a tooltip: it clears 24×24 and it carries a
-            French name.
-          */}
-          <div className="mb-row flex items-baseline gap-row">
-            <h2 className="font-display text-strong min-w-0 flex-1 truncate text-title leading-none">
-              {title}
-            </h2>
-            {/* `min-w-[24px]`, like the calendar's month pager: a glyph this
-                narrow is 9px of target otherwise (WCAG 2.2, 24×24). */}
-            {/* Drawn, not typed. « ✕ » is U+2715 and Inter 4.1 does not carry
-                it, so this close was painted by whatever the OS substituted —
-                Segoe UI Symbol on Windows (HR-2), at its own size. */}
-            <Button
-              variant="nav"
-              className="min-w-[24px]"
-              aria-label="Fermer les réglages"
-              onClick={onClose}
-            >
-              <X aria-hidden size={14} strokeWidth={2} />
-            </Button>
-          </div>
-          {children}
+            {children}
           </ReadingColumn>
         </main>
       </div>
