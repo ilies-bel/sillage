@@ -2159,7 +2159,19 @@ function UpdatePanel() {
 
       <Lede>
         Version installée&nbsp;: <span className="text-body font-medium">{update.currentVersion}</span>
-        {update.checkedAt ? ` — dernière vérification il y a ${formatAgo(update.checkedAt, Date.now())}` : null}
+        {/*
+          **`formatAgo` brings its own « il y a », and this line brought a second
+          one.** Every branch of the helper was doubled or mangled by the prefix,
+          not just the one the fixture renders: « il y a il y a 9 min », « il y a
+          il y a 3 h », « il y a à l’instant », and « il y a mar. 15 sept. ». The
+          worst of the four is the one a rep meets immediately after pressing
+          *Vérifier maintenant*, on the line directly above the only control this
+          panel has on every Windows build shipping today.
+
+          The helper's two other call sites pass it through bare and were always
+          right, so this was one site saying the same three words twice.
+        */}
+        {update.checkedAt ? ` — dernière vérification ${formatAgo(update.checkedAt, Date.now())}` : null}
       </Lede>
 
       {update.phase === 'disabled' ? (

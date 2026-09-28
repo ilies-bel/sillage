@@ -32,6 +32,7 @@ import type { SettingsSnapshot } from '../../../electron/core/contracts/settings
 import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
 import { Reglages } from '../Reglages.tsx'
+import { formatAgo } from '../../app/format.ts'
 import {
   ALLOWED_WHILE_TYPING,
   SHORTCUTS,
@@ -1127,6 +1128,53 @@ describe('mise à jour', () => {
     bridge.when('update:status', () => updateStatus(over))
     await open('Mise à jour')
   }
+
+  /*
+    **« dernière vérification il y a il y a 9 min ».**
+
+    The call site prefixed « il y a » to a helper that supplies its own, and the
+    helper has four branches — so every branch of this line was wrong, not one:
+
+        30 s    « dernière vérification il y a à l’instant »
+        9 min   « dernière vérification il y a il y a 9 min »
+        3 h     « dernière vérification il y a il y a 3 h »
+        2 j     « dernière vérification il y a mar. 15 sept. »
+
+    The stock fixture answers `checkedAt: now − 9 min`, so the middle case is
+    what the harness renders on `reglages` at both sizes, and it is also what a
+    rep sees immediately after pressing *Vérifier maintenant* — « il y a à
+    l’instant », the worst of the four, on the line directly above the panel's
+    one control on every Windows build shipping today (`phase: 'disabled'`).
+
+    `formatAgo`'s other two call sites pass it through bare and are correct,
+    which is why the helper's contract was never in doubt — this was one site
+    saying the same words twice. Fourteen smoke passes were green over it:
+    `--prose` counts characters against a 75 ch ceiling and 66 ch is inside it,
+    so a phrase drawn twice is a pass. No pass reads a sentence.
+
+    All four horizons, because fixing the one the fixture happens to render is
+    how three of them would have stayed broken. And asserted against `formatAgo`
+    itself rather than against a count of « il y a » — counting would have
+    accepted « dernière vérification il y a à l’instant », which is one
+    occurrence and still not French. The line is the helper's words, or it is
+    wrong.
+  */
+  test('the last-check line is exactly what formatAgo says, on every horizon', async () => {
+    const MIN = 60_000
+    for (const ago of [30_000, 9 * MIN, 3 * 60 * MIN, 2 * 24 * 60 * MIN]) {
+      mount()
+      const checkedAt = Date.now() - ago
+      await openWith({ phase: 'idle', checkedAt })
+      const text = (pane().getByText(/dernière vérification/).textContent ?? '').replace(
+        / /g,
+        ' ',
+      )
+      expect(text, `« ${text.trim()} » is not « dernière vérification » + formatAgo`).toContain(
+        `dernière vérification ${formatAgo(checkedAt, Date.now())}`,
+      )
+      cleanup()
+    }
+  })
 
   test('the running version is named in every phase, including the one that cannot update', async () => {
     mount()
