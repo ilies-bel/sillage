@@ -15110,6 +15110,56 @@ async function rhythm(page) {
     }
 
     /**
+     * **The scroller a box is inside, because a distance across two of them is a
+     * scroll position and not a decision.**
+     *
+     * `plane` says this for `absolute` and `fixed`; this says it for the case the
+     * docblock under it already describes and did not close. `clipped` removes a
+     * neighbour that has been scrolled out of sight, which is right, and
+     * `edgeDrawn` removes a *heading* that straddles its own scroller's edge,
+     * which is also right. What was left is the pair in between: a heading fully
+     * inside a scroller whose true neighbour has scrolled away, where the search
+     * walks on and settles on a box **pinned outside** that scroller — « a
+     * distance nothing authored », in that docblock's own words.
+     *
+     * Measured on `reglages-essai@1440×900`, where clicking *Essai de…* scrolls
+     * the pane under the harness. Two stable outcomes, decided by whether the
+     * measurement lands before or after that scroll:
+     *
+     *     scrollTop   0     h3 « À vous — parlez… » 335.53 px under the pane top
+     *     scrollTop 331     the same h3   4.53 px under the pane top
+     *
+     * At 331 the heading's own neighbour is gone and the nearest surviving box
+     * above it is the pane's title row, which is not in the scroller at all — so
+     * claim 3 read « 4.53 px au-dessus contre 32.95 px en dessous » and went red.
+     * The authored spacing is 32.95 px in both, and the rep sees 32.95 px in both.
+     * **Red 4 of 12 concurrent runs before, 0 of 12 after.**
+     *
+     * **And it binds only on a pane that has actually scrolled, because that is
+     * the only state in which the distance stops being authored.** Refusing every
+     * cross-pane pair outright also works and costs far too much: swept over six
+     * stages it took the measured population from 4·3·4·5·5·7 headings down to
+     * 2·2·3·3·4·4 — a third to a half of claim 3's subject deleted to remove one
+     * false positive, which is the trade `CLAUDE.md` names when it says a check
+     * must be as wide as the rule's subject. Gated on `scrollTop` the same six
+     * stages measure 4·3·4·5·5·7: **the same population as before this guard
+     * existed**, with the scrolled case declined rather than mismeasured.
+     *
+     * Memoised up the chain for `plane`'s reason: this is one walk over the tree
+     * rather than one per candidate pair.
+     */
+    const scrollers = new Map()
+    const scroller = (el) => {
+      if (el === null) return null
+      if (scrollers.has(el)) return scrollers.get(el)
+      const style = getComputedStyle(el)
+      const cuts = style.overflowX !== 'visible' || style.overflowY !== 'visible'
+      const answer = cuts ? el : scroller(el.parentElement)
+      scrollers.set(el, answer)
+      return answer
+    }
+
+    /**
      * **An edge that is not painted has no space beside it.**
      *
      * The side of a heading that matters is the side being measured, and a
@@ -15403,6 +15453,14 @@ async function rhythm(page) {
         continue
       }
       const room = plane(head)
+      const box_scroller = scroller(head)
+      /*
+       * At rest the distance across a pane's edge *is* authored — it is padding
+       * and margins — so the guard costs nothing on a screen nobody has scrolled.
+       * It binds only once the pane has moved under the content, which is the
+       * only state in which that distance stops being anyone's decision.
+       */
+      const drifted = box_scroller !== null && box_scroller.scrollTop > 0.5
       const box = head.getBoundingClientRect()
       let above = null
       let below = null
@@ -15410,6 +15468,9 @@ async function rhythm(page) {
         if (el === head || head.contains(el) || el.contains(head)) continue
         // See `plane`: a box the flow around this heading does not place.
         if (plane(el) !== room) continue
+        // See `scroller`: once this heading's pane has scrolled, its distance to
+        // anything outside that pane is a scroll position and not a spacing.
+        if (drifted && scroller(el) !== box_scroller) continue
         /*
          * Horizontally over the heading, by at least half the narrower of the
          * two: a box in the next column is not the space above this title.
