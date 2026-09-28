@@ -64,6 +64,7 @@ import {
 } from '../modules/llm/index.ts'
 import {
   STT_PROVIDERS,
+  abandonPendingLoads,
   descriptorFor as sttDescriptorFor,
   isLocalWhisperReady,
   prewarmEngine,
@@ -2782,6 +2783,19 @@ const boot = async (): Promise<void> => {
    */
   let quitting = false
   app.on('before-quit', (event) => {
+    /*
+     * **Before anything else, and whether or not the quit is deferred below.**
+     *
+     * `prewarmLocalEngine` holds a reference it never releases, so a model still
+     * loading when the app is told to quit is one nothing will tear down — and
+     * the crash-loop record it wrote before spawning its worker would be read by
+     * the *next* launch as « the previous process died loading that model », with
+     * local transcription refused once over a quit that was perfectly orderly.
+     * `whisper-small` is tens of seconds cold, so the window is the first half
+     * minute of every launch. Synchronous and a single `unlink`.
+     */
+    abandonPendingLoads()
+
     const recording = orchestrator
       .liveIds()
       .filter((id) => orchestrator.stateOf(id) === 'recording')

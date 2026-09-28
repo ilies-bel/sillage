@@ -39,7 +39,7 @@ export {
 export type { RestProviderId } from './RestSttSession.ts'
 export { LocalWhisperSession } from './LocalWhisperSession.ts'
 export type { LocalWhisperOptions, WorkerLike } from './LocalWhisperSession.ts'
-export { prewarmEngine } from './whisper/engine.ts'
+export { prewarmEngine, abandonPendingLoads } from './whisper/engine.ts'
 export { MODELS, DEFAULT_MODEL_ID, isModelCached } from './whisper/catalog.ts'
 export type { WhisperModel } from './whisper/catalog.ts'
 

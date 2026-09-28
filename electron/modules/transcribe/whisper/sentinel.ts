@@ -7,13 +7,26 @@
  * mode this file exists for, and it is worth the disk write precisely because
  * it is the one class of failure that no in-memory handler can survive.
  *
- * A file is written before the worker is spawned and removed when it says
- * `ready`. Finding one at the next attempt means the previous process died
- * loading that model, so it is refused *once* and the record cleared — crashes
- * forever becomes crashes at most once. The TTL is short and the record is a
- * cooldown, not a ban: a force-quit mid-load is indistinguishable from a real
- * abort, and permanently disabling the offline floor over an ambiguous signal
- * would be the worse error.
+ * A file is written before the worker is spawned. Finding one at the next
+ * attempt means the previous process died loading that model, so it is refused
+ * *once* and the record cleared — crashes forever becomes crashes at most once.
+ * The TTL is short and the record is a cooldown, not a ban: a force-quit
+ * mid-load is indistinguishable from a real abort, and permanently disabling the
+ * offline floor over an ambiguous signal would be the worse error.
+ *
+ * **Everything that is not that failure has to take the record back off the
+ * disk, and `ready` is only one of them.** This said « removed when it says
+ * `ready` » for as long as it existed, and that was the whole of the clearing:
+ * a load the worker *reported* as failed, and a load this process tore down
+ * before the model arrived, both left the record behind and both are ordinary
+ * — a checkpoint that is absent or half-downloaded, and a meeting that ends
+ * inside the tens of seconds `whisper-small` takes cold. The next launch was
+ * then refused as well, and refused with this file's sentence, which says the
+ * previous process died. `engine.ts` owns those two clears (`#onMessage`'s
+ * load-failure branch and `#teardown`) and `sentinelLifecycle.test.ts` drives
+ * them; the clear on `ready` and the one on a clean worker `exit` are the other
+ * two. What is left in the ambiguous column is a process that goes away
+ * mid-load, which is the case the paragraph above accepts.
  *
  * Every operation fails open. A read-only directory costs one launch's worth of
  * protection; it must never cost the ability to transcribe.

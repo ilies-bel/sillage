@@ -144,6 +144,27 @@ export class WhisperEngine extends EventEmitter {
   }
 
   /**
+   * **The app is going away with this load still in flight.**
+   *
+   * The third way a record outlives a load that did not crash, and the one a rep
+   * meets most: `prewarmLocalEngine` takes a reference at boot and **never
+   * releases it** — deliberately, so the first words of a meeting do not pay for
+   * a cold model — so `#teardown` is not reached on the way out and the clear it
+   * now does never runs. `whisper-small` is tens of seconds cold; quitting inside
+   * that window is an ordinary gesture, and it cost the next launch its offline
+   * floor with a sentence saying the previous process had died.
+   *
+   * `sentinel.ts` accepts that a *force*-quit mid-load is indistinguishable from
+   * an abort. An orderly quit is not: the app is the one saying so.
+   *
+   * The worker is left alone. It is about to go with the process, and asking it
+   * to leave is what `#teardown` is for — the point here is only the record.
+   */
+  abandonLoad(): void {
+    if (!this.#ready && this.#stateDir) clearSentinel(this.#stateDir, this.modelId)
+  }
+
+  /**
    * Give up a reference. The worker is torn down when the last one goes.
    *
    * Never partially: a release that is not the last one resolves immediately,
@@ -337,6 +358,20 @@ export class WhisperEngine extends EventEmitter {
       return
     }
     this.#ready = false
+    /*
+     * **The worker said so, so there is nothing for the next process to
+     * discover.** `sentinel.ts` writes the record for the one failure nothing
+     * can observe — « no exception, no `exit` event, nothing JavaScript can
+     * catch and remember » — and reads it back as « the previous process died
+     * loading that model ». This branch is the opposite of that: the worker is
+     * alive, it posted the cause, `explainLoadFailure` turns it into a sentence
+     * the rep reads, and health carries it. Leaving the record behind spent the
+     * *next* launch on the same failure as well, and spent it saying something
+     * untrue about their machine — the commonest way in being the ordinary one,
+     * a checkpoint that is absent or half-downloaded with
+     * `allowRemoteModels: false`.
+     */
+    clearSentinel(this.#stateDir, this.modelId)
     this.#releaseLoad()
     this.#failAll(new Error(explainLoadFailure(message.message, this.modelId)))
   }
@@ -369,6 +404,19 @@ export class WhisperEngine extends EventEmitter {
    * inference has returned, and keep `terminate()` as the deadline behind it.
    */
   #teardown(): Promise<void> {
+    /*
+     * **A load this process gave up on did not crash it.** The line below drops
+     * the `exit` listener, which is the only other place the record is cleared
+     * once the load is in flight — and it has to, because the teardown is what
+     * asks the worker to leave. The case is named two paragraphs up: « a meeting
+     * that ends before a cold model has finished loading », and `whisper-small`
+     * is tens of seconds cold. Without this the next launch was refused over a
+     * load nobody was still waiting for.
+     *
+     * Scoped to this model, for `clearSentinel`'s own reason: a sibling engine's
+     * still-in-flight record is not this one's to erase.
+     */
+    if (!this.#ready) clearSentinel(this.#stateDir, this.modelId)
     this.#releaseLoad()
     const worker = this.#worker
     // "Busy" is *any* native work in progress, not just an inference. Building
@@ -483,6 +531,16 @@ export const forgetEngine = (engine: WhisperEngine): void => {
 export const prewarmEngine = (options: EngineOptions = {}): Promise<void> => {
   const engine = acquireEngine(options)
   return engine.retain()
+}
+
+/**
+ * Called on the way out, for every engine that is still loading — see
+ * `WhisperEngine.abandonLoad`. Pool-wide because the quit is: a prewarmed
+ * default and a meeting's own checkpoint are two entries and either may be
+ * mid-load.
+ */
+export const abandonPendingLoads = (): void => {
+  for (const engine of pool.values()) engine.abandonLoad()
 }
 
 /** Test seam. Drops every pooled engine without tearing its worker down. */
