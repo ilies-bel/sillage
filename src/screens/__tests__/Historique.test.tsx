@@ -803,8 +803,40 @@ describe('push status per intent', () => {
       retried safely is retried by the outbox itself and never reaches this
       state.
     */
-    expect(screen.getByText(/À vérifier dans Outlook avant de refaire l’envoi/)).toBeTruthy()
+    expect(screen.getByText(/À vérifier dans Outlook avant de le créer à la main/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull()
+  })
+
+  /**
+   * **The sentence may not ask for the gesture the file forbids.**
+   *
+   * `Historique.tsx`'s own head spends a paragraph on why a *Réessayer* here
+   * « is a duplicate in the client's CRM one click away », and sixty lines below
+   * it the shipped row read « À vérifier dans Outlook avant de refaire l'envoi. »
+   * There is no re-send: no channel offers one, the outbox retries only what it
+   * knows was never created, and `failed` is by definition the other case. So the
+   * only thing « refaire l'envoi » can mean to a rep is *create it again by hand
+   * in VerySwing*, which is the duplicate the paragraph exists to prevent —
+   * printed as an instruction, in the product's own voice, under a row that has
+   * just told them nobody knows whether the record is there.
+   *
+   * Asserted as an absence over the whole failure block rather than on one
+   * string, because what is forbidden is the idea and not the wording.
+   */
+  test('the failed row never asks for a send the product does not offer', async () => {
+    answered()
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await screen.findByText(/jeton Microsoft expiré/)
+
+    const said = [...document.querySelectorAll('p')]
+      .map((node) => node.textContent ?? '')
+      .filter((text) => text.includes('échec'))
+      .join(' ')
+
+    expect(said.length > 0, 'la ligne en échec ne dit plus rien').toBe(true)
+    expect(said).not.toMatch(/refaire l’envoi|renvoyer|réessayer|nouvel envoi/i)
+    // And it does name the one action there is, which is to look before writing.
+    expect(said).toMatch(/À vérifier dans \w+ avant de le créer à la main/)
   })
 
   test('an expanded row states why a push failed (DEC-26)', async () => {

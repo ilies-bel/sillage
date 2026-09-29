@@ -572,6 +572,15 @@ const sentence = (reason: string | null): string => {
  * record was created, so the useful instruction is to look in VerySwing, not to
  * press something. Saying so is the fix. A `pending` intent needs none of this:
  * it is a queue that has not drained yet and it drains itself.
+ *
+ * **And the sentence must not ask for the gesture this file forbids.** It read
+ * « À vérifier dans Outlook avant de refaire l’envoi. » There is no re-send:
+ * no channel offers one, the outbox retries only what it knows was never
+ * created, and `failed` is by definition the other case. So the only thing
+ * « refaire l’envoi » could mean to a rep is *create it again by hand in
+ * VerySwing* — the duplicate the paragraph at the top of this file exists to
+ * prevent, printed as an instruction, in the product’s own voice, under a row
+ * that has just told them nobody knows whether the record is there.
  */
 function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
   const failed = intents.filter((intent) => intent.state === 'failed')
@@ -581,27 +590,35 @@ function PushFailure({ intents }: { intents: readonly HistoryIntent[] }) {
     <div className="px-block pb-snug">
       {failed.map((intent) => (
         <p key={intent.intentId} className="text-ui">
-          <span className="text-warn">{intent.label} — échec.</span>{' '}
+          {/*
+            A colon and not a full stop, because what follows is the adapter's
+            own fragment and those are written lowercase — « … — échec. la
+            sandbox VSA n'a pas répondu en 10 s. » started a sentence with a
+            lowercase word, measured on the shipped row.
+
+            The comment that used to sit here claimed the two voices were joined
+            by an em dash « the one this app already uses to join a clause to its
+            consequence ». They were joined by `{' '}`, and what actually fixed
+            the collision it describes was `sentence()` punctuating the fragment.
+            A docblock arguing for a fix that is not the one in the code, which is
+            shape twenty-eight on CLAUDE.md's list.
+          */}
+          <span className="text-warn">{intent.label} — échec :</span>{' '}
           {/* The adapter's own sentence. Never a rewrite of it: what a rep
               reads here is what the CRM said, and a paraphrase would be one
               more thing that can disagree with the log. */}
-          {/*
-            The adapter's sentence, then ours, with a separator between them.
-
-            They were joined by a bare space, and the adapter's sentence does not
-            end in a full stop — so the row read « …reconnexion nécessaire À
-            vérifier dans Outlook avant de refaire l'envoi. », a capital À
-            colliding with a lowercase word and the boundary between two
-            different voices swallowed. The em dash is the one this app already
-            uses to join a clause to its consequence.
-          */}
           <span className="text-muted">{sentence(intent.lastError)}</span>{' '}
           {/*
             Named by the system that was actually being written to. « À vérifier
             dans VerySwing » under a failed *Outlook* draft sends the rep to the
             wrong application, and the kind is right there on the intent.
+
+            « avant de le créer à la main » and not « avant de refaire l'envoi »:
+            creating it by hand is the only thing a rep can actually do, and
+            doing it without looking first is the duplicate this whole file is
+            arranged to prevent.
           */}
-          <span className="text-muted">{`À vérifier dans ${WHERE_TO_LOOK[intent.kind]} avant de refaire l’envoi.`}</span>
+          <span className="text-muted">{`À vérifier dans ${WHERE_TO_LOOK[intent.kind]} avant de le créer à la main.`}</span>
         </p>
       ))}
     </div>
