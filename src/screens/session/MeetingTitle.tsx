@@ -64,19 +64,24 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
    * side on most meetings in the product, while the gate one screen later
    * printed the account once.
    *
-   * **What it costs, measured rather than quoted.** Driven on the shipped
-   * renderer, `session-compte-rendu`, at 1280×800 and 960×600 alike — the
-   * header row is 700.67px wide at the first and 371.28 at the second:
+   * **What it costs, and the stage it costs it on.** Driven on the shipped
+   * renderer at both smoke sizes. `session` — the live call, whose header also
+   * carries the meter, the recipe switch and *Terminer*, so the row is 450.67px
+   * at 1280×800 and **228.25** at 960×600:
    *
-   *     avant   objet  boîte 261.44  veut 261.44   client  boîte 89.09  veut 89.09
-   *     après   objet  boîte 261.44  veut 261.44   client  non dessiné
+   *     1280×800   avant  objet 261.44 / veut 261.44    client 89.09 / veut  89.09
+   *                après  objet 261.44 / veut 261.44    client non dessiné
+   *      960×600   avant  objet 156.25 / veut 261.44    client    64 / veut  89.09
+   *                après  objet 228.25 / veut 261.44    client non dessiné
    *
-   * So the objet was **not** truncated here and is not wider now: what the
-   * change buys is 89.09px of field plus the 8px of `gap-snug` beside it, 97.09
-   * in all, and one fewer copy of the client's name. The defect this closes is
-   * the duplication, not a clipping — and the paragraph on the objet below,
-   * which reads as though the row were 129.7px short, is measured against a
-   * header 228.3px wide that this one no longer is. It is marked there.
+   * At the window's own minimum, on the one screen a rep is looking at while a
+   * client talks, the header read « Néovia Santé — ca… » beside « Néovia… » —
+   * **105.19px of the meeting's name cut off to make room for a second copy of
+   * part of it**. The objet takes 72.00 of those back and is 33.19 short, which
+   * is exactly what the paragraph below it predicted before this was written.
+   * On `session-compte-rendu`, where the call is over and the header is 371.28
+   * wide, nothing was cut before or after and the change buys ink alone:
+   * 89.09px of field and the 8 of `gap-snug` beside it.
    *
    * **Read off the props, never off what the rep is typing.** The store's title
    * is the one the gate will read and the one the CRM will receive; the local
@@ -258,26 +263,26 @@ export function MeetingTitle({ meetingId, title, clientName }: MeetingTitleProps
          * picker (DEC-43), and neither is a layout decision. The pass counts it
          * on every run at both sizes, so the next attempt starts from a number.
          *
-         * **Stale, and re-measured — no field on either fixture is cut today.**
-         * Re-driven on the shipped renderer at both smoke sizes: on
-         * `session-compte-rendu` the row is 371.28px at 960×600 and the objet
-         * takes 261.44 of it for 261.44 of text; on `agenda-preparer` the row is
-         * 476.64 and the objet 382.84 for 382.84. Neither is short of a pixel,
-         * at either size. The « boîte 156.3 / veut 261 » above is that same
-         * `session-compte-rendu` objet measured when this row was **228.3px**
-         * wide, and the two paragraphs before this one are why it is not: the
-         * `max-w-[42ch]` ceiling came off, and the header gave the pair 143px
-         * back. The wants — 261 and 89 — are still exactly right; only the
-         * boxes moved, which is what made a true paragraph read as a live one.
+         * **Right, and paid off — to the pixel.** It is tempting to read the
+         * numbers above as stale, and one round did: re-driven on
+         * `session-compte-rendu` they do not reproduce, because that stage's
+         * call is over and its header row is 371.28px rather than this one's
+         * 228.25. Driven on `session`, the stage this paragraph is about, they
+         * are exact — objet 156.25 for 261.44, client 64 for 89.09, at 960×600,
+         * today. **A measurement is about a stage, and a re-measurement on a
+         * different stage falsifies nothing.**
          *
-         * What did change here is upstream of all of it: the client field is no
-         * longer *drawn* when the objet already names it (`clientIsRedundant`,
-         * above), so this row is one field on those meetings and two on the
-         * rest. That returns 97.09px on `session-compte-rendu` — 89.09 of field
-         * and the 8 of `gap-snug` — and nothing at all on `agenda-preparer`,
-         * whose client is empty. The argument above, that no redistribution
-         * inside this row can buy the objet room, is untouched and still holds
-         * for the day a fixture does arrive with an objet too long for it.
+         * And the prediction held. The client field is no longer drawn when the
+         * objet already names it (`clientIsRedundant`, above), which is the one
+         * redistribution this paragraph did not consider — it asked what the
+         * row could give the objet and not whether the row was saying the same
+         * word twice. Measured after: objet 228.25 for 261.44. That is the
+         * **72.00px** predicted here, and the **33.19** short predicted here,
+         * with no digit moved. The rest of the argument stands unaltered: the
+         * remaining 33.19 has to come from the meter (DEC-38) or the recipe
+         * picker (DEC-43), neither of which is a layout decision, and on a
+         * meeting whose objet does *not* name its client nothing above changes
+         * at all.
          */
         className="text-strong placeholder:text-muted hover:border-subtle focus:border-subtle focus:bg-inner min-w-[7rem] max-w-full shrink truncate rounded-sm border border-transparent bg-transparent px-tight py-tight font-sans text-copy font-medium outline-none [field-sizing:content]"
       />

@@ -371,11 +371,15 @@ describe('the meeting names itself where the rep is, not before the call', () =>
  * rule, so it printed the account twice on every meeting a rep named after
  * their client — which, for an ESN's sales reps, is most of them.
  *
- * It is ink and it is room. Driven on the shipped renderer at both smoke
- * sizes, `session-compte-rendu`: the client field is 89.09px holding a name the
- * objet's 261.44px already spell out, and with the 8px beside it that is 97.09
- * of a 371.28px header row at 960×600 spent saying one thing twice. Neither
- * field is truncated there, before or after — the defect is the repetition.
+ * It is ink and it is room, and on the live call at the window's own minimum
+ * it is mostly room. Driven on the shipped renderer, `session`@960×600 — a
+ * 228.25px header row, because the meter, the recipe switch and *Terminer*
+ * share it: the objet got **156.25px for 261.44px of text** and the client
+ * 64 for 89.09, so the screen a rep watches while a client talks read
+ * « Néovia Santé — ca… » beside « Néovia… ». After, the objet has 228.25 and
+ * is 33.19 short instead of 105.19. On `session-compte-rendu`, where the call
+ * is over and the row is 371.28, nothing was cut either way and what the
+ * change buys is the 89.09px of field and one fewer copy of the name.
  *
  * The field is not removed, it is not drawn: the value still travels in every
  * `meeting:rename` this header sends, and editing the objet so it no longer
