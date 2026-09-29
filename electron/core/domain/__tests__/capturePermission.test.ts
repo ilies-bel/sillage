@@ -171,3 +171,69 @@ test('a host with no pane to open says so, and it is never a platform test', () 
   assert.equal(view.state, 'denied')
   assert.equal(view.canOpenSettings, false)
 })
+
+/**
+ * **One channel never asked, the other already refused — the sentence covered
+ * only the first.**
+ *
+ * `remedy` asked « is any of these askable », and answered « Autorisez-le pour
+ * que Sillage puisse l'enregistrer. » for the whole set. With the microphone
+ * `not-determined` and screen recording `denied` — a rep who accepted the first
+ * macOS prompt and refused the second, then reinstalled — the whole status read
+ *
+ *     Ni le micro ni l'audio système ne sont autorisés — une réunion ne serait
+ *     pas enregistrée. Autorisez-le pour que Sillage puisse l'enregistrer.
+ *
+ * « Autorisez-le », singular, after a clause naming two, for a pair where
+ * authorising fixes exactly one: the OS will not prompt for the refused one
+ * again, so nothing the rep can do from that sentence brings back the far end of
+ * the call — which is the half the product exists for. They press *Autoriser*,
+ * the microphone prompt appears, they accept, and the screen reports a different
+ * warning they have already read once.
+ *
+ * `restricted` beside an askable channel is deliberately *not* this case and the
+ * test above it says why: a managed profile is fixable by nobody, so there is no
+ * second instruction to give. `denied` has one, and it was missing.
+ */
+test('one channel to ask for and one already refused names both remedies', () => {
+  const health = capturePermissionHealth(
+    access({ microphone: 'not-determined', screen: 'denied' }),
+    NOW,
+  )
+  assert.ok(health && health.state !== 'ok')
+  assert.equal(health.state, 'down')
+  assert.equal(health.retryable, true)
+  // The half a prompt can still fix…
+  assert.match(health.reason, /Autorisez le micro/)
+  // …and the half only the pane can.
+  assert.match(health.reason, /réautorisez l’audio système dans les réglages de confidentialité/)
+})
+
+test('the mirror pair names them the other way round', () => {
+  const health = capturePermissionHealth(
+    access({ microphone: 'denied', screen: 'not-determined' }),
+    NOW,
+  )
+  assert.ok(health && health.state !== 'ok')
+  assert.match(health.reason, /Autorisez l’audio système/)
+  assert.match(health.reason, /réautorisez le micro dans les réglages de confidentialité/)
+})
+
+/**
+ * Two of the same, and the pronoun that follows « Ni le micro ni l'audio
+ * système ». Both remedies were constants, so the `down` case — the only one
+ * that names two channels — read « Autorisez-le » and « Vous l'avez refusé »
+ * about a pair.
+ */
+test('two channels in the same state are spoken of as two', () => {
+  const never = capturePermissionHealth(
+    access({ microphone: 'not-determined', screen: 'not-determined' }),
+    NOW,
+  )
+  assert.ok(never && never.state !== 'ok')
+  assert.match(never.reason, /Autorisez-les pour que Sillage puisse les enregistrer/)
+
+  const both = capturePermissionHealth(access({ microphone: 'denied', screen: 'denied' }), NOW)
+  assert.ok(both && both.state !== 'ok')
+  assert.match(both.reason, /Vous les avez refusés : réautorisez Sillage/)
+})

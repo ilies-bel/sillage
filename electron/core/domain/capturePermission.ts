@@ -87,14 +87,61 @@ export const canPrompt = (status: AccessStatus): boolean => status === 'not-dete
 const MIC = 'le micro'
 const SCREEN = 'l’audio système'
 
-/** What to tell a rep to do about a channel they have not got. */
-const remedy = (statuses: readonly AccessStatus[]): string => {
-  if (statuses.every((status) => status === 'restricted')) {
+interface Missing {
+  /** « le micro » or « l’audio système », for a sentence that names it. */
+  name: string
+  status: AccessStatus
+}
+
+/**
+ * What to tell a rep to do about the channels they have not got.
+ *
+ * **The two halves can need different remedies, and this said only one.** It
+ * asked « is any of these askable » and answered for the whole set, so a
+ * microphone that was never asked for beside screen recording that was refused
+ * — a rep who accepted the first macOS prompt and refused the second, then
+ * reinstalled — produced
+ *
+ *     Ni le micro ni l’audio système ne sont autorisés — une réunion ne serait
+ *     pas enregistrée. Autorisez-le pour que Sillage puisse l’enregistrer.
+ *
+ * « Autorisez-le », singular, after a clause naming two, for a pair where
+ * authorising fixes exactly one. The OS will not prompt for the refused one
+ * again, so nothing in that sentence brings back the far end of the call.
+ *
+ * `restricted` beside an askable channel is deliberately not this case: a
+ * managed profile is fixable by nobody, so there is no second instruction to
+ * give and the sentence stays the askable one’s. `denied` has one.
+ */
+const remedy = (missing: readonly Missing[]): string => {
+  if (missing.every(({ status }) => status === 'restricted')) {
     return 'Cet ordinateur est géré et l’autorisation est bloquée par votre service informatique.'
   }
-  if (statuses.some(canPrompt)) return 'Autorisez-le pour que Sillage puisse l’enregistrer.'
-  // Already refused once: the OS will not ask again, so the button that asks is
-  // not the remedy and must not be offered as one.
+
+  const askable = missing.filter(({ status }) => canPrompt(status))
+  const refused = missing.filter(({ status }) => status === 'denied')
+
+  if (askable.length > 0 && refused.length > 0) {
+    const ask = askable.map(({ name }) => name).join(' et ')
+    const open = refused.map(({ name }) => name).join(' et ')
+    return `Autorisez ${ask}, puis réautorisez ${open} dans les réglages de confidentialité du système.`
+  }
+
+  /*
+   * Singular or plural with the count, because both of these were written as
+   * constants and both are printed after « Ni le micro ni l'audio système » on
+   * the `down` case: « Ni le micro ni l'audio système ne sont autorisés — …
+   * Autorisez-le » and « … Vous l'avez refusé », both measured on the shipped
+   * sentence. A `restricted` channel beside one askable one is the case that
+   * legitimately stays singular, and it does: it is not in either list.
+   */
+  if (askable.length > 1) return 'Autorisez-les pour que Sillage puisse les enregistrer.'
+  if (askable.length > 0) return 'Autorisez-le pour que Sillage puisse l’enregistrer.'
+  // Already refused: the OS will not ask again, so the button that asks is not
+  // the remedy and must not be offered as one.
+  if (refused.length > 1) {
+    return 'Vous les avez refusés : réautorisez Sillage dans les réglages de confidentialité du système.'
+  }
   return 'Vous l’avez refusé : réautorisez Sillage dans les réglages de confidentialité du système.'
 }
 
@@ -115,16 +162,16 @@ export const capturePermissionHealth = (
   const screen = usable(access.screen)
   if (mic && screen) return null
 
-  const missing: AccessStatus[] = []
-  if (!mic) missing.push(access.microphone)
-  if (!screen) missing.push(access.screen)
+  const missing: Missing[] = []
+  if (!mic) missing.push({ name: MIC, status: access.microphone })
+  if (!screen) missing.push({ name: SCREEN, status: access.screen })
 
   /*
    * `retryable` is « can this screen's button change anything », not « is this
    * permission grantable ». Visiting the settings pane is something the button
    * can do; a managed device is not.
    */
-  const retryable = missing.some((status) => status !== 'restricted')
+  const retryable = missing.some(({ status }) => status !== 'restricted')
 
   if (!mic && !screen) {
     return {
