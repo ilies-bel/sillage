@@ -66,6 +66,7 @@ import {
 import { AskPanel } from './session/AskPanel.tsx'
 import { TranscriptReader, type TranscriptFocus } from './review/TranscriptReader.tsx'
 import { RecipeSwitch } from './review/RecipeSwitch.tsx'
+import { titleSaysAccount } from './titleSaysAccount.ts'
 
 /** The one thing a rep must notice without reading (DEC-21). */
 const FAIBLE = '⚠ faible'
@@ -2091,7 +2092,10 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
             two weights, neither screen naming a reason. */}
         <h1 className="text-strong min-w-0 flex-1 truncate text-heading">
           {panel.meeting.title}
-          {edits.accountName && !panel.meeting.title.includes(edits.accountName)
+          {/* The rule, shared with the session header: `titleSaysAccount.ts`.
+              It was written inline here and nowhere else, so the one other
+              screen that prints this pair printed the account twice. */}
+          {edits.accountName && !titleSaysAccount(panel.meeting.title, edits.accountName)
             ? ` · ${edits.accountName}`
             : ''}
         </h1>

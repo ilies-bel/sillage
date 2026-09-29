@@ -359,3 +359,62 @@ describe('the meeting names itself where the rep is, not before the call', () =>
     await waitFor(() => expect(bridge.calls.some((c) => c.channel === 'meeting:rename')).toBe(true))
   })
 })
+
+/**
+ * The account, unless the objet already says it — the review gate's own rule,
+ * applied to the one other screen that prints the pair.
+ *
+ * `Review.tsx` composes its heading as `title · account` and suppresses the
+ * suffix when `title.includes(account)`, because a heading that says « Néovia
+ * Santé — cadrage · Néovia Santé » teaches a rep that the end of that line is
+ * noise. The session header prints the same pair as two fields and had no such
+ * rule, so it printed the account twice on every meeting a rep named after
+ * their client — which, for an ESN's sales reps, is most of them.
+ *
+ * It is ink and it is room. Driven on the shipped renderer at both smoke
+ * sizes, `session-compte-rendu`: the client field is 89.09px holding a name the
+ * objet's 261.44px already spell out, and with the 8px beside it that is 97.09
+ * of a 371.28px header row at 960×600 spent saying one thing twice. Neither
+ * field is truncated there, before or after — the defect is the repetition.
+ *
+ * The field is not removed, it is not drawn: the value still travels in every
+ * `meeting:rename` this header sends, and editing the objet so it no longer
+ * names the client brings the field straight back.
+ */
+describe('the session header does not say the client twice', () => {
+  test('an objet that already names the client draws no client field', async () => {
+    open({ title: 'Néovia Santé — cadrage renfort data', clientName: 'Néovia Santé' })
+
+    // The objet is whole: nothing was moved out of it to make this true.
+    const objet = (await screen.findByLabelText('Objet de la réunion')) as HTMLInputElement
+    expect(objet.value).toBe('Néovia Santé — cadrage renfort data')
+
+    expect(screen.queryByLabelText('Client')).toBeNull()
+  })
+
+  test('an objet that does not name the client still draws it', async () => {
+    open({ title: 'Cadrage renfort data', clientName: 'Néovia Santé' })
+
+    const client = (await screen.findByLabelText('Client')) as HTMLInputElement
+    expect(client.value).toBe('Néovia Santé')
+  })
+
+  test('the field the rep types into is never taken away under them', async () => {
+    open({ title: 'Cadrage renfort data', clientName: 'Néovia Santé' })
+
+    // Typing the client into the objet makes the pair redundant — but the rep
+    // is mid-edit and nothing is saved yet, so the field they may be about to
+    // return to has to survive the keystroke that made it redundant.
+    const objet = await screen.findByLabelText('Objet de la réunion')
+    fireEvent.change(objet, { target: { value: 'Néovia Santé — cadrage' } })
+
+    expect(screen.queryByLabelText('Client')).not.toBeNull()
+  })
+
+  test('a meeting with no client has nothing to hide and nothing to draw twice', async () => {
+    open({ title: 'Point hebdo', clientName: null })
+
+    const client = (await screen.findByLabelText('Client')) as HTMLInputElement
+    expect(client.value).toBe('')
+  })
+})
