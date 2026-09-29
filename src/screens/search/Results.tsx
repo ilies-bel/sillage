@@ -125,7 +125,7 @@ export function Results({ rows, failure, truncated, onOpen }: ResultsProps) {
               counted phrases, 173.1px measured and ~240px at three-digit
               counts, which still leaves the line inside 430.
             */}
-            <IntentSummary intents={row.intents} variant="compact" className="lg:w-28 lg:truncate" />
+            <IntentSummary intents={row.intents} className="lg:w-28 lg:truncate" />
 
             <Button onClick={() => onOpen(row.meeting.id)}>Ouvrir</Button>
 

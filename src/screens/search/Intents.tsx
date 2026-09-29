@@ -19,20 +19,28 @@ import type { HistoryIntent } from '../../../electron/core/contracts/history.ts'
 import { INTENT_SHORT, pushWord } from './pushWords.ts'
 
 /**
- * How much room the caller has.
+ * **There is one form, and it counts.**
  *
- * `full` names every intent and its state — « tâche envoyée · opportunité en
- * attente · mail en échec » — and is for *Historique*, whose rows run the width
- * of the window.
+ * This was two — a `full` variant naming every intent and its state (« tâche
+ * envoyée · opportunité en attente · mail en échec ») and a `compact` one that
+ * counts — with `full` as the default. `full` never had a caller: both call
+ * sites have passed `compact` since `b28964e`, the commit that introduced the
+ * variant, and that is 471 commits ago. The default was the one nothing reached.
  *
- * `compact` is for the calendar's search pane, where the same summary sits
- * between a title and an *Ouvrir* button in about a hundred pixels. Naming
- * three intents there overran the column and ran *under* the button. It counts
- * instead, and it counts failures first, because that is the one state a rep is
- * scanning for; the full ledger is one click away in Historique and rides along
- * in the `title` in the meantime.
+ * It is gone rather than wired, because the measurement that produced `compact`
+ * is the argument against bringing it back. Naming three intents overran the
+ * calendar's search pane — about a hundred pixels between a title and an
+ * *Ouvrir* button — and ran *under* the button; in *Historique* at 1280 the
+ * three ran past the row and « mail en échec » was cut against the edge, which
+ * is the one state a rep is scanning for. The full ledger, with each intent, its
+ * VerySwing id and its failure sentence, is « Envois » in the expanded record
+ * two clicks below, and the per-intent wording rides along in the `title` in the
+ * meantime.
+ *
+ * Its docblock argued for `full` in the present tense the whole time, which made
+ * a dead branch read as the primary one — the shape CLAUDE.md's prose list keeps
+ * finding.
  */
-export type IntentSummaryVariant = 'full' | 'compact'
 
 /**
  * « 1 envoi en échec · 2 effectués », ordered by what a rep is looking for.
@@ -63,49 +71,30 @@ const counted = (intents: readonly HistoryIntent[]): string => {
 
 export function IntentSummary({
   intents,
-  variant = 'full',
   className,
 }: {
   intents: readonly HistoryIntent[]
-  variant?: IntentSummaryVariant
   className?: string
 }) {
   if (intents.length === 0) {
     return <span className={`text-muted shrink-0 text-right text-ui ${className ?? ''}`}>—</span>
   }
 
-  if (variant === 'compact') {
-    return (
-      <span
-        title={intents
-          .map((intent) => `${INTENT_SHORT[intent.kind]} ${pushWord(intent.state, intent.kind)}`)
-          .join(' · ')}
-        className={`shrink-0 whitespace-nowrap text-right text-ui ${
-          intents.some((intent) => intent.state === 'failed') ? 'text-warn' : 'text-muted'
-        } ${className ?? ''}`}
-      >
-        {counted(intents)}
-      </span>
-    )
-  }
-
   return (
-    /* `whitespace-nowrap`: the cluster wrapped mid-list on a narrow row and
-       left an orphaned « · » at the end of the line. It is three short phrases
-       and it either fits on one line or the caller wanted `compact`. */
-    <span className={`shrink-0 whitespace-nowrap text-right text-ui ${className ?? ''}`}>
-      {intents.map((intent, index) => (
-        <span
-          key={intent.intentId}
-          /* The reason, where there is one — colour is never the only signal
-             and « en échec » with no cause is a dead end (DEC-26). */
-          title={intent.lastError ?? undefined}
-          className={intent.state === 'failed' ? 'text-warn' : 'text-muted'}
-        >
-          {index > 0 ? ' · ' : ''}
-          {`${INTENT_SHORT[intent.kind]} ${pushWord(intent.state, intent.kind)}`}
-        </span>
-      ))}
+    /* `whitespace-nowrap`: the cluster wrapped mid-count on a narrow row and
+       left an orphaned « · » at the end of the line. */
+    <span
+      /* The per-intent wording, which the count above it does not carry. It is
+         the same words « Envois » prints two clicks below (`pushWords.ts`), so
+         the two zoom levels of one fact cannot drift apart again. */
+      title={intents
+        .map((intent) => `${INTENT_SHORT[intent.kind]} ${pushWord(intent.state, intent.kind)}`)
+        .join(' · ')}
+      className={`shrink-0 whitespace-nowrap text-right text-ui ${
+        intents.some((intent) => intent.state === 'failed') ? 'text-warn' : 'text-muted'
+      } ${className ?? ''}`}
+    >
+      {counted(intents)}
     </span>
   )
 }
