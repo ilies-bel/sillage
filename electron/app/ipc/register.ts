@@ -1024,7 +1024,10 @@ export const handlers: Handlers = {
     }
   },
 
-  'review:confirm': ({ meetingId, edits, intentIds }, { store, orchestrator, clock, drain }) => {
+  'review:confirm': (
+    { meetingId, edits, intentIds },
+    { store, orchestrator, clock, drain, identity },
+  ) => {
     const session = orchestrator.session(meetingId)
     if (!session) throw refuse(`réunion inconnue: ${meetingId}`)
 
@@ -1044,6 +1047,24 @@ export const handlers: Handlers = {
       facts,
       edits,
       mailTo,
+      /*
+       * **The same account the gate read**, and this line is the whole of a
+       * defect that shipped.
+       *
+       * `draftIntents` defaults `mailAccount` to `true` when a caller says
+       * nothing, and this was the one caller of four that said nothing — the one
+       * that writes. `review:get` computes it twice and `review:preview` once,
+       * all three from `authState(identity)`, so the screen drew *Brouillon de
+       * relance (Outlook)* disabled with « Aucun compte Microsoft connecté » on
+       * it and *Valider* created the intent anyway: a second path confirming
+       * what the gate refuses, which DEC-4 forbids, on the channel whose port
+       * has no delete verb.
+       *
+       * Reachable on the build DEC-28 ships first — no Entra app at all — and
+       * reachable again with one, whenever the refresh token dies between the
+       * gate opening and the press.
+       */
+      mailAccount: authState(identity).status === 'signedIn',
       recipe: stored.extraction.interpretation.recipe,
       checked: intentIds,
     })

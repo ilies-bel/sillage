@@ -595,6 +595,11 @@ test('DEC-21: ⚠ faible on the account is measured, and a resolved account carr
 
 test('DEC-4: one Valider ships everything checked, together', async () => {
   const { ipc, deps, cleanup } = open()
+  // Signed in, because each of these asserts a `mail.draft` among what the
+  // press creates, and the press now drafts against the account the gate
+  // read. They passed without it while `review:confirm` was the one
+  // `draftIntents` caller that did not say whether there was one.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
 
@@ -654,6 +659,11 @@ test('DEC-4: one Valider ships everything checked, together', async () => {
  */
 test('a confirmation that would create nothing is refused, not consumed', async () => {
   const { ipc, deps, cleanup } = open()
+  // Signed in, because each of these asserts a `mail.draft` among what the
+  // press creates, and the press now drafts against the account the gate
+  // read. They passed without it while `review:confirm` was the one
+  // `draftIntents` caller that did not say whether there was one.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
 
@@ -693,6 +703,11 @@ test('a confirmation that would create nothing is refused, not consumed', async 
 
 test('DEC-20: an unchecked intent is absent from intentIds and never created', async () => {
   const { ipc, deps, cleanup } = open()
+  // Signed in, because each of these asserts a `mail.draft` among what the
+  // press creates, and the press now drafts against the account the gate
+  // read. They passed without it while `review:confirm` was the one
+  // `draftIntents` caller that did not say whether there was one.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
 
@@ -736,6 +751,11 @@ test('DEC-20: an unchecked intent is absent from intentIds and never created', a
 
 test('an edited field is what gets sent, not the model’s original', async () => {
   const { ipc, deps, cleanup } = open()
+  // Signed in, because each of these asserts a `mail.draft` among what the
+  // press creates, and the press now drafts against the account the gate
+  // read. They passed without it while `review:confirm` was the one
+  // `draftIntents` caller that did not say whether there was one.
+  signIn(deps)
   atGate(deps, 'm1')
   const panel = await editsFor(ipc, 'm1')
 
@@ -2457,6 +2477,89 @@ test('consent is read through the port, and the pane reports whether it opened',
   // nothing teaches a rep that the screen is broken.
   assert.deepEqual(await ipc.invoke('capture:permission:open', {}), { opened: false })
   assert.equal(opened, 1)
+
+  cleanup()
+})
+
+/**
+ * **The write drafts against the same Microsoft account the gate read.**
+ *
+ * `draftIntents` takes `mailAccount` and defaults it to `true` when the caller
+ * says nothing (`reviewGate.ts:578`). Three of its four callers pass it —
+ * `review:get` twice and `review:preview` once, each computing
+ * `authState(identity).status === 'signedIn'` on the line above. The fourth is
+ * `review:confirm`, the one that writes, and it passed nothing.
+ *
+ * So on the build DEC-28 ships first — no Entra app, `deps.identity` null, which
+ * is what `open()` above reproduces — the gate draws *Brouillon de relance
+ * (Outlook)* disabled, with « Aucun compte Microsoft connecté » on the row, and
+ * *Valider* creates a `mail.draft` intent regardless. That is a second path
+ * confirming what the gate refuses, which DEC-4 forbids, on the one channel
+ * whose port has no delete verb.
+ *
+ * The same divergence is reachable with an Entra app too, and there it is the
+ * ordinary case rather than the demo's: the rep opens the gate signed in, the
+ * refresh token dies while they read, and the press drafts against an account
+ * that is gone.
+ *
+ * The assertion is deliberately not « the reason on the row », which is what a
+ * test of `draftIntents` would say. It is « nothing was written », because the
+ * defect is a write that the screen above it refused.
+ */
+test('DEC-4: Valider never ships a draft the gate drew as impossible', async () => {
+  const { ipc, deps, cleanup } = open()
+  atGate(deps, 'm1')
+
+  const panel = await editsFor(ipc, 'm1')
+  const mail = panel.intents.find((intent) => intent.kind === 'mail.draft')
+  // What the rep was shown. With no identity there is no account to draft from.
+  assert.equal(mail?.available, false)
+  assert.ok((mail?.reason ?? '').length > 0)
+
+  // And the press, with the row's id in the list exactly as `Review.tsx` sends
+  // every id it drew — including the ones it drew disabled.
+  const confirmed = await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: panel.edits,
+    intentIds: panel.intents.map((intent) => intent.id),
+  })
+
+  assert.equal(confirmed.ok, true)
+  assert.deepEqual(
+    createdIntents(deps, 'm1').map((intent) => intent.kind),
+    ['crm.task', 'crm.opportunity'],
+    'un brouillon Outlook a été créé sans compte Microsoft',
+  )
+  assert.equal(
+    deps.store.projections.outboxFor('m1').some((entry) => entry.kind === 'mail.draft'),
+    false,
+  )
+
+  cleanup()
+})
+
+/**
+ * The other half of the same rule: signed in, the draft is drawn, checked and
+ * written. Without this the fix above would pass by never drafting mail at all.
+ */
+test('DEC-4: signed in, the same press does ship the draft', async () => {
+  const { ipc, deps, cleanup } = open()
+  signIn(deps)
+  atGate(deps, 'm1')
+
+  const panel = await editsFor(ipc, 'm1')
+  assert.equal(panel.intents.find((intent) => intent.kind === 'mail.draft')?.available, true)
+
+  await ipc.invoke('review:confirm', {
+    meetingId: 'm1',
+    edits: panel.edits,
+    intentIds: panel.intents.map((intent) => intent.id),
+  })
+
+  assert.deepEqual(
+    createdIntents(deps, 'm1').map((intent) => intent.kind),
+    ['crm.task', 'crm.opportunity', 'mail.draft'],
+  )
 
   cleanup()
 })
