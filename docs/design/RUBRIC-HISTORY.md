@@ -139,6 +139,7 @@ round 5 did not.
 | 23 | main | `4e3da8a` | 7 | 7.5 | 8.5 | 7 | 8.5 | 7.5 | 8 | 7.5 | 7.5 | **69** ¶ |
 | 23 | detection | `4e3da8a` | 7.5 | 8 | 8.5 | 6.5 | 7 | 6.5 | 6 | 6 | 6.5 | **62.5** |
 | 24 | main | `5eb4b16` | 7 | 8 | 8 | 6.5 | 7 | 8.5 | 7.5 | 7 | 7.5 | **67** ※ |
+| 25 | main | `e5d3534` | 6.5 | 7 | 8.5 | 6 | 8 | 7 | 7 | 7 | 7 | **64** ❖ |
 
 **Round 14 detection was measured against a tree I was editing under it, and that
 is my error, not the reviewer's.** The round's own instructions say a review runs
@@ -1458,6 +1459,209 @@ flow is the next defect in the same element.
   `role` and no `aria-live`: one stage shows a designed sentence with a remedy, the
   next shows « aucun fournisseur de transcription disponible » — lowercase, no
   terminal period, no remedy. Round 23 fixed which connector speaks, not how.
+
+## Round 25: five of seven moves inside the noise floor — ❖ the axis that moved most moved because the instrument did
+
+**`e5d3534`, scored blind at 64/90.** Round 24 was 67 at `5eb4b16`.
+
+Run under `RUBRIC.md`'s split, on two detached worktrees both pinned to
+`e5d3534` with their own Vite servers (5182 for the hunter, 5183 for the
+scorer), so neither agent touched the other's baseline or the live checkout,
+and the agent that hunted the defects did not assign the score.
+
+### What moved, and why
+
+| axis | r24 | r25 | Δ | the scorer's reading |
+|---|---|---|---|---|
+| 1 Chrome | 7 | 6.5 | −0.5 | an 82px transparent header band on `agenda@1280` (10.3% of window height) for a date and one button, 5 rules ≥40% of a viewport dimension, 45 painted border sides. New cost named: the Réglages pane's title and ✕ leave the viewport under its own page turn. |
+| 2 Typography | 8 | 7 | −1 | round 24's +0.5 closed « the 19px rung is two typefaces » and it stays closed. What is priced instead is the *list* screens: **68 of 86 runs at 12px** on `agenda`, 16 and 19 absent, body→page title a bare 2.0× with nothing between. |
+| 3 Spacing | 8 | 8.5 | +0.5 | re-derived independently by sibling-gap histogram: `review` **350/350** painted spacings on the seven declared steps, `agenda` 174/174, `reglages` 310/310, `historique` 1 364 at 99.9%. The best-measured axis in the product. |
+| 4 Density | 6.5 | 6 | −0.5 | **the lowest axis for the twentieth consecutive round.** Round 24's own « one thing » is the cause and is still open. |
+| 5 Colour | 7 | 8 | +1 | round 24 marked this to 7 and called it « mostly instrument ». Measured on the shipped gate: five ink roles, `#5d6b76`×91 · `#4a5a67`×43 · `#14202a`×25 · `#7d5f18`×4 (only `⚠ faible`) · `#036696`×2 (only links), each doing one job. |
+| 6 Motion | 8.5 | 7 | **−1.5** | the only move outside round 21's measured spread — the only one the scorer said it would defend as real, and **the scorer read it as a scoring correction, not a product regression**, unprompted. Round 24's +1 came from `--motion`'s blindness being fixed (85 stages → 37 driven, 93 departures newly *measured*). Nothing moved in the product; the instrument started seeing what was already there. Against the product: all 69 animated elements on `agenda` at 0.09s on colour properties, the 150ms rung worn by none, the view switcher's hover a **1.31:1** text step with no other change. |
+| 7 States | 7.5 | 7 | −0.5 | 0 of 64 controls on `agenda` without a focus ring, every state designed — against the modal that loses its way out, and two disabled paints side by side. |
+| 8 Craft | 7 | 7 | 0 | flat, with a real improvement inside it: the DEC-4 gate went from **six** author-decided control heights to **five**, and the 13px control is gone. |
+| 9 The whole | 7.5 | 7 | −0.5 | one token file, one ladder, one radius family, French throughout; the shell is what is not. |
+| | **67** | **64** | **−3** | |
+
+**The scorer's own summary sentence does not match its own table, and the
+conclusion survives anyway.** It wrote « five of the seven moves are −0.5 ».
+There are **eight** non-zero moves and **four** of them are −0.5 — chrome,
+density, states, the whole. The sum is right (−0.5 − 1 + 0.5 − 0.5 + 1 − 1.5
+− 0.5 + 0 − 0.5 = −3, and 67 − 3 = 64); the count of them is not. That is a
+number computed and written down as a number observed, in a report whose subject
+is a product held to exactly that rule, and it is recorded here rather than
+quietly corrected — the same way this file recorded its own « 32 above, 20.3
+below ».
+
+What it was reaching for holds: round 21's controlled experiment — two blind
+scorers, one commit, **66 vs 68**, no axis more than a point apart — puts half
+the moves at the noise floor, and typography's −1 and colour's +1 sit exactly on
+its edge rather than past it. Only motion's −1.5 is outside. Read the total as
+flat-to-slightly-down with one axis re-priced.
+
+**The −1.5 is the useful row and not for its sign.** A number that went up
+because a check started seeing more, and then came back down when a human scored
+the same product, is the clearest statement this file has that *an instrument's
+reach and the product's quality are different quantities*. Round 24's motion
+score was never about the product. The scorer said so itself, with the history
+open, and declined to claim the regression.
+
+### The one thing, for the second round running
+
+**Give the document the window at 960×600.** `session-compte-rendu@960×600`:
+header 61px; the document 61→413px holding the H1, four metadata lines,
+« ## Résumé » and **one line of body prose**; then the ask box at y 478 and its
+chips to y 584, 106px of a 600px window. The gate's decision band on the next
+screen is another 107px — **11.9% ink at 1280×800, 14.7% at 960×600**. The ask
+block shrank 130→106px since round 24 and the rep still gets one sentence of the
+thing they came for. It is the only finding on the list a rep on the declared
+minimum Windows laptop (HR-2) meets on their first day.
+
+### Closed this round, in the commits that closed them
+
+Hunter: **NOT IMPRESSED**, five substantive findings and four smaller ones. All
+nine are landed, each falsified on the parent before its fix existed.
+
+- **`9dd1f5e`** — *the sheet's only visible exit left under its own control.* The
+  scorer's second finding: press « Lire la suite » to the end of Connecteurs and
+  the Réglages title and ✕ sit at y **−537/−536** at 1280×800 and **−709/−708**
+  at 960×600, clipped both times. The title row is chrome and chrome does not
+  scroll — the argument was already in the file, applied to the element that
+  needed it less.
+- **`2b873bf`** — *the printed keyboard promised the one chord it removed.* The
+  Lede named two typing exceptions where `ALLOWED_WHILE_TYPING` has one, and the
+  invented one was `valider`, the accelerator for `review:confirm` —
+  `shortcuts.ts` removed it on purpose and its docblock calls the alternative
+  « the most dangerous line in this file ». The behaviour was always right; the
+  sentence a rep reads once and believes was wrong, and contradicted its own
+  table four rows below. Now generated from the array.
+- **`27aefec`** — *« dernière vérification il y a il y a 9 min »*, wrong in all
+  four branches of `formatAgo`. The worst is « il y a à l'instant », which is
+  what a rep sees right after pressing *Vérifier maintenant*, directly above the
+  only control the panel has on every Windows build shipping today.
+- **`3bafc31`** — *`--rhythm` read a scroll position as a spacing.* Exposed by
+  `9dd1f5e`: once a pane has scrolled, the distance from a heading to anything
+  outside that pane is a scroll offset. Red **4 of 12** concurrent
+  `reglages-essai` runs, **0 of 12** on the parent, 4.53px against a real
+  32.95px. The blunt guard — refuse every cross-pane pair — cost claim 3's
+  heading populations 4·3·4·5·5·7 → 2·2·3·3·4·4; gating on `scrollTop > 0.5`
+  restores 4·3·4·5·5·7 exactly, because at rest that distance genuinely *is*
+  padding.
+- **`5dca6e4`** — *« mail envoyée », « Tâche … envoyé » — four of six wrong.* The
+  hunter's third finding, and wider than reported: both tables are ungrammatical,
+  in opposite directions. Measured on the shipped surfaces with three `drained`
+  pushes, the row summary was feminine for everything and the ledger masculine
+  for everything, so four of the six rows disagree with their own subject. A
+  French participle cannot be a constant and both had written one down as one.
+- **`cb92560`** — *`IntentSummary`'s default variant had no caller.* `full` has
+  never been reached: both call sites have passed `compact` since `b28964e`, the
+  commit that introduced the variant, **471 commits ago**, and its docblock
+  argued for it in the present tense the whole time.
+- **`845ea7e`** — *the one write drafted against an account the gate refused.*
+  `draftIntents` defaults `mailAccount` to `true`; three of its four callers pass
+  it and the fourth is `review:confirm`. Measured on the real handlers with no
+  identity: `review:get` draws *Brouillon de relance (Outlook)* disabled with
+  « Aucun compte Microsoft connecté », and the press writes
+  `['crm.task','crm.opportunity','mail.draft']`. A second path confirming what
+  the gate refuses, which DEC-4 forbids. **Four existing tests were passing
+  because of it.**
+- **`521ef37`** — *« Le compte-rendu a été envoyé » when nothing was sent.* Held
+  from the hunt and not duplicated by it. `done` is reached by
+  `allIntentsSettled`, whose `settled` is `drained || failed || !routable`, so a
+  meeting whose every push failed arrives by the same edge as one whose every
+  push landed — and `CONSEQUENCE.done` asserted the second for both, with « il
+  n'y a rien d'autre à faire ici » on the end. Nothing else on the rep's path
+  says otherwise: the confirmation navigates to the agenda, `Agenda.tsx` never
+  reads `intents`, and `outbox.failed` is an `error` diagnostic whose only
+  renderer reader is a Réglages pane opened on purpose.
+- **`40b5150`** — *the failed row asked for the send this file forbids.*
+  `Historique.tsx` opens on why a *Réessayer* there « is a duplicate in the
+  client's CRM one click away », and sixty lines below it the shipped row said
+  « À vérifier dans Outlook **avant de refaire l'envoi.** » There is no re-send,
+  so the only thing that could mean is *create it again by hand* — the duplicate
+  the paragraph exists to prevent.
+- **`5c2cbd4`** — *one permission to ask for, one refused, and one remedy.*
+  « Ni le micro ni l'audio système ne sont autorisés — … Autorisez-le », for a
+  pair where authorising fixes exactly one and the OS will never prompt for the
+  other again. The same measurement caught two more constants disagreeing with
+  their own count on the same branch.
+- **`04a18b9`** — *« 1 déjà marqués ».* The widget's mark count in an accessible
+  name, with a constant plural, so the mark a rep makes most often announced
+  itself wrong. Four test assertions carried the shipped string, which is where
+  the measurement came from.
+
+### The second instrument that was measuring itself
+
+`3bafc31` was one: `--rhythm` reading a scroll position as a spacing. `--press`
+was the other (`1ea274f`), and it surfaced in this round's own gate run.
+
+`PRESS_TOLERATED` holds the presses this product makes that move a control under
+the pointer and that the round that found them did not own. An entry is granted
+nothing outside the stage and sizes it was measured at, and there it **must still
+fire** — a tolerance that stops reproducing fails the pass until it is deleted,
+which is the rule `check-platform.mjs` holds its own allowances to. The staleness
+check read only the verdict `arrivé`.
+
+`judge` has a fourth verdict for exactly the case that broke it. `recouvert`
+means « no resting frame »: three samples never agreed, so the press was not
+judged at all. Its docblock says why it exists — `review-garde-sources` reported
+a 137px displacement on 1 parallel run in 4 and 0px on every serial one, and « an
+intermittent failure on a stage that has nothing to do with the feature under
+review is the worst shape a check can have ». It protects the finding direction.
+It did not protect the staleness direction, so under `smoke.mjs`'s parallel lanes
+a tolerated press that could not be judged looked exactly like a tolerance that
+had stopped firing, and the pass printed **« retirez-la de PRESS_TOLERATED »** —
+a confident instruction to delete an argued, measured exemption, on the evidence
+of a frame nobody managed to read.
+
+Measured: `agenda-empty` at 960×600 went red on **1 of 4** full smoke runs, while
+the tolerance fired on **11 of 11** runs of that stage alone — 3 serial and 8
+concurrent. The entry is as live as it ever was.
+
+The guard is that an entry goes stale only on a press that was *judged*.
+Verified in both directions: an entry that can never fire still fails the pass,
+and the real one still reports itself firing. What it gives up is stated in the
+code rather than implied — an entry on a control that never rests would be
+excused for ever, which is a silence with a clock on it rather than a permanent
+one, and it is the price of not telling somebody to delete a measurement because
+the machine was busy.
+
+### The prose list grew by two, and one of them was a fix arguing for itself
+
+- `Intents.tsx`'s header said « `drained` is the only state that gets a tick »
+  from the root commit until this round. `d8eab35` took the glyphs out and left
+  the sentence describing them. The same docblock asserted that both screens read
+  the same while *Historique*'s own table contradicted it.
+- `PushFailure`'s comment claimed the adapter's fragment and the product's
+  sentence were joined by « the em dash this app already uses to join a clause to
+  its consequence ». They are joined by `{' '}`, and what fixed the collision it
+  describes was `sentence()` punctuating the fragment. A docblock arguing for a
+  fix that is not the one in the code.
+
+### A false instruction, found by reading the file that forbids it
+
+`Historique.tsx` opens with a paragraph on why a *Réessayer* on a failed push
+« is a duplicate in the client's CRM one click away ». Sixty lines below it the
+shipped row read « À vérifier dans Outlook **avant de refaire l'envoi.** » There
+is no re-send: no channel offers one, the outbox retries only what it knows was
+never created, and `failed` is by definition the other case. So the only thing
+that sentence could mean to a rep is *create it again by hand in VerySwing* —
+the duplicate the paragraph exists to prevent, printed as an instruction, in the
+product's own voice, under a row that has just told them nobody knows whether
+the record is there.
+
+### Still open, still needing a product decision
+
+Unchanged from round 24, and the first is the round's own « one thing »:
+
+- **The compte-rendu's window allocation at 960×600.** Second round running.
+- **The session header prints the account twice at 960×600** and truncates the
+  objet.
+- **The widget says nothing when the client's side stops being captured** —
+  DEC-49 says that surface must not take the call, so the pill would have to
+  carry a mark.
+
 
 ## Round 24: six waves merged, none scored — ※ the gap this row closes
 

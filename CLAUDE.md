@@ -167,13 +167,21 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code twenty-six times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code twenty-eight times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
 three; a docblock calling a column « wide enough for the longest thing any list puts here »
 when it was 31px generous; and the pass count four lines above this file's own command
-block, wrong for the third time in the same direction.
+block, wrong for the third time in the same direction. Round 25 added two, both
+in the file it was fixing: `Intents.tsx`'s header said « `drained` is the only
+state that gets a tick » from the root commit until that round — `d8eab35` took
+the glyphs out and left the sentence describing them — while the same docblock
+asserted that both screens read the same push state, which *Historique*'s own
+table contradicted; and `PushFailure`'s comment claimed the adapter's fragment
+and the product's sentence were joined by « the em dash this app already uses to
+join a clause to its consequence », when they are joined by `{' '}` and what
+fixed the collision it describes was `sentence()` punctuating the fragment.
 - **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the
