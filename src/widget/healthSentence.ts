@@ -208,3 +208,68 @@ export const healthLine = (
   }
   return { text: WIDGET_SENTENCES[status.worst][status.state], written: 'widget' }
 }
+
+/**
+ * **The short form, for the one element that is always on screen.**
+ *
+ * `healthLine` above is what the *panel* draws, and the panel is mounted by a
+ * press on the pill. `Widget.tsx` said so in as many words beside that slot —
+ * « a rep who never opens the panel is told nothing, sighted or not. That is a
+ * larger change — the pill would have to carry a mark ». This is that mark's
+ * half of it. **Marked closed here rather than left standing in the present
+ * tense over there.**
+ *
+ * It is a *phrase* and never a sentence, because it is read out as the tail of
+ * one: « Enregistrement en cours — son de l’appel dégradé ». Lowercase, no
+ * terminal mark, no remedy — the remedy is the panel, one press away, and a
+ * pill that recited a two-line remedy every time a screen reader passed over it
+ * would be the interruption DEC-49 exists to prevent.
+ *
+ * **And it never carries the producer's own sentence.** `healthLine` passes
+ * one through when it is written for a rep, which is right for a 340px card and
+ * wrong here: those sentences run to two lines and end on « Ouvrez Sillage »,
+ * and this is the element a rep hears on the way to every other control on the
+ * pill. Four cells, exhaustive at compile time, and they say which side —
+ * which is the whole reason a mark on the pill beats no mark at all.
+ */
+export const WIDGET_MARKS: Record<LiveConnector, Record<TroubledState, string>> = {
+  capture: {
+    degraded: 'son de l’appel dégradé',
+    down: 'son de l’appel interrompu',
+  },
+  transcribe: {
+    degraded: 'transcription dégradée',
+    down: 'transcription interrompue',
+  },
+}
+
+export interface HealthMark {
+  /** The tail of the pill's spoken name. A phrase, never a sentence. */
+  short: string
+  /** Which side, so a caller can say it without re-deriving it. */
+  connector: LiveConnector
+  state: TroubledState
+}
+
+/**
+ * The pill's mark, from the two connectors the window holds — or `null` when
+ * there is nothing wrong.
+ *
+ * Deliberately the same ranking as `healthLine`: `aggregateStatus` is the
+ * repo's one ordering of these states, so the pill and the panel are never
+ * marking different channels about the same call. The two functions differ in
+ * *register*, not in what they are about — which is why this reads the same
+ * narrowing and returns `null` in the same place.
+ */
+export const healthMark = (
+  connectors: Partial<Record<LiveConnector, ConnectorHealth>>,
+): HealthMark | null => {
+  const status = aggregateStatus(connectors)
+  if (status.state === 'ok' || status.worst === null) return null
+  if (status.worst !== 'capture' && status.worst !== 'transcribe') return null
+  return {
+    short: WIDGET_MARKS[status.worst][status.state],
+    connector: status.worst,
+    state: status.state,
+  }
+}

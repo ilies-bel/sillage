@@ -91,7 +91,13 @@ import type { ConnectorHealth } from '../../electron/core/contracts/health.ts'
  * that file's header for why the table is in the renderer and what its
  * predicate cannot tell apart.
  */
-import { healthLine, type HealthLine, type LiveConnector } from './healthSentence.ts'
+import {
+  healthLine,
+  healthMark,
+  type HealthLine,
+  type HealthMark,
+  type LiveConnector,
+} from './healthSentence.ts'
 import {
   MARK_NOTE_MAX,
   interleaveMarks,
@@ -673,6 +679,12 @@ export function Widget() {
     setConnectors((was) => ({ ...was, [connector]: next }))
   })
   const trouble = healthLine(connectors)
+  /*
+   * The same trouble, in the register the pill can wear. `healthSentence.ts`
+   * ranks it once for both, so the pill and the panel never mark different
+   * channels about the same call.
+   */
+  const pillTrouble = healthMark(connectors)
 
   /*
    * The turns arrive on the broadcast nothing had ever subscribed to.
@@ -1024,6 +1036,7 @@ export function Widget() {
             onToggle={() => setOpen((was) => !was)}
             onMark={() => void mark(null, '')}
             onMention={() => void announce()}
+            trouble={meetingId === null ? null : pillTrouble}
           />
           {/*
             The one card, where the press was.
@@ -1997,6 +2010,11 @@ interface PillProps {
   onMark: () => void
   /** US-11 — one press, the sentence on the clipboard and on screen. */
   onMention: () => void
+  /**
+   * What is wrong with the capture, short enough to be the tail of the dot's
+   * spoken name — or `null` when nothing is. `healthSentence.ts` ranks it.
+   */
+  trouble: HealthMark | null
 }
 
 /**
@@ -2022,7 +2040,46 @@ function Pill({
   onToggle,
   onMark,
   onMention,
+  trouble,
 }: PillProps) {
+  /*
+   * **The halo, and it is the pill's half of a defect this file named and left
+   * open.**
+   *
+   * The panel's health slot carried « a rep who never opens the panel is told
+   * nothing, sighted or not. That is a larger change — the pill would have to
+   * carry a mark ». The panel is mounted by a press, so on the one window that
+   * is up for the whole call, a capture that had stopped reaching Sillage was
+   * reported by nothing at all until the rep thought to open a card they had no
+   * reason to open. **Marked closed at that slot rather than left standing in
+   * the present tense.**
+   *
+   * **A detached halo, not a coloured dot, and the number says why.** `--warn`
+   * is `--widget-warn` on this ground, `#d4ae55`; the dot is `--accent`,
+   * `#ff8500`. Against each other they are **1.16:1**. A gold ring drawn *on*
+   * the orange dot is round 22's « recorded » and « recording now » at 1.0077:1
+   * one surface over — two marks of one key told apart by nothing. So the ring
+   * is offset by a pixel of the card's own ground: the carrier is the **shape**
+   * (a dot with a detached halo is not a dot), and the colour is a second,
+   * redundant channel measured against what it actually sits on —
+   * `--widget-warn` on `--widget-bg` is **8.22:1**, twice over 1.4.11's 3:1.
+   *
+   * It costs the row nothing. `ring` and `ring-offset` are box-shadows, so the
+   * halo is three pixels of paint each side of an 8px dot inside a `gap-tight`
+   * of six: the layout does not move and neither does any control on the pill.
+   * That is what makes it a mark rather than a new element — DEC-49's window
+   * must not grow, take the pointer, or offer a second thing to press.
+   *
+   * On both live glyphs, recording and paused. A pause stops the *capture*, not
+   * the transcription engine or the machine's audio route, so a paused call can
+   * still be the one whose channel died — and a mark that came and went with a
+   * press would be read as a consequence of the press. Never on idle: `Widget`
+   * passes `null` there, an idle pill has no call to lose, and a halo on the
+   * hollow idle dot would be a fourth glyph on a surface whose whole argument is
+   * that there are two.
+   */
+  const halo = trouble === null ? '' : ' ring-2 ring-warn ring-offset-1 ring-offset-card'
+
   return (
     <div
       data-pill
@@ -2112,6 +2169,12 @@ function Pill({
         <span
           aria-hidden
           /*
+            `data-pill-trouble`, so a stage can tell « the halo is on » from « a
+            gold pixel happens to be there ». It names the side, which is what
+            the spoken twin below says out loud.
+          */
+          data-pill-trouble={trouble === null ? undefined : trouble.connector}
+          /*
             `data-graphic`, and this is the surface that most needed it. The
             check is opt-in — 1.4.11 covers a graphic *required to understand
             the content*, and only the author knows which — and exactly one
@@ -2128,9 +2191,9 @@ function Pill({
           data-graphic={
             meetingId === null
               ? 'aucun enregistrement'
-              : paused
-                ? 'enregistrement en pause'
-                : 'enregistrement en cours'
+              : `${paused ? 'enregistrement en pause' : 'enregistrement en cours'}${
+                  trouble === null ? '' : `, ${trouble.short}`
+                }`
           }
           className={
             meetingId === null
@@ -2153,7 +2216,7 @@ function Pill({
                     transport control a rep has ever used means by pause, and it
                     keeps the hue that says the call is still armed.
                   */
-                  'border-accent h-2 w-2 shrink-0 border-x-2 border-y-0 bg-transparent'
+                  `border-accent h-2 w-2 shrink-0 border-x-2 border-y-0 bg-transparent${halo}`
                 : /*
                   No ring. The mark wore a `--warn` boundary for one commit,
                   because `--accent` on the pill's old `--bg-card` ground was
@@ -2162,9 +2225,46 @@ function Pill({
                   there, so the boundary has nothing left to do and a second
                   orange inside an 8px circle is only mud.
                 */
-                'bg-accent h-2 w-2 shrink-0 rounded-full'
+                `bg-accent h-2 w-2 shrink-0 rounded-full${halo}`
           }
         />
+        {/*
+          **The halo, and it is the pill's half of a defect this file named and
+          left open.**
+
+          The panel's health slot carried « a rep who never opens the panel is
+          told nothing, sighted or not. That is a larger change — the pill would
+          have to carry a mark ». The panel is mounted by a press, so on the one
+          window that is up for the whole call, a capture that has stopped
+          reaching Sillage was reported by nothing at all until the rep thought
+          to open a card they had no reason to open. That is the widget's
+          version of « proof of life is the meter » failing in the one direction
+          that matters.
+
+          **A detached halo, not a coloured dot, and the number says why.**
+          `--warn` is `--widget-warn` on this ground, `#d4ae55`; the dot is
+          `--accent`, `#ff8500`. Against each other they are **1.16:1**. A gold
+          ring drawn *on* the orange dot is round 22's « recorded » and
+          « recording now » at 1.0077:1 all over again — two marks of one key,
+          told apart by nothing. So the ring is offset by a pixel of the card's
+          own ground: the carrier is the **shape** (a dot with a detached halo is
+          not a dot), and the colour is a second, redundant channel measured
+          against what it actually sits on — `--widget-warn` on `--widget-bg` is
+          **8.22:1**, which clears 1.4.11's 3:1 more than twice over.
+
+          It costs the row nothing. `ring` and `ring-offset` are box-shadows, so
+          the halo is 3px of paint each side of an 8px dot inside a `gap-tight`
+          of 6 — the layout does not move and neither does any control on the
+          pill. That is what makes this a mark rather than a new element:
+          DEC-49's window must not grow, take the pointer, or offer a second
+          thing to press.
+
+          Only while a meeting is live (`Widget.tsx` passes `null` otherwise).
+          An idle pill has no call to lose, and a halo on the hollow idle dot
+          would be a fourth glyph on a surface whose whole argument is that
+          there are two.
+        */}
+
         {/*
           Only when there is something to say that is not already on screen.
           Recording, the pill's words are a clock and a meter — neither of which
@@ -2176,6 +2276,17 @@ function Pill({
         {meetingId === null ? null : (
           <span className="sr-only">
             {paused ? 'Enregistrement en pause' : 'Enregistrement en cours'}
+            {/*
+              And which side, when a side has gone. The halo above is the
+              sighted half of the same mark; this is the half that says what it
+              means. A phrase and not the panel's sentence — `WIDGET_MARKS` in
+              `healthSentence.ts` argues that register — because this is read
+              out on the way to every other control on the pill, and a two-line
+              remedy recited each time is the interruption DEC-49 forbids. The
+              remedy is one press away, on the card the halo is telling them to
+              open.
+            */}
+            {trouble === null ? '' : ` — ${trouble.short}`}
           </span>
         )}
 
@@ -2650,10 +2761,16 @@ function Panel({
         `aria-atomic`, because the sentence is replaced whole when the worst
         channel changes and half of a swapped sentence is not a sentence.
 
-        **What this still does not fix**: the slot lives in `Panel`, which is
-        mounted by a press on the pill. A rep who never opens the panel is told
-        nothing, sighted or not. That is a larger change — the pill would have to
-        carry a mark — and it is stated here rather than quietly left.
+        **What this did not fix — closed.** The slot lives in `Panel`, which is
+        mounted by a press on the pill, so a rep who never opened the panel was
+        told nothing, sighted or not. The pill carries a mark now: a detached
+        `--warn` halo on the recording dot, and the side named in the dot's
+        spoken twin (`halo` in `Pill`, `WIDGET_MARKS` in `healthSentence.ts`).
+        Both read the same `aggregateStatus` ranking as this slot, so the pill
+        and the card are never marking different channels about one call. This
+        paragraph is marked in the commit that closes it rather than left
+        asserting an open finding a round later, which is the defect the
+        paragraph would otherwise be an instance of.
       */}
       <p
         role="status"

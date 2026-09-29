@@ -2289,3 +2289,102 @@ test('la région vivante existe avant d’avoir quelque chose à dire', async ()
   expect(await healthRegion()).toBe(line)
   expect(line.textContent).toBe(WIDGET_SENTENCES.transcribe.down)
 })
+
+/*
+ * ── The mark on the pill, which is the half a rep who never presses sees ─────
+ *
+ * Every assertion above opens the panel first — `openPanel()` is the second
+ * line of each — and the panel is mounted by a press. `Widget.tsx` said so
+ * beside the health slot: « a rep who never opens the panel is told nothing,
+ * sighted or not. That is a larger change — the pill would have to carry a
+ * mark. » So the one window that is up for the whole call reported a dead
+ * capture only to a rep who had already decided something was wrong.
+ *
+ * These four drive the **pill**, closed, which is the state it is in for all
+ * but a few seconds of a meeting.
+ */
+
+/** Has the window's `health:snapshot` been answered yet? */
+const healthAsked = () => bridge.calls.some((call) => call.channel === 'health:snapshot')
+
+/** The recording dot, which is the element that wears the mark. */
+const pillDot = () => {
+  const dot = document.querySelector('[data-pill] [data-graphic]')
+  if (dot === null) throw new Error('la pastille ne dessine pas de point')
+  return dot
+}
+
+test('la pastille fermée porte la panne, sans qu’on ouvre le panneau', async () => {
+  bridge.when('health:snapshot', () => snapshot({ capture: CAPTURE_DEGRADED }))
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  // Not opened. This is the whole point of the test.
+  expect(screen.queryByPlaceholderText('Noter ce moment…')).toBeNull()
+
+  // `waitFor`, because `health:snapshot` is an *invoke* and the pill paints
+  // before it answers. Asserting on the first frame passed this file in
+  // isolation and failed it in the full run, which is a test that measures the
+  // scheduler rather than the product.
+  const dot = pillDot()
+  // The halo, by the class that draws it — `ring-offset` is what detaches it
+  // from the dot, and `--warn` against `--accent` is 1.16:1 without it.
+  await waitFor(() => expect(dot.className).toContain('ring-warn'))
+  expect(dot.className).toContain('ring-offset-1')
+  // And which side, in the one place a screen reader will reach.
+  expect(dot.getAttribute('data-pill-trouble')).toBe('capture')
+  expect(dot.getAttribute('data-graphic')).toBe(
+    'enregistrement en cours, son de l’appel dégradé',
+  )
+})
+
+test('la panne nommée sur la pastille est celle que le panneau raconte', async () => {
+  bridge.when('health:snapshot', () => snapshot({ transcribe: TRANSCRIBE_DOWN }))
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  // One ranking, two registers: `aggregateStatus` decides which connector
+  // speaks and both readers ask it. A pill marking one channel while the card
+  // explains another would be worse than no mark at all.
+  await waitFor(() => expect(pillDot().getAttribute('data-pill-trouble')).toBe('transcribe'))
+  await openPanel()
+  expect((await healthRegion()).textContent).toBe(WIDGET_SENTENCES.transcribe.down)
+})
+
+test('une pastille en bonne santé ne porte aucune auréole', async () => {
+  bridge.when('health:snapshot', () => snapshot({}))
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+
+  // The snapshot has to have *landed* for this to mean anything: a pill
+  // asserted clean before its health arrived is clean for the wrong reason.
+  await waitFor(() => expect(healthAsked()).toBe(true))
+  const dot = pillDot()
+  expect(dot.className).not.toContain('ring-warn')
+  expect(dot.getAttribute('data-pill-trouble')).toBeNull()
+  // The name is the state and nothing else: a trailing « , » would say a side
+  // had gone and not name it.
+  expect(dot.getAttribute('data-graphic')).toBe('enregistrement en cours')
+})
+
+test('la marque arrive sur un front, pas seulement sur l’instantané', async () => {
+  bridge.when('health:snapshot', () => snapshot({}))
+  render(<Widget />)
+  await screen.findByLabelText('Durée d’enregistrement')
+  expect(pillDot().className).not.toContain('ring-warn')
+
+  // `health:changed` is an edge and `health:snapshot` a level; the widget seeds
+  // from both. A pill fed by only the first is blind to a call that was already
+  // broken when the window opened, and one fed by only the second is blind to
+  // everything that happens during the call.
+  act(() => {
+    bridge.emit('health:changed', {
+      connector: 'capture',
+      health: CAPTURE_DEGRADED,
+      at: STARTED + 60_000,
+    })
+  })
+
+  expect(pillDot().className).toContain('ring-warn')
+  expect(pillDot().getAttribute('data-pill-trouble')).toBe('capture')
+})
