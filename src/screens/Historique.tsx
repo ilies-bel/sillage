@@ -84,6 +84,7 @@ import {
   isSearchActive,
 } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
+import { pushWord } from './search/pushWords.ts'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 import { Matches } from './search/Matches.tsx'
 import { SearchBar } from './search/SearchBar.tsx'
@@ -1120,7 +1121,7 @@ function PushStatus({ intents }: { intents: readonly HistoryIntent[] }) {
           <li key={intent.intentId} className="text-ui">
             <span className="text-body">{intent.label}</span>{' '}
             <span className={intent.state === 'failed' ? 'text-warn' : 'text-muted'}>
-              {PUSH_LABEL[intent.state]}
+              {pushWord(intent.state, intent.kind)}
             </span>
             {intent.remoteId ? <span className="text-muted"> · {intent.remoteId}</span> : null}
             {/* A failed row without its reason is the dead control DEC-26 forbids. */}
@@ -1134,10 +1135,3 @@ function PushStatus({ intents }: { intents: readonly HistoryIntent[] }) {
   )
 }
 
-const PUSH_LABEL: Record<HistoryIntent['state'], string> = {
-  pending: 'en attente',
-  blocked: 'en attente d’un autre envoi',
-  draining: 'envoi en cours',
-  drained: 'envoyé',
-  failed: 'échec',
-}
