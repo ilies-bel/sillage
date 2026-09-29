@@ -8,7 +8,12 @@
  * VerySwing will not get. Every case below is a round trip.
  */
 import { describe, expect, it } from 'vitest'
-import { parseCompteRendu, parseInline, serializeCompteRendu } from '../compteRenduLines.ts'
+import {
+  metadataBlock,
+  parseCompteRendu,
+  parseInline,
+  serializeCompteRendu,
+} from '../compteRenduLines.ts'
 import { COMPTE_RENDU_SECTIONS } from '../../../../electron/core/contracts/recipes.ts'
 
 const roundTrips = (source: string) =>
@@ -237,5 +242,76 @@ describe('a quoted fragment', () => {
       'quote',
       'faible',
     ])
+  })
+})
+
+/**
+ * **The identity block, found by shape.**
+ *
+ * `modules/extract/compteRendu.ts` opens every document on `# <objet>`, one
+ * blank, three or four unmarked lines, one blank, `## Résumé` (DEC-40). Those
+ * unmarked lines are the meeting's identity, and the parser classes them
+ * `text` like any other line because they carry no marker.
+ *
+ * A rule that looked for « Client : » would be this file guessing which of the
+ * product's own lines are metadata — and the repo's invariant is that a
+ * document's lines are followable *by string equality*, never by a heuristic.
+ * So the shape is the whole rule, and these say what shapes it refuses.
+ */
+describe('metadataBlock', () => {
+  const composed = [
+    '# Néovia Santé — cadrage renfort data',
+    '',
+    'Client : Néovia Santé',
+    'Date : jeudi 17 septembre 2026, 13:00–13:45',
+    'Interlocuteurs : Élodie Vasseur (elodie.vasseur@neovia-sante.fr)',
+    'Commercial : julien.marchand@synapse-conseil.fr',
+    '',
+    '## Résumé',
+    '',
+    'Une phrase.',
+  ].join('\n')
+
+  it('finds the run the composer writes, and only that run', () => {
+    const lines = parseCompteRendu(composed)
+    expect(metadataBlock(lines)).toEqual({ start: 2, end: 6 })
+    // Every line in the range is one of the four, verbatim — the range is into
+    // the parsed array, so nothing here is recomposed.
+    expect(lines.slice(2, 6).map((line) => (line.kind === 'text' ? line.text : null))).toEqual([
+      'Client : Néovia Santé',
+      'Date : jeudi 17 septembre 2026, 13:00–13:45',
+      'Interlocuteurs : Élodie Vasseur (elodie.vasseur@neovia-sante.fr)',
+      'Commercial : julien.marchand@synapse-conseil.fr',
+    ])
+  })
+
+  it('finds the three-line form, because Microsoft is optional', () => {
+    // `repEmail` is nullable the whole way down — a compte-rendu never requires
+    // a Microsoft account — so « Commercial : » is simply absent.
+    const lines = parseCompteRendu(composed.split('\n').filter((l) => !l.startsWith('Commercial')).join('\n'))
+    expect(metadataBlock(lines)).toEqual({ start: 2, end: 5 })
+  })
+
+  it('refuses a title followed by prose', () => {
+    // The closing condition is « a blank, then a heading ». Prose is not
+    // followed by a heading one blank later, so a document that opens on a
+    // paragraph keeps every line it had.
+    expect(
+      metadataBlock(parseCompteRendu('# Titre\n\nUne phrase.\nUne autre.\n\nEt la suite.')),
+    ).toBeNull()
+  })
+
+  it('refuses a single line, because one folded is one drawn', () => {
+    expect(metadataBlock(parseCompteRendu('# Titre\n\nClient : X\n\n## Résumé\n\nBon.'))).toBeNull()
+  })
+
+  it('refuses a document that does not open on a level-1 heading', () => {
+    expect(metadataBlock(parseCompteRendu('## Besoin\n\nClient : X\nDate : Y\n\n## Résumé'))).toBeNull()
+    expect(metadataBlock(parseCompteRendu(''))).toBeNull()
+  })
+
+  it('changes nothing about the round trip it sits beside', () => {
+    // The whole point: this reads the parsed array and never writes one.
+    roundTrips(composed)
   })
 })

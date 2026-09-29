@@ -221,3 +221,67 @@ export function parseInline(text: string): InlineRun[] {
   if (at < text.length) runs.push({ kind: 'plain', text: text.slice(at) })
   return runs
 }
+
+/**
+ * **Where the composer's metadata block is — by shape, never by content.**
+ *
+ * `modules/extract/compteRendu.ts` opens every document the same way:
+ *
+ *     # <objet>
+ *     (vide)
+ *     Client : …
+ *     Date : …
+ *     Interlocuteurs : …
+ *     Commercial : …            ← absent when `repEmail` is null (HR-3 is optional)
+ *     (vide)
+ *     ## Résumé                 ← DEC-40, both recipes
+ *
+ * Four lines, sometimes three, that are not prose and are not a heading: they
+ * are the meeting's identity, and the parser above classes them `text` because
+ * they carry no marker. This finds that run so a surface can *set* it as a
+ * block rather than as four paragraphs.
+ *
+ * **Structural and not a heuristic, deliberately.** A rule that looked for
+ * « Client : » would be the app guessing which of its own lines are metadata —
+ * and this repo's invariant is that the document's lines are followable *by
+ * string equality* against `compteRenduSources`, never by a heuristic. So the
+ * shape is the whole rule, and all four conditions must hold:
+ *
+ *   · the document opens on a level-1 heading (DEC-40's `# <objet>`),
+ *   · followed by exactly one blank,
+ *   · followed by two or more `text` lines and nothing else,
+ *   · closed by a blank whose next non-blank line is a heading.
+ *
+ * The last is what stops a document that opens on a title and then a paragraph
+ * from having its first paragraph folded: prose is not followed by a heading
+ * one blank later, `## Résumé` is. A document that does not match returns
+ * `null` and is set exactly as before — which is every fixture the tests feed
+ * that is not a whole composed document.
+ *
+ * Two lines is the floor because one line folded is one line drawn: there is
+ * nothing to collapse, and a control offering to expand a single line already
+ * on screen is the dead control DEC-26 forbids.
+ *
+ * It returns a **range into the array it was given**, so a caller reads the
+ * lines themselves rather than a copy this function decided how to format.
+ * Nothing here composes a string; `serializeCompteRendu` above is still the
+ * only thing that turns lines back into a document, and it is untouched.
+ */
+export function metadataBlock(
+  lines: readonly CompteRenduLine[],
+): { start: number; end: number } | null {
+  const first = lines[0]
+  if (first === undefined || first.kind !== 'heading' || first.level !== 1) return null
+  if (lines[1]?.kind !== 'blank') return null
+
+  let end = 2
+  while (lines[end]?.kind === 'text') end += 1
+  if (end - 2 < 2) return null
+
+  if (lines[end]?.kind !== 'blank') return null
+  let after = end + 1
+  while (lines[after]?.kind === 'blank') after += 1
+  if (lines[after]?.kind !== 'heading') return null
+
+  return { start: 2, end }
+}

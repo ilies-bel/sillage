@@ -181,3 +181,102 @@ describe('one document, set two ways', () => {
     }
   })
 })
+
+/**
+ * **The identity block, set as itself — and the two surfaces that must not
+ * touch it.**
+ *
+ * At 960×600, the minimum `main.ts` declares on HR-2's primary platform, the
+ * session pane's compte-rendu column is 267.9px and the composer's four
+ * identity lines took **122.0** of it as body prose. Measured on the shipped
+ * renderer, `session-compte-rendu`, before and after: the block is **96.4px**,
+ * « ## Résumé » moves **25.7px** earlier in the column, and the Résumé
+ * paragraph itself goes from **28.3px of its 195 on screen to 53.9**.
+ *
+ * `foldMetadata` is opt-in and one caller passes it. The gate must not: its
+ * arming guard measures what the rep was *shown*, and those four lines are the
+ * account, the date and who was in the room — the deterministic facts the CRM
+ * push is built on. `Historique` does not either. That is the direction these
+ * tests defend, together with the one that matters more: **every character is
+ * still on screen**. A `truncate`d fold behind a chevron was tried first and
+ * `--cells` measured 830.6px of text, about 134 characters, cut with an
+ * ellipsis and reachable only by a press. This file's licence is that nothing
+ * here hides a character, and a control is not an exception to it.
+ */
+describe('the identity block', () => {
+  const COMPOSED = [
+    '# Néovia Santé — cadrage renfort data',
+    '',
+    'Client : Néovia Santé',
+    'Date : jeudi 17 septembre 2026, 13:00–13:45',
+    'Interlocuteurs : Élodie Vasseur',
+    'Commercial : julien.marchand@synapse-conseil.fr',
+    '',
+    '## Résumé',
+    '',
+    'Une phrase.',
+  ].join('\n')
+
+  /** The four lines, as the DOM has them, in order. */
+  const identityLines = (container: HTMLElement) =>
+    [...container.querySelectorAll('p')]
+      .map((node) => (node.textContent ?? '').trim())
+      .filter((text) => /^(Client|Date|Interlocuteurs|Commercial) :/.test(text))
+
+  it('sets the four lines smaller, and every character of them', () => {
+    const { container } = render(<CompteRenduDocument text={COMPOSED} foldMetadata />)
+
+    // Byte for byte, in order, from the same parsed array — not joined, not
+    // summarised, not shortened.
+    expect(identityLines(container)).toEqual([
+      'Client : Néovia Santé',
+      'Date : jeudi 17 septembre 2026, 13:00–13:45',
+      'Interlocuteurs : Élodie Vasseur',
+      'Commercial : julien.marchand@synapse-conseil.fr',
+    ])
+  })
+
+  it('adds no control, because nothing is behind one', () => {
+    const { container } = render(<CompteRenduDocument text={COMPOSED} foldMetadata />)
+    // The version that had a chevron hid 134 characters behind it. Nothing to
+    // press means nothing hidden, which is this file's whole licence.
+    expect(container.querySelector('button[aria-expanded]')).toBeNull()
+  })
+
+  it('takes the secondary rung, not the document’s prose rung', () => {
+    const { container } = render(<CompteRenduDocument text={COMPOSED} foldMetadata />)
+    const line = [...container.querySelectorAll('p')].find((node) =>
+      (node.textContent ?? '').startsWith('Client :'),
+    )
+    // `--type-copy` and `leading-snug`. 12px would be a character over
+    // `--prose`'s 75 ceiling in this column, which is the number that chose it.
+    expect(line?.className).toContain('text-copy')
+    expect(line?.className).toContain('leading-snug')
+  })
+
+  it('leaves the block alone when nothing asked', () => {
+    const { container } = render(<CompteRenduDocument text={COMPOSED} />)
+    const line = [...container.querySelectorAll('p')].find((node) =>
+      (node.textContent ?? '').startsWith('Client :'),
+    )
+    // What the gate and the historique record get: the document's own prose
+    // setting, unchanged.
+    expect(line?.className).toContain('text-prose')
+    expect(identityLines(container)).toHaveLength(4)
+  })
+
+  it('leaves the rest of the document exactly where it was', () => {
+    const { container } = render(<CompteRenduDocument text={COMPOSED} foldMetadata />)
+    const text = drawn(container)
+    expect(text).toContain('# Néovia Santé — cadrage renfort data')
+    expect(text).toContain('## Résumé')
+    expect(text).toContain('Une phrase.')
+  })
+
+  it('touches nothing when the document has no such block', () => {
+    const { container } = render(
+      <CompteRenduDocument text={'## Besoin\n\nDeux data engineers.'} foldMetadata />,
+    )
+    expect(drawn(container)).toContain('## BesoinDeux data engineers.')
+  })
+})

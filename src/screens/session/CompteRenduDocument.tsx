@@ -35,11 +35,36 @@
  * the sentence is now checkable against a token instead of a literal.
  */
 import { Search } from 'lucide-react'
-import { parseCompteRendu, parseInline } from './compteRenduLines.ts'
+import { metadataBlock, parseCompteRendu, parseInline } from './compteRenduLines.ts'
 
 interface CompteRenduDocumentProps {
   /** The rendered document, exactly as `renderCompteRendu` produced it. */
   text: string
+  /**
+   * **Set the composer's identity block as one folded line, on this surface
+   * only.**
+   *
+   * The document opens on four lines that are not prose — Client, Date,
+   * Interlocuteurs, Commercial — and at 960×600 they cost the session pane
+   * more of its column than the Résumé they precede. `metadataBlock` in
+   * `compteRenduLines.ts` finds them by shape.
+   *
+   * **Opt-in, and exactly one caller passes it: `CompteRenduPane`.** The gate
+   * must not fold. Its arming guard measures *what the rep was shown*, and
+   * those four lines are the deterministic facts the push is built on — the
+   * account, the date, who was in the room. Folding them there would put
+   * content a rep has not seen behind a control on the screen whose POST has
+   * no idempotency key, which is the whole of what that guard exists to stop.
+   * `Historique` does not fold either: a past record is read to be checked,
+   * and it has a column to spare.
+   *
+   * DEC-44 is untouched in the sense that matters: the string is not altered,
+   * `serializeCompteRendu` is not involved, the four lines are rendered from
+   * the same parsed array they always were, and the surface that decides what
+   * VerySwing receives never folds. What this surface is, is a **read beside
+   * the rep's notes** — DEC-5's pane, not a gate.
+   */
+  foldMetadata?: boolean
   /**
    * **Open the record on a fragment the model quoted** (DEC-21).
    *
@@ -186,8 +211,10 @@ export function CompteRenduDocument({
   onQuote,
   sources,
   className,
+  foldMetadata = false,
 }: CompteRenduDocumentProps) {
   const lines = parseCompteRendu(text)
+  const identity = foldMetadata ? metadataBlock(lines) : null
 
   /*
    * The line, without its `⚠ faible`, against what the composer wrote.
@@ -208,6 +235,18 @@ export function CompteRenduDocument({
     return hit ? hit.span.quote : null
   }
 
+  /*
+    The fallback line. It is a named function rather than the tail of the map
+    because the folded identity block draws the *same* line when it is open, and
+    a second copy of this JSX is a second place for the document's prose setting
+    to drift.
+  */
+  const renderText = (line: { kind: 'text'; text: string }, key: number | string) => (
+    <p key={key} className="text-body whitespace-pre-wrap text-prose leading-relaxed">
+      <Prose text={line.text} onQuote={onQuote} />
+    </p>
+  )
+
   return (
     /*
       `data-document`: this element declares what it is, and the notepad
@@ -222,6 +261,56 @@ export function CompteRenduDocument({
         // Index as key: these are lines of one immutable string, they have no
         // identity of their own and the list is replaced wholesale or not at all.
         const key = index
+
+        /*
+          **The identity block, set as itself — four lines, at the secondary
+          rung, with the document's leading closed up.**
+
+          The composer opens every document on three or four unmarked lines:
+          Client, Date, Interlocuteurs, and Commercial when there is one
+          (`repEmail` is nullable the whole way down). Set as body prose at
+          `--type-prose` and `leading-relaxed` they took **122.0px** of the
+          session pane's compte-rendu column, which is **267.9px** tall at
+          960×600 — the minimum `main.ts` declares, on HR-2's primary platform.
+          A rep pressing *Terminer* on the thing the product exists to produce
+          got the title, those four lines, and **28.3px of a 195px Résumé**.
+
+          They are not prose. They are the meeting's identity, the same facts
+          the gate lists in its own rail, and they are read by scanning rather
+          than by sentence — so they take `--type-copy` and `leading-snug`
+          instead of the document's own 15px and 1.625.
+
+          **Two smaller changes were tried first and the harness refused both,
+          which is the only reason this one is right.** A `truncate`d fold
+          behind a chevron: `--cells` measured that row at 452.3px holding
+          1282.9px of text — **830.6px, about 134 characters, cut with an
+          ellipsis** and reachable only by a press. This file's one licence is
+          that nothing here hides a character, because the CRM gets the string
+          the rep read (DEC-44), and a control is not an exception to that, it
+          is the mechanism of it. (`--targets` and `--prose` failed it too: the
+          row was 17.88px against a 24px floor and 80 car./ligne against a 75
+          ceiling.) Then the same four lines joined by ` · ` and wrapped at
+          `--type-ui`: `--prose` measured **76 car./ligne** in a 472px box, one
+          over. That pass measures the *box*, not the text, so any 12px run at
+          this column's width is over the ceiling by construction — which is
+          the number that decided the rung.
+
+          Nothing is hidden, nothing is joined, no separator is invented and no
+          control is added. The four lines are the four lines, from the same
+          parsed array, in the same order, drawn smaller.
+
+          Drawn line by line at the run's own indices rather than wrapped in a
+          container: `lines.map` is a flat list of line boxes whose gutter is
+          `absolute` inside each one, so a wrapper would give these a new
+          positioning context and move every marker in the block.
+        */
+        if (identity !== null && index >= identity.start && index < identity.end) {
+          return line.kind === 'text' ? (
+            <p key={key} className="text-muted whitespace-pre-wrap text-copy leading-snug">
+              <Prose text={line.text} onQuote={onQuote} />
+            </p>
+          ) : null
+        }
 
         if (line.kind === 'blank') {
           /*
@@ -398,11 +487,7 @@ export function CompteRenduDocument({
           )
         }
 
-        return (
-          <p key={key} className="text-body whitespace-pre-wrap text-prose leading-relaxed">
-            <Prose text={line.text} onQuote={onQuote} />
-          </p>
-        )
+        return renderText(line, key)
       })}
     </div>
   )

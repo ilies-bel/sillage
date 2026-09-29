@@ -134,7 +134,17 @@ export function CompteRenduPane({
           stated rather than implied.
         */}
         <div className="measure">
-          <CompteRenduDocument text={compteRendu} />
+          {/*
+            `foldMetadata`, and this is the only caller in the product that
+            passes it. This pane is DEC-5's *read* beside the rep's own notes,
+            so folding the four identity lines costs a rep nothing they cannot
+            get back with one press — and at 960×600 it is the difference
+            between the Résumé starting on screen and starting below it. The
+            gate must never fold: its arming guard measures what the rep was
+            shown, and those four lines are the facts the CRM push is built on.
+            See the prop's own docblock.
+          */}
+          <CompteRenduDocument text={compteRendu} foldMetadata />
         </div>
       </ReadingColumn>
 
