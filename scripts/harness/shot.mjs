@@ -9707,15 +9707,55 @@ async function main() {
       )
       for (const entry of applies) {
         const hit = every.filter((item) => excused(item) === entry).length
-        if (hit === 0) {
-          console.log(
-            `  ✗ pressions: la tolérance « ${entry.what} » ne se reproduit plus sur ${screen} ` +
-              `en ${size} — retirez-la de PRESS_TOLERATED`,
-          )
-          process.exitCode = 22
-        } else {
+        if (hit > 0) {
           console.log(`  pressions tolérées: ${hit} × ${entry.what} — ${entry.why}`)
+          continue
         }
+        /*
+         * **« it did not happen » and « it could not be judged » are the same
+         * silence, and this told them apart in one direction only.**
+         *
+         * `judge` already refuses to call a press a finding without a resting
+         * frame — that is what `recouvert` is for, and its docblock names the
+         * 137px stall it was written to stop believing. The staleness check
+         * above read only `arrivé`, so a tolerated press that came back
+         * `recouvert` under `smoke.mjs`'s parallel lanes looked exactly like one
+         * that had stopped reproducing, and the pass printed « retirez-la de
+         * PRESS_TOLERATED » — a confident instruction to delete an argued,
+         * measured exemption, on the evidence of a frame nobody managed to read.
+         *
+         * Measured: `agenda-empty` at 960×600 went red on 1 of 3 full smoke
+         * runs, while the tolerance fired on 11 of 11 runs of that stage alone
+         * (3 serial, 8 concurrent). So the entry is as live as it ever was and
+         * the red was about the machine's load.
+         *
+         * An entry still cannot rot: it goes stale the moment its press is
+         * *judged* and does not arrive — verified by adding an entry that can
+         * never fire, which still fails this pass. What it no longer does is go
+         * stale because nothing settled in time to judge it.
+         *
+         * What this gives up, stated rather than implied: an entry on a control
+         * that *never* rests would be excused for ever. That is a silence with a
+         * clock on it rather than a permanent one — every stage is played twice
+         * per run and a control that never settles anywhere is a `--press`
+         * finding of its own — but it is a silence, and it is the price of not
+         * telling somebody to delete a measurement because the machine was busy.
+         */
+        const unjudged = real.filter(
+          (item) => item.verdict === 'recouvert' && entry.pressed.test(item.what.name),
+        ).length
+        if (unjudged > 0) {
+          console.log(
+            `  pressions tolérées: 0 × ${entry.what} — non jugée ce tour ` +
+              `(${unjudged} pression(s) de ce contrôle sans image au repos)`,
+          )
+          continue
+        }
+        console.log(
+          `  ✗ pressions: la tolérance « ${entry.what} » ne se reproduit plus sur ${screen} ` +
+            `en ${size} — retirez-la de PRESS_TOLERATED`,
+        )
+        process.exitCode = 22
       }
       if (arrived.length > 0) {
         console.log(
@@ -12557,7 +12597,10 @@ function motionFlightAttack() {
  *
  * An entry cannot go stale in the silent direction: one whose finding stops
  * reproducing fails this pass until it is deleted, and one is granted nothing
- * outside the sizes it was measured at.
+ * outside the sizes it was measured at. **It can only go stale on a press that
+ * was judged** — see the check itself: for one round this paragraph was true of
+ * a serial run and false under `smoke.mjs`, where a tolerated press with no
+ * resting frame read as a tolerance that had stopped firing.
  */
 const PRESS_TOLERATED = [
   {
