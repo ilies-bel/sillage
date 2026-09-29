@@ -34,6 +34,7 @@
  * takes an initial document and accepts no incoming transactions at all.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { HistoryIntent } from '../../electron/core/contracts/history.ts'
 import type { Signal } from '../../electron/core/contracts/signals.ts'
 import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import { invoke, useBroadcast, useInvoke } from '../app/bridge.ts'
@@ -227,9 +228,21 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
    * arrives.
    */
   const [recipe, setRecipe] = useState<RecipeId | null>(null)
+  /**
+   * What became of each push.
+   *
+   * Held beside the compte-rendu and refreshed on the same edge, because the
+   * edge is the same one: `pushing → done` is the transition on which the outbox
+   * settles, and `done` is reached whether every push landed or every push
+   * failed (`allIntentsSettled` is `drained || failed || !routable` for each).
+   * Read here rather than in `OutcomeNotice` so the notice has no channel of its
+   * own to disagree with the screen it sits on.
+   */
+  const [intents, setIntents] = useState<readonly HistoryIntent[]>([])
   useEffect(() => {
     setCompteRendu(initial?.compteRendu ?? null)
     setRecipe(initial?.recipe ?? null)
+    setIntents(initial?.intents ?? [])
   }, [initial])
 
   useBroadcast('session:changed', (payload) => {
@@ -238,6 +251,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
       .then((next) => {
         setCompteRendu(next.compteRendu)
         setRecipe(next.recipe)
+        setIntents(next.intents)
       })
       // The pane simply stays as it was. A meeting whose compte-rendu could not
       // be re-read is still a meeting with a notepad and a review gate.
@@ -500,7 +514,7 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
         because the order on the day a tenth state makes them overlap should be
         « what is still happening » above « what already happened ».
       */}
-      <OutcomeNotice state={current} {...(onReglages ? { onReglages } : {})} />
+      <OutcomeNotice state={current} intents={intents} {...(onReglages ? { onReglages } : {})} />
 
       {/*
         Only ever drawn when a switch is armed against an existing compte-rendu.

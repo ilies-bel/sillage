@@ -98,3 +98,27 @@ const INVARIABLE: Record<Exclude<OutboxState, 'drained'>, string> = {
 export const pushWord = (state: OutboxState, kind: PushIntentKind): string =>
   state === 'drained' ? (FEMININE[kind] ? 'envoyée' : 'envoyé') : INVARIABLE[state]
 
+/**
+ * Which application a rep has to open to find out what really happened.
+ *
+ * Read off the intent's own `kind`, never off the screen that is drawing it:
+ * « À vérifier dans VerySwing » under a failed *Outlook* draft sends the rep to
+ * the wrong application, and two surfaces now say this — *Historique*'s row and
+ * the session screen's notice.
+ */
+export const WHERE_TO_LOOK: Record<PushIntentKind, string> = {
+  'crm.task': 'VerySwing',
+  'crm.opportunity': 'VerySwing',
+  'mail.draft': 'Outlook',
+}
+
+/**
+ * The applications a set of pushes touched, named once each, in the order the
+ * gate drafts them.
+ *
+ * « VerySwing et Outlook » and not « VerySwing, VerySwing et Outlook »: the task
+ * and the opportunity are the same application and a rep opens it once.
+ */
+export const applicationsFor = (kinds: readonly PushIntentKind[]): string[] => [
+  ...new Set(kinds.map((kind) => WHERE_TO_LOOK[kind])),
+]

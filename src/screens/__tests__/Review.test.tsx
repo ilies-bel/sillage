@@ -209,6 +209,8 @@ beforeEach(() => {
       meeting,
       segments: [],
       signals: [],
+      // Empty, and honestly so: nothing is drafted before the gate is spent.
+      intents: [],
       outbox: [],
       document: null,
       compteRendu: panel().edits.compteRendu,
@@ -1683,6 +1685,8 @@ describe('the recipe is on the document, and changeable (DEC-43)', () => {
         meeting,
         segments: [],
         signals: [],
+        // Empty, and honestly so: nothing is drafted before the gate is spent.
+        intents: [],
         outbox: [],
         document: null,
         compteRendu: panel().edits.compteRendu,

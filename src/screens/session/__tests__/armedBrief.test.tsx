@@ -156,6 +156,8 @@ const open = (
     meeting: meeting(state, eventId),
     segments: [],
     signals: [],
+    // Empty, and honestly so: nothing is drafted before the gate is spent.
+    intents: [],
     document: NOTES_WITH_A_HEADING,
     compteRendu: HAS_COMPTE_RENDU[state] ? '# Delcourt\n\n## Résumé\n\nRien.\n' : null,
     recipe: 'besoin-commercial' as RecipeId,

@@ -30,7 +30,12 @@ import {
   ReviewIntentSchema,
   ReviewSnapshotSchema,
 } from './review.ts'
-import { HistoryFilterSchema, HistoryRecordSchema, HistorySearchResultSchema } from './history.ts'
+import {
+  HistoryFilterSchema,
+  HistoryIntentSchema,
+  HistoryRecordSchema,
+  HistorySearchResultSchema,
+} from './history.ts'
 import { MENTION_MAX_CHARS } from './mention.ts'
 import { SettingsSnapshotSchema } from './settings.ts'
 import { ModelProgressSchema, ModelSectionSchema } from './models.ts'
@@ -251,6 +256,26 @@ export const invokeChannels = {
        * while the pane still shows the document that exists.
        */
       recipe: RecipeIdSchema,
+      /**
+       * What became of each push, from the outbox projection — the same rows
+       * *Historique* draws, on the screen the rep is standing on.
+       *
+       * **`done` is not « the pushes succeeded ».** `MeetingSession`'s guard is
+       * `allIntentsSettled`, and `settled` is `drained || failed || !routable`,
+       * so a meeting whose every push failed reaches `done` by the same edge as
+       * one whose every push landed. With only `meeting.state` on this channel
+       * the session screen could not tell the two apart, and it did not try: it
+       * said « Le compte-rendu a été envoyé ; il n'y a rien d'autre à faire
+       * ici. » for both.
+       *
+       * Empty at every state before `pushing`, because nothing is drafted until
+       * the gate is spent — and a `done` meeting always has at least one, since
+       * `allIntentsSettled` is `intents.length > 0 && …`.
+       *
+       * On this channel and not a new one because the screen already re-reads it
+       * on `session:changed`, which is exactly the edge the outbox settles on.
+       */
+      intents: z.array(HistoryIntentSchema),
     }),
   },
   /**

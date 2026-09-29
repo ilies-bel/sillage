@@ -73,6 +73,8 @@ const open = (options: { entra?: boolean; over?: Partial<Meeting> } = {}) => {
     meeting: meeting(options.over ?? {}),
     segments: [],
     signals: [],
+    // Empty, and honestly so: nothing is drafted before the gate is spent.
+    intents: [],
     outbox: [],
     document: null,
     compteRendu: COMPTE_RENDU,

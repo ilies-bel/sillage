@@ -21,6 +21,7 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import type { HistoryIntent } from '../../../electron/core/contracts/history.ts'
 import type { Meeting, MeetingState } from '../../../electron/core/contracts/meeting.ts'
 import { MeetingStateSchema, STATE_REASON } from '../../../electron/core/contracts/meeting.ts'
 import type { HealthSnapshot } from '../../../electron/core/contracts/health.ts'
@@ -69,11 +70,32 @@ const NO_TRANSCRIBER: HealthSnapshot = {
   },
 }
 
+/**
+ * What became of each push, as the outbox projection has it.
+ *
+ * `[]` is not the neutral fixture it looks like: a `done` meeting always has
+ * intents — `allIntentsSettled` is `intents.length > 0 && …`, so a meeting with
+ * none can never reach `done` at all. The three below are what the gate drafts.
+ */
+const pushes = (...states: HistoryIntent['state'][]): HistoryIntent[] =>
+  (['crm.task', 'crm.opportunity', 'mail.draft'] as const)
+    .slice(0, states.length)
+    .map((kind, index) => ({
+      intentId: `m-fin:${kind}`,
+      kind,
+      label: kind === 'mail.draft' ? 'Brouillon de relance (Outlook)' : 'Tâche compte-rendu (VerySwing)',
+      state: states[index]!,
+      attempts: states[index] === 'failed' ? 3 : 1,
+      lastError: states[index] === 'failed' ? 'la sandbox VSA n’a pas répondu en 10 s' : null,
+      remoteId: states[index] === 'drained' ? 'R-1' : null,
+    }))
+
 const open = (
   state: MeetingState,
   options: {
     health?: HealthSnapshot
     compteRendu?: string | null
+    intents?: HistoryIntent[]
     onReglages?: (section?: string) => void
   } = {},
 ) => {
@@ -81,7 +103,7 @@ const open = (
     meeting: meeting(state),
     segments: [],
     signals: [],
-    outbox: [],
+    intents: options.intents ?? (state === 'done' || state === 'pushing' ? pushes('drained', 'drained', 'drained') : []),
     document: null,
     compteRendu: options.compteRendu ?? null,
     recipe: 'besoin-commercial' as RecipeId,
@@ -345,5 +367,115 @@ describe('the states that are not an abort', () => {
     open('extracting')
     await waitFor(() => screen.getByRole('button', { name: '‹ Calendrier' }))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+/**
+ * **« Le compte-rendu a été envoyé » is also what this screen said when nothing
+ * was sent.**
+ *
+ * `done` is not « the pushes succeeded ». `MeetingSession`'s guard is
+ * `allIntentsSettled`, and `settled` is `drained || failed || !routable` — so a
+ * meeting whose every push failed reaches `done` by exactly the same edge as one
+ * whose every push landed. `CONSEQUENCE.done` asserted the second for both, and
+ * added « il n'y a rien d'autre à faire ici » on top of it.
+ *
+ * What that costs is the whole of it: the write behind those rows is
+ * `POST /v1/crm/tasks`, which has no idempotency key, into a port with no delete
+ * verb. A rep told the task is in VerySwing when it is not either never chases
+ * it or creates it twice by hand. The sentence that names the cause exists and is
+ * good — `Historique`'s `PushFailure` — and it is two screens and a search away.
+ * The agenda cannot help: it never reads `intents`, and `STATE_LABEL.done` is
+ * « Validée » for both outcomes. `outbox.failed` is recorded at `error`, and the
+ * only reader of diagnostics in the renderer is a Réglages pane a rep opens on
+ * purpose.
+ *
+ * So the claim is tested where it is made, against what the outbox actually says.
+ */
+describe('a validated meeting says what became of the pushes, not what it hoped', () => {
+  const SENT = 'Le compte-rendu a été envoyé'
+
+  test('every push landed — it says so, and that there is nothing left to do', async () => {
+    open('done', {
+      compteRendu: '# Acme\n\n## Résumé\n\nRien.\n',
+      intents: pushes('drained', 'drained', 'drained'),
+    })
+    const alert = await screen.findByRole('alert')
+    await waitFor(() => expect(alert.textContent).toContain(SENT))
+    expect(alert.textContent).toContain('il n’y a rien d’autre à faire ici')
+  })
+
+  test('every push failed — it does not say the compte-rendu was sent', async () => {
+    open('done', {
+      compteRendu: '# Acme\n\n## Résumé\n\nRien.\n',
+      intents: pushes('failed', 'failed', 'failed'),
+    })
+    const alert = await screen.findByRole('alert')
+    // The state word is still true and stays.
+    expect(alert.textContent).toContain(STATE_REASON.done)
+    await waitFor(() => expect(alert.textContent).not.toContain(SENT))
+    // And a rep who is being told a push failed is owed the application to open.
+    expect(alert.textContent).toContain('VerySwing')
+  })
+
+  test('one of three failed — the count is the failures, not the successes', async () => {
+    open('done', {
+      compteRendu: '# Acme\n\n## Résumé\n\nRien.\n',
+      intents: pushes('drained', 'drained', 'failed'),
+    })
+    const alert = await screen.findByRole('alert')
+    await waitFor(() => expect(alert.textContent).not.toContain(SENT))
+    expect(alert.textContent).toContain('1 envoi')
+    // The one that failed here is the Outlook draft, so that is the application
+    // named — « à vérifier dans VerySwing » would send them to the wrong one.
+    expect(alert.textContent).toContain('Outlook')
+    expect(alert.textContent).not.toContain('VerySwing')
+  })
+
+  /**
+   * `settled` is also true for an intent nobody can route — no CRM wired at all
+   * on the build DEC-28 ships first. Those were never attempted, so « en échec »
+   * would be a second false claim in the other direction.
+   */
+  test('a push that was never attempted is not reported as a failure', async () => {
+    open('done', {
+      compteRendu: '# Acme\n\n## Résumé\n\nRien.\n',
+      intents: pushes('pending', 'pending', 'pending'),
+    })
+    const alert = await screen.findByRole('alert')
+    await waitFor(() => expect(alert.textContent).not.toContain(SENT))
+    expect(alert.textContent).not.toContain('échec')
+  })
+
+  /**
+   * It arrives on the broadcast, which is how a rep meets it when they stay on
+   * this screen: `pushing` re-reads on `session:changed`, and the answer that
+   * lands with `done` is the one that says whether anything got through.
+   */
+  test('the verdict is the outbox at the moment the machine stopped, not at mount', async () => {
+    let state: MeetingState = 'pushing'
+    let intents = pushes('draining', 'draining', 'draining')
+    bridge.when('meeting:get', () => ({
+      meeting: meeting(state),
+      segments: [],
+      signals: [],
+      intents,
+      document: null,
+      compteRendu: '# Acme\n\n## Résumé\n\nRien.\n',
+      recipe: 'besoin-commercial' as RecipeId,
+    }))
+    bridge.when('enhancement:status', () => ({ status: 'idle' }) as const)
+    bridge.when('health:snapshot', () => WELL)
+    render(<Session meetingId="m-fin" onBack={() => {}} onReview={() => {}} />)
+
+    const alert = await screen.findByRole('alert')
+    await waitFor(() => expect(alert.textContent).toContain(STATE_REASON.pushing))
+
+    state = 'done'
+    intents = pushes('failed', 'failed', 'failed')
+    bridge.emit('session:changed', { meetingId: 'm-fin', state: 'done' })
+
+    await waitFor(() => expect(alert.textContent).toContain(STATE_REASON.done))
+    expect(alert.textContent).not.toContain(SENT)
   })
 })

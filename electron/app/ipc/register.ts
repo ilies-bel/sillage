@@ -708,6 +708,13 @@ export const handlers: Handlers = {
       // disagree with the thing it describes.
       compteRendu: compteRenduOf(store, meetingId),
       recipe: store.projections.recipe(meetingId),
+      /*
+       * The same rows *Historique* draws, read the same way — `done` is
+       * `drained || failed || !routable` for every intent, so the state alone
+       * cannot say whether anything reached the client's CRM, and the screen
+       * that speaks for `done` is this channel's reader.
+       */
+      intents: historyIntents(store, meetingId),
     }
   },
 

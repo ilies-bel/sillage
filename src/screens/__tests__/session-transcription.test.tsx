@@ -50,6 +50,8 @@ const open = () => {
     meeting: meeting(),
     segments: [],
     signals: [],
+    // Empty, and honestly so: nothing is drafted before the gate is spent.
+    intents: [],
     outbox: [],
     document: null,
     compteRendu: null,

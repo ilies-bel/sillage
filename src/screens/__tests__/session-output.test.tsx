@@ -54,6 +54,8 @@ const open = (
     meeting: meeting(over),
     segments: [],
     signals: [],
+    // Empty, and honestly so: nothing is drafted before the gate is spent.
+    intents: [],
     outbox: [],
     document: null,
     compteRendu,

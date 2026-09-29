@@ -84,7 +84,7 @@ import {
   isSearchActive,
 } from './search/filters.ts'
 import { IntentSummary } from './search/Intents.tsx'
-import { pushWord } from './search/pushWords.ts'
+import { pushWord, WHERE_TO_LOOK } from './search/pushWords.ts'
 import { CompteRenduDocument } from './session/CompteRenduDocument.tsx'
 import { Matches } from './search/Matches.tsx'
 import { SearchBar } from './search/SearchBar.tsx'
@@ -556,13 +556,6 @@ const sentence = (reason: string | null): string => {
   const trimmed = reason?.trim() ?? ''
   if (trimmed === '') return 'Cause non enregistrée.'
   return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`
-}
-
-/** Which application a rep has to open to find out what really happened. */
-const WHERE_TO_LOOK: Record<HistoryIntent['kind'], string> = {
-  'crm.task': 'VerySwing',
-  'crm.opportunity': 'VerySwing',
-  'mail.draft': 'Outlook',
 }
 
 /**

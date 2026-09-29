@@ -55,6 +55,7 @@
  * about where the fix is.
  */
 import { useState } from 'react'
+import type { HistoryIntent } from '../../../electron/core/contracts/history.ts'
 import type { MeetingState } from '../../../electron/core/contracts/meeting.ts'
 import { STATE_REASON } from '../../../electron/core/contracts/meeting.ts'
 import type { HealthSnapshot } from '../../../electron/core/contracts/health.ts'
@@ -62,6 +63,7 @@ import { aggregateStatus, type RequiredConnectorId } from '../../../electron/cor
 import { useBroadcast, useInvoke } from '../../app/bridge.ts'
 import { Button } from '../../ui/index.ts'
 import { SECTION_FOR_CONNECTOR, type SectionId } from '../Reglages.tsx'
+import { applicationsFor } from '../search/pushWords.ts'
 
 /**
  * The states that reach this screen with no control of their own and nothing
@@ -102,17 +104,72 @@ const SPEAKS_FOR: Record<MeetingState, boolean> = {
 const CONSEQUENCE: Partial<Record<MeetingState, string>> = {
   aborted: 'L’enregistrement s’est arrêté et il n’y aura pas de compte-rendu.',
   pushing: 'Vos notes et le compte-rendu sont enregistrés.',
-  done: 'Le compte-rendu a été envoyé ; il n’y a rien d’autre à faire ici.',
+}
+
+/**
+ * **What became of the pushes, and `done` is not an answer to that.**
+ *
+ * `CONSEQUENCE.done` was a constant: « Le compte-rendu a été envoyé ; il n’y a
+ * rien d’autre à faire ici. » — asserted for a state the machine reaches by
+ * `allIntentsSettled`, whose `settled` is `drained || failed || !routable`. A
+ * meeting whose every push failed arrives at `done` by exactly the edge a
+ * meeting whose every push landed arrives by, and the screen told both of them
+ * the same thing, with « rien d’autre à faire » on the end of it.
+ *
+ * The write behind those rows is `POST /v1/crm/tasks` — no idempotency key —
+ * into a port with no delete verb. A rep who is told the task is in VerySwing
+ * when it is not either never chases it or creates a second one by hand, and
+ * nothing else on their path says otherwise: the confirmation navigates to the
+ * agenda, `Agenda.tsx` never reads `intents` and prints « Validée » for both
+ * outcomes, and `outbox.failed` is an `error` diagnostic whose only reader in the
+ * renderer is a Réglages pane opened on purpose. The sentence that names the
+ * cause is `Historique`’s `PushFailure`, two screens and a search away.
+ *
+ * Three answers, because the outbox has three shapes at `done`:
+ *
+ *  · everything drained — the old sentence, now earned;
+ *  · something failed — the count, and the application to open. Never a
+ *    *Réessayer*: `failed` is precisely the state where nobody knows whether the
+ *    record was created, which is the note at the top of `Historique.tsx` and the
+ *    rule in CLAUDE.md. The applications are read off the intents that actually
+ *    failed — « à vérifier dans VerySwing » under a failed Outlook draft sends
+ *    the rep to the wrong one;
+ *  · neither — `!routable`, an intent nobody can route, which on the build
+ *    DEC-28 ships first is every CRM push. Those were never attempted, so « en
+ *    échec » would be a second false claim in the other direction.
+ */
+const plural = (n: number) => (n > 1 ? 's' : '')
+
+const pushOutcome = (intents: readonly HistoryIntent[]): string => {
+  const failed = intents.filter((intent) => intent.state === 'failed')
+  if (failed.length > 0) {
+    const where = applicationsFor(failed.map((intent) => intent.kind)).join(' et ')
+    return `${failed.length} envoi${plural(failed.length)} en échec — à vérifier dans ${where}.`
+  }
+  const waiting = intents.filter((intent) => intent.state !== 'drained')
+  if (waiting.length > 0) {
+    const where = applicationsFor(waiting.map((intent) => intent.kind)).join(' et ')
+    return `${waiting.length} envoi${plural(waiting.length)} n’${
+      waiting.length > 1 ? 'ont' : 'a'
+    } pas pu être effectué${plural(waiting.length)} — rien n’a été créé dans ${where}.`
+  }
+  return 'Le compte-rendu a été envoyé ; il n’y a rien d’autre à faire ici.'
 }
 
 interface OutcomeNoticeProps {
   /** `null` before the first read lands — nothing to say about nothing. */
   state: MeetingState | null
+  /**
+   * The outbox, as `meeting:get` last answered. Empty at every state before the
+   * gate is spent, and never empty at `done` — `allIntentsSettled` is
+   * `intents.length > 0 && …`, so a meeting with none cannot reach it.
+   */
+  intents: readonly HistoryIntent[]
   /** Réglages, on the pane where the named connector lives. */
   onReglages?: (section?: SectionId) => void
 }
 
-export function OutcomeNotice({ state, onReglages }: OutcomeNoticeProps) {
+export function OutcomeNotice({ state, intents, onReglages }: OutcomeNoticeProps) {
   /*
    * Read on mount and kept current on the broadcast, for `EnhancementNotice`'s
    * reasons exactly: the read answers for a meeting opened out of *Historique*
@@ -153,6 +210,20 @@ export function OutcomeNotice({ state, onReglages }: OutcomeNoticeProps) {
   const cause = status && status.state !== 'ok' ? status.reason : null
   const worst: RequiredConnectorId | null = status && status.state !== 'ok' ? status.worst : null
 
+  /*
+   * `done` is the one state whose sentence is not a constant — see `pushOutcome`.
+   * `pushing` and `aborted` keep theirs: nothing has settled yet in the first,
+   * and nothing was ever drafted in the second.
+   */
+  const consequence = state === 'done' ? pushOutcome(intents) : CONSEQUENCE[state]
+  /*
+   * Marked, not only worded. `--warn` is what *Historique* paints a failed push
+   * in and what the calendar’s summary uses; the rule everywhere else in this
+   * repo is that colour is never the only signal, which is why the count and the
+   * application are in the sentence itself.
+   */
+  const wrong = state === 'done' && intents.some((intent) => intent.state !== 'drained')
+
   return (
     <div
       /*
@@ -169,8 +240,8 @@ export function OutcomeNotice({ state, onReglages }: OutcomeNoticeProps) {
         <span className={state === 'aborted' ? 'text-danger font-semibold' : undefined}>
           {STATE_REASON[state]}
         </span>{' '}
-        <span className="text-muted">
-          {CONSEQUENCE[state]}
+        <span className={wrong ? 'text-warn' : 'text-muted'}>
+          {consequence}
           {cause ? ` ${cause}` : ''}
         </span>
       </p>

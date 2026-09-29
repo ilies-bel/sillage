@@ -2825,7 +2825,18 @@ let RECORDING_STOPPED = false
         meeting: m,
         segments: live ? SEGMENTS : [],
         signals: live ? SIGNALS : [],
-        outbox: [],
+        /*
+         * The same rows the history list draws, looked up the same way the
+         * meeting was — `register.ts` answers this from
+         * `historyIntents(store, meetingId)`, one projection for both channels,
+         * so a stub that kept a second list here could stage a `done` meeting
+         * whose session screen and whose *Historique* row disagreed about
+         * whether the client's CRM received anything.
+         *
+         * This was `outbox: []`, a field no longer on the contract and never on
+         * it under that name.
+         */
+        intents: corpus().find((row) => row.meeting.id === m.id)?.intents ?? [],
         document: live ? NOTES_DOC : null,
         /*
          * The compte-rendu beside the rep's own notes, once the analysis has
