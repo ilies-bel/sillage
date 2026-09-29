@@ -2270,7 +2270,10 @@ function Pill({
               ? 'Marquer ce moment — indisponible en pause'
               : marks === 0
                 ? 'Marquer ce moment'
-                : `Marquer ce moment (${marks} déjà marqués)`
+                : /* The count agrees with itself: this was a constant plural, so
+                     the one mark a rep makes most often — the first — announced
+                     itself as « 1 déjà marqués » to every screen reader. */
+                  `Marquer ce moment (${marks} déjà marqué${marks > 1 ? 's' : ''})`
           }
           className="no-drag text-muted hover:bg-subtle hover:text-brand-700 disabled:hover:bg-transparent disabled:hover:text-muted inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center gap-hair rounded-sm px-hair transition disabled:opacity-60"
         >

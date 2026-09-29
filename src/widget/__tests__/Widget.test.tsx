@@ -270,7 +270,7 @@ test('the pill marks a moment with the panel closed, and counts them', async () 
       mark: { id: 'mk1', at: STARTED + 1_000, note: '', segmentId: null, by: 'rep' as const },
     })
   })
-  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()
+  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqué)' })).toBeTruthy()
 })
 
 /**
@@ -954,7 +954,7 @@ for (const first of ['widget:leave', 'session:changed'] as const) {
         mark: { id: 'k1', at: STARTED + 30_000, note: '', segmentId: null, by: 'rep' as const },
       })
     })
-    const marked = await screen.findByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })
+    const marked = await screen.findByRole('button', { name: /Marquer ce moment \(1 déjà marqué\)/ })
     expect(marked).toBeTruthy()
     const elapsed = screen.getByLabelText('Durée d’enregistrement').textContent
 
@@ -979,7 +979,7 @@ for (const first of ['widget:leave', 'session:changed'] as const) {
 
     expect(screen.queryByText('Aucun enregistrement')).toBeNull()
     expect(screen.getByLabelText('Durée d’enregistrement').textContent).toBe(elapsed)
-    expect(screen.getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Marquer ce moment \(1 déjà marqué\)/ })).toBeTruthy()
   })
 }
 
@@ -1995,7 +1995,7 @@ test('un second enregistrement dans la même fenêtre porte ses propres marques'
     recording([{ id: 'mk1', at: STARTED + 1_000, note: 'premier appel', segmentId: null, by: 'rep' as const }]),
   )
   render(<Widget />)
-  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqués)' })).toBeTruthy()
+  expect(await screen.findByRole('button', { name: 'Marquer ce moment (1 déjà marqué)' })).toBeTruthy()
 
   bridge.when('widget:state', () => ({
     mentionSentence: MENTION_SENTENCE_DEFAULT,
