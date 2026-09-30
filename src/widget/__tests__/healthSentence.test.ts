@@ -137,28 +137,39 @@ const PRODUCERS: readonly Producer[] = [
         'Vérifiez le périphérique audio.',
     ],
   },
+  /*
+   * **These two carry no hand-written sample, and that is the fix.**
+   *
+   * They used to, and all three of them were fiction. They said
+   * « L’enregistrement de l’écran », a wording that exists nowhere in that file
+   * — `SCREEN` is « l’audio système », and the file's header explains why
+   * (Windows has no screen-recording permission to grant, so nothing in the
+   * renderer may name one). They said « Autorisez-le » under « Ni le micro ni
+   * … », which `5c2cbd4` had already replaced with « Autorisez-les ». And they
+   * opened on a capital when the shipped `degraded` sentences did not — so this
+   * corpus asserted that a sentence nobody writes would survive the predicate,
+   * on the one file whose sentences were failing it.
+   *
+   * `capturePermission.ts` is pure `core/domain/` over five statuses on two
+   * channels: twenty-five pairs, all constructible, nothing to stub. There is
+   * no reason to sample it and every reason not to. « les phrases de permission,
+   * telles que le produit les compose » drives the composer over all of them.
+   * The anchors stay, because the coverage scan below is what keeps this file
+   * from forgetting the producer exists.
+   */
   {
     file: 'electron/core/domain/capturePermission.ts',
     connector: 'capture',
     anchor: 'ne sont autorisés — une réunion ne serait pas enregistrée',
     written: true,
-    samples: [
-      'Ni le micro ni l’enregistrement de l’écran ne sont autorisés — une réunion ne ' +
-        'serait pas enregistrée. Autorisez-le pour que Sillage puisse l’enregistrer.',
-    ],
+    samples: [],
   },
   {
     file: 'electron/core/domain/capturePermission.ts',
     connector: 'capture',
     anchor: 'n’est pas autorisé — le client ne sera pas enregistré',
     written: true,
-    samples: [
-      'L’enregistrement de l’écran n’est pas autorisé — le client ne sera pas ' +
-        'enregistré, vous seul le serez. Autorisez-le pour que Sillage puisse l’enregistrer.',
-      'Le micro n’est pas autorisé — vous ne serez pas enregistré, seul le client le ' +
-        'sera. Cet ordinateur est géré et l’autorisation est bloquée par votre service ' +
-        'informatique.',
-    ],
+    samples: [],
   },
   {
     file: 'electron/core/contracts/essai.ts',
@@ -477,6 +488,25 @@ describe('le corpus est tenu à l’arbre', () => {
       uncovered.map((u) => `${u.where}: ${u.expression.slice(0, 90)}`),
       'état(s) de santé capture/transcribe que le corpus ne classe pas',
     ).toEqual([])
+  })
+
+  /**
+   * **An empty `samples` is a claim that something else drives that producer,
+   * and exactly one file gets to make it.**
+   *
+   * Without this, emptying a row is how a producer stops being asserted while
+   * the corpus goes on listing it — which is the shape the two
+   * `capturePermission.ts` rows were already in, with samples the product could
+   * not emit. They are driven by « les phrases de permission, telles que le
+   * produit les compose », over all twenty-five status pairs. Nothing else may
+   * be.
+   */
+  test('seul le producteur piloté se passe d’échantillons', () => {
+    const silent = PRODUCERS.filter((p) => p.samples.length === 0).map((p) => p.file)
+    expect(silent).toEqual([
+      'electron/core/domain/capturePermission.ts',
+      'electron/core/domain/capturePermission.ts',
+    ])
   })
 
   /**

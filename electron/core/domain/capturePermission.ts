@@ -87,6 +87,39 @@ export const canPrompt = (status: AccessStatus): boolean => status === 'not-dete
 const MIC = 'le micro'
 const SCREEN = 'l’audio système'
 
+/**
+ * **The same two channels, opening a sentence — and it is not a style rule.**
+ *
+ * The `degraded` reason below begins with one of these names, so it began
+ * lowercase: « le micro n’est pas autorisé — … ». Two surfaces read that string.
+ *
+ * `capturePermissionView` hands it to the onboarding row, which draws it as a
+ * standalone paragraph — a French sentence opening in lower case.
+ *
+ * The widget throws it away. `src/widget/healthSentence.ts` decides whether a
+ * `reason` was written for a rep by an allowlist over **shapes**, and one of
+ * the three conditions is « opens on a capital », because every fragment a
+ * state machine writes for itself in this tree opens lowercase. Driven over all
+ * twenty-five status pairs through the shipped composer: **twelve of the
+ * twenty-one that produce a health were replaced**, and every one of them was
+ * `degraded` — the state DEC-32 reserves for « one channel is missing », whose
+ * whole point is that the sentence names which side. The window said « une
+ * partie de la réunion peut manquer au compte-rendu » instead, which names
+ * nothing, over a live client call, on Windows as much as on macOS:
+ * `main.ts` records that the Windows 10 global microphone switch reports
+ * `denied`.
+ *
+ * The predicate is not wrong. This was — the seven sentences in this tree that
+ * are written for a rep open on a capital, name the side and end on a remedy,
+ * and these did two of the three. Declared as their own constants rather than
+ * upper-cased at the call site: a transformation over a display string is one
+ * more thing to be right about, and « l’audio » → « L’audio » is not the rule a
+ * naive `toUpperCase` on the first character would keep if the name ever
+ * changed.
+ */
+const MIC_OPENING = 'Le micro'
+const SCREEN_OPENING = 'L’audio système'
+
 interface Missing {
   /** « le micro » or « l’audio système », for a sentence that names it. */
   name: string
@@ -185,8 +218,8 @@ export const capturePermissionHealth = (
   return {
     state: 'degraded',
     reason: !screen
-      ? `${SCREEN} n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. ${remedy(missing)}`
-      : `${MIC} n’est pas autorisé — vous ne serez pas enregistré, seul le client le sera. ${remedy(missing)}`,
+      ? `${SCREEN_OPENING} n’est pas autorisé — le client ne sera pas enregistré, vous seul le serez. ${remedy(missing)}`
+      : `${MIC_OPENING} n’est pas autorisé — vous ne serez pas enregistré, seul le client le sera. ${remedy(missing)}`,
     since: now,
     retryable,
   }

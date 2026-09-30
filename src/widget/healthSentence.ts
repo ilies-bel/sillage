@@ -61,35 +61,24 @@
  *    diagnostic information a rep can copy into a ticket. Hoisting this table
  *    into `core/` would impose the widget's 340 px on every reader of health.
  *
- * ## What the predicate can and cannot tell apart — stated, because it is a limit
+ * ## What the predicate can and cannot tell apart — and where it lives now
  *
- * `isWrittenSentence` is an **allowlist over shapes**, which is the idiom this
- * repo already uses for a foreign payload (`detail` on a diagnostic). Three
- * conditions, each of which every one of the six written sentences meets and none
- * of the ten fragments does — asserted over all sixteen, in both directions, by
- * `healthSentence.test.ts`:
+ * `isWrittenSentence` is an allowlist over shapes and it is **no longer in this
+ * file**: it moved to `core/contracts/health.ts`, where its three conditions and
+ * their limits are argued. It is re-exported below so this file's callers and
+ * its corpus are unchanged.
  *
- *   · it opens on an uppercase letter
- *   · it closes on `.`, `!`, `?` or `…`
- *   · it carries at least one character ASCII does not have
- *
- * The third is not decoration. Every user-facing string in this repo is French
- * with the typographic apostrophe U+2019 (`npm run check:french` enforces it), so
- * a sentence the product wrote carries `’`, `—`, `«` or an accent. A JavaScript
- * `Error`'s message does not.
- *
- * **What it stops measuring.** A foreign message that is capitalised, terminated
- * *and* non-ASCII passes as ours: Microsoft Graph's French-locale errors would,
- * if one ever reached these two connectors (today none does — Graph feeds
- * `calendar` and `mail`, which this window does not collect). Closing that hole
- * needs a field on `ConnectorHealth` saying who wrote the string — a `code`, or
- * `written: true` — and `core/contracts/health.ts` is coordinator-owned and was
- * not opened this round. Symmetrically, a sentence of ours that is pure ASCII
- * would be replaced by the table's; that direction is safe, and no literal in
- * the tree is in it — `healthSentence.test.ts` asserts both halves over every
- * `reason` the six producer files can emit, read out of their source.
+ * It moved because of where it was. The renderer may import `core/contracts/`
+ * only, so nothing under `src/` could drive a producer in `core/domain/`
+ * through the predicate — and the corpus in `healthSentence.test.ts` therefore
+ * hand-wrote samples of what it believed `capturePermission.ts` says. All three
+ * were fiction, and underneath them the shipped `degraded` sentences opened on
+ * a lowercase channel name and were being replaced, twelve status pairs of
+ * them, on the state DEC-32 reserves for « one channel is missing » — the case
+ * whose whole point is that the sentence names which side. The table stays
+ * here; the predicate belongs to the type.
  */
-import type { ConnectorHealth } from '../../electron/core/contracts/health.ts'
+import { isWrittenSentence, type ConnectorHealth } from '../../electron/core/contracts/health.ts'
 import { aggregateStatus } from '../../electron/core/contracts/status.ts'
 
 /**
@@ -98,6 +87,15 @@ import { aggregateStatus } from '../../electron/core/contracts/status.ts'
  * window never puts it in front of the aggregate — see `Widget.tsx`.
  */
 export type LiveConnector = 'capture' | 'transcribe'
+
+/**
+ * Re-exported, not redefined. The predicate moved to `core/contracts/health.ts`
+ * so a test could drive a `core/domain/` producer through it — the renderer may
+ * import `core/contracts/` only, and that rule is why this file's corpus had to
+ * hand-write samples of sentences the product could not emit. The table below
+ * stays here, because it *is* a property of a 340px card.
+ */
+export { isWrittenSentence }
 
 /** The two non-`ok` states a `ConnectorHealth` can be in. */
 export type TroubledState = 'degraded' | 'down'
@@ -147,32 +145,6 @@ export const WIDGET_SENTENCES: Record<LiveConnector, Record<TroubledState, strin
       'Plus aucun moteur de transcription ne répond — le compte-rendu ne pourra pas ' +
       'être écrit. Ouvrez Sillage pour en choisir un.',
   },
-}
-
-/** Opens on a capital: every fragment in the tree opens lowercase. */
-const OPENS = /^\p{Lu}/u
-/** Closes on a terminal mark: a fragment stops, a sentence ends. */
-const CLOSES = /[.!?…]$/u
-/**
- * Carries a character ASCII does not — `’`, `—`, `«`, or an accent. Every
- * user-facing string in this repo is French with U+2019 (`check:french`); a raw
- * `Error.message` is not. See the header for what this does not catch.
- */
-const FRENCH = /[^\u0000-\u007F]/u
-
-/**
- * Is this `reason` a sentence the product wrote for a rep, or a fragment it
- * wrote for itself?
- *
- * Exported because the check that binds this asks it of every `reason` literal
- * in the six producer files, and a predicate a test cannot reach is a predicate
- * nothing holds to the tree.
- */
-export const isWrittenSentence = (reason: string | null | undefined): boolean => {
-  if (typeof reason !== 'string') return false
-  const text = reason.trim()
-  if (text === '') return false
-  return OPENS.test(text) && CLOSES.test(text) && FRENCH.test(text)
 }
 
 /**

@@ -10,11 +10,13 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isWrittenSentence } from '../../contracts/health.ts'
 import {
   actionFor,
   capturePermissionHealth,
   capturePermissionView,
   canPrompt,
+  type AccessStatus,
   type CaptureAccess,
 } from '../capturePermission.ts'
 
@@ -236,4 +238,66 @@ test('two channels in the same state are spoken of as two', () => {
   const both = capturePermissionHealth(access({ microphone: 'denied', screen: 'denied' }), NOW)
   assert.ok(both && both.state !== 'ok')
   assert.match(both.reason, /Vous les avez refusés : réautorisez Sillage/)
+})
+
+/**
+ * **Every sentence this file composes, held to the predicate that decides
+ * whether a rep ever reads it.**
+ *
+ * `isWrittenSentence` (`core/contracts/health.ts`) is what the widget asks
+ * before rendering a `reason` verbatim: a `reason` it refuses is replaced by
+ * one of four generic sentences that name no channel. The `degraded` reasons
+ * here opened on `MIC` / `SCREEN`, which are lowercase because they are also
+ * used mid-sentence in the `down` one — so **twelve of the twenty-one status
+ * pairs that produce a health at all were being thrown away**, every one of
+ * them `degraded`, which is the state DEC-32 reserves for « one channel is
+ * missing » and whose whole point is that the sentence names which side. On
+ * the widget a rep read « une partie de la réunion peut manquer au
+ * compte-rendu » over a live client call; in the onboarding row they read this
+ * file's own sentence opening in lower case.
+ *
+ * Reachable on both platforms. `main.ts` records that the Windows 10 global
+ * microphone switch reports `denied`, which is `{microphone:'denied',
+ * screen:'unknown'}` → `degraded` → replaced, on HR-2's primary platform.
+ *
+ * **This test could not have been written where the predicate used to be.** It
+ * lived in `src/widget/healthSentence.ts`, and the renderer may import
+ * `core/contracts/` only — so nothing under `src/` could reach this composer,
+ * and the corpus there hand-wrote samples of what it believed this file says.
+ * All three said « L’enregistrement de l’écran », a wording that exists nowhere
+ * here. A fixture is not a caller.
+ */
+test('chaque phrase composée ici est une phrase que la fenêtre rend telle quelle', () => {
+  const STATUSES: AccessStatus[] = [
+    'granted',
+    'denied',
+    'not-determined',
+    'restricted',
+    'unknown',
+  ]
+
+  const composed: { pair: string; reason: string }[] = []
+  for (const microphone of STATUSES) {
+    for (const screen of STATUSES) {
+      const health = capturePermissionHealth(access({ microphone, screen }), NOW)
+      if (!health || health.state === 'ok') continue
+      composed.push({ pair: `${health.state} micro=${microphone} écran=${screen}`, reason: health.reason })
+    }
+  }
+
+  // A floor on the enumeration itself: a `capturePermissionHealth` that started
+  // returning `null` everywhere would otherwise pass this having checked nothing.
+  assert.ok(composed.length >= 20, `seulement ${composed.length} paire(s) produisent une santé`)
+
+  const refused = composed.filter(({ reason }) => !isWrittenSentence(reason))
+  assert.deepEqual(refused.map(({ pair }) => pair), [], 'phrase(s) que la fenêtre remplacerait')
+
+  // And each one names its channel in the product's own words — which is the
+  // thing the generic replacement could never do.
+  for (const { pair, reason } of composed) {
+    assert.ok(
+      reason.includes('micro') || reason.includes('audio système'),
+      `${pair} ne nomme aucun côté : ${reason}`,
+    )
+  }
 })
