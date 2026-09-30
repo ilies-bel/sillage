@@ -1701,7 +1701,7 @@ let RECORDING_STOPPED = false
       /*
         `ok`, and it is the honest first launch.
 
-        This claimed « téléchargement du modèle Whisper — 196 Mo sur 466 Mo » in
+        This claimed « téléchargement du modèle Whisper — 204 Mo sur 486 Mo » in
         `degraded`, which the app cannot emit and which is not even true of the
         product: the weights ship inside the installer (`main.ts` says so where
         it explains why the splash never waits on a download), and the only
@@ -1991,11 +1991,58 @@ let RECORDING_STOPPED = false
      * where every model happens to be installed.
      */
     models: {
+      /*
+        **The catalogue's own four rows, with the product's own numbers.**
+
+        This table was hand-written and none of its three rows matched
+        `whisper/catalog.ts`: Small was `466` against 486, Medium `1530` against
+        1614, and Whisper Large v3 Turbo was `1031` — which is the exact figure
+        the catalogue records as the defect it removed, « the rep was promised
+        1 GB and charged 2.8 ». That row is gone from the product entirely now
+        (every one of its inferences throws), so the fixture was staging a
+        download of a model a rep cannot select, at a size the product never
+        reported, on the one screen that tells a rep what a download will cost.
+
+        Numbers copied from `MODELS`, not imported: this function is serialised
+        into the page by `addInitScript`, so it can close over nothing. That is
+        what makes a copy the only option and a check the only way to keep it
+        honest — `harnessFixture.test.ts` asserts the four ids, labels, sizes,
+        speeds and accuracies against the shipped catalogue.
+
+        The statuses are the fixture's own and are the point of the stage: one
+        bundled and selected, one mid-download so the progress row is
+        photographed rather than a table where everything happens to be
+        installed, and two absent.
+      */
       rows: [
+        {
+          id: 'Xenova/whisper-tiny',
+          label: 'Whisper Tiny',
+          sizeMb: 61,
+          speed: 'fast',
+          accuracy: 'correcte',
+          bundled: false,
+          status: 'absent',
+          progress: 0,
+          reason: null,
+          selected: false,
+        },
+        {
+          id: 'Xenova/whisper-base',
+          label: 'Whisper Base',
+          sizeMb: 130,
+          speed: 'fast',
+          accuracy: 'bonne',
+          bundled: false,
+          status: 'absent',
+          progress: 0,
+          reason: null,
+          selected: false,
+        },
         {
           id: 'Xenova/whisper-small',
           label: 'Whisper Small',
-          sizeMb: 466,
+          sizeMb: 486,
           speed: 'medium',
           accuracy: 'très bonne',
           bundled: true,
@@ -2005,26 +2052,14 @@ let RECORDING_STOPPED = false
           selected: true,
         },
         {
-          id: 'onnx-community/whisper-large-v3-turbo-ONNX',
-          label: 'Whisper Large v3 Turbo',
-          sizeMb: 1031,
-          speed: 'medium',
+          id: 'Xenova/whisper-medium',
+          label: 'Whisper Medium',
+          sizeMb: 1614,
+          speed: 'slow',
           accuracy: 'très bonne',
           bundled: false,
           status: 'downloading',
           progress: 38,
-          reason: null,
-          selected: false,
-        },
-        {
-          id: 'Xenova/whisper-medium',
-          label: 'Whisper Medium',
-          sizeMb: 1530,
-          speed: 'slow',
-          accuracy: 'très bonne',
-          bundled: false,
-          status: 'absent',
-          progress: 0,
           reason: null,
           selected: false,
         },
@@ -2177,7 +2212,7 @@ let RECORDING_STOPPED = false
   /*
     **The boot a rep actually gets, mid-answer.**
 
-    This staged `downloading` — a progress bar, « 196 Mo sur 466 Mo », an ETA —
+    This staged `downloading` — a progress bar, « 204 Mo sur 486 Mo », an ETA —
     and `core/contracts/boot.ts` says in as many words that **nothing in the app
     emits that variant**: the weights ship inside the installer, so a first run
     answers all three steps in under a second. The variant is declared for a
@@ -2210,7 +2245,10 @@ let RECORDING_STOPPED = false
     devices: { state: 'pending' },
     transcription: {
       state: 'downloading',
-      value: 'modèle Whisper — 196 Mo sur 466 Mo · environ 1 min',
+      // 486 Mo is Whisper Small's size in `whisper/catalog.ts`. It read 466
+      // here and in the two comments above, which is a number the product has
+      // not reported since the catalogue was corrected.
+      value: 'modèle Whisper — 204 Mo sur 486 Mo · environ 1 min',
       percent: 42,
     },
     version: '0.4.2',

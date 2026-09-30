@@ -119,7 +119,18 @@ test('the quiet half — Medium is refused at exactly the old floor', () => {
     // The flat floor admitted this one, and an ONNX session that cannot
     // allocate does not throw — it aborts the process, mid-meeting.
     assert.equal(hasEnoughMemory('Xenova/whisper-medium'), false)
-    assert.equal(hasEnoughMemory('onnx-community/whisper-large-v3-turbo-ONNX'), false)
+    /*
+     * The 2 848 MB turbo checkpoint used to be the second half of this
+     * assertion, refused here at 2.0 GB free. It is no longer in `MODELS` —
+     * every one of its inferences throws (`whisper-models.verified.json`), so
+     * it is not offered at all — and `requiredMemoryGB` reads the catalogue,
+     * so it is now an id this file has never heard of and takes the
+     * conservative flat 2.0 that branch exists for. Asserted rather than
+     * dropped: the fallback is what makes removing a row safe, and a removal
+     * that silently turned a refusal into an admission is exactly what this
+     * line would have hidden.
+     */
+    assert.equal(requiredMemoryGB('onnx-community/whisper-large-v3-turbo-ONNX'), 2.0)
   })
 })
 

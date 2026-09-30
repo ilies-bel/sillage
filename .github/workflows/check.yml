@@ -56,6 +56,24 @@ jobs:
       - name: Typecheck, boundaries, CRM containment
         run: npm run check
 
+      # **Not in `npm run check`, and in CI, and the difference is the point.**
+      #
+      # `check:models` runs a real inference for every catalogue row whose
+      # weights are on the machine — on a dev laptop with the default
+      # checkpoint cached that is several seconds, which is why `catalog.ts`
+      # kept it out of the fast gate. A runner has no weights, so it answers
+      # entirely from `scripts/whisper-models.verified.json` in about a tenth
+      # of a second and reaches the network not at all.
+      #
+      # It was in neither. It was red on `83a76da` over a row whose every
+      # inference throws — a 2 848 MB download a rep could select from
+      # Réglages and then transcribe a whole client meeting to nothing — and
+      # nothing was going to say so. An instrument that knows about a defect
+      # and is in no gate is a comment.
+      - name: Catalogue (from the ledger — no weights on a runner)
+        run: npm run check:models
+        timeout-minutes: 2
+
       # Bounded tighter than the job, and separately, so the log says *which*
       # phase stalled rather than only that the job was killed.
       - name: Test

@@ -1267,3 +1267,4 @@ test('the fixture’s history:search partitions the way historySearch.ts partiti
     'le fixture répond à history:search un ensemble que le produit ne peut pas répondre',
   )
 })
+

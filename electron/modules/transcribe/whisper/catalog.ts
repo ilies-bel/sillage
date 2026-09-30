@@ -32,51 +32,38 @@ export interface WhisperModel {
   sizeMb: number
   speed: 'fast' | 'medium' | 'slow'
   accuracy: 'correcte' | 'bonne' | 'très bonne'
-  /**
-   * Checkpoints whose weights live in a sibling `*.onnx_data` file. Declared
-   * here when the model's own `config.json` does not declare it — without the
-   * flag transformers never fetches the companion. Keyed exactly as the loader
-   * resolves it: full ONNX basename first, then module name.
-   */
-  externalDataFormat?: Record<string, boolean>
 }
 
+/**
+ * **What a rep may select. Four rows, and one was taken out of it.**
+ *
+ * `onnx-community/whisper-large-v3-turbo-ONNX` was here until round 26. Every
+ * one of its inferences throws `Missing the following inputs: cache_position`
+ * — the merged decoder is exported against a newer graph signature than the
+ * pinned `transformers` (3.8.1) builds a feed for — and the throw is caught
+ * per segment, so a rep who selected it downloaded **2 848 MB** and then read
+ * « transcription de l’audio système dégradée » beside an empty transcript for
+ * a whole client meeting, on the engine DEC-30 makes the *default*. That is a
+ * control that is present and does nothing, which DEC-26 forbids, on the one
+ * failure `essai.ts` says cannot be repaired afterwards.
+ *
+ * `npm run check:models` has reported it since 2026-09-21 and named the two
+ * ways out — « réexporter le modèle, ou retirer la ligne ». Re-exporting is not
+ * ours to do, so the line is out of the offer. **The check was in no gate**,
+ * which is why it could be red for a week; it runs in CI now, where a runner
+ * has no weights and answers from the ledger in about a tenth of a second.
+ *
+ * The comment that used to sit on the row argued for keeping it because it was
+ * the only user of `externalDataFormat` and two tests reach that loader through
+ * its id. That is shipping a broken offer to keep a fixture alive, which is the
+ * trade backwards. The loader knowledge moved to `EXTERNAL_DATA` below, where
+ * it is a property of a checkpoint rather than of an offer, and both tests pass
+ * unchanged.
+ */
 export const MODELS: WhisperModel[] = [
   { id: 'Xenova/whisper-tiny', label: 'Whisper Tiny', sizeMb: 61, speed: 'fast', accuracy: 'correcte' },
   { id: 'Xenova/whisper-base', label: 'Whisper Base', sizeMb: 130, speed: 'fast', accuracy: 'bonne' },
   { id: 'Xenova/whisper-small', label: 'Whisper Small', sizeMb: 486, speed: 'medium', accuracy: 'très bonne' },
-  {
-    /*
-     * **This row is an offer the engine cannot honour. Measured 2026-09-21.**
-     *
-     * Every inference throws `Missing the following inputs: cache_position` —
-     * the merged decoder is exported against a newer graph signature than the
-     * pinned transformers (3.8.1) builds a feed for. Not once: every utterance,
-     * for the whole meeting. The throw is caught per segment, so a rep who
-     * selects this sees « transcription de l'audio système dégradée » and an
-     * empty transcript, on the engine DEC-30 makes the default. `MODELS`
-     * reaches Réglages through `modelSection` (`main.ts:667`), so it is
-     * selectable today. Same shape as the Deepgram row in `registry.ts`, and
-     * `ModelStatus` has no way to say it — `ready` | `absent` and nothing for
-     * « offered and broken ».
-     *
-     * `sizeMb` was 1031 and the comment here said the encoder data was
-     * « ~820 MB ». Both wrong: the Hub's blob sizes give **2848 MB**, because
-     * the shipped dtype map keeps the encoder fp32 and large-v3's encoder is
-     * 635M parameters (635M x 4 B = 2.54 GB). `modelSizeBytes` feeds the
-     * download progress bar, so the rep was promised 1 GB and charged 2.8.
-     *
-     * Kept, not deleted, because it is the only catalogue user of
-     * `externalDataFormat` and two tests in `whisper.test.ts` exercise that
-     * loader path through this id. Deleting the row deletes their subject.
-     */
-    id: 'onnx-community/whisper-large-v3-turbo-ONNX',
-    label: 'Whisper Large v3 Turbo',
-    sizeMb: 2848,
-    speed: 'medium',
-    accuracy: 'très bonne',
-    externalDataFormat: { 'encoder_model.onnx': true },
-  },
   { id: 'Xenova/whisper-medium', label: 'Whisper Medium', sizeMb: 1614, speed: 'slow', accuracy: 'très bonne' },
 ]
 
@@ -95,8 +82,34 @@ export const modelSizeBytes = (id: string): number => {
   return model ? Math.round(model.sizeMb * 1024 * 1024) : 0
 }
 
+/**
+ * **Which checkpoints keep their encoder weights outside the graph file.**
+ *
+ * A property of a *checkpoint*, not of an offer — which is why it is a table of
+ * its own and no longer a field on `MODELS`. `onnx-community/whisper-large-v3-turbo-ONNX`
+ * was a catalogue row until it was taken out of the offer (see `MODELS` above),
+ * and it is the only id this loader path has ever had. Two things follow, and
+ * both are deliberate:
+ *
+ *  · `externalDataFormatFor` returns `undefined` for every model a rep can
+ *    select today, so `useExternalDataFormat` is never set in production and
+ *    `isModelCached` never looks for an `_data` sibling. **That branch is
+ *    unreached, and it is kept rather than deleted** because the checkpoint is
+ *    re-exportable: the defect is a graph signature against a pinned
+ *    `transformers`, not the external-data layout, and deleting the loader
+ *    would mean rediscovering it the next time a large checkpoint ships that
+ *    way. `scripts/whisper-models.verified.json` records the measurement.
+ *  · It is stated here rather than left to be inferred, because « a declared
+ *    port that nothing calls is not a feature » is this repo's rule and an
+ *    unreached branch with no reason beside it is exactly what that rule is
+ *    about.
+ */
+const EXTERNAL_DATA: Record<string, Record<string, boolean>> = {
+  'onnx-community/whisper-large-v3-turbo-ONNX': { 'encoder_model.onnx': true },
+}
+
 export const externalDataFormatFor = (id: string): Record<string, boolean> | undefined =>
-  modelById(id)?.externalDataFormat
+  EXTERNAL_DATA[id]
 
 // ── Cache layout ──────────────────────────────────────────────────────────
 //
