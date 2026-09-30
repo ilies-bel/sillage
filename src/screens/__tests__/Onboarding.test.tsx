@@ -300,7 +300,9 @@ describe('the dry run', () => {
     // The failure a rep cannot discover on their own: their own voice is in the
     // transcript, so the recording looks like it worked.
     expect(await screen.findByText(/le client non/)).toBeTruthy()
-    expect(screen.getByText(/autorisation d’enregistrement de l’écran/)).toBeTruthy()
+    // « l’audio système », not « l’enregistrement de l’écran »: Windows has no
+    // screen-recording permission to grant, and it is the primary platform.
+    expect(screen.getByText(/l’audio système est autorisé dans Réglages/)).toBeTruthy()
     // And the other channel is reported separately, not merged into a verdict.
     expect(screen.getByText(/Ce que vous dites sera transcrit/)).toBeTruthy()
   })

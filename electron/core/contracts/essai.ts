@@ -138,7 +138,30 @@ export const essaiLines = (result: EssaiResult): readonly EssaiLine[] => [
     heard: result.far.heard,
     sentence: result.far.heard
       ? 'Entendu. Ce que dit le client sera transcrit.'
-      : 'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez l’autorisation d’enregistrement de l’écran et la sortie audio utilisée.',
+      : /*
+           **« l’audio système », and not « l’enregistrement de l’écran ».**
+
+           This named a macOS permission on HR-2's primary platform. Windows has
+           no screen-recording authorisation to grant — CLAUDE.md's platform
+           table says so in one row, « Capture permission: macOS TCC prompt ·
+           Windows none » — so half the remedy sent a Windows rep looking for a
+           setting that does not exist, on the screen DEC-45 makes the authority
+           over the boot probe.
+
+           `capturePermission.ts` had already decided the platform-neutral word
+           for this channel and its header argues it: `SCREEN = 'l’audio
+           système'`, because « Windows has no screen-recording permission to
+           grant … nothing in the renderer needs to know that ». This file did
+           not follow. `EssaiAudio.tsx` is careful enough not to draw the
+           settings-pane button here, so the control beside the sentence was
+           right and the sentence was not.
+
+           `check-platform.mjs` cannot see this: it scans for platform *signals
+           in code*, and a mac-only concept inside a French string is invisible
+           to it. The guard is a test over the strings themselves
+           (`essai.test.ts`), which is where a claim about wording belongs.
+        */
+        'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez que l’audio système est autorisé dans Réglages, et la sortie audio utilisée.',
   },
 ]
 

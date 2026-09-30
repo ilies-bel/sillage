@@ -2609,3 +2609,44 @@ describe('the gate gives one cause for one non-creation', () => {
     ).toBeTruthy()
   })
 })
+
+/**
+ * **A one-turn call is « 1 prise de parole », not « 1 prises ».**
+ *
+ * `TranscriptReader`'s header counts the turns it is showing. Zero was handled
+ * — a call with marks and no transcript opens this reader at all — and one was
+ * not, so the shortest real call in the product printed a plural over a single
+ * sentence, on the screen whose whole argument is that a rep can check a claim
+ * against the recording.
+ *
+ * Every other `${n} <noun>s` in this tree branches: `pushWords.ts` for the
+ * outbox, the widget's mark button, « Valider malgré N champ(s) non vérifié(s) »
+ * on this very screen. This was the one that did not, and no test read the
+ * string.
+ */
+describe('the transcript reader counts what it is showing', () => {
+  const opened = async (segments: ReturnType<typeof segment>[]) => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({ marks: [], segments }))
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+    // The tab, not a citation: opened on a `[source ▸]` the header names the
+    // quote instead of counting the call, which is the state this is not about.
+    fireEvent.click(screen.getByRole('button', { name: 'Transcription' }))
+    await screen.findByText(new RegExp(segments[0]!.text.slice(0, 20)))
+  }
+
+  test('one turn is singular', async () => {
+    await opened([segment('s1', 'far', 61_000, 'On vous envoie deux CV vendredi, promis.')])
+    expect(screen.getByText(/1 prise de parole/)).toBeTruthy()
+    expect(screen.queryByText(/1 prises de parole/)).toBeNull()
+  })
+
+  test('two turns are plural', async () => {
+    await opened([
+      segment('s1', 'far', 61_000, 'On vous envoie deux CV vendredi, promis.'),
+      segment('s2', 'rep', 74_000, 'Parfait, je les attends.'),
+    ])
+    expect(screen.getByText(/2 prises de parole/)).toBeTruthy()
+  })
+})

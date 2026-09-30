@@ -36,7 +36,19 @@ src/                 renderer.
 **The import rule, enforced in CI:** `core/*` imports only `core/`. `modules/X` imports
 `core/` and itself, never `modules/Y`. `app/*` imports `core/` and `modules/*`. `src/*`
 imports `core/contracts/` only. Modules never talk to each other; the orchestrator wires
-them. Behaviour that is hard to place goes in `app/session/MeetingSession.ts` or
+them.
+
+**The rule also decides what can be tested together, and round 26 found two defects living
+exactly where it forbids a caller.** `isWrittenSentence` sat in `src/widget/`, so nothing
+could drive a `core/domain/` producer through it — and every `capturePermission.ts`
+`degraded` sentence was being thrown away for want of a capital letter, with a corpus of
+hand-written samples standing in for the composer. The fixture's model table sat in
+`scripts/harness/` and the only file asserting things about it was under `modules/extract/`,
+which may not import `modules/transcribe` — so nothing compared it to the catalogue, and it
+painted three sizes the product does not report. **When a fact is shared by two sides of a
+boundary, it belongs in `core/contracts/`; when a test needs both sides, it belongs in
+`scripts/`.** A predicate about a contract type is not a property of the surface that happens
+to call it first. Behaviour that is hard to place goes in `app/session/MeetingSession.ts` or
 `core/domain/` — never in an IPC handler.
 
 ## The CRM boundary (DEC-29)
@@ -167,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code twenty-eight times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code thirty-one times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -182,6 +194,21 @@ table contradicted; and `PushFailure`'s comment claimed the adapter's fragment
 and the product's sentence were joined by « the em dash this app already uses to
 join a clause to its consequence », when they are joined by `{' '}` and what
 fixed the collision it describes was `sentence()` punctuating the fragment.
+Round 26 added three, and **the first was written by the reviewer who was
+checking the other two**: a paragraph marking two true paragraphs of
+`MeetingTitle.tsx` as stale prose, and counting it, because it re-drove their
+960×600 numbers on `session-compte-rendu` — where the call is over and the
+header row is 371.28px — instead of `session`, where it is 228.25 and the
+numbers are exact to the pixel, including a prediction the fix then met to the
+digit. **A measurement is about a stage; a re-measurement on a different stage
+falsifies nothing, and « I could not reproduce it » is not « it is not there ».**
+The other two are fixtures asserting things the product cannot do:
+`healthSentence.test.ts`'s corpus hand-wrote three `capturePermission.ts`
+sentences using a wording that exists nowhere in that file, on the one producer
+whose real sentences were failing the predicate the corpus was testing; and
+`Review.test.tsx`'s « with no Microsoft account » staged a *signed-in* panel
+with the calendar's reason on the row, its name and its fixture disagreeing
+with nothing able to tell them apart.
 - **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the
@@ -199,6 +226,14 @@ fixed the collision it describes was `sentence()` punctuating the fragment.
   a pass uses but whether its question is **relational**: a pass asking something intrinsic
   about one element is unaffected; a pass asking about the distance between two is corrupted.
   A number that is computed, printed and binds nothing is not a check.
+  **And an instrument that is red, knows about a shipped defect, and is in no gate is a
+  comment.** `npm run check:models` had reported `onnx-community/whisper-large-v3-turbo-ONNX`
+  — a 2 848 MB download a rep could select from Réglages, every one of whose inferences
+  throws — since 2026-09-21, and it was in neither `npm run check` nor CI. The reason
+  `catalog.ts` gave, « its subject is gigabytes of weights rather than source », was true of a
+  dev laptop and not of the check: with no weights it answers from its ledger in about 110 ms
+  and reaches the network not at all, which is exactly a CI runner. **Before trusting that a
+  check is excluded for a good reason, run it and time it.**
   **And a list of open findings goes stale the round after it is written.** Two of the five
   above were closed or false within one round while this paragraph went on asserting them in
   the present tense — which is the same defect the paragraph is about, committed by the
@@ -227,8 +262,10 @@ node scripts/harness/smoke.mjs                 # every stage × two sizes, all f
 
 `--geometry`, `--targets`, `--prose`, `--echo`, `--a11y`, `--contrast`, `--marks`,
 `--scrollers`, `--motion`, `--fade`, `--census`, `--rhythm`, `--cells` and `--press` are the
-fourteen `smoke.mjs` passes (`PASSES`, `smoke.mjs:193`); `--scan` is a fifteenth it does not
-pass. This said « six » and named the first list for three rounds, then « nine » for one
+fourteen `smoke.mjs` passes (`PASSES`, `smoke.mjs:214`); `--scan` is a fifteenth it does not
+pass. (The line number said **193** for two rounds after the list moved; a reviewer in round
+26 counted the passes correctly and reported the pointer beside them as stale, which is the
+first time this sentence was wrong about *where* rather than *how many*.) This said « six » and named the first list for three rounds, then « nine » for one
 round after `--census` landed, then « ten » for one round after `--rhythm` and `--cells`
 landed, then « twelve » while `--marks` was being added, then « thirteen » while `--press`
 was being added — each time omitting exactly the passes added most recently, which are the

@@ -77,7 +77,57 @@ test('each channel gets its own sentence, in the rep’s vocabulary', () => {
   assert.equal(lines[0]?.heard, true)
   assert.match(lines[0]?.sentence ?? '', /Entendue/)
   // And the failing one says what to check, not that something is wrong.
-  assert.match(lines[1]?.sentence ?? '', /autorisation d’enregistrement de l’écran/)
+  assert.match(lines[1]?.sentence ?? '', /l’audio système est autorisé dans Réglages/)
+})
+
+/**
+ * **No sentence on this screen names a permission one of the two platforms
+ * does not have.**
+ *
+ * The far-channel remedy said « vérifiez l’autorisation d’enregistrement de
+ * l’écran ». Windows has no screen-recording authorisation to grant —
+ * CLAUDE.md's platform table says so in one row — so on HR-2's **primary**
+ * platform half the remedy sent a rep hunting for a setting that does not
+ * exist, on the screen DEC-45 makes the authority over the boot probe.
+ * `capturePermission.ts` had already settled the platform-neutral word and its
+ * header argues it; this file had not followed.
+ *
+ * `check-platform.mjs` cannot catch this. It scans for platform *signals in
+ * code* — a `process.platform`, a `darwin` literal — and a mac-only concept
+ * inside a French sentence is invisible to it. A claim about wording belongs in
+ * a test over the wording, which is this.
+ *
+ * The list is the two macOS-only concepts this product could name, spelled the
+ * way a rep would read them. It is deliberately short: a broad screen for
+ * « anything mac-ish » would be a check nobody could keep true.
+ */
+test('aucune phrase de l’essai ne nomme une autorisation propre à macOS', () => {
+  const MAC_ONLY = [/enregistrement de l’écran/i, /Préférences Système/i]
+
+  const sentences = [
+    ...essaiLines({
+      rep: { heard: false, peak: 0 },
+      far: { heard: false, peak: 0 },
+      floor: 0.01,
+      seconds: 20,
+    }).map((line) => line.sentence),
+    ...essaiLines({
+      rep: { heard: true, peak: 0.5 },
+      far: { heard: true, peak: 0.5 },
+      floor: 0.01,
+      seconds: 20,
+    }).map((line) => line.sentence),
+  ]
+
+  // A floor on the enumeration: four sentences, or this has stopped reading the
+  // thing it claims to read.
+  assert.equal(sentences.length, 4)
+
+  for (const sentence of sentences) {
+    for (const mac of MAC_ONLY) {
+      assert.ok(!mac.test(sentence), `phrase propre à macOS : ${sentence}`)
+    }
+  }
 })
 
 /*

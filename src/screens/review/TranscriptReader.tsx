@@ -347,7 +347,11 @@ export function TranscriptReader({
           segments.length === 0 ? (
             'Aucune transcription — seuls vos moments marqués sont ci-dessous.'
           ) : (
-            `${segments.length} prises de parole · ${formatOffset(segments[segments.length - 1]!.endMs)}`
+            // Zero is handled on the line above; one was not, and a one-turn
+            // call read « 1 prises de parole ». Every other `${n} <noun>s` in
+            // this tree branches (`pushWords.ts`, `Widget`'s mark button,
+            // `Valider malgré N champ(s)`); this was the one that did not.
+            `${segments.length} prise${segments.length > 1 ? 's' : ''} de parole · ${formatOffset(segments[segments.length - 1]!.endMs)}`
           )
         ) : hit ? (
           <>
