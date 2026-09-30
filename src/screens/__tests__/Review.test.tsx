@@ -109,6 +109,9 @@ const panel = (over: Partial<ReviewPanel> = {}): ReviewPanel => ({
     },
   ],
   mailTo: ['camille.leroy@acme-industries.fr'],
+  // Signed in, which is what every test here has always assumed. The two that
+  // care pass `mailAccount: false` explicitly.
+  mailAccount: true,
   overall: 'ok',
   /*
    * Two of the three bullets came from a cited item; the third did not. The
@@ -785,19 +788,29 @@ describe('DEC-20 / DEC-4 — three intents, one button', () => {
    * — so `mailTo` is empty and `mail.draft` is undraftable. The other two
    * intents go to VerySwing and owe Microsoft nothing (DEC-26), so they must
    * stay fully selectable and pushable.
+   *
+   * **And this fixture used to contradict its own name.** It staged
+   * `mailAccount` at the default — signed in — with the row's reason set to
+   * « Aucun destinataire au calendrier. », on the test called « with no
+   * Microsoft account ». The panel carried no `mailAccount` then, so nothing
+   * could tell the two apart; now that it does, the fixture has to pick, and
+   * the case this test is named for is the one where there is no registration
+   * at all. `reviewGate.ts` argues at length that on *that* build the
+   * calendar's sentence is a true statement about the wrong thing.
    */
   test('with no Microsoft account the Outlook intent is greyed and the two CRM ones still ship', async () => {
     bridge.when('review:get', () =>
       openGate({
         interlocuteurs: [],
         mailTo: [],
+        mailAccount: false,
         intents: panel().intents.map((intent) =>
           intent.kind === 'mail.draft'
             ? {
                 ...intent,
                 summary: 'Indisponible',
                 available: false,
-                reason: 'Aucun destinataire au calendrier.',
+                reason: 'Aucun compte Microsoft connecté.',
               }
             : intent,
         ),
@@ -810,11 +823,14 @@ describe('DEC-20 / DEC-4 — three intents, one button', () => {
     const draft = screen.getByRole('checkbox', { name: /Brouillon/ }) as HTMLInputElement
     expect(draft.disabled).toBe(true)
     expect(draft.checked).toBe(false)
-    expect(screen.getByText('Aucun destinataire au calendrier.')).toBeTruthy()
+    expect(screen.getByText('Aucun compte Microsoft connecté.')).toBeTruthy()
 
     // The mail editor states the consequence where the rep starts reading it,
-    // rather than only in *Ce qui sera créé* two sections below.
-    expect(screen.getByText(/aucun destinataire — aucun brouillon ne sera créé/)).toBeTruthy()
+    // rather than only in *Ce qui sera créé* two sections below — and it names
+    // the same cause, which it did not until round 26.
+    expect(
+      screen.getByText(/aucun compte Microsoft connecté — aucun brouillon ne sera créé/),
+    ).toBeTruthy()
 
     // The other two are untouched: no calendar is not a degradation of the CRM.
     for (const name of [/Tâche compte-rendu/, /Opportunité/]) {
@@ -2527,5 +2543,69 @@ describe('la colonne de droite ne dépend que des deux intentions CRM', () => {
     const all = await drawnFor(0b111)
     expect(await drawnFor(0b110), 'sans la tâche').not.toBe(all)
     expect(await drawnFor(0b101), 'sans l’opportunité').not.toBe(all)
+  })
+})
+
+/**
+ * **One act, one cause — and the surface a rep reads first named the shallow
+ * one.**
+ *
+ * `MailDraft`'s own docblock says it exists because *Ce qui sera créé* states
+ * the consequence « **below** this section, which is a rep editing a follow-up
+ * for two minutes and only then reading that it goes nowhere ». It then branched
+ * on `to.length` alone, so on the build the first demo ships in (DEC-28) it said
+ * « aucun destinataire » while the row 1 700 px below it said « Aucun compte
+ * Microsoft connecté. » — and `reviewGate.ts` spends nine lines arguing that the
+ * first is *a true sentence about the wrong thing*: with no Entra registration
+ * there is no calendar to have attendees in, so a rep goes looking for people to
+ * add to a meeting, which is a search that cannot succeed.
+ *
+ * Driven on `review-sans-entra`, one painted frame, both smoke sizes: the two
+ * sentences at y 2316 and y 635. `--echo` cannot see it — it exempts repetition
+ * along a list, and these are two different strings a screen apart. No check
+ * compares two sentences about one act.
+ *
+ * `mailBlocker` in `core/contracts/review.ts` is now the one ordering, read by
+ * the domain and by this screen, because `core/domain/` is not importable from
+ * `src/` and a string duplicated across that boundary is two sentences waiting
+ * to drift.
+ */
+describe('the gate gives one cause for one non-creation', () => {
+  const noMail = (reason: string, mailAccount: boolean) =>
+    openGate({
+      interlocuteurs: [],
+      mailTo: [],
+      mailAccount,
+      intents: panel().intents.map((intent) =>
+        intent.kind === 'mail.draft'
+          ? { ...intent, summary: 'Indisponible', available: false, reason }
+          : intent,
+      ),
+    })
+
+  test('no Microsoft account: both surfaces say so, and neither blames the calendar', async () => {
+    bridge.when('review:get', () => noMail('Aucun compte Microsoft connecté.', false))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.getByText('Aucun compte Microsoft connecté.')).toBeTruthy()
+    expect(
+      screen.getByText(/aucun compte Microsoft connecté — aucun brouillon ne sera créé/),
+    ).toBeTruthy()
+    // The sentence that sends a rep hunting for attendees they cannot add.
+    expect(screen.queryByText(/aucun destinataire — aucun brouillon/)).toBeNull()
+  })
+
+  test('an account but an empty invite still names the calendar', async () => {
+    bridge.when('review:get', () => noMail('Aucun destinataire au calendrier.', true))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    expect(screen.getByText('Aucun destinataire au calendrier.')).toBeTruthy()
+    expect(
+      screen.getByText(/aucun destinataire au calendrier — aucun brouillon ne sera créé/),
+    ).toBeTruthy()
   })
 })

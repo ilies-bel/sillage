@@ -184,6 +184,18 @@ export const ReviewPanelSchema = z.object({
   interlocuteurs: z.array(AttendeeSchema),
   /** Recipients of the draft, derived from the attendees. Read-only. */
   mailTo: z.array(z.string()),
+  /**
+   * **Whether a Microsoft account is connected at all.**
+   *
+   * `mailTo` is empty in two different situations and the renderer could not
+   * tell them apart: no attendees on the invite, or no Entra registration — the
+   * build the first demo ships in (DEC-28), where there is no calendar to have
+   * attendees in and no mailbox to draft from either. `draftIntents` has taken
+   * the distinction since round 25 and gives the row the deeper cause first;
+   * the panel did not carry it, so `MailDraft`, on the line the rep reads
+   * first, could only say « aucun destinataire ». See `mailBlocker` below.
+   */
+  mailAccount: z.boolean(),
   /** `faible` when any interpretive field's quote could not be located. */
   overall: ConfidenceSchema,
   intents: z.array(ReviewIntentSchema),
@@ -233,3 +245,65 @@ export const ReviewConfirmationSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), state: MeetingStateSchema, reason: z.string() }),
 ])
 export type ReviewConfirmation = z.infer<typeof ReviewConfirmationSchema>
+
+/**
+ * **Why no follow-up draft will be created, in the order the causes actually
+ * block each other.**
+ *
+ * Two surfaces on the gate say this about one act, and they said two different
+ * things. `draftIntents` gives the row in *Ce qui sera créé* the deeper cause
+ * first — `reviewGate.ts` spends nine lines arguing it: on the build the first
+ * demo ships in (DEC-28) there is no Entra registration, so « Aucun destinataire
+ * au calendrier. » is *a true sentence about the wrong thing*, and a rep reading
+ * it goes looking for people to add to a meeting, which is a search that cannot
+ * succeed. `MailDraft` in the renderer branched on `to.length` alone and named
+ * the shallow one — and its own docblock says it exists precisely because it is
+ * « the line the rep reads first », 1 700 px above the row that disagreed with
+ * it. Driven on `review-sans-entra`, one frame, both smoke sizes:
+ *
+ *     « aucun destinataire — aucun brouillon ne sera créé, … »   y 2316
+ *     « Aucun compte Microsoft connecté. »                       y  635
+ *
+ * So the cause lives here, where both may read it. `core/domain/` is not
+ * importable from `src/` and never will be; a string duplicated across that
+ * boundary is two sentences waiting to drift, which is what this is.
+ *
+ * `--echo` could not see it: it exempts repetition along a list, and these are
+ * two different strings a screen apart. No check compares two sentences about
+ * one act.
+ */
+export type MailBlocker = 'no-account' | 'no-recipients'
+
+/**
+ * The blocking cause, or `null` when nothing structural is in the way.
+ *
+ * The order is the whole point and it is not alphabetical: no account means no
+ * calendar to have attendees in *and* no mailbox to draft from, so it outranks
+ * an empty recipient list rather than sitting beside it.
+ */
+export const mailBlocker = (
+  mailAccount: boolean,
+  recipients: readonly string[],
+): MailBlocker | null => {
+  if (!mailAccount) return 'no-account'
+  if (recipients.length === 0) return 'no-recipients'
+  return null
+}
+
+/**
+ * The same cause as a sentence, for the row in *Ce qui sera créé*.
+ *
+ * Full stops, because that column is a list of sentences. `MAIL_BLOCKER_CLAUSE`
+ * below is the same fact without one, for a line that continues into a
+ * consequence.
+ */
+export const MAIL_BLOCKER_SENTENCE: Record<MailBlocker, string> = {
+  'no-account': 'Aucun compte Microsoft connecté.',
+  'no-recipients': 'Aucun destinataire au calendrier.',
+}
+
+/** The same cause mid-sentence, for the line above the draft. */
+export const MAIL_BLOCKER_CLAUSE: Record<MailBlocker, string> = {
+  'no-account': 'aucun compte Microsoft connecté',
+  'no-recipients': 'aucun destinataire au calendrier',
+}

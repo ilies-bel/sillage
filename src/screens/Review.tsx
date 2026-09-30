@@ -35,6 +35,7 @@ import type {
   ReviewIntent,
   ReviewPanel,
 } from '../../electron/core/contracts/review.ts'
+import { MAIL_BLOCKER_CLAUSE, mailBlocker } from '../../electron/core/contracts/review.ts'
 import type { MeetingState } from '../../electron/core/contracts/meeting.ts'
 import type { RecipeId } from '../../electron/core/contracts/recipes.ts'
 import { recipeById } from '../../electron/core/contracts/recipes.ts'
@@ -2520,6 +2521,7 @@ export function Review({ meetingId, onBack, onConfirmed }: ReviewProps) {
               body={edits.mailBody}
               to={panel.mailTo}
               drafting={draftingMail}
+              mailAccount={panel.mailAccount}
               onSubject={(value) => set('mailSubject', value)}
               onBody={(value) => set('mailBody', value)}
             />
@@ -3532,6 +3534,23 @@ interface MailDraftProps {
    * whole job is being believed.
    */
   drafting: boolean
+  /**
+   * **Whether a Microsoft account is connected at all** — the panel's own
+   * `mailAccount`, the same fact `draftIntents` reads.
+   *
+   * `to` is empty in two different situations and this component could not tell
+   * them apart: an invite with no attendees, or no Entra registration — the
+   * build the first demo ships in (DEC-28), where there is no calendar to have
+   * attendees in and no mailbox to draft from either. So it said « aucun
+   * destinataire » on both, and `reviewGate.ts` spends nine lines arguing that
+   * on the second this is *a true sentence about the wrong thing*: a rep goes
+   * looking for people to add to a meeting, which is a search that cannot
+   * succeed. Meanwhile the row in *Ce qui sera créé* said « Aucun compte
+   * Microsoft connecté. » Two sentences about one act, on one painted frame,
+   * 1 700 px apart — and the wrong one on the line this docblock says a rep
+   * reads first.
+   */
+  mailAccount: boolean
   onSubject: (value: string) => void
   onBody: (value: string) => void
 }
@@ -3550,7 +3569,24 @@ interface MailDraftProps {
  * Outlook this text is the one thing a rep can select and paste into their own
  * mail client, and a read-only textarea would take that away to make a point.
  */
-function MailDraft({ subject, body, to, drafting, onSubject, onBody }: MailDraftProps) {
+function MailDraft({
+  subject,
+  body,
+  to,
+  drafting,
+  mailAccount,
+  onSubject,
+  onBody,
+}: MailDraftProps) {
+  /*
+    The one ordering, from `core/contracts/review.ts`, which is the only place
+    `src/` can read it from — `draftIntents` names the same cause in the row
+    below. No account outranks an empty recipient list rather than sitting
+    beside it: it means there is no calendar to have attendees in *and* no
+    mailbox to draft from.
+  */
+  const blocked = mailBlocker(mailAccount, to)
+
   return (
     <section className="mt-block">
       <div className="mb-snug flex items-center gap-inline">
@@ -3588,12 +3624,21 @@ function MailDraft({ subject, body, to, drafting, onSubject, onBody }: MailDraft
         on the same screen, one press before the VerySwing task and the Outlook draft.
       */}
       <p className="text-muted measure mb-hair text-meta">
-        À :{' '}
-        {to.length === 0
-          ? 'aucun destinataire — aucun brouillon ne sera créé, le texte reste copiable'
-          : drafting
-            ? to.join(', ')
-            : `${to.join(', ')} — aucun brouillon ne sera créé, le texte reste copiable`}
+        {/*
+          No « À : » when there is no recipient list to introduce: a blocked
+          draft is a statement about the draft, not a recipient field holding a
+          sentence. With recipients the prefix is what the line is.
+        */}
+        {blocked !== null ? (
+          `${MAIL_BLOCKER_CLAUSE[blocked]} — aucun brouillon ne sera créé, le texte reste copiable`
+        ) : (
+          <>
+            À :{' '}
+            {drafting
+              ? to.join(', ')
+              : `${to.join(', ')} — aucun brouillon ne sera créé, le texte reste copiable`}
+          </>
+        )}
       </p>
       <input
         aria-label="Objet du brouillon"

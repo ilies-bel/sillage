@@ -1176,6 +1176,12 @@ let RECORDING_STOPPED = false
         ]
       : [],
     mailTo: entra ? ['elodie.vasseur@neovia-sante.fr', 'sophie.bertrand@neovia-sante.fr'] : [],
+    /*
+      The panel carries this now, so the line above the draft can name the cause
+      that is actually in the way rather than the one an empty `mailTo` happens
+      to suggest. `review-sans-entra` is the stage where the two differ.
+    */
+    mailAccount: entra,
     overall: 'faible',
     /*
       **Where each generated line came from** (DEC-21).
@@ -1272,7 +1278,15 @@ let RECORDING_STOPPED = false
         label: 'Brouillon de relance (Outlook)',
         summary: entra ? 'Suite à notre échange — renfort data Néovia Santé' : 'Indisponible',
         available: entra,
-        reason: entra ? null : 'Aucun destinataire au calendrier.',
+        /*
+          The cause the *product* gives on this build, which is not the one this
+          row carried. `draftIntents` has named the deeper one since round 25 —
+          no Entra registration means no calendar to have attendees in *and* no
+          mailbox to draft from — and `review:preview` in this same file already
+          answered that way, so `review-sans-entra` showed one sentence on the
+          first frame and a different one after the rep's first keystroke.
+        */
+        reason: entra ? null : 'Aucun compte Microsoft connecté.',
       },
     ],
   }

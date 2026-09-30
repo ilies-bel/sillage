@@ -36,6 +36,7 @@ import type {
   ReviewFieldKey,
   ReviewIntent,
 } from '../contracts/review.ts'
+import { MAIL_BLOCKER_SENTENCE, mailBlocker } from '../contracts/review.ts'
 import { DEFAULT_RECIPE, isFreeForm, recipeById, type RecipeId } from '../contracts/recipes.ts'
 import type { PushIntent, PushIntentKind } from '../contracts/push.ts'
 import type { TranscriptSpan } from '../contracts/transcript.ts'
@@ -724,13 +725,18 @@ export const draftIntents = (input: DraftIntentsInput): DraftedIntent[] => {
         label: INTENT_LABEL[kind],
         summary: mailPossible ? `${edits.mailSubject} → ${mailTo.join(', ')}` : 'Indisponible',
         available: mailPossible,
+        /*
+          The two structural causes come from `core/contracts/review.ts`, which
+          is the only place `src/` can read them from — `MailDraft` names the
+          same one on the line the rep reads first, 1 700px above this row, and
+          named a different one until round 26.
+        */
         reason: mailPossible
           ? null
-          : !mailAccount
-            ? 'Aucun compte Microsoft connecté.'
-            : mailTo.length === 0
-              ? 'Aucun destinataire au calendrier.'
-              : NO_MAIL_SUBJECT,
+          : (() => {
+              const blocked = mailBlocker(mailAccount, mailTo)
+              return blocked === null ? NO_MAIL_SUBJECT : MAIL_BLOCKER_SENTENCE[blocked]
+            })(),
       },
       // A draft, never a send (HR-8). `modules/mail` posts to
       // `/me/messages`, which creates a draft in the rep's mailbox.

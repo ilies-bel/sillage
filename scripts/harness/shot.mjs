@@ -4645,7 +4645,20 @@ const SCREENS = {
         screen's own case.
       */
       await page.getByText('Prêt à envoyer').waitFor()
-      await page.getByText('Aucun destinataire au calendrier.').waitFor()
+      /*
+        **Both sentences about the one act, because the point of this stage is
+        that they agree.** It waited only on the row's, and on the row's *old*
+        wording: « Aucun destinataire au calendrier. », which on this build is
+        a true sentence about the wrong thing — with no Entra registration there
+        is no calendar to have attendees in, so a rep goes looking for people to
+        add to a meeting, a search that cannot succeed. `reviewGate.ts` argues
+        that at length and `draftIntents` has named the deeper cause since round
+        25; `MailDraft`, 1 700px above the row, went on naming the shallow one.
+        Waiting on both is what makes this stage able to fail over a
+        disagreement rather than only over a missing string.
+      */
+      await page.getByText('Aucun compte Microsoft connecté.').waitFor()
+      await page.getByText(/aucun compte Microsoft connecté — aucun brouillon/).waitFor()
     },
   },
 

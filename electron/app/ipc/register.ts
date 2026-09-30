@@ -973,6 +973,15 @@ export const handlers: Handlers = {
         ),
         interlocuteurs: extraction.facts.interlocuteurs,
         mailTo,
+        /*
+          The same fact the two `draftIntents` passes above already read, given
+          to the renderer as well: `mailTo` is empty both when the invite had no
+          attendees and when there is no Entra registration at all, and
+          `MailDraft` — the line the rep reads first — could only say
+          « aucun destinataire » about either. `mailBlocker` in
+          `core/contracts/review.ts` is the one ordering both surfaces read.
+        */
+        mailAccount,
         overall: verification.overall,
         intents: drafted.map((d) => d.view),
         /*
