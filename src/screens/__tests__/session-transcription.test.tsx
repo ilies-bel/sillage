@@ -110,6 +110,53 @@ describe('the column opens on the slate and the transcript is asked for', () => 
     expect(screen.getByText('Deux data engineers confirmés et un lead.')).toBeTruthy()
   })
 
+  /**
+   * **The other toggle — the one the collector does not survive.**
+   *
+   * The test above is named for the property and exercises *Trame ⇄
+   * Transcription*, which `LiveAside` does survive because it is mounted
+   * across it. There is a second way to `showRail === false`, named in
+   * `Session.tsx`'s own docblock: `LiveAside`'s « Masquer » at any width, and
+   * « Mes notes » below 1184. Both **unmount** the collector, so the record it
+   * holds was destroyed and the pane came back saying the call had not started
+   * speaking — « the feature not working on precisely its own use case », which
+   * is the sentence `docs/INVARIANTS.md` uses about the widget's version of
+   * this bug, next to a claim that the session screen does not have it.
+   *
+   * There is no way back during the call: `review:get` answers with no panel
+   * while `recording` (DEC-23), and `review:transcript` is the only channel
+   * that serves the stored record.
+   */
+  test('putting the side panes away and bringing them back keeps the record', async () => {
+    open()
+    await screen.findByRole('button', { name: 'Terminer' })
+
+    append({ id: 's-1', text: 'On a voté le budget ce matin.' })
+    append({ id: 's-2', text: 'Deux data engineers confirmés et un lead.' })
+    toTranscription()
+    expect(screen.getByText('On a voté le budget ce matin.')).toBeTruthy()
+
+    // *Masquer* is not drawn in the Transcription view (it would push the
+    // switch past the column's gutters), so the rep's route back out is Trame
+    // first. That is the gesture, not a detour around one.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Trame' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Masquer' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Afficher les signaux' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Transcription' }))
+    })
+
+    // Everything said before the press is still there.
+    expect(screen.getByText('On a voté le budget ce matin.')).toBeTruthy()
+    expect(screen.getByText('Deux data engineers confirmés et un lead.')).toBeTruthy()
+  })
+
   test('a row is a time, a side and a sentence — and the side is never a person', async () => {
     open()
     await screen.findByRole('button', { name: 'Terminer' })

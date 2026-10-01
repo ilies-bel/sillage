@@ -640,23 +640,30 @@ export function Session({ meetingId, onBack, onReview, onReglages }: SessionProp
           confirmé » staircases. The ceiling is what keeps the other slot from
           being starved on the way up to the breakpoint.
         */}
-        {showRail ? (
-          <aside className="border-subtle bg-card-soft min-h-0 w-[32%] min-w-[280px] max-w-[360px] shrink-0 border-l min-[1184px]:w-[22%] min-[1184px]:min-w-[240px] min-[1184px]:max-w-[300px]">
-            {/*
-              Two views of the same call, and the rep picks (`LiveAside`). The
-              slate is the default and the transcript is opt-in — DEC-38's
-              clause is about a transcript drawn *to prove the tool works*, and
-              proof of life is still the meter in the header.
-            */}
-            <LiveAside
-              meetingId={meetingId}
-              onHide={() => setShowRail(false)}
-              signals={allSignals}
-              recipe={recipe ?? DEFAULT_RECIPE}
-              recording={recording}
-            />
-          </aside>
-        ) : null}
+        {/*
+          Two views of the same call, and the rep picks (`LiveAside`). The
+          slate is the default and the transcript is opt-in — DEC-38's clause
+          is about a transcript drawn *to prove the tool works*, and proof of
+          life is still the meter in the header.
+
+          **`shown`, not a ternary.** This was `{showRail ? <aside>…</aside> :
+          null}`, which unmounted the one component collecting
+          `transcript:appended` — so « Masquer » threw the call's record away
+          and the pane came back saying nothing had been said yet. The column
+          owns its own `<aside>` now and draws nothing when it is put away,
+          which keeps the collector mounted for the length of the meeting, the
+          thing its docblock already claimed. It stays out of `Session` for the
+          reason it always did: the editor's caret must not reconcile every few
+          seconds.
+        */}
+        <LiveAside
+          shown={showRail}
+          meetingId={meetingId}
+          onHide={() => setShowRail(false)}
+          signals={allSignals}
+          recipe={recipe ?? DEFAULT_RECIPE}
+          recording={recording}
+        />
       </div>
     </div>
   )
