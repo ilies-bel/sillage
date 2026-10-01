@@ -138,7 +138,12 @@ export function Splash({ state }: SplashProps) {
         {/*
           What the app is, for the one second a rep spends here on the day they
           are first shown it. `--brand-700` at 6.28:1; the tracking is what
-          makes ten-pixel uppercase readable rather than dense.
+          makes eleven-pixel uppercase readable rather than dense — measured
+          2.42px here, against the 0.99px the `label` rung now carries for a
+          pane eyebrow, which is why this is the one declared `allow` on
+          `check:tokens`' `text-label` + `tracking-*` rule. It said « ten-pixel
+          » from the root commit: `--type-label` was 10px then, `a87cc7f` moved
+          it off the legibility floor, and this line was not touched.
         */}
         <p className="text-brand-700 mt-tight text-label font-semibold uppercase tracking-[0.22em]">
           Compte-rendu de réunion

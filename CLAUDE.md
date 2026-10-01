@@ -179,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code thirty-one times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code thirty-three times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -209,6 +209,14 @@ whose real sentences were failing the predicate the corpus was testing; and
 `Review.test.tsx`'s « with no Microsoft account » staged a *signed-in* panel
 with the calendar's reason on the row, its name and its fixture disagreeing
 with nothing able to tell them apart.
+Round 27 added two, both found while moving one number into a token, and both
+about a **rung**: `Chip.tsx`'s docblock said « the uppercase `label` variant
+keeps `--type-meta` » over code that has said `text-label` since the round that
+wrote the sentence — harmless while the two 11px rungs differed only in name,
+and an argument for taking the eyebrow's tracking back off the moment
+`--label-tracking` landed on one of them; and `Splash.tsx`'s kicker has called
+its own type « ten-pixel » since the root commit, `a87cc7f` having moved
+`--type-label` to 11px without touching the line that justifies its 0.22em.
 - **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the

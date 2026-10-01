@@ -58,8 +58,16 @@ import { cn } from '../lib/utils.ts'
  * « Client », « Rechercher dans la transcription »). One height fewer on every
  * screen that draws both, and the thing a rep presses is now set at the size
  * every other control is set at. The uppercase `label` variant keeps
- * `--type-meta`: it is a word in a row and not a control, which is the
+ * **`--type-label`**: it is a word in a row and not a control, which is the
  * distinction the docblock below already drew about `min-h-[24px]`.
+ *
+ * This sentence said `--type-meta` from the round that wrote it, and the code
+ * under it has said `text-label` throughout. The two are both 11px, so the
+ * claim cost nothing while the rungs differed only in name — and then
+ * `--label-tracking` landed on the `label` rung, which is the eyebrow's
+ * tracking, and `--type-meta` became the rung for 11px that is *not* an
+ * eyebrow. The variant wants the eyebrow. Naming the wrong one here would now
+ * argue for taking the tracking back off.
  */
 const chip = cva('inline-flex shrink-0 items-center', {
   variants: {
