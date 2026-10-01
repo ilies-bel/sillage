@@ -77,7 +77,7 @@ const chip = cva('inline-flex shrink-0 items-center', {
       /** Brand tint. 10.55:1 — the only filled chip that carries text. */
       brand: 'bg-brand-100 text-brand-900 min-h-[24px] rounded-sm px-snug py-hair text-ui',
       /** The uppercase micro-label. Not a control, just a word in a row. */
-      label: 'text-muted text-label font-semibold uppercase tracking-wider',
+      label: 'text-muted text-label font-semibold uppercase',
     },
   },
   defaultVariants: { variant: 'choice' },

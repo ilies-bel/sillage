@@ -256,7 +256,25 @@ module.exports = {
         gutter: 'var(--space-gutter)',
       },
       fontSize: {
-        label: 'var(--type-label)',
+        /*
+         * **The eyebrow rung carries its tracking, on the `title` rung's
+         * precedent twenty lines down.**
+         *
+         * `--type-label` and `--type-meta` are the same 11px worn two ways
+         * (tokens.css): uppercase, tracked and 600 for a section eyebrow,
+         * sentence case and regular for a meta line. The tracking half of that
+         * sentence was never declared — `.pane-label` wrote `0.09em` and the
+         * two call sites that assemble the same eyebrow out of utilities wrote
+         * `tracking-wider`, `0.05em`. Measured on `agenda`@1280×800, the two
+         * uppercase runs on the screen were 11px/600/Inter/rgb(93, 107, 118)
+         * both, and 0.99px against 0.55px.
+         *
+         * So the rung brings it and nothing beside `text-label` has to
+         * remember: tracking is a property of the size and not of the tag.
+         * `text-meta` is the rung for 11px that is *not* an eyebrow, which is
+         * what the three sentence-case call sites of `text-label` wanted.
+         */
+        label: ['var(--type-label)', { letterSpacing: 'var(--label-tracking)' }],
         meta: 'var(--type-meta)',
         ui: 'var(--type-ui)',
         copy: 'var(--type-copy)',

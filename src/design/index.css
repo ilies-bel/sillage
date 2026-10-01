@@ -835,7 +835,10 @@
        together to move it off the 10px legibility floor. */
     font-size: var(--type-label);
     font-weight: 600;
-    letter-spacing: 0.09em;
+    /* The token, for the same reason the size above is one: `text-label` spends
+       the identical number through the `label` rung, and the two eyebrows this
+       product draws were 0.99px here and 0.55px there. */
+    letter-spacing: var(--label-tracking);
     text-transform: uppercase;
     color: var(--text-muted);
   }

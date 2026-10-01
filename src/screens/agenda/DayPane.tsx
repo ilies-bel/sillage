@@ -560,7 +560,7 @@ function EntryRow({ entry, showDay, filled, onOpen, onArm, leaving }: EntryRowPr
         <StateDot
           tone={entry.state === 'recording' ? 'recording' : 'armed'}
           label={entry.state === 'recording' ? STATE_LABEL.recording : 'Prêt'}
-          className="text-label font-semibold uppercase tracking-wider"
+          className="text-label font-semibold uppercase"
         />
       ) : entry.state ? (
         <span className="text-muted shrink-0 text-ui">{STATE_LABEL[entry.state]}</span>

@@ -144,7 +144,7 @@ export function SignalRail({ signals, recipe = DEFAULT_RECIPE }: SignalRailProps
           the plan simply does not exist yet (DEC-43).
         */}
         {slots.length === 0 ? (
-          <p className="text-muted mt-row text-label">
+          <p className="text-muted mt-row text-meta">
             Aucune trame : le plan du compte-rendu sera décidé à la fin, à partir de ce qui a été
             dit.
           </p>

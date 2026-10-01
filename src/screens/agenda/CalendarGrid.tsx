@@ -98,7 +98,7 @@ export function CalendarGrid({
               <th
                 key={day}
                 scope="col"
-                className="text-muted pb-hair text-label font-medium"
+                className="text-muted pb-hair text-meta font-medium"
               >
                 {upperFirst(formatWeekdayShort(noonOf(day)))}
               </th>
@@ -305,7 +305,7 @@ function Legend() {
         reports for the same mark and a census cannot show the same colour under
         two names.
       */}
-      <ul className="text-muted grid grid-cols-1 gap-y-tight text-label">
+      <ul className="text-muted grid grid-cols-1 gap-y-tight text-meta">
         {LEGEND.map(({ mark, label }) => (
           <li key={mark} className="flex items-center gap-tight">
             {/*

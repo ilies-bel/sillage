@@ -133,6 +133,31 @@ const CANCELS = [
     utility: /\bline-clamp-(?!none\b)[a-z0-9]+\b/,
     by: /\b(?:block|flex|grid|inline-block|inline-flex|inline-grid|table|contents)\b/,
     why: 'line-clamp needs `display: -webkit-box`; a display utility beside it wins',
+    fix: 'Drop the display utility, or drop the clamp — the two cannot both be meant.',
+  },
+  /*
+   * **Fourth instance, and the one this family was named for.**
+   *
+   * The `label` rung carries `letterSpacing: var(--label-tracking)` because
+   * `--type-label` *is* « uppercase, tracked and 600 » (tokens.css). A
+   * `tracking-*` beside `text-label` therefore replaces the rung's own
+   * tracking, and it reads in the source as if it were adding something. That
+   * is how the product came to draw one eyebrow at two trackings — measured on
+   * `agenda`@1280×800, « PASSÉES » at 0.99px against « EN COURS » at 0.55px,
+   * identical in size, weight, face, ink and transform.
+   *
+   * `allow` rather than a blanket exception, because there is exactly one
+   * deliberate override and it is not an eyebrow: the splash sets the product's
+   * tagline under the wordmark at `0.22em`, a wide-tracked kicker shown once,
+   * and `Splash.tsx` records why beside it. A second entry here is a decision,
+   * which is the point of the list.
+   */
+  {
+    utility: /\btext-label\b/,
+    by: /\btracking-[a-z0-9[\]._%-]+/,
+    why: 'the `label` rung already carries `--label-tracking`; a `tracking-*` beside it replaces it',
+    fix: 'Drop the `tracking-*`: `text-label` brings `--label-tracking`. For 11px that is not an eyebrow, the rung is `text-meta`.',
+    allow: new Set(['src/screens/Splash.tsx']),
   },
 ]
 
@@ -465,12 +490,16 @@ for (const file of files) {
         `${file}:${i + 1}: ${match[0]} — ${stepPx(match[2])}px is \`--space-${name}\`, write \`${match[1]}-${name}\`\n      ${line.trim()}`,
       )
     }
-    for (const { utility, by, why } of CANCELS) {
+    for (const { utility, by, why, fix, allow } of CANCELS) {
+      if (allow?.has(file)) continue
       const hit = utility.exec(line)
       if (!hit) continue
       const other = by.exec(line)
       if (!other) continue
-      cancelled.push(`${file}:${i + 1}: ${hit[0]} + ${other[0]} — ${why}\n      ${line.trim()}`)
+      cancelled.push({
+        where: `${file}:${i + 1}: ${hit[0]} + ${other[0]} — ${why}\n      ${line.trim()}`,
+        fix,
+      })
     }
   })
   const whole = withoutComments(readFileSync(join(ROOT, file), 'utf8'))
@@ -493,8 +522,15 @@ if (unnamedAccent.length > 0) {
 
 if (cancelled.length > 0) {
   console.error(`\nutilities that cancel each other — the class is right and the rule never applies (${cancelled.length}):\n`)
-  for (const v of cancelled) console.error(`  ${v}`)
-  console.error('\nDrop the display utility, or drop the clamp — the two cannot both be meant.\n')
+  for (const v of cancelled) console.error(`  ${v.where}`)
+  /*
+   * Per pair, because there are two kinds now and one remedy does not describe
+   * both. This line said « Drop the display utility, or drop the clamp » for
+   * every finding, which was true of the only entry on the list the day it was
+   * written and wrong about the eyebrow the moment a second one landed.
+   */
+  for (const fix of new Set(cancelled.map((v) => v.fix))) console.error(`\n${fix}`)
+  console.error('')
   process.exit(1)
 }
 

@@ -754,6 +754,34 @@
   --display-tracking: -1.5px;
 
   /*
+   * **The eyebrow's tracking, which was two numbers for one object.**
+   *
+   * `--type-label`'s own comment above says the rung is « uppercase, tracked
+   * and 600 for a section header » — one size worn two ways, the other being
+   * `--type-meta`. The tracking was not declared anywhere: `.pane-label` in
+   * `index.css` wrote `0.09em` and the two call sites that build the same
+   * eyebrow out of utilities wrote Tailwind's `tracking-wider`, which is
+   * `0.05em`. Measured on the shipped renderer, `agenda`@1280×800 — two
+   * uppercase runs on the whole screen, identical in every other property:
+   *
+   *     « PASSÉES »   11px / 600 / Inter / rgb(93, 107, 118) / 0.99px
+   *     « EN COURS »  11px / 600 / Inter / rgb(93, 107, 118) / 0.55px
+   *
+   * Same size, same weight, same face, same ink, same transform, 80% apart on
+   * the one axis left — which is too small to read as a distinction and too
+   * large to be the same thing. This is the fourth split of this one object:
+   * `4ee37e6` fixed its size, a later round fixed its family, and `.pane-label`
+   * records both.
+   *
+   * It is spent by the `label` **rung** rather than by a utility, which is the
+   * argument `tailwind.config.js` already makes on the `title` rung: tracking
+   * is a property of the size and not of the tag. So `text-label` brings it,
+   * `.pane-label` reads this token, and a `tracking-*` written beside
+   * `text-label` is a cancelling pair `check:tokens` now names.
+   */
+  --label-tracking: 0.09em;
+
+  /*
    * **The wordmark's two remaining settings, so that « one wordmark » is a
    * declaration and not an impression.**
    *
