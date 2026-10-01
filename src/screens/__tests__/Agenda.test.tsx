@@ -1091,6 +1091,70 @@ describe('the calendar asks for the window it draws (meeting:list)', () => {
     expect(after?.to).toBeLessThan(before?.to as number)
   })
 
+  /**
+   * **The range follows the grid, the list follows the selection, and nothing
+   * made them agree.**
+   *
+   * `range` is derived from `month` alone and `inRange` filters on `selected`.
+   * The two are deliberately separate — the comment where `month` is declared
+   * says paging ahead « must not silently move the day whose meetings are
+   * listed » — but the *data request* went with the grid, so one press of
+   * « Mois suivant » asks the store about a window the selected day is not in.
+   * `monthMatrix` spans six weeks, so the overlap covers the last days of the
+   * previous month and no more: a day in the middle of it falls straight out.
+   *
+   * The two tests above are why this was invisible. Both assert the *request* —
+   * that `from`/`to` narrowed — against a responder that answers the same fixed
+   * array whatever it is asked. The question was checked and the answer never
+   * was. This responder bounds on the meeting's anchor, which is what
+   * `Projections.listMeetings` does (`COALESCE(scheduled_start, started_at,
+   * created_at)`).
+   *
+   * What a rep meets is the defect `DayPane.tsx` records as fixed, coming back
+   * through the data path instead of the branch order: with the meeting gone
+   * from `meetings`, `entries.ts` falls back to the armed flag, and a call that
+   * is **recording** is drawn « Prêt ». HR-7 says armed is an offer and never a
+   * recording; this is the home screen saying the opposite, mid-call.
+   */
+  test('paging the grid keeps the day the pane is still showing', async () => {
+    const live = meeting('m-live', {
+      state: 'recording',
+      eventId: 'e1',
+      title: 'Acme — cadrage',
+      scheduledStart: at(SUITE_HOUR - 1),
+      startedAt: at(SUITE_HOUR - 1),
+    })
+    const anchorOf = (m: Meeting): number => m.scheduledStart ?? m.startedAt ?? m.createdAt
+    bridge
+      .when('auth:state', () => ({ status: 'signedIn', account: account() }))
+      // Range-honouring, like the real handler. A fixed array hides the bug.
+      .when('meeting:list', (payload) => {
+        const { from, to } = payload as { from: number | null; to: number | null }
+        if (from === null || to === null) return [live]
+        return anchorOf(live) >= from && anchorOf(live) <= to ? [live] : []
+      })
+      .when('agenda:snapshot', () => ({
+        events: [event('e1', 'Acme — cadrage', SUITE_HOUR - 1)],
+        syncedAt: Date.now(),
+        window: { from: 0, to: 0 },
+        armed: { meetingId: 'm-live', eventId: 'e1', subject: 'Acme — cadrage' },
+        reason: '',
+      }))
+
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    await screen.findByText('En cours')
+
+    await act(async () => {
+      fireEvent.click(within(grid()).getByRole('button', { name: 'Mois suivant' }))
+    })
+
+    // The pane did not move — the H1 is still today — so what it says about
+    // today must not have moved either.
+    expect(screen.getByText('En cours')).toBeTruthy()
+    expect(screen.queryByText('Prêt')).toBeNull()
+  })
+
   test('Liste is the one view that asks for everything', async () => {
     signedOut()
     render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)

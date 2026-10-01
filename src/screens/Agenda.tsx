@@ -169,10 +169,37 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
    * everything (capped by the contract's own 500 — past that, the search below
    * is the reader, and it is not capped by a viewport).
    */
+  /*
+   * The grid's six weeks **and the day the pane is showing**, which are not
+   * always the same window.
+   *
+   * `month` and `selected` are separate on purpose (see where `month` is
+   * declared): paging ahead must not move the day whose meetings are listed.
+   * This asked for `month` alone while `inRange` below filters on `selected`,
+   * so one press of « Mois suivant » asked the store about a window the
+   * selected day was not in — `monthMatrix` overlaps only the last days of the
+   * previous month, so a day in the middle of it fell straight out — and the
+   * day pane went on drawing a title for a day whose meetings it no longer
+   * had. What a rep saw was `entries.ts` falling back to the armed flag for a
+   * call that was *recording*, drawing it « Prêt » (HR-7 inverted, mid-call),
+   * both finished calls losing their only control, and one of them appearing a
+   * second time in the backlog because the de-duplication matches on a
+   * `meetingId` that had become null.
+   *
+   * Widening rather than re-selecting, because re-selecting is the thing the
+   * separation exists to prevent. Day keys are zero-padded `YYYY-MM-DD`, so
+   * comparing them as strings is comparing them as days.
+   *
+   * The span this produces is only ever wider than the grid when the rep has
+   * paged away from their selection, and `listMeetings` caps at the same 500
+   * either way — a cap *Liste* already runs against with no range at all.
+   */
   const range = useMemo(() => {
     const weeks = monthMatrix(month)
-    return spanOf(weeks[0][0], weeks[5][6])
-  }, [month])
+    const first = weeks[0][0]
+    const last = weeks[5][6]
+    return spanOf(selected < first ? selected : first, selected > last ? selected : last)
+  }, [month, selected])
 
   const meetings = useInvoke(
     'meeting:list',
