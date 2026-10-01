@@ -163,8 +163,29 @@ export function Rail({
         the offer stands next to the door it goes through.
       */}
       <div className="mt-auto">
+        {/*
+          **The offer hovers down the ramp, it does not go grey.** Measured on
+          `agenda`@1280×800, 57 of 61 controls change at least one of
+          background-color, color, border-color, box-shadow, text-decoration,
+          opacity or transform under the pointer; three of the four that did not
+          are selected nav items, which have nowhere to go, and the fourth was
+          this row. It is painted `--brand-700` at `font-medium` — the one link
+          in the chrome — and it was the only control in the product that then
+          did nothing when pointed at.
+
+          `hover:bg-card` is the lift every other row here uses (`ITEM`'s
+          neighbours and `SectionNav`'s unselected branch), so the ground change
+          is the rail's own. The ink goes to `--brand-900` rather than
+          `--text-body`: that is the step the ramp already has and the one
+          `primary` uses, and taking the row's blue away on hover would erase
+          the thing that says this is the row about something new.
+        */}
         {updateReady ? (
-          <button type="button" onClick={onUpdate} className={cn(ITEM, 'text-brand-700 font-medium')}>
+          <button
+            type="button"
+            onClick={onUpdate}
+            className={cn(ITEM, 'text-brand-700 hover:bg-card hover:text-brand-900 font-medium')}
+          >
             <RailGlyph d="M12 3v11m0 0 4-4m-4 4-4-4M4 19h16" />
             <span className="min-w-0 flex-1 truncate">Mise à jour prête</span>
           </button>
