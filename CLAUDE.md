@@ -179,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code thirty-three times — five of them numbers that were computed and written down as numbers that were observed, one of those five repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code thirty-five times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -217,6 +217,22 @@ and an argument for taking the eyebrow's tracking back off the moment
 `--label-tracking` landed on one of them; and `Splash.tsx`'s kicker has called
 its own type « ten-pixel » since the root commit, `a87cc7f` having moved
 `--type-label` to 11px without touching the line that justifies its 0.22em.
+Round 28 added two, and the first carries **the sixth and seventh
+computed-as-observed numbers**: `4780bc4` corrected every size in the Whisper catalogue — Tiny
+74 → 61, Base 145 → 130, Small 466 → 486, Medium 1530 → 1614 — and did not
+touch `whisper/onnx.ts`, which does *arithmetic* on them, so five sentences
+across that file and its test went on arguing from the old table. Two of the
+five stated a derived figure: « a single load costs … 2.3× the file » (2.2× of
+486 MB) and « Medium … wants something closer to 3.7 GB », written twice, over
+a function that answers **3.9** — and restoring 1530 makes it answer exactly
+3.7, which is the proof the number was computed rather than seen. The second is
+`whisper-models.verified.json`'s turbo entry, whose note said the row was
+« kept in the catalogue … because it is the only user of `externalDataFormat` »
+— the argument `catalog.ts` **rebuts in the same commit that removed the row**,
+so the ledger was still making a case the code had already thrown out, about a
+row that was no longer there. Both are now pinned by a test rather than a
+sentence: `onnxMemory.test.ts` writes down every catalogue row's requirement,
+so moving a `sizeMb` goes red in the diff that moves it.
 - **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the

@@ -181,9 +181,17 @@ const RUNTIME_BASELINE_GB = 0.5
  * Peak resident bytes per byte of checkpoint, during the load.
  *
  * One measurement, and it is the only one this rests on: two concurrent loads
- * of Small — 466 MB of weights — peaked at 2.1 GB (see `prewarmLocalEngine` in
- * `app/main.ts`), so a single load costs about 1.05 GB, or 2.3× the file.
+ * of Small — 486 MB of weights — peaked at 2.1 GB (see `prewarmLocalEngine` in
+ * `app/main.ts`), so a single load costs about 1.05 GB, or 2.2× the file.
  * Rounded up.
+ *
+ * The peak is the measurement; the ratio is arithmetic on it, and the
+ * denominator was wrong here until round 28. `4780bc4` corrected Small from
+ * 466 MB to 486 — the bundled checkpoint is `encoder_model.onnx` 336.49 MB
+ * fp32 plus `decoder_model_merged_quantized.onnx` 149.52 MB q8, which is the
+ * catalogue's number to the megabyte — and did not touch this file. 2.5 still
+ * rounds up from 2.2, so the constant is unchanged; the sentence that
+ * justifies it was not.
  */
 const LOAD_FACTOR = 2.5
 
@@ -191,14 +199,22 @@ const LOAD_FACTOR = 2.5
  * How much *available* RAM loading this checkpoint needs.
  *
  * It was a flat 2.0 GB for every model, which was wrong in both directions and
- * only ever complained about in one. Whisper Tiny is 74 MB and loads in a few
+ * only ever complained about in one. Whisper Tiny is 61 MB and loads in a few
  * hundred MB; the flat floor refused it on any machine that could not also have
  * run Medium, and told the rep « moins de 2 Go disponibles » with no way to say
  * *of what* — a real one read it as disk space and went to check a drive with
- * 400 GB free on it. The quiet half is worse: Medium is 1530 MB of weights and
- * wants something closer to 3.7 GB, which the flat floor waved through at 2.0 —
- * and an ONNX session that cannot allocate does not fail politely, it takes the
- * process with it.
+ * 400 GB free on it. The quiet half is worse: Medium is 1614 MB of weights and
+ * wants **3.9 GB**, which the flat floor waved through at 2.0 — and an ONNX
+ * session that cannot allocate does not fail politely, it takes the process
+ * with it.
+ *
+ * That 3.9 is read off the function, not computed in prose. It said « closer
+ * to 3.7 GB » for as long as this file has existed, which is exactly what
+ * 1530 MB × 2.5 comes to: `4780bc4` moved Medium to 1614 and left the
+ * paragraph behind, so the sentence was a *computed* number presented as an
+ * observed one, understating the shipped requirement by 200 MB. The figures
+ * are pinned per row in `__tests__/onnxMemory.test.ts` now — restore any of
+ * the old sizes and that test names the row.
  *
  * An unknown id keeps the old flat 2.0: a checkpoint this file has never heard
  * of is exactly where a guess should be conservative.

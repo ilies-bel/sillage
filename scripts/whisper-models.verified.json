@@ -45,7 +45,7 @@
       "transformers": "3.8.1",
       "at": "2026-09-21",
       "where": "commit 4780bc4 — measured against the real engine before the weights were removed from this machine",
-      "note": "Every utterance, not the first. The merged decoder is exported against a newer graph signature than transformers 3.8.1 builds a feed for. The throw is caught per segment, so selecting this row in Réglages transcribes a whole meeting to nothing behind « transcription de l'audio système dégradée ». Kept in the catalogue rather than deleted because it is the only user of externalDataFormat and two whisper.test.ts tests reach that loader path through its id."
+      "note": "Every utterance, not the first. The merged decoder is exported against a newer graph signature than transformers 3.8.1 builds a feed for. The throw is caught per segment, so selecting this row in Réglages transcribed a whole meeting to nothing behind « transcription de l'audio système dégradée ». NOT a catalogue row: 4780bc4 took it out of MODELS, and this entry is the tombstone — check-models.mjs only walks the catalogue, so re-adding the id fails the check in the diff that re-adds it (verified by doing exactly that: 1 problème sur 5 lignes). The note here used to say it was kept in the catalogue because it is the only user of externalDataFormat and two whisper.test.ts tests reach that loader through its id; catalog.ts rebuts that argument in the same commit that removed the row — the loader knowledge moved to EXTERNAL_DATA, where it is a property of a checkpoint rather than of an offer, and both tests pass unchanged."
     },
     "Xenova/whisper-medium": {
       "verdict": "unverified",

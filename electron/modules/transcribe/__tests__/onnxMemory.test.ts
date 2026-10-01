@@ -6,7 +6,7 @@
  * needs no network — does not start. So both directions of a wrong answer cost
  * something real, and both were wrong before these tests existed:
  *
- *  - too strict, loudly: a flat 2.0 GB refused Whisper Tiny, 74 MB of weights,
+ *  - too strict, loudly: a flat 2.0 GB refused Whisper Tiny, 61 MB of weights,
  *    on any machine that could not also have run Medium;
  *  - too lax, silently: the same 2.0 GB waved Medium through, and an ONNX
  *    session that cannot allocate takes the process with it.
@@ -109,8 +109,41 @@ test('a laptop with 1.5 GB free runs Tiny and is refused Medium', () => {
     assert.equal(hasEnoughMemory('Xenova/whisper-tiny'), true)
     assert.equal(hasEnoughMemory('Xenova/whisper-base'), true)
     assert.equal(hasEnoughMemory(DEFAULT_MODEL_ID), true)
-    // Still refused, and rightly: 1530 MB of weights does not fit in 1.5 GB.
+    // Still refused, and rightly: 1614 MB of weights does not fit in 1.5 GB.
     assert.equal(hasEnoughMemory('Xenova/whisper-medium'), false)
+  })
+})
+
+/**
+ * **The figure the prose argues from, pinned to the figure the code computes.**
+ *
+ * `4780bc4` corrected every size in the catalogue — Tiny 74 → 61, Base
+ * 145 → 130, Small 466 → 486, Medium 1530 → 1614 — and did not touch
+ * `onnx.ts`, which does arithmetic on them. Five sentences across that file
+ * and this one went on arguing from the old table, and two of them stated a
+ * *derived* number as an observed one: « a single load costs … 2.3× the file »
+ * (it is 2.2× of 486 MB) and « Medium … wants something closer to 3.7 GB »,
+ * written twice, over a function that answers **3.9**.
+ *
+ * A comment is not a check, so this is the check. Every catalogue row's
+ * requirement is written down, so moving a `sizeMb` — or `LOAD_FACTOR`, or the
+ * baseline — goes red in the diff that moves it instead of leaving a paragraph
+ * to be believed for a round. Adding a row goes red too: a checkpoint nobody
+ * has priced is the shape `whisper-models.verified.json` exists to refuse.
+ */
+test('every catalogue row asks for the amount the shipped function computes', () => {
+  clean(() => {
+    assert.deepEqual(
+      Object.fromEntries(MODELS.map((m) => [m.id, requiredMemoryGB(m.id)])),
+      {
+        // 61 MB and 130 MB both land under the runtime baseline, which is the
+        // floor's whole point: the flat 2.0 used to refuse them.
+        'Xenova/whisper-tiny': 0.5,
+        'Xenova/whisper-base': 0.5,
+        'Xenova/whisper-small': 1.2,
+        'Xenova/whisper-medium': 3.9,
+      },
+    )
   })
 })
 
@@ -165,7 +198,7 @@ test('a free-page count never refuses a machine that has the RAM', () => {
 })
 
 test('the fallback still refuses a machine that could never hold the model', () => {
-  // The one claim os.totalmem() does support. Medium wants 3.7 GB.
+  // The one claim os.totalmem() does support. Medium wants 3.9 GB.
   const medium = requiredMemoryGB('Xenova/whisper-medium')
   assert.equal(memoryDecision(freemem(3), medium, 4), false, '4 GB laptop admitted Medium')
   assert.equal(memoryDecision(freemem(0.1), medium, 16), true, '16 GB laptop refused Medium')
