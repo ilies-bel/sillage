@@ -31,6 +31,7 @@ import {
   atParis,
   dayKeyOf,
   monthMatrix,
+  monthOf,
   noonOf,
   spanOf,
   weekOf,
@@ -350,8 +351,29 @@ describe('a rep can select any day and see it', () => {
   })
 
   test('Semaine widens the same list to the week, without moving the grid', async () => {
-    // Another day of *this* week, whichever weekday the suite runs on — the
-    // one day guaranteed to be outside Jour and inside Semaine.
+    /*
+     * **A chosen date, for the same reason the file above chose an hour.**
+     *
+     * This test widens twice and asserts the row survives both, so `elsewhere`
+     * has to be outside Jour, inside Semaine *and* inside Mois — and the third
+     * of those is a question about where in the month the suite runs. Weeks are
+     * Monday-first (`calendar.ts`), so on any week that straddles a month
+     * boundary `weekOf(today())` hands back days of the neighbouring month and
+     * the *Mois* assertion is false about a list that is correct: on Thursday
+     * 2026-10-01 the first day of the week is 2026-09-28, which October's list
+     * has no business drawing. Red for the ~two days a month the boundary falls
+     * mid-week, green the rest, on no change to the product.
+     *
+     * The hour stays `SUITE_HOUR` and the date is pinned to a Wednesday whose
+     * whole week lies inside its month. Pinned as a UTC instant rather than a
+     * local one because `dayKeyOf` names the *Paris* day and a runner is not
+     * promised to be in Paris: 14:00Z in April is 16:00 in Paris.
+     */
+    vi.setSystemTime(new Date(Date.UTC(2026, 3, 15, 14, 0, 0)))
+    // The premise, checked rather than argued above: every day of this week is
+    // in this month. Without it there is no day that is outside Jour and inside
+    // both of the wider two, and the assertion that fails is the last one.
+    expect(weekOf(today()).every((day) => monthOf(day) === monthOf(today()))).toBe(true)
     const elsewhere = weekOf(today()).find((day) => day !== today()) as DayKey
     bridge
       .when('auth:state', () => ({ status: 'signedIn', account: account() }))
