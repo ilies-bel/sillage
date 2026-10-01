@@ -445,6 +445,48 @@ describe('DEC-21 — ⚠ faible is measured, not decorated', () => {
     expect(screen.getAllByText('1:01')).toHaveLength(2)
   })
 
+  /**
+   * **A line of the document is a third surface, and it borrowed the second's
+   * sentence.**
+   *
+   * `TranscriptFocus.from` is a two-value union and its docblock names exactly
+   * two askers: a row of the form, and *Demander*'s answer. The compte-rendu's
+   * provenance control (DEC-44) is neither, and it was wired to `'answer'` —
+   * so following the commitment that becomes the VerySwing task reported it as
+   * « Extrait cité par la réponse », a different artefact that need not be
+   * anywhere on the screen. `label: 'compte-rendu'` was passed on the same
+   * call and dropped unread in that branch.
+   *
+   * The one feature this product has over a general-purpose notetaker is that
+   * a claim is followable. Saying the wrong thing about where a line came from
+   * is the feature answering the wrong question.
+   */
+  test('following a line of the compte-rendu says it is the document, not an answer', async () => {
+    bridge.when('review:get', () => openGate())
+    bridge.when('review:transcript', () => ({
+      marks: [],
+      segments: [
+        segment('s1', 'far', 0, 'Bonjour, merci pour le point.'),
+        segment('s2', 'rep', 61_000, 'on vous envoie deux CV vendredi'),
+      ],
+    }))
+
+    render(<Review meetingId="m1" onBack={() => {}} />)
+    await screen.findByText('Prêt à envoyer')
+
+    await act(async () => {
+      screen
+        .getAllByRole('button', { name: /^Voir la source dans la transcription/ })[0]
+        ?.click()
+    })
+
+    // The sentence is split across nodes (a fragment plus the `tabular-nums`
+    // moment), so it is read off the container rather than matched as one.
+    const said = () => document.body.textContent ?? ''
+    expect(said()).toMatch(/Ligne du compte-rendu, à 1:01\./)
+    expect(said()).not.toMatch(/Extrait cité par la réponse/)
+  })
+
   test('a citation the transcript does not contain says so, and does not pretend', async () => {
     bridge.when('review:get', () => openGate())
     bridge.when('review:transcript', () => ({

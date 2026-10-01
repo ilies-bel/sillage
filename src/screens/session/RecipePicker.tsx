@@ -151,6 +151,22 @@ export function RecipePicker({ choice, state }: RecipePickerProps) {
   // Past the gate the document is history — it has been sent (DEC-25). A picker
   // that could still rewrite it would be offering to change a record.
   const settled = state === 'done'
+  /*
+   * **Locked for three reasons, and they are not the same sentence.**
+   *
+   * `running` is right about all three — a second choice mid-run would store a
+   * document whose recipe is not the one the picker shows — but the word under
+   * it said « rédaction en cours » for all three too, and at `pushing` that is
+   * false twice over: the document is finished and the rep has already pressed
+   * the one irreversible control in the product. The line above says so.
+   *
+   * It is also not a flicker worth rounding off. An intent queued behind a
+   * down VerySwing keeps the meeting in `pushing`, so the claim that something
+   * is still being written can stand for as long as the outbox is blocked,
+   * 48 px above a notice that already says « Envoi en cours… ». Same word as
+   * that notice, so one act reads as one act.
+   */
+  const word = settled ? 'validé' : state === 'pushing' ? 'envoi en cours' : 'rédaction en cours'
 
   return (
     <div className="flex min-w-0 shrink-0 flex-col">
@@ -165,7 +181,7 @@ export function RecipePicker({ choice, state }: RecipePickerProps) {
            */
           <span className="text-body shrink-0 text-ui">
             {titleOf(choice.current)}
-            <span className="text-muted"> · {settled ? 'validé' : 'rédaction en cours'}</span>
+            <span className="text-muted"> · {word}</span>
           </span>
         ) : (
           <Segmented

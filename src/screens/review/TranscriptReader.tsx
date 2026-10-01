@@ -64,8 +64,18 @@ export interface TranscriptFocus {
    * is not what a quote under an answer from *Demander* is — it came from a
    * sentence the rep asked for, not from a row of the form. Defaulted, so every
    * existing call site keeps the wording it had.
+   *
+   * **Three, because there are three.** It was two while the compte-rendu's
+   * provenance control (DEC-44) was wired to `'answer'`, so following the
+   * commitment that becomes the VerySwing task — « Envoyer 3 CV avec les TJM
+   * associés … avant vendredi » — reported it as « Extrait cité par la
+   * réponse », which is a different artefact and need not be anywhere on the
+   * screen. On a `⚠ faible` line the same wording landed on the claim the rep
+   * is least sure about. The one feature this product has over a
+   * general-purpose notetaker is that a claim is followable; naming the wrong
+   * origin is the feature answering the wrong question.
    */
-  from?: 'field' | 'answer'
+  from?: 'field' | 'answer' | 'document'
 }
 
 interface TranscriptReaderProps {
@@ -357,6 +367,10 @@ export function TranscriptReader({
           <>
             {focus.from === 'answer' ? (
               <>Extrait cité par la réponse, à </>
+            ) : focus.from === 'document' ? (
+              // Not « citation du champ » either: no row of the form was
+              // pressed, and the document is the thing VerySwing receives.
+              <>Ligne du compte-rendu, à </>
             ) : (
               <>
                 Citation du champ <span className="text-body">« {focus.label} »</span>, à{' '}

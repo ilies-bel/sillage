@@ -293,6 +293,35 @@ describe('choosing what the compte-rendu will be', () => {
     expect(screen.queryByRole('button', { name: 'Libre' })).toBeNull()
   })
 
+  /**
+   * **`pushing` is not a run, and the picker said it was.**
+   *
+   * `running` covers `extracting`, `pushing` and `choice.busy`, and one word
+   * served all three. For the first and the third it is true. For `pushing`
+   * the document is finished, the rep has pressed the one irreversible control
+   * in the product, and the picker's own comment two lines above `running`
+   * says so — « Past the gate the document is history — it has been sent ».
+   * Nothing is being written; records are on the wire.
+   *
+   * On the shipped screen the two sentences are 48.2 px apart at both sizes:
+   * « … · rédaction en cours » on the header line, « Envoi en cours… » below
+   * it. And `pushing` is not a flicker — an intent queued behind a down
+   * VerySwing keeps the meeting there — so « rédaction en cours » can sit on
+   * screen for as long as the outbox is blocked, inviting the rep to wait for
+   * a second document that is never coming.
+   *
+   * The only test on this string opened at `extracting`, the one state the
+   * word is true for.
+   */
+  test('once it is sent, the picker says sending and not writing', async () => {
+    open({ state: 'pushing' }, 'Cadrage du renfort data')
+    await screen.findByText(/envoi en cours/)
+
+    expect(screen.queryByText(/rédaction en cours/)).toBeNull()
+    // Still locked, for the reason it was locked before: one control, one run.
+    expect(screen.queryByRole('button', { name: 'Libre' })).toBeNull()
+  })
+
   test('the free recipe’s rail says the plan is decided at the end (DEC-43)', async () => {
     open({ state: 'recording' }, null, 'libre')
 
