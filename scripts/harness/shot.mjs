@@ -421,16 +421,23 @@ const departureOf = (page, target, press) =>
        * catch removals that were being missed.
        */
       observer.observe(document.documentElement, { childList: true, subtree: true })
+      /*
+        `lastAt` as well as the values. The samples alone cannot tell « the fade
+        was cut short » from « the sampler missed the last frames », and on this
+        curve those produce the same number — see `judgeDeparture`.
+      */
+      let lastAt = null
       const tick = () => {
         if (!going.isConnected) return
         samples.push(Number(getComputedStyle(going).opacity))
+        lastAt = performance.now() - started
         requestAnimationFrame(tick)
       }
       control.click()
       requestAnimationFrame(tick)
       await new Promise((resolve) => setTimeout(resolve, 900))
       observer.disconnect()
-      return { samples, detachedAt }
+      return { samples, detachedAt, lastAt }
     },
     { target, press },
   )
@@ -456,8 +463,51 @@ const departureOf = (page, target, press) =>
  * `reglages-sortie`, `review-source-sortie` and `agenda-ligne-sortie` at both
  * smoke sizes, four in flight at a time (`scratch/x-stress.mjs`): **30 mesures,
  * 0 échec, min 0.000, médiane 0.000, max 0.000** against a 0.05 threshold. The
- * distribution has no tail to trip over. Re-run that before widening the
- * threshold, and re-run it before narrowing it.
+ * paragraph then said « the distribution has no tail to trip over », and asked
+ * for a re-run before the threshold moved.
+ *
+ * **It was re-run, and there is a tail.** Two failures on ordinary smoke runs in
+ * one round, each green on the runs either side with the same tree:
+ * `agenda-ligne-sortie` at **0.215, detached 229 ms**, and
+ * `agenda-preparer-refus-sortie` at **0.059, detached 192 ms**. Both are *later*
+ * than the 183–226 ms healthy detach range, which is the signature of dropped
+ * frames at the tail rather than of an early removal.
+ *
+ * The reason is the curve, and it makes the last sample the wrong statistic.
+ * `--ease-in` is `cubic-bezier(0.64, 0, 0.78, 0)`: opacity holds near 1 for most
+ * of the fade and then collapses. Solved against `--motion` 150 ms, 0.44 lands
+ * at 146 ms and 0.001 at 163 ms — the whole visible drop happens inside **one**
+ * 16.7 ms frame, and 0.05 corresponds to 148 ms, a **2 ms** window. A sampler
+ * that misses one `requestAnimationFrame` at the tail reports a number from
+ * before the cliff. 30 of 30 at 0.000 was not a distribution with no tail; it
+ * was 30 runs that happened not to drop that frame.
+ *
+ * **So the question is relational, and it is about the sampler rather than the
+ * element.** Both tracers now record `lastAt` beside the values, and what
+ * decides is the *blind gap* — how long the element went on living after the
+ * last frame anything was read from it. A fade that is genuinely cut short is
+ * removed within a frame of the last thing painted; one that merely outran the
+ * sampler leaves a hole where the frames went missing. A high last opacity is
+ * only a finding when there is no hole to explain it.
+ *
+ * Measured on the four stages that use these tracers, healthy:
+ *
+ *     ligne du jour      190 ms détachée, **11 ms** sans image
+ *     réglages           216 ms,           **0 ms**
+ *     source ▸           184 ms,           **7 ms**
+ *     refus d’armement   209 ms,          **23 ms**
+ *
+ * against the flake's 229 − 151 = **78 ms**. The slack is 34 ms — two frames at
+ * 60 Hz, which is the budget `holdOneMotion` already spends — and it separates
+ * 23 from 78 with room on both sides. Note which way the leniency runs: a
+ * *starved* machine widens the gap, so load makes this more forgiving rather
+ * than less, which is the right direction for the failure it is about.
+ *
+ * What that costs, stated rather than discovered later: a departure that is cut
+ * short *and* happens to be followed by a long sampling hole is excused. The two
+ * first clauses still hold — four frames, two of them between the ends — so an
+ * element that never fades, or that spends its whole motion transparent, is
+ * still a failure whatever the gap.
  */
 const judgeDeparture = (what, exit) => {
   if (exit.error) throw new Error(`${what} : ${exit.error}`)
@@ -470,15 +520,27 @@ const judgeDeparture = (what, exit) => {
         `l’élément disparaît entre deux images (${exit.samples.map((v) => v.toFixed(2)).join(' ')})`,
     )
   }
-  if (last > 0.05) {
+  /*
+    The gap between the last frame the sampler caught and the removal. One frame
+    at 60 Hz is 16.7 ms; two is the budget `holdOneMotion` already spends. A gap
+    wider than that means the element went on living — and fading — through
+    frames nobody sampled, so the last value is the sampler's number and not the
+    product's. A fade that is genuinely cut short has no such gap: it is removed
+    within a frame of the last thing painted.
+  */
+  const blind =
+    typeof exit.lastAt === 'number' ? exit.detachedAt - exit.lastAt : 0
+  const SAMPLER_SLACK_MS = 34
+  if (last > 0.05 && blind <= SAMPLER_SLACK_MS) {
     throw new Error(
-      `${what} : dernière opacité peinte ${last.toFixed(3)} à ${Math.round(exit.detachedAt)} ms — ` +
+      `${what} : dernière opacité peinte ${last.toFixed(3)} à ${Math.round(exit.lastAt ?? 0)} ms, ` +
+        `détachée ${Math.round(blind)} ms plus tard — ` +
         'l’élément est arraché avant la fin de son propre fondu',
     )
   }
   console.log(
     `   ${what} : ${exit.samples.length} images, dernière opacité ${last.toFixed(3)}, ` +
-      `détachée à ${Math.round(exit.detachedAt)} ms`,
+      `détachée à ${Math.round(exit.detachedAt)} ms (${Math.round(blind)} ms sans image)`,
   )
 }
 
@@ -508,7 +570,7 @@ const heldDepartureOf = async (page, selector, trigger, ms = 900) => {
     const w = /** @type {any} */ (window)
     const standing = new Set(document.querySelectorAll(selector))
     const started = performance.now()
-    w.__held = { samples: [], detachedAt: null, fresh: null, seen: false }
+    w.__held = { samples: [], detachedAt: null, lastAt: null, fresh: null, seen: false }
     let going = null
     const observer = new MutationObserver(() => {
       if (going !== null && !going.isConnected && w.__held.detachedAt === null) {
@@ -529,6 +591,7 @@ const heldDepartureOf = async (page, selector, trigger, ms = 900) => {
         return
       }
       w.__held.samples.push(Number(getComputedStyle(going).opacity))
+      w.__held.lastAt = performance.now() - started
       requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
