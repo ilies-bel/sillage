@@ -1403,6 +1403,91 @@ describe('what the backlog says about the list above it', () => {
   })
 })
 
+/*
+ * ── a section is its rows, and with none it does not exist ───────────────────
+ *
+ * `PendingGates` returns `null` on `total === 0`, and its own comment says why:
+ * « Nothing to owe is not an empty state — it is a section that does not
+ * exist. » It did not ask the same question of the rows. `rows` is `total`
+ * minus everything the list above is already drawing, so a rep in *Liste* —
+ * where `inRange` is every entry the app has — got the heading, the count, the
+ * link and an empty `<ul aria-label="Réunions en attente de validation">`.
+ */
+describe('the backlog section when every row it would draw is already on screen', () => {
+  /** Two calls owed, both of them meetings the screen knows about. */
+  const owedTwice = () => {
+    const start = at(10)
+    const long = start - 40 * 86_400_000
+    const here = meeting('m-owed-today', {
+      state: 'awaiting_confirmation',
+      title: 'Nordis — cadrage support',
+      clientName: 'Nordis Retail',
+      createdAt: start,
+      startedAt: start,
+      endedAt: start + 1_800_000,
+    })
+    const older = meeting('m-owed-older', {
+      state: 'awaiting_confirmation',
+      title: 'Lefort — restitution des CV',
+      clientName: 'Groupe Lefort',
+      createdAt: long,
+      startedAt: long,
+      endedAt: long + 1_800_000,
+    })
+    bridge.when('meeting:list', () => [here, older])
+    searched({
+      clients: [],
+      rows: [
+        { meeting: here, status: 'À valider', intents: [], matches: [] },
+        { meeting: older, status: 'À valider', intents: [], matches: [] },
+      ],
+    })
+    signedOut()
+  }
+
+  const switchTo = async (view: string) => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: view }))
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+  }
+
+  test('*Liste* draws the rows and no heading over nothing', async () => {
+    owedTwice()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    // *Jour* keeps the section: one of the two is not on today's list.
+    await screen.findByText('En attente de validation')
+
+    await switchTo('Liste')
+
+    // Not a heading with an empty list under it, and not an empty list either:
+    // the section is gone, which is what `total === 0` already does.
+    expect(screen.queryByText('En attente de validation')).toBeNull()
+    expect(
+      screen.queryByRole('list', { name: 'Réunions en attente de validation' }),
+    ).toBeNull()
+
+    // And nothing was lost by its going: both calls are in the list above, and
+    // the rail still carries the size of the backlog.
+    expect(screen.getByText('Nordis — cadrage support')).toBeTruthy()
+    expect(screen.getByText('Lefort — restitution des CV')).toBeTruthy()
+    expect(screen.getByText('2 appels en attente de validation')).toBeTruthy()
+  })
+
+  test('and *Jour*, which draws only one of them, keeps it', async () => {
+    owedTwice()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+
+    const list = await screen.findByRole('list', {
+      name: 'Réunions en attente de validation',
+    })
+    expect(list.querySelectorAll('li')).toHaveLength(1)
+    expect(screen.getByText('Une autre est dans la liste ci-dessus.')).toBeTruthy()
+  })
+})
+
 // ── US-22: the screen is named by what changed ──────────────────────────────
 
 describe('the page is named by the day, and the day is drawn once', () => {

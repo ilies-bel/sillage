@@ -143,6 +143,26 @@ export function PendingGates({
   // every day and reads on none of them.
   if (total === 0) return null
 
+  /*
+   * **And neither is a backlog the list above is already drawing in full.**
+   *
+   * The guard above asked about the *count*; the rows are the count minus
+   * everything `Agenda` has already put on the screen, and that subtraction can
+   * take all of them. Measured on the shipped renderer at 1280×800, fixture
+   * `agenda`, two calls owed and both of them meetings the app knows about: in
+   * *Mois* and in *Liste* this section was 672×49.05 at y=1273.17 holding the
+   * heading, « 2 », « Les 2 › », a sentence pointing upwards — and
+   * `<ul aria-label="Réunions en attente de validation">` with **0** children,
+   * so a reader navigating by list landed on an empty one. Both calls were on
+   * screen eleven rows up, each carrying « À valider ».
+   *
+   * Nothing is lost by its going. The rail's own note carries the size in every
+   * view and its *À valider* row asks `onHistorique` the same query this
+   * section's link does (`Agenda.tsx`, `onPlace`), so the count and the way to
+   * the full record are both still one press away.
+   */
+  if (rows.length === 0) return null
+
   const shown = rows.slice(0, PENDING_SHOWN)
   /*
    * How many of the backlog are on this screen already, drawn by the day list.

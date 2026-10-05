@@ -58,11 +58,11 @@ const row = (id: string, daysAgo: number): HistoryRow => ({
   matches: [],
 })
 
-const draw = (rows: readonly HistoryRow[]) =>
+const draw = (rows: readonly HistoryRow[], total = rows.length) =>
   render(
     <PendingGates
       rows={rows}
-      total={rows.length}
+      total={total}
       capped={false}
       emphasis={null}
       now={NOW}
@@ -81,6 +81,31 @@ const saidOn = (title: string): string[] => {
     .map((span) => (span.textContent ?? '').trim())
     .filter((text) => text !== '')
 }
+
+/**
+ * **A section is its rows.**
+ *
+ * `total` and `rows` are deliberately different numbers — the count is the whole
+ * backlog and the rows are what is left after `Agenda` removes whatever the list
+ * above is already drawing — and the subtraction can take all of them. The guard
+ * at the top of the file asked only about the count, so `total: 2, rows: []`
+ * drew the heading, the number, « Les 2 › », a sentence pointing upwards and an
+ * empty `<ul>` with the section's accessible name on it. Measured on the shipped
+ * renderer in *Mois* and in *Liste*: 672×49.05 of chrome and zero `<li>`.
+ */
+describe('PendingGates — with nothing left to draw', () => {
+  test('a backlog entirely drawn above is a section that does not exist', () => {
+    const { container } = draw([], 2)
+    expect(container.innerHTML).toBe('')
+  })
+
+  test('and one row left is still a section', () => {
+    draw([row('m-left', 1)], 2)
+    expect(screen.getByText('En attente de validation')).toBeTruthy()
+    expect(screen.getByRole('list', { name: 'Réunions en attente de validation' })).toBeTruthy()
+    expect(screen.getByText('Une autre est dans la liste ci-dessus.')).toBeTruthy()
+  })
+})
 
 describe('PendingGates — the staleness line', () => {
   test('a call waiting less than a week says nothing about how long', () => {
