@@ -857,13 +857,62 @@ describe('the capture row draws consent, and never a platform', () => {
     const probe = bridge.calls.find((call) => call.channel === 'health:retry')
     expect(probe?.payload).toEqual({ connector: 'capture' })
 
-    // The answer is the re-measured consent, so a grant lands on the row that
-    // asked for it rather than on the next launch — and the dot is green once
-    // the probe answers, which is what a real `health:retry` broadcasts.
+    /*
+     * The answer is the re-measured consent, so a grant lands on the row that
+     * asked for it rather than on the next launch.
+     *
+     * **What this models, exactly.** `ok` is what `captureRetryHealth` answers
+     * for *this* staging and only this one: the standing row was the permission
+     * sentence the grant has just invalidated. A reviewer read the sentence
+     * that used to sit here — « which is what a real `health:retry`
+     * broadcasts » — as covering every fault, and it does not: the retry reads
+     * the module and the permission, and a device fault is observed while
+     * capturing. The case below is the other half, and the decision itself is
+     * pinned in `core/domain/__tests__/capturePermission.test.ts`, which is
+     * where it can be driven rather than modelled.
+     */
     await act(async () => {
       bridge.emit('health:changed', { connector: 'capture', health: { state: 'ok' }, at: 2 })
     })
     await waitFor(() => expect(screen.getByText('prêt')).toBeTruthy())
+  })
+
+  test('a fault the probe could not clear keeps its sentence after the press', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
+    bridge.when('capture:permission:request', () =>
+      consent({ state: 'ready', channel: null, reason: null, canOpenSettings: false }),
+    )
+    open()
+    await toBesoins()
+    await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+
+    await act(async () => {
+      fireEvent.click(captureRow().querySelector('button') as HTMLElement)
+    })
+
+    /*
+     * Consent is settled, so the row now reports capture — and what the retry
+     * answers here is the device fault unchanged, because nothing measured the
+     * device. The screen must say so rather than paint the grant's success over
+     * it: this is the row a rep reads before their first client call.
+     */
+    await act(async () => {
+      bridge.emit('health:changed', {
+        connector: 'capture',
+        health: {
+          state: 'degraded',
+          reason: 'micro indisponible — Device unavailable',
+          since: 1,
+          retryable: true,
+        },
+        at: 2,
+      })
+    })
+
+    await waitFor(() =>
+      expect(within(captureRow()).getByText(/micro indisponible/)).toBeTruthy(),
+    )
+    expect(within(captureRow()).queryByText('prêt')).toBeNull()
   })
 
   test('a prompt the rep refused falls through to the pane, in one press', async () => {

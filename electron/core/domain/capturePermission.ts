@@ -297,3 +297,49 @@ export const capturePermissionView = (
   const state = missing.some(canPrompt) ? 'to-grant' : 'denied'
   return { state, channel, reason, canOpenSettings }
 }
+
+/**
+ * **What a capture retry is allowed to say it measured.**
+ *
+ * `main.ts` registers one retry for `capture`, and the press that reaches it is
+ * *Autoriser* on the onboarding screen — the screen a rep meets before their
+ * first client call. That retry can measure exactly two things: whether the
+ * native module loads, and what the OS now answers about the permission. It
+ * cannot measure a device, because the device facts this product has — a
+ * microphone that would not open, an 8 kHz HFP profile, an output route that
+ * moved mid-call — are all observed *while capturing*, and nothing is capturing
+ * when a rep is on the onboarding screen.
+ *
+ * It answered `?? { state: 'ok' }`, which is the one thing it is not entitled
+ * to say. `capturePermissionHealth` returns `null` rather than `ok` precisely
+ * « so the caller can keep whatever *other* fact it had about capture … a
+ * permission probe must not paint over it », and `main.ts`'s boot path honours
+ * that with `?? loaded`. The retry did not: over « micro indisponible — Device
+ * unavailable », one press turned the row green, dropped the sentence and
+ * removed the button, and because that goes through `setHealth` it moved the
+ * general status (DEC-32) and Réglages' capture row with it.
+ *
+ * Four of the five health emissions in `modules/capture/index.ts` are
+ * `retryable: true`, so the button is the majority case rather than the corner.
+ *
+ * So: a fault this probe did not look at survives the probe. The one row it is
+ * entitled to clear is the permission sentence it has just invalidated, and it
+ * is identified by string equality against what `capturePermissionHealth`
+ * itself composed a moment earlier — the same device this repo uses to make the
+ * compte-rendu's lines followable, and not a heuristic over the wording.
+ *
+ * `standing` is the row the orchestrator currently holds, which by DEC-45 may
+ * be a dry run's verdict; that outranks this probe and is kept, which falls out
+ * of the rule rather than needing a case of its own.
+ */
+export const captureRetryHealth = (
+  before: ConnectorHealth | null,
+  after: ConnectorHealth | null,
+  standing: ConnectorHealth,
+): ConnectorHealth => {
+  if (after) return after
+  if (standing.state === 'ok') return standing
+  return before !== null && before.state !== 'ok' && before.reason === standing.reason
+    ? { state: 'ok' }
+    : standing
+}

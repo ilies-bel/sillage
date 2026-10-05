@@ -30,6 +30,7 @@ import { CaptureSession } from '../modules/capture/index.ts'
 import {
   actionFor,
   capturePermissionHealth,
+  captureRetryHealth,
   capturePermissionView,
   type AccessStatus,
   type CaptureAccess,
@@ -1913,10 +1914,22 @@ const boot = async (): Promise<void> => {
    * do nothing.
    */
   orchestrator.registerRetry('capture', async () => {
+    const before = capturePermissionHealth(captureAccess(), Date.now())
     const loaded = CaptureSession.probe()
     if (loaded.state !== 'ok') return loaded
     await requestCaptureAccess()
-    return capturePermissionHealth(captureAccess(), Date.now()) ?? { state: 'ok' }
+    /*
+      `captureRetryHealth` and not `?? { state: 'ok' }`: this probe reads the
+      module and the permission, and a device fault is observed while capturing,
+      so clearing one here would be the probe asserting something it never
+      looked at. It is entitled to clear the permission sentence it has just
+      invalidated and nothing else.
+    */
+    return captureRetryHealth(
+      before,
+      capturePermissionHealth(captureAccess(), Date.now()),
+      orchestrator.health().capture,
+    )
   })
 
   orchestrator.setHealth(

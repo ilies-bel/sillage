@@ -10,12 +10,13 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isWrittenSentence } from '../../contracts/health.ts'
+import { isWrittenSentence, type ConnectorHealth } from '../../contracts/health.ts'
 import { captureRemedyFor } from '../../contracts/permissions.ts'
 import {
   actionFor,
   capturePermissionHealth,
   capturePermissionView,
+  captureRetryHealth,
   canPrompt,
   type AccessStatus,
   type CaptureAccess,
@@ -398,4 +399,63 @@ test('un refus mène au volet, un appareil géré et une absence de réponse à 
   // An older main process, or a channel that threw: the row keeps the health
   // sentence and the retry it already had rather than guessing a remedy.
   assert.equal(captureRemedyFor(null, false), 'none')
+})
+
+/*
+ * `captureRetryHealth` — what the one capture retry is allowed to say it
+ * measured. The defect these pin: over « micro indisponible », one press of
+ * *Autoriser* on the onboarding screen returned `{ state: 'ok' }`, which went
+ * through `setHealth` and so moved the general status and Réglages' row too.
+ */
+const DEVICE: ConnectorHealth = {
+  state: 'degraded',
+  reason: 'micro indisponible — Device unavailable',
+  since: 10,
+  retryable: true,
+}
+
+test('a fault the probe never looked at survives the probe', () => {
+  const permission = capturePermissionHealth(
+    { microphone: 'denied', screen: 'granted' },
+    1,
+  )
+  assert.notEqual(permission, null)
+  // Permission was the problem, it is granted now, and the standing row is a
+  // *device* fault this probe cannot see. It must come back unchanged.
+  assert.deepEqual(captureRetryHealth(permission, null, DEVICE), DEVICE)
+})
+
+test('the one row it clears is the permission sentence it just invalidated', () => {
+  const before = capturePermissionHealth({ microphone: 'denied', screen: 'granted' }, 1)
+  assert.notEqual(before, null)
+  // The standing row IS that sentence, and the grant has invalidated it.
+  assert.deepEqual(captureRetryHealth(before, null, before as ConnectorHealth), {
+    state: 'ok',
+  })
+})
+
+test('a permission still missing is the answer, whatever was standing', () => {
+  const after = capturePermissionHealth({ microphone: 'denied', screen: 'denied' }, 2)
+  assert.notEqual(after, null)
+  assert.deepEqual(captureRetryHealth(null, after, DEVICE), after)
+})
+
+test('an ok row stays ok', () => {
+  assert.deepEqual(captureRetryHealth(null, null, { state: 'ok' }), { state: 'ok' })
+})
+
+/*
+ * DEC-45 — the dry run's verdict outranks a probe, and that falls out of the
+ * rule rather than needing a case of its own: it is not the sentence this probe
+ * composed, so it is not the sentence this probe may clear.
+ */
+test('a dry run’s verdict outranks the probe', () => {
+  const essai: ConnectorHealth = {
+    state: 'degraded',
+    reason: 'rien n’a été entendu pendant l’essai',
+    since: 20,
+    retryable: false,
+  }
+  const before = capturePermissionHealth({ microphone: 'denied', screen: 'granted' }, 1)
+  assert.deepEqual(captureRetryHealth(before, null, essai), essai)
 })
