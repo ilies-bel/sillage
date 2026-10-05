@@ -1507,6 +1507,58 @@ describe('the sentence the client hears (US-19)', () => {
     expect(box().getByText(/déjà la phrase par défaut/)).toBeTruthy()
   })
 
+  /**
+   * **« Déjà la phrase par défaut » was about the store, over a box holding
+   * something else.**
+   *
+   * Driven in Chromium at 1280×800 and 960×600: with the ESN wording stored,
+   * typing an 84-character sentence of one's own left *Rétablir la phrase par
+   * défaut* `disabled` with « c’est déjà la phrase par défaut » beside a box
+   * that no longer held it — and emptying the box (`0 / 400`) left it dead too,
+   * so the vetted wording could not be put back on screen by any control. The
+   * only way back was to press *Enregistrer la phrase* on an empty box, which
+   * is precisely the trick the control exists to replace.
+   *
+   * The test above cannot see it: it reads the control at rest, where the box
+   * and the store agree, so the predicate it is named after is never exercised.
+   * The sentence is the ESN's legal wording — a rep who edits it and wants the
+   * approved one back is the whole case for the button.
+   */
+  test('the wording on screen is what decides it, not the wording stored', async () => {
+    mount()
+    let sent: string | null = null
+    bridge.when('settings:setMentionSentence', ({ value }) => {
+      sent = value
+      return snapshot({ mentionSentence: value.trim() === '' ? MENTION_SENTENCE_DEFAULT : value })
+    })
+    await open('Transcription')
+
+    const own = 'Je vous préviens que je prends des notes avec un outil, dites-moi si cela vous gêne.'
+    await act(async () => {
+      fireEvent.change(field(), { target: { value: own } })
+    })
+    expect(
+      restore().disabled,
+      '« Rétablir la phrase par défaut » est mort devant une phrase qui n’est pas celle par défaut',
+    ).toBe(false)
+    await act(async () => {
+      restore().click()
+    })
+    await waitFor(() => expect(field().value).toBe(MENTION_SENTENCE_DEFAULT))
+    expect(sent).toBe('')
+
+    // And the box a rep has emptied: nothing on screen, nothing stored to undo,
+    // and the approved wording still has to be reachable.
+    await act(async () => {
+      fireEvent.change(field(), { target: { value: '' } })
+    })
+    expect(restore().disabled, 'une boîte vide ne tient pas la phrase par défaut').toBe(false)
+    await act(async () => {
+      restore().click()
+    })
+    await waitFor(() => expect(field().value).toBe(MENTION_SENTENCE_DEFAULT))
+  })
+
   test('nothing in the pane claims the client agreed', async () => {
     /*
      * The same sweep `Widget.test.tsx` runs over the card, on the surface that

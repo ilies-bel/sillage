@@ -987,8 +987,10 @@ function OfflineOnly({
  *
  * **Saving an empty box is how you go back**, and there is a control that says so
  * rather than a trick a rep has to know: *Rétablir la phrase par défaut* is live
- * exactly when what is on screen is not the default, which is the `SettingField`
- * rule — a button is dead precisely when pressing it would do nothing (DEC-26).
+ * whenever the box or the store holds anything but the default, which is the
+ * `SettingField` rule — a button is dead precisely when pressing it would do
+ * nothing (DEC-26). It read the *store* alone, and was therefore dead over a box
+ * the rep had just rewritten; see the comment on `atDefault`.
  *
  * **`[field-sizing:content]` and no scroller.** A four-line sentence in a
  * three-line box is the eleven clipped textareas at the gate, and `--scrollers`
@@ -1011,7 +1013,26 @@ function MentionSentence({
 }) {
   const [draft, setDraft] = useState(value)
   const dirty = draft.trim() !== value.trim()
-  const customised = value.trim() !== MENTION_SENTENCE_DEFAULT
+  /*
+    **Pressing it has to change something, and « something » includes the box.**
+
+    This was `value.trim() !== MENTION_SENTENCE_DEFAULT` — the *stored* wording —
+    so the control read the store while sitting under a textarea the rep had just
+    rewritten. Driven in Chromium at both sizes, with the ESN sentence stored:
+    typing an 84-character sentence of one's own left *Rétablir la phrase par
+    défaut* `disabled` with « c’est déjà la phrase par défaut » next to a box that
+    no longer held it, and emptying the box (`0 / 400`) left it dead as well. The
+    approved wording was then unreachable by any control — the way back was to
+    press *Enregistrer la phrase* on an empty box, which is the trick this button
+    exists to replace, and the sentence is the ESN's legal one.
+
+    So the question is the one the docblock above always claimed: would the press
+    do anything? It puts the default in the box and sends « forget it », so it is
+    dead only when the box *and* the store already hold the default — and then
+    « c’est déjà la phrase par défaut » is true of both.
+  */
+  const atDefault =
+    draft.trim() === MENTION_SENTENCE_DEFAULT && value.trim() === MENTION_SENTENCE_DEFAULT
 
   return (
     <section className="mb-gutter">
@@ -1069,7 +1090,7 @@ function MentionSentence({
               onSave('')
             }}
             {...unavailable(
-              busy || !customised,
+              busy || atDefault,
               busy ? 'enregistrement en cours' : 'c’est déjà la phrase par défaut',
             )}
           >
