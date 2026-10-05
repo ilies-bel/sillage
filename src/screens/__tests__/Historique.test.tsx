@@ -504,6 +504,68 @@ describe('a caption only where the content cannot name itself (US-23)', () => {
   })
 
   /*
+   * **One column, one clock.**
+   *
+   * A mark is stored as wall clock and a turn as an offset into the recording —
+   * both deliberate, both argued in `marks.ts` and `transcript.ts`. The record
+   * then drew them in the same 40px column, the same `text-meta`, the same
+   * `tabular-nums` and the same interleaved list, so « 11:06 » sat two rows
+   * above « 13:32 » and they were the same instant: a rep scanning for « twelve
+   * minutes in » read an hour as an offset, or an offset as an hour.
+   *
+   * The fixture makes the two unmistakable. The mark is at `startedAt +
+   * 814_000`, two seconds after the turn it precedes — 13:34 on the
+   * transcript's clock, 11:06 on the machine's. Asserting both ways round
+   * matters: a test for 13:34 alone would pass on a column that *also* printed
+   * the wall clock somewhere, and it was the mixture that cost the reading.
+   */
+  test('un moment marqué est daté comme les tours qui l’entourent', async () => {
+    answered()
+    bridge.when('history:record', () =>
+      record({
+        marks: [
+          { id: 'mk-1', at: 1_760_000_814_000, note: 'le TJM', segmentId: null, by: 'rep' },
+        ],
+      }),
+    )
+
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await expandTheRow()
+    await screen.findByText('le TJM')
+
+    // The call's own clock, next to the turn's 13:32.
+    expect(screen.getByText('13:34')).toBeTruthy()
+    expect(screen.getByText('13:32')).toBeTruthy()
+    // And never the machine's, which is what the same instant used to read as.
+    expect(screen.queryByText('11:06')).toBeNull()
+  })
+
+  /*
+   * The arithmetic with no answer: a mark older than the recording on screen,
+   * which is the meeting armed, ended and re-recorded that `marks.ts` names as
+   * the reason `at` is stored as wall clock in the first place. « 0:00 » would
+   * be a claim about where it sits; the em dash says the product does not know,
+   * on the scale the column is in.
+   */
+  test('un marquage antérieur à l’enregistrement n’est pas daté à zéro', async () => {
+    answered()
+    bridge.when('history:record', () =>
+      record({
+        marks: [
+          { id: 'mk-0', at: 1_759_999_000_000, note: 'appel précédent', segmentId: null, by: 'rep' },
+        ],
+      }),
+    )
+
+    render(<Historique onBack={() => {}} onReglages={() => {}} />)
+    await expandTheRow()
+    await screen.findByText('appel précédent')
+
+    expect(screen.getByText('—')).toBeTruthy()
+    expect(screen.queryByText('0:00')).toBeNull()
+  })
+
+  /*
    * **A pane with no caption and nothing to copy draws no head row at all.** A
    * call whose transcription failed has no segments, so there is nothing to put on
    * the clipboard either — and an empty 24-pixel band above « Aucune transcription

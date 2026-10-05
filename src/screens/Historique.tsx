@@ -62,7 +62,7 @@ import { useShortcuts } from '../app/shortcuts.ts'
 import { useUpdateReady } from '../app/update.ts'
 import type { SectionId } from './Reglages.tsx'
 import { meetingAnchor } from '../../electron/core/contracts/meeting.ts'
-import { formatDayShort, formatOffset, formatTime, meetingHeading } from '../app/format.ts'
+import { formatDayShort, formatOffset, meetingHeading } from '../app/format.ts'
 import { interleaveMarks, type MomentMark } from '../../electron/core/contracts/marks.ts'
 import {
   Button,
@@ -722,6 +722,7 @@ function Record({
         <Transcript
           segments={record.segments}
           marks={record.marks}
+          startedAt={record.meeting.startedAt}
           quote={located}
           interlocuteurs={record.interlocuteurs}
         />
@@ -944,10 +945,23 @@ const transcriptText = (
 function Transcript({
   segments,
   marks,
+  startedAt,
   quote,
   interlocuteurs,
 }: {
   segments: readonly TranscriptSegment[]
+  /**
+   * When the recording this transcript belongs to began — the reference the
+   * segment offsets were computed against.
+   *
+   * Here because a mark is stored as wall clock and a turn as an offset
+   * (`marks.ts` argues the storage at length, and is right: a meeting armed,
+   * ended and re-recorded has more than one start). What it names as the cost
+   * — « an offset would have to be recomputed against `startedAt` at every call
+   * site » — is this, and it is one call site, against the alternative of two
+   * clocks in one column.
+   */
+  startedAt: number | null
   /**
    * The rep's own marks, made from the widget during the call
    * (`core/contracts/marks.ts`).
@@ -1007,8 +1021,28 @@ function Transcript({
         if (row.kind === 'mark') {
           return (
             <li key={row.key} className="flex gap-snug text-ui">
+              {/*
+                **The call's own clock, because the column next to it is.**
+
+                This printed `formatTime(row.mark.at)` — « 14:32 » — in the same
+                40px, the same `text-meta`, the same `tabular-nums` and the same
+                list as the turns' `formatOffset(segment.startMs)` — « 1:01 ».
+                Two incompatible scales interleaved down one column with nothing
+                telling them apart, so a rep scanning for « twelve minutes in »
+                read a wall clock as an offset, or an offset as an hour.
+                `formatOffset`'s own docblock settles which one belongs here:
+                « the transcript's own clock … never wall time ».
+
+                An em dash where the arithmetic has no answer: no recording to
+                count from, or a mark older than the recording on screen, which
+                is the re-recorded meeting `marks.ts` warns about. « 0:00 »
+                there would be a claim about where the mark sits; this says the
+                product does not know, on the scale the column is in.
+              */}
               <span className="text-brand-700 w-10 shrink-0 tabular-nums text-meta font-semibold">
-                {formatTime(row.mark.at)}
+                {startedAt !== null && row.mark.at >= startedAt
+                  ? formatOffset(row.mark.at - startedAt)
+                  : '—'}
               </span>
               <span className="text-brand-700 w-12 shrink-0 text-meta font-semibold">marqué</span>
               <span className="text-strong measure border-brand-500 min-w-0 flex-1 border-l-2 pl-snug">
