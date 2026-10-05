@@ -53,7 +53,7 @@
  * secret.
  */
 import { X } from 'lucide-react'
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DiagEvent } from '../../electron/core/contracts/diagnostics.ts'
 import type { ConnectorHealth, ConnectorId } from '../../electron/core/contracts/health.ts'
 import {
@@ -537,20 +537,59 @@ export function Reglages({ onBack, section: opensOn, onOnboarding, leaving = fal
  * them their position on the calendar every time they went to look at a
  * connector, which is the trip the header status control exists to make short.
  *
- * Three things it owes, and each is a way modals go wrong:
+ * Four things it owes, and each is a way modals go wrong:
  *
  *  · **A way out that is not the keyboard.** The veil closes it and the pane's
  *    own ✕ closes it. `Échap` closes it too (`app/shortcuts.ts`, installed by
  *    `App.tsx` for every route that has somewhere to go back to) — but a sheet
  *    whose only exit is a key is a sheet a rep gets stuck in.
- *  · **A frame the content cannot burst.** 920×600, and both are ceilings as
- *    well as sizes: at 960×600 — the minimum `app/main.ts` declares — the sheet
- *    takes the window less a margin rather than hanging off the bottom edge.
- *    The pane scrolls inside it; the sheet never does.
+ *  · **The keyboard where the pointer is**, which is the fourth below and the
+ *    one this sheet owed for the life of the screen.
+ *  · **A frame the content cannot burst.** 784 wide and 680 tall at the most,
+ *    and both are ceilings as well as sizes: at 960×600 — the minimum
+ *    `app/main.ts` declares — the sheet takes the window less a margin rather
+ *    than hanging off the bottom edge. The pane scrolls inside it; the sheet
+ *    never does. (Measured on the shipped sheet, `reglages`: 784×680 at
+ *    1280×800 and 784×536 at 960×600. This line said « 920×600 » — the
+ *    argument sixty lines below is the one that chose 784 and rebuts its own
+ *    file's header.)
  *  · **Ease-out on the way in.** `animate-rise-in` is `var(--motion)
  *    var(--ease-out)`, the one curve this product owns for a thing arriving, and
  *    it collapses to nothing under `prefers-reduced-motion` because `--motion`
  *    does.
+ *
+ * **The fourth: the keyboard goes where the pointer goes.** This sheet declared
+ * itself `aria-modal="true"`, stopped every press with its veil — and left real
+ * focus outside itself. Driven on the `reglages` stage, both smoke sizes: focus
+ * after opening was BUTTON « Réglages », the trigger, *outside* the dialog; of
+ * 78 focusable elements on screen 64 were behind the veil and 0 were hidden
+ * from anything; of 90 presses of `Tab`, 76 landed on a background control and
+ * 14 in the sheet; and one `Tab` then `Entrée` left the sheet and started an
+ * ad-hoc meeting from under the veil. A pointer press on the same control was
+ * refused. So the product decided one thing with the mouse and the opposite
+ * with the keyboard, on the screen that holds the CRM credentials, while
+ * telling a screen reader that nothing outside this dialog exists.
+ *
+ * Two halves, each in the file that owns the element it moves focus to. The
+ * background is made `inert` by `App.tsx`, which is the composition and the
+ * only place that knows what is behind the sheet; the focus is put *into* the
+ * sheet here, on mount, because this is the only place that holds the sheet. On
+ * the way out `useReturnFocus` gives it back to the trigger — which is what
+ * `Échap` already appeared to do only because focus had never left it.
+ *
+ * `tabIndex={-1}` on the frame rather than reaching for the first control: the
+ * dialog's own `aria-label` is what a reader should hear first, and the first
+ * control is a section in the rail, so landing on it would announce
+ * « Transcription » and skip the fact that a dialog opened. It is **not** a tab
+ * stop — `-1` means focusable, never reachable by `Tab` — so the frame is in
+ * the cycle exactly once, as the place the rep starts.
+ *
+ * Rendered three times by `Reglages` — loading, failed, and the settled screen
+ * — and all three are the same element in the same position, so React reuses
+ * one `Sheet` and this effect runs once per opening rather than once per state.
+ * Measured (`Reglages.test.tsx`, « a snapshot that lands after the opening »):
+ * `settings:snapshot` resolving after the mount does not take focus back off
+ * whatever the rep had moved it to.
  */
 function Sheet({
   title,
@@ -581,6 +620,12 @@ function Sheet({
   leaving: boolean
   children: ReactNode
 }) {
+  /** The frame, so the opening can put the keyboard inside it. See the header. */
+  const frame = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    frame.current?.focus()
+  }, [])
+
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center p-gutter">
       {/*
@@ -601,6 +646,8 @@ function Sheet({
       />
 
       <div
+        ref={frame}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Réglages"

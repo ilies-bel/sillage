@@ -31,6 +31,7 @@ import { MENTION_SENTENCE_DEFAULT } from '../../../electron/core/contracts/menti
 import type { SettingsSnapshot } from '../../../electron/core/contracts/settings.ts'
 import type { UpdateStatus } from '../../../electron/core/contracts/update.ts'
 import { fakeBridge, installBridge, type FakeBridge } from '../../test/appBridge.ts'
+import { App } from '../../App.tsx'
 import { Reglages } from '../Reglages.tsx'
 import { formatAgo } from '../../app/format.ts'
 import {
@@ -1713,5 +1714,251 @@ describe('a refusal on this screen reaches the rep', () => {
     refusing = false
     await press()
     await waitFor(() => expect(screen.queryByText(REFUS)).toBeNull())
+  })
+})
+
+/**
+ * **The sheet is a modal for the keyboard too — and only the composition can
+ * say so.**
+ *
+ * Every block above renders `<Reglages onBack={…} />`: the sheet with nothing
+ * behind it, so there is nothing to tab into, no trigger to give focus back to,
+ * and no screen to declare out of reach. The defect lived in exactly that gap.
+ * On the shipped `reglages` stage, at 1280×800 and 960×600 alike, the sheet
+ * declared `aria-modal="true"`, refused every pointer press with its veil — and
+ * left focus on BUTTON « Réglages », outside the dialog, with 64 of the 78
+ * focusable elements on screen behind the veil and none of them hidden from
+ * anything. Of 90 presses of `Tab`, 76 landed on a background control; one
+ * `Tab` then `Entrée` started an ad-hoc meeting, and aimed at a day row's
+ * *Ouvrir* it opened a live recording. So these mount `App`, which is the only
+ * place the sheet and the screen under it exist together.
+ *
+ * **What jsdom can say and what it cannot.** `focus()`,
+ * `document.activeElement` and the attribute are real here, so « focus goes
+ * into the sheet », « the background is declared inert » and « focus comes back
+ * to the trigger » are executed rather than asserted. jsdom does **not**
+ * implement `inert`: it will happily focus a control inside an inert subtree,
+ * and it has no tab order at all. That half is measured in Chromium instead —
+ * 90 `Tab` and 90 `Maj Tab` from a freshly opened sheet land 84 times in the
+ * dialog, 6 times on `<body>` at the wrap and **0** times outside, at both
+ * smoke sizes — and the numbers are in the commit that added this block. What a
+ * jsdom guard can hold is the mechanism and the two halves of the focus move:
+ * taking `inert={sheetOpen}` out of `App.tsx` reddens the second test, and
+ * taking the mount effect out of `Sheet` reddens the first and the third.
+ */
+describe('the sheet is a modal for the keyboard, not only for the pointer', () => {
+  const boot = () => ({
+    store: { state: 'ready' as const, value: 'ouverte · sur cette machine' },
+    devices: { state: 'ready' as const, value: 'prêtes' },
+    transcription: { state: 'ready' as const, value: 'Whisper (local)' },
+    version: '0.1.1',
+  })
+
+  const searched = () =>
+    bridge.when('history:search', (payload) => ({
+      query: payload.query ?? '',
+      filter: {
+        client: payload.filter?.client ?? null,
+        periode: payload.filter?.periode ?? ('toute' as const),
+        statut: payload.filter?.statut ?? ('tous' as const),
+        intention: payload.filter?.intention ?? ('toutes' as const),
+      },
+      scanned: 0,
+      clients: [],
+      rows: [],
+    }))
+
+  /**
+   * The whole window, staged the way a rep meets it: boot answered, first run
+   * behind them, no Microsoft account (DEC-28), an empty day.
+   *
+   * `settings` is a parameter because one test below needs the sheet to open
+   * *before* the snapshot lands, which is the state the shipped sheet spends
+   * its first frames in.
+   */
+  const mountApp = (settings: () => SettingsSnapshot | Promise<SettingsSnapshot> = () => snapshot()) => {
+    searched()
+    bridge
+      .when('boot:state', boot)
+      .when('onboarding:state', () => ({ seen: true }))
+      .when('auth:state', () => ({ status: 'signedOut' as const }))
+      .when('agenda:snapshot', () => ({
+        events: [],
+        syncedAt: 0,
+        window: { from: 0, to: 0 },
+        armed: null,
+        reason: 'application Entra non configurée',
+      }))
+      .when('meeting:list', () => [])
+      .when('settings:snapshot', settings)
+      .when('diagnostics:recent', () => [])
+      .when('update:status', () => updateStatus())
+    return render(<App />)
+  }
+
+  /**
+   * The rail's own *Réglages* — the trigger in the shipped product, and the one
+   * the harness presses. There is exactly one on the calendar.
+   */
+  const trigger = async () => await screen.findByRole('button', { name: 'Réglages' })
+
+  const openSheet = async () => {
+    const button = await trigger()
+    button.focus()
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    await screen.findByRole('dialog', { name: 'Réglages' })
+    return button
+  }
+
+  /** `Échap`, on `window`, which is where `app/shortcuts.ts` listens. */
+  const escape = async () => {
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Escape' })
+      // `useDismiss` holds the sheet for one `--motion`, which reads as 0ms in
+      // jsdom because the token is unreadable there — two frames and a tick.
+      await new Promise((resolve) => setTimeout(resolve, 80))
+    })
+  }
+
+  test('opening it puts the keyboard inside the dialog', async () => {
+    mountApp()
+    await openSheet()
+
+    const dialog = screen.getByRole('dialog', { name: 'Réglages' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    // The frame itself, not its first control: a reader hears the dialog's name
+    // before a section name. `-1` keeps it out of the cycle afterwards.
+    expect(document.activeElement).toBe(dialog)
+    expect(dialog.getAttribute('tabindex')).toBe('-1')
+  })
+
+  test('the screen behind it is declared inert, and the sheet is not', async () => {
+    mountApp()
+    const button = await openSheet()
+
+    const inert = document.querySelectorAll('[inert]')
+    expect(inert).toHaveLength(1)
+    // The trigger — and therefore the calendar, the search field and every day
+    // cell — is inside that subtree.
+    expect(button.closest('[inert]')).toBe(inert[0])
+    expect(screen.getByRole('dialog', { name: 'Réglages' }).closest('[inert]')).toBeNull()
+  })
+
+  test('Échap gives the keyboard back to the control that opened it', async () => {
+    mountApp()
+    const button = await openSheet()
+    await escape()
+
+    expect(screen.queryByRole('dialog', { name: 'Réglages' })).toBeNull()
+    // The same node, not a new one with the same name: the calendar is not
+    // rebuilt by the sheet closing, so the rep's day survives it too.
+    expect(button.isConnected).toBe(true)
+    expect(document.activeElement).toBe(button)
+    expect(document.querySelectorAll('[inert]')).toHaveLength(0)
+  })
+
+  test('the ✕ gives it back too, and that is the gesture that used to lose it', async () => {
+    mountApp()
+    const button = await openSheet()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Fermer les réglages' }))
+      await new Promise((resolve) => setTimeout(resolve, 80))
+    })
+
+    expect(screen.queryByRole('dialog', { name: 'Réglages' })).toBeNull()
+    expect(document.activeElement).toBe(button)
+  })
+
+  /**
+   * The sheet is rendered three times by `Reglages` — loading, failed, settled
+   * — at one position, so React reuses one `Sheet` and the mount effect runs
+   * once per opening. If it ran per state, the snapshot landing would snatch
+   * focus back off whatever the rep had reached in the meantime.
+   */
+  test('a snapshot that lands after the opening does not take focus back', async () => {
+    let answer: (value: SettingsSnapshot) => void = () => {}
+    const pending = new Promise<SettingsSnapshot>((resolve) => {
+      answer = resolve
+    })
+    mountApp(() => pending)
+    const dialog = await (async () => {
+      await openSheet()
+      return screen.getByRole('dialog', { name: 'Réglages' })
+    })()
+    expect(document.activeElement).toBe(dialog)
+    expect(screen.getByText('Chargement…')).toBeTruthy()
+
+    // The rep moves on while « Chargement… » is up.
+    const close = screen.getByRole('button', { name: 'Fermer les réglages' })
+    close.focus()
+    await act(async () => {
+      answer(snapshot())
+      await pending
+    })
+    await screen.findByRole('navigation', { name: 'Sections des réglages' })
+
+    expect(document.activeElement).toBe(close)
+  })
+
+  /**
+   * **First run is the other composition, and it is the one with « Passer » on
+   * it.** The sheet is reached from step 2's *Réglages ›* on a required
+   * subsystem that needs a decision rather than a retry. Behind the veil sit
+   * *Retour*, *Continuer* and *Passer* — which ends first run altogether —
+   * and in Chromium, before this, 17 of 60 `Tab` presses landed on them at
+   * 1280×800 and 21 of 60 at 960×600.
+   */
+  test('first run keeps its step behind the sheet, and gets its focus back', async () => {
+    searched()
+    bridge
+      .when('boot:state', boot)
+      .when('onboarding:state', () => ({ seen: false }))
+      .when('onboarding:seen', () => ({ seen: true }))
+      .when('health:snapshot', () => ({
+        capture: { state: 'ok' as const },
+        transcribe: { state: 'ok' as const },
+        llm: {
+          state: 'down' as const,
+          reason: 'aucun modèle de langage configuré',
+          since: 1,
+          retryable: false,
+        },
+        calendar: { state: 'ok' as const },
+        crm: { state: 'ok' as const },
+        mail: { state: 'ok' as const },
+      }))
+      .when('settings:snapshot', () => snapshot())
+      .when('diagnostics:recent', () => [])
+      .when('update:status', () => updateStatus())
+    render(<App />)
+
+    // Found before the `act`, not inside it: a `findBy*` nested in an `act`
+    // callback cannot flush the render it is waiting for, and the splash is
+    // still up on the first frame.
+    const carryOn = await screen.findByRole('button', { name: 'Continuer' })
+    await act(async () => {
+      fireEvent.click(carryOn)
+    })
+    await screen.findByRole('heading', { name: 'Ce dont Sillage a besoin' })
+    const detour = screen.getByRole('button', { name: 'Réglages ›' })
+    const skip = screen.getByRole('button', { name: 'Passer' })
+    detour.focus()
+    await act(async () => {
+      fireEvent.click(detour)
+    })
+
+    const dialog = await screen.findByRole('dialog', { name: 'Réglages' })
+    expect(document.activeElement).toBe(dialog)
+    expect(skip.closest('[inert]')).not.toBeNull()
+    expect(document.querySelectorAll('[inert]')).toHaveLength(1)
+
+    await escape()
+    // The step is still there — it was never unmounted — and so is its button.
+    expect(screen.getByRole('heading', { name: 'Ce dont Sillage a besoin' })).toBeTruthy()
+    expect(detour.isConnected).toBe(true)
+    expect(document.activeElement).toBe(detour)
+    expect(document.querySelectorAll('[inert]')).toHaveLength(0)
   })
 })

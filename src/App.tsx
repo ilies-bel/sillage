@@ -26,6 +26,7 @@ import { Reglages, type SectionId } from './screens/Reglages.tsx'
 import { Onboarding, type Step } from './screens/Onboarding.tsx'
 import { useShortcuts } from './app/shortcuts.ts'
 import { useDismiss } from './app/useDismiss.ts'
+import { useReturnFocus } from './app/useReturnFocus.ts'
 import { NO_FILTER } from './screens/search/filters.ts'
 import { Splash } from './screens/Splash.tsx'
 
@@ -183,6 +184,54 @@ export function App() {
     boot.state.status === 'failed' ||
     (boot.state.status === 'ready' && bootAnswered(boot.state.value))
 
+  /*
+   * First run is on screen — with or without the sheet over it. One expression
+   * instead of the two inline copies this was, because the two branches below
+   * that read it differ only by the sheet.
+   */
+  const firstRun =
+    replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen)
+
+  /**
+   * **A sheet is drawn, and the screen behind it is out of reach** — which until
+   * now meant out of reach of the *pointer* only.
+   *
+   * The veil stops every press (measured: a click on « Démarrer une réunion »
+   * behind it times out at 2 500 ms and the sheet stays open) and
+   * `aria-modal="true"` tells a reader that nothing outside the dialog exists.
+   * Real focus was told neither: on the `reglages` stage, at 1280×800 and
+   * 960×600 alike, 64 of the 78 focusable elements on screen were behind the
+   * veil, none of them hidden from anything, and of 90 presses of `Tab` 76
+   * landed on one of them. One `Tab` and one `Entrée` started an ad-hoc meeting
+   * from under the veil; aimed at a day row's *Ouvrir* it opened a live
+   * recording, and on first run « Passer » behind the veil skips the
+   * onboarding.
+   *
+   * `inert` rather than a focus trap, and the choice is measured rather than
+   * tasteful: it is one attribute, it takes the subtree out of the tab order
+   * **and** out of the accessibility tree — so `aria-modal` becomes true of the
+   * document instead of a claim about it — and it needs no `keydown` of its own
+   * beside the three ways out this screen already has. Driven both ways round:
+   * 90 `Tab` and 90 `Maj Tab` from a freshly opened sheet land 84 times inside
+   * the dialog, 6 times on `<body>` at the wrap, and **0** times outside. A
+   * trap would have to re-implement what `Tab` means, including `Maj Tab` off
+   * the first control and every focus a script moves, and it would leave the
+   * background in the reader's tree while the dialog says it is not there.
+   *
+   * It is exactly the condition under which a sheet is rendered below, and that
+   * matters in one direction only: « Revoir la présentation » replaces the
+   * screen *behind* the sheet, so the rep is left on a first-run step that must
+   * not be inert. `firstRun` is the branch that happens in, and `inReglages` is
+   * null by then.
+   */
+  const sheetOpen = bootReady && (firstRun ? inReglages !== null : route.screen === 'reglages')
+  /*
+   * Called before the first early return, as a hook must be, and with the whole
+   * condition rather than one branch's — the way out of the sheet is a route
+   * change in this component either way.
+   */
+  useReturnFocus(sheetOpen)
+
   if (!bootReady) {
     const state: BootState | null = boot.state.status === 'ready' ? boot.state.value : null
     return <Splash state={state} />
@@ -206,64 +255,84 @@ export function App() {
   /*
    * Réglages opened from first run, and the way back out of it is *back into*
    * first run — not to the calendar the rep has never reached.
+   *
+   * **One branch, not two.** This was two returns whose JSX differed only by
+   * the sheet beside the onboarding, and keeping them apart would have cost the
+   * thing the comment below claims: React reuses a fiber by type and position,
+   * so `[Onboarding, sheet]` → `Onboarding` keeps the step the rep was on,
+   * while `[wrapper, sheet]` → `Onboarding` would throw the screen away and
+   * rebuild it the moment the sheet closed. The wrapper the sheet needs has to
+   * be in both states, so the two states are one branch.
    */
-  if (inReglages && (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen))) {
+  if (firstRun) {
     /*
       The sheet, over the step the rep left — not instead of it. Réglages is a
       drawer (V2), so first run stays on screen behind the veil and coming back
-      out of it is the same screen rather than a re-mount.
+      out of it is the same screen rather than a re-mount. Measured through a
+      marked DOM node, both smoke sizes: the step's own « Réglages › » button is
+      the same element after the sheet has been and gone, and focus is back on
+      it.
     */
     return (
       <>
-        <Onboarding
-          onDone={() => {
-            setReplay(false)
-            onboarding.set({ seen: true })
-          }}
-          onReglages={({ section, step }) => {
-            setResume(step)
-            setInReglages(section)
-          }}
-          initialStep={resume}
-        />
-        <Reglages section={inReglages} leaving={reglagesLeaving} onBack={dismissReglages} />
+        {/*
+          `h-full` because `#root` is `height: 100%` and `Onboarding`'s own root
+          is `h-full` — the wrapper passes the height straight through, measured
+          at 0,0 1280×800 and 0,0 960×600 with and without it. It exists for
+          `inert`, whose argument is on `sheetOpen` above.
+        */}
+        <div className="h-full" inert={sheetOpen}>
+          <Onboarding
+            onDone={() => {
+              setReplay(false)
+              onboarding.set({ seen: true })
+            }}
+            /*
+              **Réglages is a detour, not an exit.**
+
+              It used to mark the onboarding seen and navigate, which meant the
+              two rows whose remedy is a setting were one-way doors: the rep who
+              left by the one link that actually fixes their problem never saw
+              step 3, and never saw this screen again. That is the last rep who
+              should lose it.
+
+              So the flag is not written here — `Onboarding` records it, on every
+              exit, including this one, so a rep who quits from Réglages is still
+              not nagged — and the route is remembered instead. Coming back out
+              of Réglages lands on the step they left.
+            */
+            onReglages={({ section, step }) => {
+              setResume(step)
+              setInReglages(section)
+            }}
+            initialStep={resume}
+          />
+        </div>
+        {inReglages !== null ? (
+          <Reglages section={inReglages} leaving={reglagesLeaving} onBack={dismissReglages} />
+        ) : null}
       </>
-    )
-  }
-
-  if (replay || (onboarding.state.status === 'ready' && !onboarding.state.value.seen)) {
-    return (
-      <Onboarding
-        onDone={() => {
-          setReplay(false)
-          onboarding.set({ seen: true })
-        }}
-        /*
-          **Réglages is a detour, not an exit.**
-
-          It used to mark the onboarding seen and navigate, which meant the two
-          rows whose remedy is a setting were one-way doors: the rep who left by
-          the one link that actually fixes their problem never saw step 3, and
-          never saw this screen again. That is the last rep who should lose it.
-
-          So the flag is not written here — `Onboarding` records it, on every
-          exit, including this one, so a rep who quits from Réglages is still not
-          nagged — and the route is remembered instead. Coming back out of
-          Réglages lands on the step they left.
-        */
-        onReglages={({ section, step }) => {
-          setResume(step)
-          setInReglages(section)
-        }}
-        initialStep={resume}
-      />
     )
   }
 
   return (
     <div className="bg-canvas flex h-full flex-col">
-      <div className="min-h-0 flex-1">
-        {route.screen === 'agenda' ? (
+      {/*
+        **The screen, and `inert` while a sheet is over it** — the argument is
+        on `sheetOpen` above. It goes on the box that already exists rather than
+        on a wrapper, and the sheet moved out from under it to be its sibling,
+        for two reasons: `inert` is inherited, so a sheet inside this box would
+        have been inert along with everything else; and the calendar is then one
+        child in one position in both the `agenda` and the `reglages` branch,
+        which is what lets React keep it — and the rep's day, and the button
+        focus comes back to — across the sheet opening and closing. The sheet is
+        `fixed inset-0` with no transformed ancestor either side of the move, so
+        it paints in the same place: measured 784×680 at 248,60 (1280×800) and
+        784×536 at 88,32 (960×600), before and after, and the calendar's own box
+        is 240,134 287×421 / 188,118 215×421 with the sheet open or closed.
+      */}
+      <div className="min-h-0 flex-1" inert={sheetOpen}>
+        {route.screen === 'agenda' || route.screen === 'reglages' ? (
           <Agenda
             onOpen={open}
             onHistorique={historique}
@@ -276,29 +345,6 @@ export function App() {
             query={route.query}
             filter={route.filter}
           />
-        ) : route.screen === 'reglages' ? (
-          /*
-            **The sheet is drawn over the calendar, which stays mounted.**
-
-            Réglages stopped being a screen (V2): a rep who opens it to look at a
-            connector has not left the day they were on, and replacing the window
-            made them find it again on the way back. The route is still a route —
-            `Échap` and the ✕ both pop it — but what it renders is the calendar
-            plus a dialog over it.
-          */
-          <>
-            <Agenda
-              onOpen={open}
-              onHistorique={historique}
-              onReglages={reglages}
-            />
-            <Reglages
-              section={route.section}
-              leaving={reglagesLeaving}
-              onBack={dismissReglages}
-              onOnboarding={() => setReplay(true)}
-            />
-          </>
         ) : route.screen === 'review' ? (
           <Review key={route.meetingId} meetingId={route.meetingId} onBack={back} onConfirmed={back} />
         ) : (
@@ -313,6 +359,24 @@ export function App() {
           />
         )}
       </div>
+
+      {/*
+        **The sheet is drawn over the calendar, which stays mounted.**
+
+        Réglages stopped being a screen (V2): a rep who opens it to look at a
+        connector has not left the day they were on, and replacing the window
+        made them find it again on the way back. The route is still a route —
+        `Échap` and the ✕ both pop it — but what it renders is the calendar plus
+        a dialog over it.
+      */}
+      {route.screen === 'reglages' ? (
+        <Reglages
+          section={route.section}
+          leaving={reglagesLeaving}
+          onBack={dismissReglages}
+          onOnboarding={() => setReplay(true)}
+        />
+      ) : null}
     </div>
   )
 }
