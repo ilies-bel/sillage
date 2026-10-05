@@ -179,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code thirty-seven times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and ten of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code forty-two times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and twelve of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -233,6 +233,33 @@ so the ledger was still making a case the code had already thrown out, about a
 row that was no longer there. Both are now pinned by a test rather than a
 sentence: `onnxMemory.test.ts` writes down every catalogue row's requirement,
 so moving a `sizeMb` goes red in the diff that moves it.
+Round 30 added five, and **three of them were an instrument describing a
+product that does not exist**. `bridge-stub.mjs`'s transcription table painted
+four rows, of which three were invented: `local-whisper-large` / « Whisper
+large-v3 (local) » against a registry declaring exactly one local engine;
+`soniox`, a provider the app has never offered; and « Azure Speech — France
+Centre » for the registry's « Azure Speech (France Central) », id and label both
+wrong. Its refusal — « poids absents de cette machine — 1,5 Go à installer » —
+is composed nowhere in the tree (`providerRows.refusal` says « non installé sur
+cette machine »), and 1,5 Go is in no catalogue row either. So every Réglages
+staging photographed a table a rep cannot see and the fourteen passes measured
+its contrast, its rhythm and its cells. **The cost was a vacuous gate**:
+`shot.mjs`'s `reglages-hors-ligne` — the one stage asserting DEC-37's promise —
+waited for « Azure Speech — France Centre » to reach `state: 'detached'`, which
+an element that never existed satisfies instantly, so the stage passed whether
+the switch filtered anything or not. Its own comment, two lines above, warns
+that « a selector that matches prose is a stage that passes while the thing it
+is about is still on screen »; a selector matching *nothing* is that defect one
+notch worse, and the fixture had the filter all along. The wait is two-sided now
+— present, press, gone — and breaking `settingsSnapshot`'s residency filter
+reddens it, which it did not before. The other two: `Reglages.tsx`'s diagnostics
+docblock called `retentionDays` « the retention setting » from the root commit,
+in the one section that states a policy and offers no control, where a docblock
+promising one is a brief for building it; and `Onboarding.tsx`'s « Measured,
+never asserted. The dot says « prêt » because the snapshot does, not because a
+button was pressed » was false about exactly the case it defends until
+`9980aac`, the capture dot having read the consent row alone — a button pressed,
+nothing probed, the sentence arguing against the code beneath it.
 Round 29 added two, both in files the same commit was fixing, and both about
 **a table**. `config.ts`'s READERS docblock said Anthropic « stays in the table
 and `configuredLlmProviders` never reports it » over a table that has never had

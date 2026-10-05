@@ -692,6 +692,20 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                   Measured, never asserted. The dot says « prêt » because the
                   snapshot does, not because a button was pressed — which is the
                   difference between an onboarding and a form.
+
+                  **It was false while it said this, about exactly the case it
+                  defends.** Until `9980aac` the capture dot read the *consent*
+                  row alone, so granting the TCC prompt painted « prêt » over a
+                  native module that had failed to load: a button had been
+                  pressed, nothing had been probed, and the sentence above was
+                  the argument against the code beneath it.
+
+                  Both snapshots, in this order: an unsettled permission wins,
+                  because « nobody has answered yet » is the more actionable of
+                  the two states and the remedy is on this row; once consent is
+                  `ready` the health probe decides, and it is the only thing
+                  that can say « prêt ». Pressing *Autoriser* therefore ends in
+                  `retry('capture')`, not in a tone of its own.
                 */}
                 <span className="shrink-0">
                   <StateDot

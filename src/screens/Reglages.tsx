@@ -2099,7 +2099,19 @@ function Finding({ finding }: { finding: CapabilityFinding }) {
 // ── Diagnostics (DEC-27) ────────────────────────────────────────────────────
 
 /**
- * Recent errors, the retention setting, and the two exports.
+ * Recent errors, the retention **policy**, and the two exports.
+ *
+ * It said « the retention setting » from the root commit, and there is no
+ * setting: `retentionDays` arrives as a prop and is drawn once, inside the
+ * lede, as a sentence — « Les diagnostics sont conservés N jours puis
+ * effacés » — with no control beside it at either size. The contract agrees
+ * (`settings.ts`'s `retention: RetentionPolicySchema`, `diagnostics.ts`'s
+ * « rolling 90 days »); only this line called it a thing a rep can move.
+ *
+ * One word, and worth the commit, because this pane's whole discipline is that
+ * what Réglages says is what a meeting does: a docblock promising a control
+ * here is a brief for building one, in the one section that states a policy
+ * rather than offering a choice.
  *
  * The asymmetry between the buttons is the design. *Diagnostics* is one click
  * and safe to send; *Diagnostic complet* states on itself, in French, that it
