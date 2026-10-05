@@ -316,7 +316,7 @@ function Legend() {
               a key of four lines, and a key whose entries do not align is
               harder to read down than the code it teaches.
             */}
-            <span aria-hidden className="flex h-2 w-2 shrink-0 items-center justify-center">
+            <span aria-hidden className="flex h-2.5 w-2.5 shrink-0 items-center justify-center">
               <span data-graphic={MARK_NAME[mark]} className={cn('shrink-0', MARK_CLASS[mark])} />
             </span>
             {label}
@@ -376,24 +376,51 @@ const MARK_CLASS: Record<DayMark, string> = {
     is *why* they measure 1.0077:1 — so the second channel has to be shape, and
     fill-against-hollow was already spent on offered-against-happening.
 
-    So the blue pair takes an 8 px square and the orange pair keeps the 6 px
-    dot: **the round mark is the recorder** — hollow is armed, filled is rolling,
-    and it is the same filled orange circle `Widget.tsx` draws over the client's
-    video, so « en cours » has one glyph on both surfaces — and **the square is
-    the meeting in the book**, hollow when it is only planned, filled once it is
-    recorded. Measured by `--marks` on the shipped screen, the two pairs that
-    were 0.0000 before: « enregistrée » against « en cours » is now **0.5605** of
-    their union, « prévue » against « prête » **1.0000**. The floor is 0.30, and
-    a 6 px square against a 6 px dot (**0.2186**, corners and nothing else)
-    deliberately fails it — which is why the sizes differ as well as the shape.
+    So **the round mark is the recorder** — hollow is armed, filled is rolling —
+    and **the square is the meeting in the book**, hollow when it is only
+    planned, filled once it is recorded.
 
     The size difference is load-bearing and not decoration: at one size a square
-    and a circle differ only by their corners, which is under the floor.
+    and a circle differ only by their corners (**0.2186** for 6 px against 6 px),
+    which is under the 0.30 floor. So the pairs must differ in size as well as
+    in shape, and that leaves the question of *which* pair is the larger — which
+    this file got backwards for the life of the mark.
+
+    **The round mark is now the larger one, and that is a hierarchy fix, not a
+    taste one.** The paragraph above says the question the month is read to
+    answer is « is anything recording right now », and the answer was being
+    drawn at **44.2%** of the area of a meeting that finished three weeks ago:
+    a 6 px dot is 28.3 px², an 8 px square 64.0 px². A reviewer measured it off
+    the shipped screen — day 17, « 5 réunions, dont une en cours
+    d'enregistrement », 6 px circle; day 3, « 1 réunion, dont une enregistrée »,
+    8 px square. Key and grid agreed, so it was the hierarchy and not a legend
+    bug.
+
+    `--marks` decides which orientations are available, and only two of the four
+    clear its floor. Measured on `agenda`, « enregistrée » against « en cours »:
+
+        6 px circle  vs  8 px square   0.5605   ✓   (what shipped)
+        8 px circle  vs  6 px square   0.2910   ✗
+        10 px circle vs  8 px square   0.2357   ✗
+        10 px circle vs  6 px square   ≥0.4444  ✓   (this)
+
+    A circle larger than the square is penalised unless the gap is wide, so
+    simply swapping the two sizes fails — which is why this is 10/6 and not 8/6.
+    At 10/6 the tightest pair on the screen is no longer this one at all: it is
+    « enregistrée » against « prévue », one ink, fill against hollow, **0.4444**.
+
+    What it costs: the orange circle is 10 px here and `StateDot` draws 6 px, so
+    « en cours » no longer has one glyph on both surfaces — it has one *shape*
+    and one ink on both, and a larger one on the surface where it is competing
+    with three other marks for a scan. `Widget.tsx` draws it alone over the
+    client's video, where nothing is competing with it. The fill/hollow axis
+    that `MARK_CLASS` and the widget both spend (`shot.mjs`'s own false-positive
+    list says so) is untouched.
   */
-  recording: 'h-1.5 w-1.5 rounded-full bg-accent',
-  armed: 'h-1.5 w-1.5 rounded-full border border-accent',
-  captured: 'h-2 w-2 bg-brand-500',
-  scheduled: 'h-2 w-2 border border-brand-500',
+  recording: 'h-2.5 w-2.5 rounded-full bg-accent',
+  armed: 'h-2.5 w-2.5 rounded-full border border-accent',
+  captured: 'h-1.5 w-1.5 bg-brand-500',
+  scheduled: 'h-1.5 w-1.5 border border-brand-500',
 }
 
 function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: DayCellProps) {
@@ -420,11 +447,13 @@ function DayCell({ day, inMonth, isToday, selected, mark, count, onSelect }: Day
       {/*
         The dot's row is always laid out, whether or not there is a dot in it —
         a grid whose numbers shift by two pixels as meetings arrive is a grid
-        that flickers all morning. It is 8px rather than 6 for the same reason:
-        the marks are two sizes now (`MARK_CLASS`), so the row is the taller of
+        that flickers all morning. It is 10px rather than 6 for the same reason:
+        the marks are two sizes (`MARK_CLASS`), so the row is the taller of
         them and a day that changes state does not move the number above it.
+        It was 8px while the square was the larger mark; it tracks whichever
+        mark is tallest, so it moved when they swapped.
       */}
-      <span aria-hidden className="flex h-2 items-center">
+      <span aria-hidden className="flex h-2.5 items-center">
         {mark ? (
           /*
             `data-graphic`, because here the dot is the whole signal.
