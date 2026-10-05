@@ -2449,6 +2449,7 @@ test('capture permission refuses in a stated sentence when nothing can answer', 
 
   await assert.rejects(ipc.invoke('capture:permission', {}), /autorisations d’enregistrement/)
   await assert.rejects(ipc.invoke('capture:permission:open', {}), /réglages de confidentialité/)
+  await assert.rejects(ipc.invoke('capture:permission:request', {}), /autorisation d’enregistrement/)
 
   cleanup()
 })
@@ -2456,6 +2457,7 @@ test('capture permission refuses in a stated sentence when nothing can answer', 
 test('consent is read through the port, and the pane reports whether it opened', async () => {
   const { deps, cleanup } = open()
   let opened = 0
+  let asked = 0
   deps.capturePermission = {
     read: () => ({
       state: 'denied',
@@ -2467,6 +2469,15 @@ test('consent is read through the port, and the pane reports whether it opened',
       opened += 1
       return false
     },
+    request: async () => {
+      asked += 1
+      return {
+        state: 'denied',
+        channel: 'screen',
+        reason: 'l’audio système n’est pas autorisé.',
+        canOpenSettings: true,
+      }
+    },
   }
   // Registered again, over the same deps, now that the port is there.
   const ipc = new FakeIpcMain()
@@ -2477,6 +2488,25 @@ test('consent is read through the port, and the pane reports whether it opened',
   // nothing teaches a rep that the screen is broken.
   assert.deepEqual(await ipc.invoke('capture:permission:open', {}), { opened: false })
   assert.equal(opened, 1)
+
+  /*
+   * **The ask, which is the remedy for a permission nobody has answered — and
+   * which had no channel at all.**
+   *
+   * `requestCaptureAccess` has been in `main.ts` since the row was written,
+   * reachable only through `health:retry('capture')`, which the capture row
+   * suppresses the moment consent answers. The renderer's one route was the
+   * pane, and a pane does not list an app that has never attempted capture.
+   *
+   * The answer is the **re-measured** consent, never `{ asked: true }`: whether
+   * the prompt changed anything is the only thing the row can draw, and it is
+   * the difference between falling through to the pane and offering the same
+   * press again.
+   */
+  const after = await ipc.invoke('capture:permission:request', {})
+  assert.equal(asked, 1)
+  assert.equal(after.state, 'denied')
+  assert.equal(after.canOpenSettings, true)
 
   cleanup()
 })

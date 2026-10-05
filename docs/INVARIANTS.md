@@ -611,6 +611,23 @@ machine) or in `core/domain/` — never in an IPC handler.
   Windows has none of these to grant and must not be shown a permission warning. The
   screen-recording prompt has no ask API; `desktopCapturer.getSources` is what fires it.
 
+  **And the first of those three rules had no channel, for the life of the screen that needs
+  it.** `requestCaptureAccess` in `main.ts` fired the prompt and the only caller was
+  `health:retry('capture')` — which the capture row *suppresses* the moment `capture:permission`
+  answers (`Onboarding.tsx`: `!permissionRow`). So the renderer's one route was
+  `capture:permission:open`. Driven on the shipped renderer at both smoke sizes with
+  `microphone` and `screen` both `not-determined`, which is every rep's first launch on macOS:
+  **one control, « Ouvrir les réglages », 134.33 × 32.59 px, and zero controls that ask** — under
+  the sentence this domain composes, « Autorisez-les pour que Sillage puisse les enregistrer. »
+  A privacy pane does not list an application that has never *attempted* capture, so the whole
+  remedy on screen was a list the app was not in. `capture:permission:request` is that missing
+  verb: it asks, re-measures, and answers the consent as it then stands, and
+  `captureRemedyFor` (`core/contracts/permissions.ts`) decides ask-or-pane once for both
+  screens — bound to `actionFor` over all twenty-five status pairs, because `main.ts` decides
+  the same thing from the other side. One ask per row: on macOS the screen-recording grant does
+  not land until the next launch, so a second identical press would be the dead control DEC-26
+  forbids, and the row hands over to the pane — which the attempt has just made useful.
+
 - **The dry run is offered, never automatic, and silence is not a fault** (DEC-45).
   `capture:essai` opens both channels for twenty seconds, reports what each heard, and keeps
   nothing — no meeting, no store row, no transcription — and refuses while a meeting is

@@ -836,6 +836,30 @@ const capturePermissionNow = (): CapturePermission => {
 }
 
 /**
+ * **The prompt, then the re-measure — the remedy for a permission nobody has
+ * answered, finally reachable from a screen.**
+ *
+ * `requestCaptureAccess` above has existed since the capture row was written and
+ * the only caller was `health:retry('capture')`, which that row suppresses the
+ * moment `capture:permission` answers. So on a first launch the renderer could
+ * reach `openCapturePane` and nothing else, and a privacy pane does not list an
+ * application that has never *attempted* capture: the rep arrived at a list
+ * their app was not in.
+ *
+ * The answer is the consent as it stands *after* the ask, because that is what
+ * decides what the row draws next. Three outcomes and none of them is a button
+ * that appeared to do nothing: granted — the row goes green; refused — the
+ * status is `denied` and the pane is the remedy; unchanged, which is the macOS
+ * screen-recording case this file already records on the retry below, where the
+ * grant does not land until the app is relaunched — the pane again, and the
+ * attempt is exactly what put the app in its list.
+ */
+const requestCapturePermission = async (): Promise<CapturePermission> => {
+  await requestCaptureAccess()
+  return capturePermissionNow()
+}
+
+/**
  * The pane for whichever channel is missing — screen first, because on the host
  * that has one it is the permission people refuse and the one whose absence
  * costs the far end of the call.
@@ -2687,7 +2711,11 @@ const boot = async (): Promise<void> => {
     essai: runEssai,
     // Consent, measured on demand. `main.ts` is the only file that knows a
     // privacy pane is a URL, and it hands the renderer a capability instead.
-    capturePermission: { read: capturePermissionNow, openSettings: openCapturePane },
+    capturePermission: {
+      read: capturePermissionNow,
+      request: requestCapturePermission,
+      openSettings: openCapturePane,
+    },
     openReleases: openReleasesPage,
     capabilities: () => ({ report: probe, reason: probeReason }),
     // Read lazily: `boot:changed` and this channel must never disagree, and a

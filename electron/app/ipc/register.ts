@@ -810,6 +810,17 @@ export const handlers: Handlers = {
     return capturePermission.read()
   },
 
+  /*
+   * The ask, then the re-measure — both in the port, because « did it change
+   * anything » is the only answer a row can draw.
+   */
+  'capture:permission:request': async (_request, { capturePermission }) => {
+    if (!capturePermission) {
+      throw refuse('L’autorisation d’enregistrement ne peut pas être demandée depuis cette configuration.')
+    }
+    return capturePermission.request()
+  },
+
   'capture:permission:open': async (_request, { capturePermission }) => {
     if (!capturePermission) {
       throw refuse('Les réglages de confidentialité ne sont pas accessibles depuis cette configuration.')

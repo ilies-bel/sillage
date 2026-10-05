@@ -3125,9 +3125,26 @@ let RECORDING_STOPPED = false
 
       `onboarding` itself is « à autoriser », which is what a fresh install on a
       Mac actually is: the screen-recording prompt has not been answered, so one
-      channel is at stake and the pane is the surer route to it.
+      channel is at stake — and the remedy is the **prompt**
+      (`capture:permission:request`), not the pane. The sentence under the line
+      above said « the pane is the surer route to it », which is what the row
+      drew and what nothing could reach: a privacy pane does not list an
+      application that has never attempted capture.
     */
     'capture:permission': () => CAPTURE_PERMISSION[scenario] ?? CAPTURE_PERMISSION.onboarding,
+    /*
+      The ask, answered with the consent as it stands afterwards — and
+      deliberately unchanged.
+
+      That is the macOS screen-recording truth and not a shortcut: `getSources`
+      raises the prompt, the rep allows it in the panel that opens, and
+      `getMediaAccessStatus('screen')` goes on answering `not-determined` until
+      the app is relaunched. A fixture that flipped to `ready` here would
+      photograph the one outcome a first launch does not give you, and would hide
+      the fall-through to the pane — which is the whole reason the row tracks
+      whether it has already asked.
+    */
+    'capture:permission:request': () => CAPTURE_PERMISSION[scenario] ?? CAPTURE_PERMISSION.onboarding,
     // The pane opens. A stage that pressed this and got `false` would be
     // photographing the failure message, which `onboarding-pane-morte` is for.
     'capture:permission:open': () => ({ opened: scenario !== 'onboarding-pane-morte' }),

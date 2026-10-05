@@ -725,10 +725,12 @@ describe('the promise the rail stopped repeating', () => {
  * correct on Windows, which is the point: the gate is « is this branch
  * declared », and a renderer branch is undeclarable.
  *
- * And the remedy is the **pane**, never a second prompt. The OS silently
- * returns the old answer to an ask it has already had, so *Autoriser* on a
- * refusal is a button that can never do anything — for ever, with nothing on
- * screen saying why.
+ * And the remedy fits which of the two it is. A **refusal** gets the pane and
+ * never a second prompt: the OS silently returns the old answer to an ask it has
+ * already had, so *Autoriser* on a refusal is a button that can never do
+ * anything, for ever, with nothing on screen saying why. A permission **nobody
+ * has answered** gets the prompt and never the pane — the case these tests were
+ * green over, and the one every rep meets on their first launch.
  */
 const consent = (over: Partial<CapturePermission> = {}): CapturePermission => ({
   state: 'denied',
@@ -743,12 +745,99 @@ const captureRow = () =>
   screen.getByText(/il écoute ce que votre machine joue/).closest('li') as HTMLElement
 
 describe('the capture row draws consent, and never a platform', () => {
-  test('a permission nobody has answered is « à autoriser », with the pane', async () => {
+  /**
+   * **First launch, and the remedy it is owed.**
+   *
+   * `microphone` and `screen` both `not-determined` is every rep's first launch
+   * on macOS. The row said « à autoriser » and drew one control — « Ouvrir les
+   * réglages » — under a sentence saying « Autorisez-les pour que Sillage puisse
+   * les enregistrer »: a privacy pane does not list an application that has
+   * never attempted capture, so the only thing on screen sent the rep to a list
+   * their app was not in. `actionFor('not-determined')` has answered `ask` all
+   * along and `requestCaptureAccess` in `main.ts` fires the prompt on it; what
+   * was missing was a channel out of `src/`.
+   */
+  test('a permission nobody has answered is asked for, not sent to the pane', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
+    bridge.when('capture:permission:request', () =>
+      consent({ state: 'ready', channel: null, reason: null, canOpenSettings: false }),
+    )
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+    // One control, and it is the ask. The pane is the remedy for a refusal and
+    // this is not one.
+    expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(captureRow().querySelector('button') as HTMLElement)
+    })
+
+    expect(bridge.calls.some((call) => call.channel === 'capture:permission:request')).toBe(true)
+    expect(bridge.calls.some((call) => call.channel === 'capture:permission:open')).toBe(false)
+    // The answer is the re-measured consent, so a grant lands on the row that
+    // asked for it rather than on the next launch.
+    await waitFor(() => expect(screen.getByText('prêt')).toBeTruthy())
+  })
+
+  test('a prompt the rep refused falls through to the pane, in one press', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
+    // What the OS answers when the TCC prompt was refused: the status moves to
+    // `denied`, and the pane is the only remedy left.
+    bridge.when('capture:permission:request', () => consent())
+    bridge.when('capture:permission:open', () => ({ opened: true }))
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+
+    await waitFor(() => expect(screen.getByText('refusé')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
+  })
+
+  /**
+   * The macOS screen-recording case, which `main.ts` states on the retry it
+   * registers: the prompt is raised, the rep allows it, and the status answers
+   * `not-determined` until the app is relaunched. Offering the same ask again
+   * would be the dead control DEC-26 forbids — and the pane now works, because
+   * the attempt is what put the app in the list.
+   */
+  test('an ask that moved nothing hands over to the pane and says so', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
+    bridge.when('capture:permission:request', () => consent({ state: 'to-grant' }))
+    open()
+    await toBesoins()
+
+    await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+
+    expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
+    expect(screen.getByText(/n’a pas encore changé/)).toBeTruthy()
+  })
+
+  /**
+   * An older main process: the channel is not there and the ask rejects. The row
+   * must not be left with no remedy at all — it falls through to the pane, which
+   * is what it had before this channel existed.
+   */
+  test('an ask the main process cannot answer leaves the pane behind it', async () => {
     bridge.when('capture:permission', () => consent({ state: 'to-grant' }))
     open()
     await toBesoins()
 
     await waitFor(() => expect(screen.getByText('à autoriser')).toBeTruthy())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+
     expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
   })
 

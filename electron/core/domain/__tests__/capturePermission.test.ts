@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { isWrittenSentence } from '../../contracts/health.ts'
+import { captureRemedyFor } from '../../contracts/permissions.ts'
 import {
   actionFor,
   capturePermissionHealth,
@@ -300,4 +301,101 @@ test('chaque phrase composée ici est une phrase que la fenêtre rend telle quel
       `${pair} ne nomme aucun côté : ${reason}`,
     )
   }
+})
+
+/**
+ * **The control the row draws against the act the main process performs.**
+ *
+ * `actionFor` has answered `ask` for `not-determined` since this file was
+ * written, and `requestCaptureAccess` in `main.ts` fires the OS prompt on
+ * exactly that answer — but no renderer could reach either, because the only
+ * route out of `src/` was `capture:permission:open`. Measured on the shipped
+ * renderer at both smoke sizes, first launch (`microphone`/`screen` both
+ * `not-determined`, which is every rep's first launch on macOS): one control,
+ * « Ouvrir les réglages », 134.33 × 32.59 px, and **zero** controls that ask —
+ * under a sentence this file composes which reads « Autorisez-les pour que
+ * Sillage puisse les enregistrer. » The pane does not list an application that
+ * has never attempted capture, so the one remedy on screen was a list the app
+ * was not in.
+ *
+ * So the two sides are bound here, over all twenty-five status pairs: the row
+ * offers the ask exactly when `requestCaptureAccess` will raise a prompt for at
+ * least one channel. `captureRemedyFor` reads a `CapturePermissionState` and
+ * `actionFor` reads an `AccessStatus`; nothing but this joins them, and a
+ * `to-grant` row sent back to the pane goes red here.
+ */
+test('sur les vingt-cinq paires, la ligne propose l’invite exactement quand main.ts en déclenche une', () => {
+  const STATUSES: AccessStatus[] = ['granted', 'denied', 'restricted', 'not-determined', 'unknown']
+
+  let asks = 0
+  for (const microphone of STATUSES) {
+    for (const screen of STATUSES) {
+      const pair = access({ microphone, screen })
+      const row = capturePermissionView(pair, true, NOW)
+      /*
+       * What `requestCaptureAccess` does with this pair, read off the same
+       * domain function it calls: a prompt for every channel whose `actionFor`
+       * is `ask`, the pane for every `open`, nothing for a managed device.
+       */
+      const prompts = [pair.microphone, pair.screen].some((status) => actionFor(status) === 'ask')
+      const remedy = captureRemedyFor(row, false)
+      assert.equal(
+        remedy === 'ask',
+        prompts,
+        `micro=${microphone} écran=${screen} : la ligne propose « ${remedy} » et main.ts ${
+          prompts ? 'déclenche une invite' : 'n’en déclenche aucune'
+        }`,
+      )
+      if (prompts) asks += 1
+    }
+  }
+
+  // A floor on the enumeration: nine of the twenty-five pairs carry at least
+  // one `not-determined`, and a `captureRemedyFor` that never answered `ask`
+  // would otherwise pass this having agreed with nothing.
+  assert.equal(asks, 9, `${asks} paire(s) déclenchent une invite`)
+})
+
+/**
+ * **An ask that did not move the status, which is the macOS screen-recording
+ * case and not a rarity.**
+ *
+ * `getSources` raises the TCC prompt; the rep allows it in the pane that opens,
+ * and `getMediaAccessStatus('screen')` goes on answering `not-determined` until
+ * the app is relaunched — `main.ts` says so on the retry it registers. A row
+ * that re-offered the ask there would be the dead control DEC-26 forbids, so
+ * once asked it falls through to the pane — which, after the attempt, is a list
+ * the application is finally in.
+ */
+test('une invite qui n’a pas bougé le statut passe la main au volet', () => {
+  const asked = capturePermissionView(access({ screen: 'not-determined' }), true, NOW)
+  assert.equal(captureRemedyFor(asked, false), 'ask')
+  assert.equal(captureRemedyFor(asked, true), 'open')
+
+  // Asking needs no URL — a pane is a capability of the host, a prompt is one
+  // of the app — so a host with no pane still offers the ask, and offers
+  // nothing at all once it has been made.
+  const noPane = capturePermissionView(access({ screen: 'not-determined' }), false, NOW)
+  assert.equal(captureRemedyFor(noPane, false), 'ask')
+  assert.equal(captureRemedyFor(noPane, true), 'none')
+})
+
+test('un refus mène au volet, un appareil géré et une absence de réponse à rien', () => {
+  // The invariant, in three lines: « A refusal leads to the settings pane, not
+  // a prompt. »
+  const refused = capturePermissionView(access({ screen: 'denied' }), true, NOW)
+  assert.equal(captureRemedyFor(refused, false), 'open')
+  assert.equal(captureRemedyFor(refused, true), 'open')
+
+  const managed = capturePermissionView(
+    access({ microphone: 'restricted', screen: 'restricted' }),
+    true,
+    NOW,
+  )
+  assert.equal(captureRemedyFor(managed, false), 'none')
+
+  assert.equal(captureRemedyFor(capturePermissionView(access(), true, NOW), false), 'none')
+  // An older main process, or a channel that threw: the row keeps the health
+  // sentence and the retry it already had rather than guessing a remedy.
+  assert.equal(captureRemedyFor(null, false), 'none')
 })

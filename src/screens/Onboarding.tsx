@@ -40,9 +40,10 @@
  */
 import { useCallback, useState } from 'react'
 import type { ConnectorHealth, ConnectorId, HealthSnapshot } from '../../electron/core/contracts/health.ts'
-import type {
-  CapturePermission,
-  CapturePermissionState,
+import {
+  captureRemedyFor,
+  type CapturePermission,
+  type CapturePermissionState,
 } from '../../electron/core/contracts/permissions.ts'
 import { REQUIRED_CONNECTORS } from '../../electron/core/contracts/status.ts'
 import { EssaiAudio } from './capture/EssaiAudio.tsx'
@@ -535,6 +536,19 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
     permission.state.status === 'ready' ? permission.state.value : null
   const [opening, setOpening] = useState(false)
   /*
+   * **Whether this screen has already made the OS ask.**
+   *
+   * `to-grant` means nobody has answered, and the remedy for that is the prompt
+   * — not the pane, which does not list an application that has never attempted
+   * capture. But the ask can leave the status exactly where it was: on macOS the
+   * screen-recording grant does not land until the app is relaunched, and
+   * `main.ts` says so on the retry it registers. Offering the same press again
+   * there is the control DEC-26 forbids, so one ask hands the row over to the
+   * pane — which the attempt has just made useful.
+   */
+  const [asked, setAsked] = useState(false)
+  const [granting, setGranting] = useState(false)
+  /*
    * A pane that would not open is said out loud.
    *
    * `canOpenSettings` says the host has a URL, which is measured before the
@@ -550,6 +564,25 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
    * that just came up and comes straight back, and a row still saying « refusé »
    * over a permission they have just given is a screen calling them a liar.
    */
+  /*
+   * The prompt, then the consent as it stands afterwards — `request` re-measures
+   * in the main process, so the row that asked is the row that reports. A
+   * rejection (an older build with no such channel) still counts as asked: the
+   * pane behind it is what this row had before the channel existed, and leaving
+   * the rep with no control at all would be worse than the dead end it replaces.
+   */
+  const ask = async () => {
+    setGranting(true)
+    try {
+      permission.set(await invoke('capture:permission:request', {}))
+    } catch {
+      // No sentence of our own: the row already carries the main process's.
+    } finally {
+      setAsked(true)
+      setGranting(false)
+    }
+  }
+
   const openSettings = async () => {
     setOpening(true)
     try {
@@ -627,6 +660,12 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
             exactly what it was.
           */
           const permissionRow = id === 'capture' ? consent : null
+          /*
+            Ask, or open the pane — decided in `core/contracts/permissions.ts`
+            because `main.ts` decides the same thing from the two `AccessStatus`es
+            and the two must not be able to disagree about which act a press is.
+          */
+          const remedy = captureRemedyFor(permissionRow, asked)
           return (
             <li key={id} className="py-row">
               <div className="flex items-baseline gap-inline">
@@ -660,17 +699,31 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
               <p className="text-muted measure mt-hair text-ui leading-relaxed">{NEEDS[id].why}</p>
 
               {/*
-                Consent, when the channel answered: the sentence names the
-                refusal and the one control opens the pane that lifts it. Never
-                a prompt — the OS silently returns the old answer to a second
-                ask, so *Autoriser* on a refusal is the control DEC-26 forbids —
-                and never a button on a managed device, where `canOpenSettings`
-                is false and the sentence is the whole of what can be said.
+                Consent, when the channel answered: the sentence names what is
+                missing and **one** control carries the act that can change it.
+
+                Which act is the whole of this row's history. A refusal gets the
+                pane and never a prompt — the OS silently returns the old answer
+                to a second ask, so *Autoriser* there is the control DEC-26
+                forbids. A permission nobody has answered gets the prompt and
+                never the pane, because a pane does not list an application that
+                has never attempted capture, and for the life of this screen that
+                was the only control it drew on a first launch. A managed device
+                gets neither: `canOpenSettings` is false, there is nothing to ask,
+                and the sentence is the whole of what can be said.
               */}
               {permissionRow && permissionRow.state !== 'ready' ? (
                 <div className="mt-snug flex items-baseline gap-inline">
                   <p className="text-warn measure min-w-0 flex-1 text-ui">{permissionRow.reason}</p>
-                  {permissionRow.canOpenSettings ? (
+                  {remedy === 'ask' ? (
+                    <Button
+                      className="shrink-0"
+                      onClick={() => void ask()}
+                      {...unavailable(granting, 'Demande…')}
+                    >
+                      {granting ? 'Demande…' : 'Autoriser'}
+                    </Button>
+                  ) : remedy === 'open' ? (
                     <Button
                       className="shrink-0"
                       onClick={() => void openSettings()}
@@ -680,6 +733,26 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                     </Button>
                   ) : null}
                 </div>
+              ) : null}
+              {/*
+                An ask that changed nothing, said out loud — otherwise the only
+                thing that happened is that one button became another, and a rep
+                who authorised in the panel that just opened is looking at a row
+                that still says « à autoriser » for a reason nothing explains.
+
+                The clause about the pane is `canOpenSettings`', because it names
+                a place: on a host with no privacy pane the row has no second
+                control either, and sending somebody to look for one would be the
+                dead end in words that this whole row is about.
+              */}
+              {permissionRow && asked && permissionRow.state === 'to-grant' ? (
+                <p className="text-muted measure mt-hair text-ui leading-relaxed">
+                  L’autorisation n’a pas encore changé. Sur certains systèmes elle ne prend effet
+                  qu’au prochain démarrage de Sillage
+                  {permissionRow.canOpenSettings
+                    ? ' ; sinon, ouvrez les réglages de confidentialité — Sillage y figure maintenant.'
+                    : '.'}
+                </p>
               ) : null}
               {permissionRow && paneRefused ? (
                 <p className="text-muted measure mt-hair text-ui leading-relaxed">

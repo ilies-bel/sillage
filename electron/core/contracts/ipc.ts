@@ -383,6 +383,26 @@ export const invokeChannels = {
     response: CapturePermissionSchema,
   },
   /**
+   * **The remedy for a permission nobody has answered: the OS's own prompt.**
+   *
+   * `requestCaptureAccess` has been in `main.ts` since the capture row was
+   * written and no screen could reach it — the one route out of `src/` was the
+   * pane below, and a privacy pane does not list an application that has never
+   * *attempted* capture. On a first launch (both statuses `not-determined`,
+   * which is every rep's first launch on macOS) step 2 drew « Ouvrir les
+   * réglages » and nothing else, under a sentence asking them to authorise.
+   *
+   * The response is the **re-measured** consent rather than `{ asked: true }`:
+   * what the row has to draw is whether anything changed. Granted and it goes
+   * green; refused and it falls through to the pane; unchanged — macOS screen
+   * recording, where the grant lands on the next launch — and it falls through
+   * to the pane too, which the attempt has just made useful.
+   */
+  'capture:permission:request': {
+    request: z.object({}),
+    response: CapturePermissionSchema,
+  },
+  /**
    * The one remedy for a refusal: the OS's own privacy pane.
    *
    * Never a second prompt — the OS silently returns the old answer, so asking

@@ -24,8 +24,16 @@
  * **A refusal leads to the pane, never to a prompt.** The OS silently returns
  * the old answer to a second ask, so a screen that offers *Autoriser* on a
  * refusal draws a control that can never do anything — the thing DEC-26 forbids.
- * `openSettings` is the whole remedy; the prompt stays where it already lives,
- * on `health:retry` for a permission nobody has answered yet.
+ * `openSettings` is that remedy.
+ *
+ * **And a permission nobody has answered leads to the prompt, never to the
+ * pane**, which is `request`. This paragraph used to end « the prompt stays
+ * where it already lives, on `health:retry` for a permission nobody has
+ * answered yet » — and the capture row *suppresses* the health branch the moment
+ * this channel answers, so on a first launch there was no prompt anywhere in the
+ * product and the only control drawn opened a pane that does not list an
+ * application which has never attempted capture. `captureRemedyFor` below
+ * decides between the two, once, for both screens.
  */
 import { z } from 'zod'
 import type { Channel } from './transcript.ts'
@@ -35,8 +43,9 @@ import type { Channel } from './transcript.ts'
  *
  *  · `ready` — everything capture needs has been granted, or there was nothing
  *    on this host to grant. Nothing to draw but the green dot.
- *  · `to-grant` — never answered. The OS will still prompt, and the settings
- *    pane is the surer route, so the row offers it.
+ *  · `to-grant` — never answered. The OS will still prompt, which is the row's
+ *    first remedy (`request`); the pane is what it falls back to once the ask
+ *    has been made and the status has not moved.
  *  · `denied` — answered, with a no. The pane is the only remedy left.
  *  · `blocked` — a managed device: a profile forbids it and neither asking nor
  *    visiting the pane changes that, so the row says so and offers nothing.
@@ -116,16 +125,77 @@ export const permissionOutstandingFor = (
 }
 
 /**
- * The two verbs `app/` is allowed to have about consent.
+ * **Which remedy a row may offer — ask, or open the pane.**
+ *
+ * The product has known the answer since `capturePermission.ts` was written:
+ * `actionFor('not-determined')` is `ask`, and `requestCaptureAccess` in
+ * `main.ts` raises the OS prompt on exactly that. No screen could reach it. The
+ * renderer's only route out was `capture:permission:open`, so on a first launch
+ * — `microphone` and `screen` both `not-determined`, which is every rep's first
+ * launch on macOS — step 2 drew one control, « Ouvrir les réglages », under a
+ * sentence reading « Autorisez-les pour que Sillage puisse les enregistrer. »
+ * A privacy pane does not list an application that has never *attempted*
+ * capture, so the one remedy on screen was a list the app was not in: the dead
+ * end `EssaiAudio` and `Onboarding` exist to remove, on the screen a rep sees
+ * once.
+ *
+ * It is decided here rather than in the screen that draws it because the main
+ * process decides the same thing from the other side — `actionFor` over two
+ * `AccessStatus`es — and the two must not be able to disagree. Bound over all
+ * twenty-five status pairs in `core/domain/__tests__/capturePermission.test.ts`:
+ * the row offers the ask exactly when `requestCaptureAccess` will prompt.
+ *
+ * `asked` is « has this screen already made the prompt », and it is the whole of
+ * why this takes a second argument. On macOS the screen-recording grant does not
+ * land until the app is relaunched, so the honest answer to an ask can be the
+ * identical `to-grant` — and re-offering the same press there is the control
+ * DEC-26 forbids. After one ask the row hands over to the pane, which the
+ * attempt has just made useful. A refusal never gets a prompt at all: the OS
+ * silently returns the old answer.
+ */
+export type CaptureRemedy = 'ask' | 'open' | 'none'
+
+export const captureRemedyFor = (
+  consent: CapturePermission | null,
+  asked: boolean,
+): CaptureRemedy => {
+  // No consent read — an older main process, or a channel that threw. The row
+  // keeps the health sentence and the retry it already had (DEC-26).
+  if (!consent) return 'none'
+  // `ready` has nothing to grant; `blocked` is a managed profile, where both
+  // remedies are theatre and the sentence is the whole of what can be said.
+  if (consent.state !== 'to-grant' && consent.state !== 'denied') return 'none'
+  /*
+   * A prompt is a capability of the application and a pane is a capability of
+   * the host, so asking does not need `canOpenSettings` and opening does.
+   */
+  if (consent.state === 'to-grant' && !asked) return 'ask'
+  return consent.canOpenSettings ? 'open' : 'none'
+}
+
+/**
+ * The three verbs `app/` is allowed to have about consent.
  *
  * Implemented in `app/main.ts` rather than in `modules/capture/`: the module
  * opens devices and does not own the app's relationship with the OS, and the
- * three Electron calls behind this (`getMediaAccessStatus`, `openExternal`, and
- * the pane URLs) are wiring, not the audio boundary.
+ * four Electron calls behind this (`getMediaAccessStatus`, `askForMediaAccess`,
+ * `openExternal`, and the pane URLs) are wiring, not the audio boundary.
  */
 export interface CapturePermissionPort {
   /** Measured now, never cached: a rep grants it in another window and comes back. */
   read(): CapturePermission
+  /**
+   * Ask the OS for what it has never been asked for, then **re-measure**.
+   *
+   * The answer is the consent as it stands afterwards, because that is the only
+   * thing a row can draw: granted and the row goes green, refused and it falls
+   * through to the pane, unchanged — the macOS screen-recording case, where the
+   * grant lands on the next launch — and it falls through to the pane as well.
+   * `read()` is not enough on its own and `openSettings()` is the wrong remedy
+   * for a permission nobody has answered: the pane does not list an app that
+   * has never attempted capture.
+   */
+  request(): Promise<CapturePermission>
   /**
    * Put the rep in front of the pane that holds this permission. `false` when
    * there was none to open, which the caller reports rather than swallowing —
