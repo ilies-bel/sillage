@@ -13,7 +13,8 @@ import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { LLM_PROVIDERS, descriptorFor, selectLlm } from '../registry.ts'
-import { configuredLlmProviders, llmEndpointFor } from '../config.ts'
+import { configuredLlmProviders, llmEndpointFor, llmRefusalReasons } from '../config.ts'
+import { providerRows } from '../../../core/domain/providerRows.ts'
 
 const reasonOf = (selection: ReturnType<typeof selectLlm>): string =>
   selection.ok === false ? selection.reason : ''
@@ -284,4 +285,75 @@ test('every declared field is one a reader actually consults', () => {
       )
     }
   }
+})
+
+/**
+ * **No row may deny a key it is showing four characters of.**
+ *
+ * `providerRows.refusal` derives its sentence from the *tier*, and for a cloud
+ * row waiting on a key that is « aucune clé enregistrée » — which is right for
+ * every row whose reader only needs the key, and was wrong for the one row that
+ * has no reader at all. Anthropic's API is tool-shaped and unreachable through
+ * the OpenAI-compatible adapter, so `configuredLlmProviders` can never report
+ * it; a rep who pasted a key read « aucune clé enregistrée » directly above
+ * « clé enregistrée · …c0de », with no *Utiliser* ever arriving.
+ *
+ * The guard is relational on purpose, and it crosses the boundary the defect
+ * crossed: the refusal is composed in `core/domain/` from a tier, the knowledge
+ * that no key can help is in `modules/llm/`, and nothing was comparing them. It
+ * is driven over the real registry and the real `llmRefusalReasons` rather than
+ * a fixture, so a provider added tomorrow with no reader is caught by the
+ * commit that adds it rather than by a rep in a demo.
+ */
+test('un fournisseur ne nie jamais une clé qu’il affiche', () => {
+  // One vault, read by both sides — which is the staging the defect needs: a
+  // key is stored for every provider, and the reader is given the same store.
+  // Passing an empty one to `configuredLlmProviders` would have reddened every
+  // cloud row and hidden the one that is red for a reason no key can fix.
+  const keys = Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, 'sk-c0de']))
+  const stored = Object.fromEntries(
+    LLM_PROVIDERS.map((p) => [p.id, { stored: true, hint: 'c0de' } as const]),
+  )
+  const rows = providerRows(LLM_PROVIDERS, {
+    configured: configuredLlmProviders({ stored: keys, fields: {}, env: NO_CODEX }),
+    selected: null,
+    reason: null,
+    credentials: stored,
+    reasons: llmRefusalReasons({ stored: keys, env: NO_CODEX }),
+  })
+  // The table is the whole list: a row the app declines to show is
+  // indistinguishable from a bug (registry.ts), so every id must be here.
+  assert.equal(rows.length, LLM_PROVIDERS.length)
+  for (const row of rows) {
+    if (!row.credential.stored) continue
+    assert.doesNotMatch(
+      row.reason ?? '',
+      /aucune clé enregistrée/,
+      `${row.id}: « aucune clé enregistrée » au-dessus de « clé enregistrée · …${row.credential.hint} »`,
+    )
+    // And nothing lands on `refusal`'s floor, which is the branch that exists
+    // only so the function is total. Measured here rather than asserted in its
+    // docblock: a row that starts reaching it is a row whose module owes a
+    // sentence, and this is where that shows up.
+    assert.doesNotMatch(
+      row.reason ?? '',
+      /reste indisponible/,
+      `${row.id}: aucune phrase propre à cette ligne`,
+    )
+  }
+  // The reachable one, and the reason this fix is not only about anthropic: a
+  // key pasted with the two required fields still empty used to read « aucune
+  // clé enregistrée » — the one thing the rep had done — while both empty
+  // fields sat on the same screen.
+  const azure = rows.find((row) => row.id === 'azure-openai')
+  assert.ok(azure !== undefined, 'azure-openai est dans la table')
+  assert.equal(azure.selectable, false)
+  assert.equal(azure.reason, 'à compléter : point de terminaison, déploiement')
+  // And the row that can never be configured says so, rather than saying
+  // nothing: an unselectable row with no sentence is the thing `ProviderRow`'s
+  // type forbids, and the reason must come from the module that knows it.
+  const anthropic = rows.find((row) => row.id === 'anthropic')
+  assert.ok(anthropic !== undefined, 'anthropic est dans la table')
+  assert.equal(anthropic.selectable, false)
+  assert.match(anthropic.reason ?? '', /ne sait pas encore parler à cette API/)
 })

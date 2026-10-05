@@ -104,6 +104,26 @@ const fieldsOf = (
  * Every branch names the constraint that bit rather than the outcome. « non
  * disponible » sends someone to read this file; « aucune clé enregistrée »
  * sends them to the field they have to fill, which is where the fix is.
+ *
+ * **Which is why it may not say that while a key is stored.** The refusal was
+ * derived from the *tier* alone and never read `credentials`, so a cloud row
+ * waiting on an API key always got « aucune clé enregistrée » — printed, in the
+ * renderer, directly above « clé enregistrée · …c0de », four characters of the
+ * key the app had just saved. Two sentences contradicting each other on
+ * consecutive lines, and the top one sent the rep back to the one thing they
+ * had already done.
+ *
+ * Two rows reached it. `anthropic` has no reader at all and can never be
+ * configured, and its module now supplies the real sentence. `azure-openai` is
+ * the reachable one and the costlier one: a key plus two required fields, so a
+ * rep who pastes the key and has not yet filled *Point de terminaison* and
+ * *Déploiement* was told the key was missing while both empty fields sat on the
+ * same screen. So when a key is stored, the refusal names the fields that are
+ * actually outstanding.
+ *
+ * The last branch is the floor, not a feature: with every module's reason
+ * supplied, no row in the real registry reaches it, and `registry.test.ts`
+ * measures that rather than this docblock asserting it.
  */
 const refusal = (
   descriptor: ProviderDescriptorLike,
@@ -114,13 +134,16 @@ const refusal = (
   if (!input.configured.includes(descriptor.id)) {
     const supplied = input.reasons?.[descriptor.id]
     if (supplied) return supplied
-    return descriptor.tier === 'local'
-      ? 'non installé sur cette machine'
-      : descriptor.tier === 'self-hosted'
-        ? 'aucune URL de serveur enregistrée'
-        : descriptor.auth === 'oauth'
-          ? 'aucune session ouverte'
-          : 'aucune clé enregistrée'
+    if (descriptor.tier === 'local') return 'non installé sur cette machine'
+    if (descriptor.tier === 'self-hosted') return 'aucune URL de serveur enregistrée'
+    if (descriptor.auth === 'oauth') return 'aucune session ouverte'
+    if (input.credentials?.[descriptor.id]?.stored !== true) return 'aucune clé enregistrée'
+    const outstanding = fieldsOf(descriptor, input).filter(
+      (field) => field.required === true && field.value.trim() === '',
+    )
+    return outstanding.length > 0
+      ? `à compléter : ${outstanding.map((field) => field.label.toLowerCase()).join(', ')}`
+      : 'clé enregistrée, mais ce fournisseur reste indisponible'
   }
   if (input.offlineOnly === true && residency !== 'local') {
     return 'mode hors ligne : seuls les moteurs locaux sont autorisés'

@@ -255,10 +255,14 @@ const simpleEndpoint = (
 /**
  * Every provider's reader, keyed by the registry id.
  *
- * Anthropic is present and deliberately unreadable through this table: its API
- * is not OpenAI-compatible, so a key alone would not make it callable. It stays
- * in the table and `configuredLlmProviders` never reports it — which is honest,
- * rather than reporting it and failing at the first request.
+ * Anthropic is **absent**, deliberately: its API is not OpenAI-compatible, so a
+ * key alone would not make it callable, and reporting it configured would fail
+ * at the first request instead of in Réglages. This said « it stays in the
+ * table » over a table that has never had an `anthropic` key — prose arguing
+ * for a mechanism beside the one actually used — and the absence is load-bearing
+ * twice over: `configuredLlmProviders` filters on `READERS[p.id]`, and
+ * `llmRefusalReasons` owes that row the sentence this file's silence makes
+ * necessary.
  */
 const READERS: Record<string, (source: Resolved) => LlmEndpointConfig | null> = {
   chatgpt: chatgptEndpoint,
@@ -318,10 +322,31 @@ export const configuredLlmProviders = (source: LlmCredentialSource = {}): string
  *
  * Empty when everything that could be configured is: a reason for a row that is
  * working would be rendered by nothing and would rot unnoticed.
+ *
+ * **Anthropic's is unconditional, because it is the one row that can never be
+ * configured.** It has no reader here at all — its API is tool-shaped, not
+ * `response_format`-shaped, and is not reachable through the OpenAI-compatible
+ * adapter — so `configuredLlmProviders` never returns it and `providerRows`
+ * fell through to its tier-derived refusal, « aucune clé enregistrée ». A rep
+ * who pasted a key then read that line *above* « clé enregistrée · …c0de »,
+ * four characters of the key the app had just stored, with no *Utiliser* ever
+ * appearing: two sentences contradicting each other on consecutive lines, for
+ * ever, the first of them sending them back to the field they had already
+ * filled.
+ *
+ * It cannot rot the way the docblock above warns about: that risk is a reason
+ * outliving the problem it describes, and this row has no path to being
+ * configured for the reason to outlive. The day a reader lands here,
+ * `configuredLlmProviders` reports it and `providerRows` drops the reason
+ * without being asked — the refusal is only consulted while a row is
+ * unconfigured.
  */
 export const llmRefusalReasons = (
   source: LlmCredentialSource = {},
 ): Readonly<Record<string, string>> => {
   const grant = readCodexGrant({ path: codexAuthPath(filled(source).env) })
-  return grant.ok ? {} : { chatgpt: grant.reason }
+  const anthropic = {
+    anthropic: 'Sillage ne sait pas encore parler à cette API — une clé enregistrée ne sera pas utilisée',
+  }
+  return grant.ok ? anthropic : { ...anthropic, chatgpt: grant.reason }
 }
