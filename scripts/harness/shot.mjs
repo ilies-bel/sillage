@@ -4447,11 +4447,26 @@ const SCREENS = {
       await openAgenda(page)
       await page.getByRole('button', { name: 'Réglages' }).click()
       await page.getByRole('button', { name: 'Transcription', exact: true }).click()
-      await page.getByRole('checkbox', { name: /Cette machine uniquement/ }).check()
       // The row, not the group header: « fournisseur cloud » also occurs in the
       // lede above it, and a selector that matches prose is a stage that passes
       // while the thing it is about is still on screen.
-      await page.getByText('Azure Speech — France Centre').waitFor({ state: 'detached' })
+      //
+      // **And a selector that matches nothing is worse than one that matches
+      // prose.** This waited on « Azure Speech — France Centre » — a label the
+      // product has never printed; the registry's row is « Azure Speech (France
+      // Central) » — so `state: 'detached'` was satisfied by an element that
+      // did not exist before the press either, and the one stage asserting
+      // DEC-37's promise passed without ever observing it. The fixture had the
+      // filter all along (`settingsSnapshot` drops `residency: 'remote'`); the
+      // stage simply could not see it work.
+      //
+      // So the wait is two-sided now: present first, gone after. A one-sided
+      // wait for an absence cannot distinguish « the switch removed it » from
+      // « it was never there », which is the whole defect above.
+      const azure = page.getByText('Azure Speech (France Central)')
+      await azure.waitFor()
+      await page.getByRole('checkbox', { name: /Cette machine uniquement/ }).check()
+      await azure.waitFor({ state: 'detached' })
     },
   },
 

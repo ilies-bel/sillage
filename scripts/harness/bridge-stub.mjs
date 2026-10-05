@@ -1902,28 +1902,35 @@ let RECORDING_STOPPED = false
           reason: null,
           fields: [],
         },
+        /*
+          **Three of these four rows used to be a product that does not exist.**
+
+          `local-whisper-large` / « Whisper large-v3 (local) » is in no registry
+          row — `transcribe/registry.ts` declares exactly one local engine — and
+          its reason, « poids absents de cette machine — 1,5 Go à installer »,
+          is composed nowhere in the tree: `providerRows.refusal` says « non
+          installé sur cette machine » for an unconfigured local row, and 1,5 Go
+          is in no catalogue row either (61, 130, 486 and 1614 MB). `soniox` was
+          a provider the app has never offered. And « Azure Speech — France
+          Centre » is the registry's « Azure Speech (France Central) » with the
+          label and the id both wrong — `azure-speech-fr` against `azure-fr`.
+
+          So every Réglages staging photographed a provider table a rep cannot
+          see, and the fourteen passes measured its contrast, its rhythm and its
+          cells. Round 26's shape — « fixtures asserting things the product
+          cannot do » — one layer over, in the fixture rather than the test.
+
+          The ids, the labels and the tiers are now the registry's, and the
+          refusals are ones `providerRows` actually writes.
+        */
         {
-          id: 'local-whisper-large',
-          label: 'Whisper large-v3 (local)',
-          tier: 'local',
-          residency: 'local',
-          cost: 'free',
-          auth: 'none',
-          credential: { stored: false, hint: null },
-          configured: false,
-          selected: false,
-          selectable: false,
-          reason: 'poids absents de cette machine — 1,5 Go à installer',
-          fields: [],
-        },
-        {
-          id: 'azure-speech-fr',
-          label: 'Azure Speech — France Centre',
+          id: 'azure-fr',
+          label: 'Azure Speech (France Central)',
           tier: 'cloud',
           residency: 'remote',
           cost: 'metered',
           auth: 'apiKey',
-          credential: { stored: false, hint: null },
+          credential: { stored: true, hint: 'a41c' },
           configured: true,
           selected: false,
           selectable: true,
@@ -1931,8 +1938,22 @@ let RECORDING_STOPPED = false
           fields: [],
         },
         {
-          id: 'soniox',
-          label: 'Soniox',
+          id: 'groq-whisper',
+          label: 'Groq (Whisper large v3 turbo)',
+          tier: 'cloud',
+          residency: 'remote',
+          cost: 'metered',
+          auth: 'apiKey',
+          credential: { stored: false, hint: null },
+          configured: false,
+          selected: false,
+          selectable: false,
+          reason: 'aucune clé enregistrée',
+          fields: [],
+        },
+        {
+          id: 'elevenlabs',
+          label: 'ElevenLabs Scribe',
           tier: 'cloud',
           residency: 'remote',
           cost: 'metered',
