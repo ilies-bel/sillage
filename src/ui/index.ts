@@ -34,6 +34,11 @@ export { Chip, type ChipProps } from './Chip.tsx'
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader.tsx'
 export { SectionNav, type SectionNavItem, type SectionNavProps } from './SectionNav.tsx'
 export { Rail, type RailPlace, type RailProps } from './Rail.tsx'
+export {
+  pendingLabel,
+  pendingMark,
+  type PendingBacklog,
+} from './pendingBacklog.ts'
 export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmented.tsx'
 export { EmptyState, Centered, type EmptyStateProps } from './EmptyState.tsx'
 export { PageTurn } from './PageTurn.tsx'

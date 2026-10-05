@@ -595,7 +595,17 @@ export function Agenda({ onOpen, onHistorique, onReglages }: AgendaProps) {
       */}
       <Rail
         current="aujourdhui"
-        pending={pending.result?.rows.length ?? null}
+        /* The whole answer — the count **and** whether a row was hidden. It
+           was the count alone, so the rail printed a backlog the main process
+           had cut short as if it were exact: measured on the shipped renderer
+           with `--scenario historique-annees`, « 50 » at x=193.75 y=147.36
+           against « 50+ » at x=788.28 y=616.34 in *En attente de validation*.
+           `ui/pendingBacklog.ts` composes both marks now. */
+        pending={
+          pending.result === null
+            ? null
+            : { total: pending.result.rows.length, capped: pending.capped }
+        }
         updateReady={updateReady}
         onPlace={(place) => {
           if (place === 'a-valider') onHistorique('', pendingFilter)

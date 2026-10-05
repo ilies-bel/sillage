@@ -35,7 +35,16 @@
 import type { HistoryRow } from '../../../electron/core/contracts/history.ts'
 import { meetingAnchor } from '../../../electron/core/contracts/meeting.ts'
 import { formatDayShort, meetingHeading } from '../../app/format.ts'
-import { Button, List, Row, RowLead, RowTitle, SectionHeader } from '../../ui/index.ts'
+import {
+  Button,
+  List,
+  pendingLabel,
+  pendingMark,
+  Row,
+  RowLead,
+  RowTitle,
+  SectionHeader,
+} from '../../ui/index.ts'
 
 /** How many rows before the screen sends the rep to the full record. */
 export const PENDING_SHOWN = 4
@@ -155,12 +164,13 @@ export function PendingGates({
           /* A bare numeral beside a heading reads as « En attente de validation
              trois » and could be anything. The label says what it counts — and
              it says the `+` too: a reader given « 50 » where the screen shows
-             « 50+ » has been told something the screen is not claiming. */
-          aria-label={
-            capped
-              ? `au moins ${total} réunions en attente de validation`
-              : `${total} réunion${total > 1 ? 's' : ''} en attente de validation`
-          }
+             « 50+ » has been told something the screen is not claiming.
+
+             Both halves come out of `ui/pendingBacklog.ts` rather than being
+             composed here, because « the two have to agree » was written three
+             lines below and was not true: the rail was handed the count without
+             `capped` and printed « 50 » against this span's « 50+ ». */
+          aria-label={pendingLabel({ total, capped }, 'réunion')}
           /*
             `--brand-700`, not `--warn`. This is the same number the rail prints
             beside *À valider* and it means the same thing — calls waiting for
@@ -177,7 +187,7 @@ export function PendingGates({
           */
           className="text-brand-700 min-w-0 flex-1 text-ui font-semibold tabular-nums"
         >
-          {capped ? `${total}+` : total}
+          {pendingMark({ total, capped })}
         </span>
         {total > shown.length ? (
           <Button variant="text" className="shrink-0" onClick={onSeeAll}>

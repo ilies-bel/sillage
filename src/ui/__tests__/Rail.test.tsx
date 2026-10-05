@@ -26,7 +26,7 @@ const draw = (updateReady: boolean) =>
   render(
     <Rail
       current="aujourdhui"
-      pending={2}
+      pending={{ total: 2, capped: false }}
       updateReady={updateReady}
       onPlace={noop}
       onReglages={noop}
@@ -59,5 +59,60 @@ describe('every row in the rail answers the pointer', () => {
   test('nothing is drawn for the offer when no update is ready', () => {
     draw(false)
     expect(screen.queryByRole('button', { name: 'Mise à jour prête' })).toBeNull()
+  })
+})
+
+/**
+ * **The note is a claim about a number, and it was the only surface making the
+ * stronger one.**
+ *
+ * `pending` was a bare `number`, so the one thing that licenses a `+` — the main
+ * process's own « a row was hidden » — could not reach this file at all. The
+ * section on the calendar had it and printed « 50+ »; the rail printed « 50 » and
+ * told a reader « 50 appels en attente de validation ».
+ */
+describe('the rail says how sure it is of the backlog', () => {
+  const note = (pending: { total: number; capped: boolean } | null) => {
+    render(
+      <Rail
+        current="aujourdhui"
+        pending={pending}
+        updateReady={false}
+        onPlace={noop}
+        onReglages={noop}
+        onUpdate={noop}
+      />,
+    )
+    const item = screen.getByRole('button', { name: /À valider/ })
+    return {
+      mark: [...item.querySelectorAll('span[aria-hidden]')]
+        .map((s) => (s.textContent ?? '').trim())
+        .join(''),
+      label: item.textContent ?? '',
+    }
+  }
+
+  test('an exact backlog is exact', () => {
+    expect(note({ total: 50, capped: false })).toEqual({
+      mark: '50',
+      label: 'À valider5050 appels en attente de validation',
+    })
+  })
+
+  test('a backlog the main process cut short carries the « + », to both readings', () => {
+    expect(note({ total: 50, capped: true })).toEqual({
+      mark: '50+',
+      label: 'À valider50+au moins 50 appels en attente de validation',
+    })
+  })
+
+  test('one call owed is singular, and none draws no note at all', () => {
+    expect(note({ total: 1, capped: false }).label).toBe(
+      'À valider11 appel en attente de validation',
+    )
+    cleanup()
+    expect(note({ total: 0, capped: false })).toEqual({ mark: '', label: 'À valider' })
+    cleanup()
+    expect(note(null)).toEqual({ mark: '', label: 'À valider' })
   })
 })

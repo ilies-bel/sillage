@@ -1262,6 +1262,60 @@ describe('what is hidden is reported, and only when something is', () => {
     ).toBe('50+')
     expect(screen.getByRole('button', { name: 'Toutes ›' })).toBeTruthy()
   })
+
+  /**
+   * **And the rail says the same thing, because it is the same set.**
+   *
+   * The two tests above are the narrow instrument: they ask the *section* and
+   * stop there, so the one number on this screen that is drawn twice was only
+   * ever checked once. `Agenda` passed `capped` to `PendingGates` and to nothing
+   * else — `pending={pending.result?.rows.length ?? null}` — so with the backlog
+   * cut short the screen printed « 50 » in the rail and « 50+ » in the section,
+   * and told a reader « 50 appels en attente de validation » beside « au moins
+   * 50 réunions en attente de validation ». Measured on the shipped renderer
+   * (`--scenario historique-annees`), at 1280×800 and at 960×600: rail numeral
+   * « 50 » at x=193.75 y=147.36, section numeral « 50+ » at x=788.28 y=616.34.
+   *
+   * It reads the mark off *both* surfaces by what each one draws — the rail's
+   * numeral is `aria-hidden` beside an `sr-only` sentence, the section's carries
+   * its own `aria-label` — so neither can satisfy it on the other's behalf.
+   */
+  /** Every numeral the screen prints about the backlog, in document order. */
+  const backlogMarks = (): string[] => {
+    const nav = screen.getByRole('navigation', { name: 'Navigation principale' })
+    const section = screen
+      .getByRole('list', { name: 'Réunions en attente de validation' })
+      .closest('section')
+    if (section === null) throw new Error('no backlog section')
+    return [nav, section]
+      .flatMap((root) => [...root.querySelectorAll('span')])
+      .map((node) => (node.textContent ?? '').trim())
+      .filter((text) => /^\d+\+?$/.test(text))
+  }
+
+  test('the rail and the section print one mark for one set, « + » and all', async () => {
+    answering({ pending: rows(50, 'p'), pendingCapped: true })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    expect(backlogMarks()).toEqual(['50+', '50+'])
+
+    // And in the accessible tree, where « 50 » is a certainty nobody claimed.
+    expect(screen.queryByText('50 appels en attente de validation')).toBeNull()
+    expect(screen.getByText('au moins 50 appels en attente de validation')).toBeTruthy()
+  })
+
+  /** The uncapped half, so a fix that writes « + » unconditionally is red too. */
+  test('and an exact backlog is exact in the rail too', async () => {
+    answering({ pending: rows(50, 'p') })
+    signedOut()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('list', { name: 'Réunions en attente de validation' })
+
+    expect(backlogMarks()).toEqual(['50', '50'])
+    expect(screen.getByText('50 appels en attente de validation')).toBeTruthy()
+  })
 })
 
 // ── US-22: the screen is named by what changed ──────────────────────────────

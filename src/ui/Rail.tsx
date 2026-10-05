@@ -30,6 +30,7 @@
  */
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
+import { pendingLabel, pendingMark, type PendingBacklog } from './pendingBacklog.ts'
 import { SectionNav, type SectionNavItem } from './SectionNav.tsx'
 import { Wordmark } from './Wordmark.tsx'
 
@@ -45,8 +46,14 @@ export interface RailProps {
    * rather than asked for again: two components asking the same channel is two
    * answers that can disagree, and this one sits beside the section that draws
    * the rows.
+   *
+   * **The whole answer and not the count**, which is the defect: this was
+   * `number | null`, so `capped` — the main process's own « a row was hidden » —
+   * reached the section and nothing else, and the rail printed « 50 » beside a
+   * section printing « 50+ ». `pendingBacklog.ts` holds the measurement and both
+   * marks now come out of it.
    */
-  pending: number | null
+  pending: PendingBacklog | null
   /** `update:status` reports `phase: 'ready'`. See the docblock. */
   updateReady: boolean
   onPlace: (place: RailPlace) => void
@@ -86,16 +93,13 @@ export function Rail({
       label: 'Aujourd’hui',
       glyph: 'M4 8h16M8 3v3m8-3v3M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z',
     },
-    pending !== null && pending > 0
+    pending !== null && pending.total > 0
       ? {
           id: 'a-valider' as const,
           label: 'À valider',
           glyph: GLYPH_VALIDER,
-          note: String(pending),
-          noteLabel:
-            pending === 1
-              ? '1 appel en attente de validation'
-              : `${pending} appels en attente de validation`,
+          note: pendingMark(pending),
+          noteLabel: pendingLabel(pending, 'appel'),
         }
       : { id: 'a-valider' as const, label: 'À valider', glyph: GLYPH_VALIDER },
     {
