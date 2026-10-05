@@ -204,12 +204,22 @@ export function PendingGates({
         about which day cell happens to be open. So « 2 » over one row, with no
         explanation, read as a section that had lost a row. It has not; the row
         is thirty pixels up.
+
+        **And it no longer names a view the rep may not be in.** It said « dans
+        la liste du jour » in all four: `Agenda`'s `inRange` is the selected day
+        in *Jour*, the week in *Semaine*, the month in *Mois* and every call the
+        app has in *Liste*, and the de-duplication follows it. Driven on the
+        shipped renderer at 1280×800, the section was drawn with this sentence in
+        *Semaine* (one row hidden), in *Mois* and in *Liste* (two hidden). This
+        section cannot see which view is current and has no business asking — the
+        sentence that is true in all four is the one that says where the row is,
+        which is the only thing it was ever for.
       */}
       {hiddenHere > 0 ? (
         <p className="text-muted -mt-hair mb-snug text-meta">
           {hiddenHere === 1
-            ? 'Une autre est dans la liste du jour, au-dessus.'
-            : `${hiddenHere} autres sont dans la liste du jour, au-dessus.`}
+            ? 'Une autre est dans la liste ci-dessus.'
+            : `${hiddenHere} autres sont dans la liste ci-dessus.`}
         </p>
       ) : null}
 

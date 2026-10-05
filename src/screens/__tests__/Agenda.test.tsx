@@ -1318,6 +1318,91 @@ describe('what is hidden is reported, and only when something is', () => {
   })
 })
 
+/*
+ * ── the section does not name a view the rep is not in ───────────────────────
+ *
+ * `PendingGates` drops the rows the day list above is already showing — the same
+ * meeting twice on one screen reads as two meetings — and says so, which is the
+ * right move: « 2 » over one row with no explanation reads as a section that has
+ * lost a row. The sentence it said it in named a *view*: « Une autre est dans la
+ * liste du jour, au-dessus. » The pane above is the day list only in *Jour*; the
+ * other three views are a week, a month and the whole record, and the sentence
+ * was drawn in all four.
+ *
+ * Driven over the four views at once, because the defect is only visible as a
+ * comparison between them — the section cannot see which one is current, so
+ * nothing it says on its own is wrong until you switch.
+ */
+describe('what the backlog says about the list above it', () => {
+  /** One pending call is also on today's list; a second one is not. */
+  const owed = () => {
+    const start = at(10)
+    const here = meeting('m-owed-here', {
+      state: 'awaiting_confirmation',
+      title: 'Nordis — cadrage support',
+      clientName: 'Nordis Retail',
+      createdAt: start,
+      startedAt: start,
+      endedAt: start + 1_800_000,
+    })
+    const elsewhere = meeting('m-owed-away', {
+      state: 'awaiting_confirmation',
+      title: 'Lefort — restitution des CV',
+      clientName: 'Groupe Lefort',
+      createdAt: start - 40 * 86_400_000,
+      startedAt: start - 40 * 86_400_000,
+      endedAt: start - 40 * 86_400_000 + 1_800_000,
+    })
+    // Only `here` is a meeting the screen knows about, so only `here` can be in
+    // the day list — in every view, since today is in all four ranges.
+    bridge.when('meeting:list', () => [here])
+    searched({
+      clients: [],
+      rows: [
+        { meeting: here, status: 'À valider', intents: [], matches: [] },
+        { meeting: elsewhere, status: 'À valider', intents: [], matches: [] },
+      ],
+    })
+    signedOut()
+  }
+
+  /** The note under the heading, as one string, in the view named. */
+  const noteIn = async (view: string): Promise<string> => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: view }))
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+    const section = (await screen.findByText('En attente de validation')).closest('section')
+    if (section === null) throw new Error('no backlog section')
+    const note = [...section.querySelectorAll('p')].map((p) => p.textContent ?? '')
+    return note.join(' ')
+  }
+
+  test('it says where the missing row is without naming a view', async () => {
+    owed()
+    render(<Agenda onOpen={() => {}} onHistorique={() => {}} onReglages={() => {}} />)
+    await screen.findByRole('region', { name: 'Calendrier' })
+    await screen.findByText('En attente de validation')
+
+    const said = [
+      await noteIn('Jour'),
+      await noteIn('Semaine'),
+      await noteIn('Mois'),
+      await noteIn('Liste'),
+    ]
+
+    // One row is hidden in every view, so the sentence is drawn four times —
+    // and it has to be the same sentence, because only one of the four views is
+    // a day.
+    expect(said).toEqual([
+      'Une autre est dans la liste ci-dessus.',
+      'Une autre est dans la liste ci-dessus.',
+      'Une autre est dans la liste ci-dessus.',
+      'Une autre est dans la liste ci-dessus.',
+    ])
+  })
+})
+
 // ── US-22: the screen is named by what changed ──────────────────────────────
 
 describe('the page is named by the day, and the day is drawn once', () => {
