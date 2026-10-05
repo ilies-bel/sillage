@@ -35,6 +35,7 @@ import {
   sampleVerification,
 } from '../../../core/contracts/fixtures.ts'
 import { providerRows } from '../../../core/domain/providerRows.ts'
+import { updateTrust } from '../../../core/domain/updateTrust.ts'
 import { STT_PROVIDERS } from '../../../modules/transcribe/registry.ts'
 import { LLM_PROVIDERS } from '../../../modules/llm/registry.ts'
 import { intentIdFor, prefillEdits } from '../../../core/domain/reviewGate.ts'
@@ -2145,10 +2146,10 @@ test('update:status carries the stated reason there is no updater', async () => 
   assert.equal(generic.phase, 'disabled')
   assert.match(generic.reason ?? '', /indisponible dans cette build/)
 
-  deps.noUpdaterReason =
-    'mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
-    'vérifier que la mise à jour vient bien de l’éditeur. Les nouvelles versions sont à ' +
-    'installer à la main.'
+  // The shipped verdict, not a copy of its French: this fixture held a
+  // hand-written duplicate of the sentence `updateTrust` composes, and the two
+  // drifted the moment that paragraph was rewritten.
+  deps.noUpdaterReason = updateTrust('win32', {}).reason
   const stated = await ipc.invoke('update:status', {})
   assert.match(stated.reason ?? '', /n’est pas signée/)
   // Still not installable, which is the point: there is nothing to install.

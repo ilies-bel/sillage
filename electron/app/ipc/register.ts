@@ -25,6 +25,7 @@ import type { MomentMark } from '../../core/contracts/marks.ts'
 import type { UpdatePort, UpdateStatus } from '../../core/contracts/update.ts'
 import { updatesUnavailable } from '../../core/contracts/update.ts'
 import { updateReadiness } from '../../core/domain/updateGate.ts'
+import { NO_UPDATER } from '../../core/domain/updateTrust.ts'
 import { withoutChannelBleed } from '../../core/domain/channelBleed.ts'
 import type { HistoryIntent, HistoryRow } from '../../core/contracts/history.ts'
 import type { ProviderSection } from '../../core/contracts/settings.ts'
@@ -320,8 +321,6 @@ export interface IpcDeps {
   broadcastForget?: (meetingId: string, markId: string) => void
 }
 
-/** What a build with no updater reports, in one place so the French matches. */
-export const NO_UPDATER = 'mise à jour automatique indisponible dans cette build'
 
 /**
  * The updater's state plus the session's answer to "may this act now".

@@ -26,6 +26,7 @@ import type { DiagRecorder } from '../../core/contracts/diagnostics.ts'
 import { NULL_RECORDER } from '../../core/contracts/diagnostics.ts'
 import type { UpdatePort, UpdateState } from '../../core/contracts/update.ts'
 import { updatesUnavailable } from '../../core/contracts/update.ts'
+import { NO_UPDATER } from '../../core/domain/updateTrust.ts'
 
 /** What electron-updater publishes on `update-available` / `update-downloaded`. */
 export interface UpdateInfoLike {
@@ -360,10 +361,7 @@ export class AutoUpdate implements UpdatePort {
   async check(): Promise<UpdateState> {
     const updater = this.#lib()
     if (!updater) {
-      this.#state = updatesUnavailable(
-        this.#state.currentVersion,
-        'mise à jour automatique indisponible dans cette build',
-      )
+      this.#state = updatesUnavailable(this.#state.currentVersion, NO_UPDATER)
       return this.#state
     }
     try {

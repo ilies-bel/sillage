@@ -44,6 +44,46 @@ export interface UpdateTrust {
 export const VERIFIED = { ok: true, reason: null } as const
 
 /**
+ * **The whole paragraph the panel prints, composed here and nowhere else.**
+ *
+ * The panel used to supply a sentence of its own after the reason it was
+ * handed, and the two halves could not be read together: the reason comes from
+ * `core/domain/` and the panel is in `src/`, which may import `core/contracts/`
+ * only — so no test could see the composed text, and both sizes of the shipped
+ * renderer printed, on every Windows build (HR-2):
+ *
+ *   « mise à jour automatique désactivée : … vient bien de l’éditeur. Les
+ *     nouvelles versions sont à installer à la main. Les nouvelles versions
+ *     sont publiées sur GitHub. »
+ *
+ * Two consecutive sentences opening on the same three words, under a paragraph
+ * opening lowercase. On the other `disabled` producer — the build with no
+ * updater — the join had no punctuation at all: « … dans cette build Les
+ * nouvelles versions sont publiées sur GitHub. »
+ *
+ * So the reason is a finished paragraph: cause, then the one remedy sentence,
+ * `isWrittenSentence`-shaped (`core/contracts/health.ts`). The destination it
+ * names is the control the panel puts underneath it — *Voir les versions
+ * publiées* — because a named page a rep cannot reach is the dead end DEC-26
+ * forbids, and a remedy stated twice is the same page named twice.
+ */
+export const MANUAL_INSTALL =
+  'Les nouvelles versions sont à installer à la main, depuis la page des versions ' +
+  'publiées sur GitHub.'
+
+/**
+ * What a build with no updater at all reports — an unpacked dev run, a portable
+ * install, a build with no `app-update.yml`.
+ *
+ * Here rather than beside either of its two callers (`app/ipc/register.ts` and
+ * `modules/update/AutoUpdate.ts`, which may not import each other) because it
+ * was written out twice already and the panel appended a third fragment to it.
+ * It is the same slot in the same paragraph as `updateTrust`'s reason, so it is
+ * held to the same shape by the same test.
+ */
+export const NO_UPDATER = `Mise à jour automatique indisponible dans cette build. ${MANUAL_INSTALL}`
+
+/**
  * Whether an update downloaded on this platform could be checked before it runs.
  *
  * Platform-tested rather than capability-tested, and that is the one place this
@@ -62,8 +102,8 @@ export const updateTrust = (platform: string, win: BuildTrust | null): UpdateTru
   return {
     ok: false,
     reason:
-      'mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
-      'vérifier que la mise à jour vient bien de l’éditeur. Les nouvelles versions sont à ' +
-      'installer à la main.',
+      'Mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
+      'vérifier que la mise à jour vient bien de l’éditeur. ' +
+      MANUAL_INSTALL,
   }
 }

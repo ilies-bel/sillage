@@ -2187,14 +2187,28 @@ function UpdatePanel() {
           versions se téléchargent depuis la page des versions du projet » and
           then held zero links and zero buttons at both sizes: the page was
           never named and could not be reached, which is the dead end with a
-          sentence in it that DEC-26 forbids. Two consecutive sentences also
-          opened on the same three words in opposite registers — « à installer à
-          la main » and « se téléchargent depuis ».
+          sentence in it that DEC-26 forbids.
+
+          **And this paragraph is the reason, whole.** The round that put the
+          button here also left a sentence of the panel's own after the reason,
+          and the join could not be read from either side — the reason is
+          composed in `core/domain/`, this file may import `core/contracts/`
+          only. What the shipped renderer printed at both sizes was « … vient
+          bien de l’éditeur. Les nouvelles versions sont à installer à la main.
+          Les nouvelles versions sont publiées sur GitHub. »: two consecutive
+          sentences on the same three words, under a paragraph opening
+          lowercase — and on the other `disabled` producer, « … dans cette build
+          Les nouvelles versions sont publiées sur GitHub. », two sentences with
+          no punctuation between them. The remedy sentence now lives once, in
+          `core/domain/updateTrust.ts`, beside the cause it follows and in the
+          layer a test can drive; nothing is appended here, which is the property
+          `Reglages.test.tsx` holds against this seam. The `??` fallback is for
+          a `disabled` state with a null reason, which no producer emits — the
+          button under it is the remedy either way.
         */
         <div className="flex flex-col items-start gap-tight">
           <p className="text-muted text-ui">
-            {update.reason ?? 'Cette version ne se met pas à jour automatiquement.'} Les nouvelles
-            versions sont publiées sur GitHub.
+            {update.reason ?? 'Cette version ne se met pas à jour automatiquement.'}
           </p>
           <Button onClick={openReleases} {...unavailable(busy, 'Ouverture en cours…')}>
             Voir les versions publiées

@@ -1224,6 +1224,44 @@ describe('mise à jour', () => {
   })
 
   /**
+   * **The paragraph is the reason, and the panel adds nothing to it.**
+   *
+   * It used to append « Les nouvelles versions sont publiées sur GitHub. »
+   * after whatever reason it was handed, and the two halves could not be read
+   * together from either side: the reason is composed in `core/domain/` and
+   * this file may import `core/contracts/` only. Driving the shipped panel with
+   * the shipped producers printed, on the branch every Windows build takes
+   * (HR-2):
+   *
+   *   « mise à jour automatique désactivée : … vient bien de l’éditeur. Les
+   *     nouvelles versions sont à installer à la main. Les nouvelles versions
+   *     sont publiées sur GitHub. »
+   *
+   * and « … dans cette build Les nouvelles versions sont publiées sur
+   * GitHub. » on the other one — no punctuation at the join. Every fixture in
+   * this describe hand-wrote a short `disabled` reason, so none of them could
+   * see it.
+   *
+   * This half holds the *seam*: one text node, equal to the reason, whatever
+   * the reason says. `updateTrust.test.ts` holds the other half — that the
+   * reason is a written paragraph naming its remedy once.
+   */
+  test('the panel prints the reason whole and adds no sentence of its own', async () => {
+    const reason =
+      'Mise à jour automatique désactivée : cette version n’est pas signée, rien ne pourrait ' +
+      'vérifier que la mise à jour vient bien de l’éditeur. Les nouvelles versions sont à ' +
+      'installer à la main, depuis la page des versions publiées sur GitHub.'
+    mount()
+    await openWith({ phase: 'disabled', reason })
+
+    const paragraph = pane().getByText(/Mise à jour automatique désactivée/)
+    const printed = (paragraph.textContent ?? '').replace(/ /g, ' ')
+    expect(printed, `« ${printed} » n’est pas la raison, telle quelle`).toBe(reason)
+    // The remedy is still reachable: a sentence naming a page is not a way to it.
+    expect(pane().getByRole('button', { name: 'Voir les versions publiées' })).toBeTruthy()
+  })
+
+  /**
    * A press that reached no browser must say so. Swallowed, it looks like it
    * worked and the rep waits for a window that is never coming.
    */
