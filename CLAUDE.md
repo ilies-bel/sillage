@@ -95,7 +95,7 @@ modules/crm/vsa/          the only place VSA exists
 - Coverage is keyed by which view was read; growth never invalidates, a shrink past `SHRINK_SLACK` does.
 - The page turn must move a scroller, and lands on the covered band's edge, not a page away.
 - The one control that ships is never the rectangle the rep just pressed.
-- Never draw an inert primary: while *Valider* is withheld the slot holds the control that shows the rest.
+- Never draw an inert primary: while *Valider* is withheld the slot holds the sub-line saying what is left to read, and nothing else. The control that shows the rest is at the foot of the column it turns, 291px away — putting it in the slot is the double-click-ships defect `Review.tsx:2960-2990` records fixing.
 - **The one control is on screen exactly when the press creates something, and the accelerator reads the same expression.** One button used to paint identically for « writes three records », « writes two » and « writes none » — same box, same cursor, same fill, and at one tick state the same label too — while `Ctrl/⌘ Entrée` called `review:confirm` with `intentIds: []`. That is a second path confirming what the button refuses, which DEC-4 forbids, reachable by keyboard on the screen whose POST has no idempotency key and whose port has no delete verb.
 - The measurement reaches the button: « Valider malgré N champ(s) non vérifié(s) ».
 - The gate opens on the first `⚠ faible` field.
@@ -179,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code forty-two times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and twelve of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code forty-three times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and twelve of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -233,8 +233,17 @@ so the ledger was still making a case the code had already thrown out, about a
 row that was no longer there. Both are now pinned by a test rather than a
 sentence: `onnxMemory.test.ts` writes down every catalogue row's requirement,
 so moving a `sizeMb` goes red in the diff that moves it.
-Round 30 added five, and **three of them were an instrument describing a
-product that does not exist**. `bridge-stub.mjs`'s transcription table painted
+Round 30 added six, and **one of them was this file**: the review-gate rule
+above said « while *Valider* is withheld the slot holds the control that shows
+the rest », and driven at both sizes the slot holds `<div aria-hidden
+className="mt-row min-h-[35px]" />` and nothing else, while the page turn sits
+at x 274…468.4 against the slot's 759.4…1264 — **291px of horizontal gap**.
+`Review.tsx:2983-2988` argues the opposite in the same tree (« this slot holds
+the decision, or nothing »), and the sixty lines above it record fixing the
+double-click-ships-to-the-CRM defect that the rule, followed literally, would
+reintroduce — on the screen whose POST has no idempotency key. A rule is prose
+too, and this one was a brief for rebuilding a fixed defect. Three more were
+**an instrument describing a product that does not exist**. `bridge-stub.mjs`'s transcription table painted
 four rows, of which three were invented: `local-whisper-large` / « Whisper
 large-v3 (local) » against a registry declaring exactly one local engine;
 `soniox`, a provider the app has never offered; and « Azure Speech — France
