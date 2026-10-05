@@ -22,7 +22,7 @@
  * photographing the one that broke. A card that grows a third control gets
  * measured against the same question on the day it arrives.
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type {
   CaptureChannel,
@@ -81,38 +81,55 @@ const run = async (options: {
 
 describe('a control is offered only where a control changes something', () => {
   /**
-   * The whole matrix. `offers` is whether the *far* row — the client's half, the
-   * one this product exists for — should carry the pane button.
+   * The whole matrix. `remedy` is which control the *far* row — the client's
+   * half, the one this product exists for — should carry.
+   *
+   * **It was a boolean, and that is what hid a defect for a round.** `offers`
+   * answered « the pane, or nothing », so `to-grant` and `denied` sat in the
+   * table as one case with the comment « Never answered, and refused: the pane
+   * is the remedy in both cases » — and the block below asserted *Autoriser*
+   * was wrong « whatever the state », on the reasoning that « a prompt is not
+   * the remedy for anything the pane is the remedy for ». A privacy pane does
+   * not list an application which has never attempted capture, so for the one
+   * state a rep meets on their first launch the pane is not a remedy at all.
+   * The third value is the whole point of the type.
    */
   const MATRIX: Array<{
     state: CapturePermissionState
     channel: CaptureChannel | null
     canOpenSettings: boolean
-    offers: boolean
+    remedy: 'ask' | 'open' | 'none'
     why: string
   }> = [
     // Windows with everything granted, and macOS after both prompts were
     // accepted: nothing is being withheld, so the silence is a muted microphone
     // or an audio route, and no button on this card touches either.
-    { state: 'ready', channel: null, canOpenSettings: false, offers: false, why: 'rien à accorder' },
+    { state: 'ready', channel: null, canOpenSettings: false, remedy: 'none', why: 'rien à accorder' },
     // A managed device. `permissions.ts`: neither asking nor visiting the pane
     // changes it, so the sentence is the whole of what can be said.
-    { state: 'blocked', channel: 'both', canOpenSettings: false, offers: false, why: 'appareil géré' },
-    // Never answered, and refused: the pane is the remedy in both cases.
-    { state: 'to-grant', channel: 'screen', canOpenSettings: true, offers: true, why: 'jamais demandé' },
-    { state: 'denied', channel: 'screen', canOpenSettings: true, offers: true, why: 'refusé' },
-    { state: 'denied', channel: 'both', canOpenSettings: true, offers: true, why: 'les deux refusés' },
+    { state: 'blocked', channel: 'both', canOpenSettings: false, remedy: 'none', why: 'appareil géré' },
+    // Never answered — the OS will still prompt, and the pane would be a list
+    // this app is not in until something has tried.
+    { state: 'to-grant', channel: 'screen', canOpenSettings: true, remedy: 'ask', why: 'jamais demandé' },
+    // A prompt is a capability of the application, so the ask does not need a
+    // pane to exist: the one host-capability case is `open`'s, below.
+    { state: 'to-grant', channel: 'screen', canOpenSettings: false, remedy: 'ask', why: 'jamais demandé, aucun volet' },
+    // Refused. The OS silently returns the old answer to a second ask, so the
+    // pane is the only remedy left — `permissions.ts` says so outright.
+    { state: 'denied', channel: 'screen', canOpenSettings: true, remedy: 'open', why: 'refusé' },
+    { state: 'denied', channel: 'both', canOpenSettings: true, remedy: 'open', why: 'les deux refusés' },
     // The refusal is on the *other* side of the call. Offering the screen pane
     // on the microphone row sends the rep to fix a permission that is granted.
-    { state: 'denied', channel: 'microphone', canOpenSettings: true, offers: false, why: 'autre canal' },
+    { state: 'denied', channel: 'microphone', canOpenSettings: true, remedy: 'none', why: 'autre canal' },
     // A host with no pane at all: `canOpenSettings` is a capability, and a
     // button that opens nothing is the same dead control one level down.
-    { state: 'denied', channel: 'screen', canOpenSettings: false, offers: false, why: 'aucun volet' },
+    { state: 'denied', channel: 'screen', canOpenSettings: false, remedy: 'none', why: 'aucun volet' },
   ]
 
   for (const row of MATRIX) {
+    const WORD = { ask: 'Autoriser', open: 'le volet', none: 'aucun bouton' }
     test(`far silent, ${row.state}/${row.channel ?? '—'} (${row.why}) → ${
-      row.offers ? 'le volet' : 'aucun bouton'
+      WORD[row.remedy]
     }`, async () => {
       await run({
         permission: consent(row.state, row.channel, row.canOpenSettings),
@@ -121,14 +138,17 @@ describe('a control is offered only where a control changes something', () => {
 
       await screen.findByText(/c’est la moitié qui compte le plus/)
       const pane = screen.queryByRole('button', { name: 'Ouvrir les réglages' })
-      expect(pane === null).toBe(!row.offers)
+      const prompt = screen.queryByRole('button', { name: 'Autoriser' })
+      expect(pane === null).toBe(row.remedy !== 'open')
+      expect(prompt === null).toBe(row.remedy !== 'ask')
 
       /*
-        And never the old one, whatever the state. *Autoriser* on this card asked
-        `health:retry`, which is the prompt — and a prompt is not the remedy for
-        anything the pane is the remedy for.
+        And the ask goes through `capture:permission:request`, never through
+        `health:retry`. That is the control this card drew for a round: on a
+        machine whose permissions are granted — every Windows machine — the retry
+        probes the native module, finds `actionFor('granted') === 'nothing'`,
+        calls no OS API and republishes `ok`.
       */
-      expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
       expect(bridge.calls.some((call) => call.channel === 'health:retry')).toBe(false)
     })
   }
@@ -175,6 +195,71 @@ describe('a control is offered only where a control changes something', () => {
 
     expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
+  })
+})
+
+describe('the prompt, once pressed', () => {
+  /*
+   * **The press that was missing, and the hand-over after it.**
+   *
+   * `capture:permission:request` raises the OS prompt — the act `actionFor`
+   * has called `ask` since `capturePermission.ts` was written and which no
+   * screen could reach until the channel landed. This card drew the pane for
+   * `to-grant` instead, which on a first launch is a list the app is not in.
+   *
+   * Then it hands over, and that is not politeness: on macOS the
+   * screen-recording grant does not land until the app is relaunched, so the
+   * honest answer to an ask can be the identical `to-grant`, and re-offering
+   * the same press is the control DEC-26 forbids. The attempt is also what puts
+   * the app in the pane, so the pane becomes a real remedy exactly then.
+   */
+  test('asks the OS, then hands over to the pane the attempt has just made useful', async () => {
+    await run({ permission: consent('to-grant', 'screen'), result: heard(true, false) })
+    await screen.findByText(/c’est la moitié qui compte le plus/)
+    // The sentence agrees with the control, which is the whole point of
+    // `channelRemedyFor` being read by both.
+    expect(screen.getByText(/n’a pas encore été autorisé/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Ouvrir les réglages' })).toBeNull()
+
+    const before = bridge.calls.length
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+    const fired = bridge.calls.slice(before).map((call) => call.channel)
+    expect(fired).toContain('capture:permission:request')
+    // And it listens again: a grant that changed nothing and a grant that fixed
+    // it look identical until something listens.
+    expect(fired).toContain('capture:essai')
+
+    // The hand-over, on both surfaces at once.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy(),
+    )
+    expect(screen.queryByRole('button', { name: 'Autoriser' })).toBeNull()
+    expect(screen.getByText(/réglages de confidentialité du système/)).toBeTruthy()
+  })
+
+  /*
+   * An older main process has no such channel, so the invoke rejects. The row
+   * must not be left holding a press that threw: it counts as asked and falls
+   * through to the pane, which is what this card had before the channel existed.
+   */
+  test('a channel the main process does not have still leaves a remedy', async () => {
+    bridge.when('capture:permission', () => consent('to-grant', 'screen'))
+    bridge.when('capture:essai', () => heard(true, false))
+    bridge.when('capture:permission:request', () => {
+      throw new Error('canal inconnu')
+    })
+    render(<EssaiAudio />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+    await screen.findByText(/c’est la moitié qui compte le plus/)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Autoriser' }))
+    })
+    expect(await screen.findByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
   })
 })
 

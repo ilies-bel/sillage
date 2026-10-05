@@ -111,6 +111,7 @@ test('each channel gets its own sentence, in the rep’s vocabulary', () => {
 test('la phrase de l’essai ne réclame une autorisation que s’il en manque une', () => {
   const silent = { rep: { heard: false, peak: 0 }, far: { heard: false, peak: 0 }, floor: 0.01, seconds: 20 }
   const far = (consent: CapturePermission | null) => essaiLines(silent, consent)[1]?.sentence ?? ''
+  const rep = (consent: CapturePermission | null) => essaiLines(silent, consent)[0]?.sentence ?? ''
 
   // Nothing outstanding — and this is the ordinary case, on every Windows
   // machine and on a mac where both prompts were accepted.
@@ -123,8 +124,8 @@ test('la phrase de l’essai ne réclame une autorisation que s’il en manque u
   // the clause is the half that can send somebody nowhere.
   assert.doesNotMatch(far(null), /autoris/i)
 
-  // Outstanding on the far channel — now it may ask, and it names the pane
-  // that holds it rather than Sillage's own.
+  // Refused on the far channel — now it may ask, and it names the pane that
+  // holds it rather than Sillage's own.
   const denied: CapturePermission = {
     state: 'denied',
     channel: 'screen',
@@ -135,6 +136,32 @@ test('la phrase de l’essai ne réclame une autorisation que s’il en manque u
   assert.doesNotMatch(far(denied), /dans Réglages/)
   assert.match(far(denied), /réglages de confidentialité du système/)
 
+  /*
+   * **Never answered is not refused**, and that pane does not list an
+   * application which has never attempted capture — so the sentence offers the
+   * ask and names no pane at all. This is the half the first version of this fix
+   * got wrong: one predicate merging the two states, naming the pane for both,
+   * on the one screen a rep meets before their first client.
+   */
+  const never: CapturePermission = {
+    state: 'to-grant',
+    channel: 'screen',
+    reason: 'peu importe',
+    canOpenSettings: true,
+  }
+  assert.match(far(never), /n’a pas encore été autorisé/)
+  assert.doesNotMatch(far(never), /réglages de confidentialité/)
+  assert.doesNotMatch(far(never), /réautorisez/)
+  // After the ask, the attempt has made the pane useful and it becomes the
+  // remedy — the same hand-over `Onboarding.tsx` makes, for the same reason.
+  assert.equal(essaiLines(silent, never, true)[1]?.sentence, far(denied))
+  // The rep's own row, both ways round.
+  assert.match(rep({ ...never, channel: 'microphone' }), /n’a pas encore été autorisé/)
+  assert.match(
+    essaiLines(silent, { ...never, channel: 'microphone' }, true)[0]?.sentence ?? '',
+    /réglages de confidentialité du système/,
+  )
+
   // Outstanding on the *other* side of the call is not this row's remedy —
   // and it is that row's, which had the same unconditional claim.
   const micOnly: CapturePermission = {
@@ -144,8 +171,13 @@ test('la phrase de l’essai ne réclame une autorisation que s’il en manque u
     canOpenSettings: true,
   }
   assert.doesNotMatch(far(micOnly), /autoris/i)
-  const rep = (consent: CapturePermission | null) => essaiLines(silent, consent)[0]?.sentence ?? ''
-  assert.match(rep(micOnly), /le micro n’est pas autorisé/i)
+  /*
+   * And it is the rep's row, which carried the same defect — though note the
+   * wording: `micOnly` is `to-grant`, so this row gets the *ask*. This
+   * assertion read `/le micro n’est pas autorisé/` while the predicate merged
+   * the two states, which is the merge stating itself in a test.
+   */
+  assert.match(rep(micOnly), /le micro n’a pas encore été autorisé/)
   assert.doesNotMatch(rep(ready), /autoris/i)
   // A managed device: forbidden, and neither asking nor the pane lifts it, so
   // the sentence does not send the rep to one.

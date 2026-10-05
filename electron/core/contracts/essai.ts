@@ -40,7 +40,7 @@
  * (DEC-12) — what survives is two peaks and two verdicts.
  */
 import { z } from 'zod'
-import { permissionOutstandingFor, type CapturePermission } from './permissions.ts'
+import { channelRemedyFor, type CapturePermission } from './permissions.ts'
 
 /**
  * The meeting id the trial's `audio:level` frames carry.
@@ -138,15 +138,26 @@ export interface EssaiLine {
  *
  * The card beside the sentence already knew: it gates the settings-pane button
  * on the very predicate the prose ignored, so the control was right and the
- * words were not. They now read the same `permissionOutstandingFor`.
+ * words were not. They now read the same `channelRemedyFor`.
  *
  * `consent` defaults to « nothing outstanding », which is the safe direction —
  * a caller that has not read consent gets the half of each remedy that is true
  * on any host, and never the half that can send somebody nowhere.
+ *
+ * **And three branches, not two, because « refused » and « never answered » send
+ * a rep to different places.** The first version of this read one predicate that
+ * merged them and named the privacy pane for both. On a first launch that pane
+ * does not list an application which has never attempted capture, so the
+ * sentence sent them to a list their app is not in — the dead end
+ * `captureRemedyFor` had just been written to end on the onboarding row, arriving
+ * here one surface over. `asked` is this screen's « the prompt has already been
+ * made »; after it, the pane is the honest remedy, because the attempt is what
+ * makes the app appear in it.
  */
 export const essaiLines = (
   result: EssaiResult,
   consent: CapturePermission | null = null,
+  asked = false,
 ): readonly EssaiLine[] => [
   {
     channel: 'rep',
@@ -154,9 +165,11 @@ export const essaiLines = (
     heard: result.rep.heard,
     sentence: result.rep.heard
       ? 'Entendue. Ce que vous dites sera transcrit.'
-      : permissionOutstandingFor(consent, 'rep')
-        ? 'Rien n’a été entendu. Le micro n’est pas autorisé : réautorisez Sillage dans les réglages de confidentialité du système, sinon vous ne serez pas dans le compte-rendu.'
-        : 'Rien n’a été entendu. Si vous avez parlé, vérifiez que le micro n’est pas coupé — sinon vous ne serez pas dans le compte-rendu.',
+      : channelRemedyFor(consent, 'rep', asked) === 'ask'
+        ? 'Rien n’a été entendu, et le micro n’a pas encore été autorisé : autorisez-le ici, sinon vous ne serez pas dans le compte-rendu.'
+        : channelRemedyFor(consent, 'rep', asked) === 'open'
+          ? 'Rien n’a été entendu. Le micro n’est pas autorisé : réautorisez Sillage dans les réglages de confidentialité du système, sinon vous ne serez pas dans le compte-rendu.'
+          : 'Rien n’a été entendu. Si vous avez parlé, vérifiez que le micro n’est pas coupé — sinon vous ne serez pas dans le compte-rendu.',
   },
   {
     channel: 'far',
@@ -164,16 +177,19 @@ export const essaiLines = (
     heard: result.far.heard,
     sentence: result.far.heard
       ? 'Entendu. Ce que dit le client sera transcrit.'
-      : permissionOutstandingFor(consent, 'far')
-        ? /*
+      : channelRemedyFor(consent, 'far', asked) === 'ask'
+        ? 'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : l’audio système n’a pas encore été autorisé — autorisez-le ici, puis vérifiez la sortie audio utilisée.'
+        : channelRemedyFor(consent, 'far', asked) === 'open'
+          ? /*
              **« l’audio système », and not « l’enregistrement de l’écran ».**
 
              This named a macOS permission on HR-2's primary platform. Windows
              has no screen-recording authorisation to grant — CLAUDE.md's
              platform table says so in one row, « Capture permission: macOS TCC
              prompt · Windows none ». That is now also why this branch exists
-             rather than being the only sentence: on Windows the predicate
-             above is `false`, so the clause is not reached at all.
+             rather than being the only sentence: on Windows
+             `channelRemedyFor` answers `'none'`, so the clause is not reached
+             at all.
 
              `capturePermission.ts` had already decided the platform-neutral
              word for this channel and its header argues it: `SCREEN =
@@ -193,7 +209,7 @@ export const essaiLines = (
              true sentences about the wrong thing.
           */
           'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : l’audio système n’est pas autorisé — réautorisez Sillage dans les réglages de confidentialité du système, puis vérifiez la sortie audio utilisée.'
-        : 'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez la sortie audio utilisée.',
+          : 'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez la sortie audio utilisée.',
   },
 ]
 

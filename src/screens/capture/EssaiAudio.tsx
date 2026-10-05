@@ -7,7 +7,7 @@ import {
   type EssaiResult,
 } from '../../../electron/core/contracts/essai.ts'
 import {
-  permissionOutstandingFor,
+  channelRemedyFor,
   type CapturePermission,
 } from '../../../electron/core/contracts/permissions.ts'
 import { invoke, useInvoke } from '../../app/bridge.ts'
@@ -70,12 +70,44 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
    * took the URL is only known after.
    */
   const [paneRefused, setPaneRefused] = useState(false)
+  /*
+   * **Whether this card has already raised the prompt**, which is what turns a
+   * row's remedy from the ask into the pane.
+   *
+   * The same flag `Onboarding.tsx` keeps, for the same reason its own comment
+   * gives: on macOS the screen-recording grant does not land until the app is
+   * relaunched, so the honest answer to an ask can be the identical `to-grant`,
+   * and re-offering the press there is the control DEC-26 forbids. After one
+   * ask the row hands over to the pane — which the attempt has just made useful,
+   * because a privacy pane lists an application that has tried.
+   */
+  const [asked, setAsked] = useState(false)
 
   /*
    * The pane, then the trial again. Re-measuring is the whole point — a grant
    * that changed nothing and a grant that fixed it look identical until
    * something listens.
    */
+  /*
+   * The prompt, then the consent as it stands after it, then the trial again.
+   * `request` re-measures in the main process, so the card that asked is the
+   * card that reports; a rejection — an older build with no such channel —
+   * still counts as asked, so the row falls through to the pane rather than
+   * holding a press that threw.
+   */
+  const ask = async () => {
+    setGranting(true)
+    try {
+      permission.set(await invoke('capture:permission:request', {}))
+    } catch {
+      // No sentence of our own: the row already carries the trial's.
+    } finally {
+      setAsked(true)
+      setGranting(false)
+    }
+    await run()
+  }
+
   const grant = async () => {
     setGranting(true)
     try {
@@ -179,7 +211,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
               holds no such setting, naming a grant that on this host was
               measured as present. One predicate now decides both.
             */}
-            {essaiLines(result, consent).map((line) => (
+            {essaiLines(result, consent, asked).map((line) => (
               <li key={line.channel}>
                 <div className="flex items-baseline gap-inline">
                   <h4 className="text-strong min-w-0 flex-1 text-ui font-semibold">{line.title}</h4>
@@ -205,9 +237,27 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                 */}
                 {/* An empty strip is not « no control »: it is a gap under the
                     sentence that reads as something failing to load. */}
-                {!line.heard && (permissionOutstandingFor(consent, line.channel) || onReglages) ? (
+                {!line.heard &&
+                (channelRemedyFor(consent, line.channel, asked) !== 'none' || onReglages) ? (
                   <div className="mt-tight flex items-baseline gap-inline">
-                    {permissionOutstandingFor(consent, line.channel) ? (
+                    {/*
+                      **Ask, or open the pane — and they are not the same press.**
+
+                      This drew the pane for both, because the predicate it read
+                      merged « refused » with « never answered ». A privacy pane
+                      does not list an application that has never attempted
+                      capture, so on a first launch the one control under the
+                      sentence opened a list the app was not in. The decision is
+                      `captureRemedyFor`'s, in `core/contracts/`, because
+                      `main.ts` decides the same thing from the two
+                      `AccessStatus`es and the two must not be able to disagree
+                      about which act a press is.
+                    */}
+                    {channelRemedyFor(consent, line.channel, asked) === 'ask' ? (
+                      <Button onClick={() => void ask()} {...unavailable(granting, 'Demande…')}>
+                        {granting ? 'Demande…' : 'Autoriser'}
+                      </Button>
+                    ) : channelRemedyFor(consent, line.channel, asked) === 'open' ? (
                       <Button
                         onClick={() => void grant()}
                         {...unavailable(granting, 'Ouverture…')}
@@ -225,7 +275,9 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                     ) : null}
                   </div>
                 ) : null}
-                {!line.heard && paneRefused && permissionOutstandingFor(consent, line.channel) ? (
+                {!line.heard &&
+                paneRefused &&
+                channelRemedyFor(consent, line.channel, asked) === 'open' ? (
                   <p className="text-muted measure mt-hair text-ui leading-relaxed">
                     Les réglages de confidentialité ne se sont pas ouverts. Ouvrez-les vous-même :
                     l’autorisation de Sillage s’y trouve avec celles des autres applications.

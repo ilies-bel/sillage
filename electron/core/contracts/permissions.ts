@@ -94,37 +94,6 @@ const PERMISSION_CHANNEL: Record<Channel, CaptureChannel> = {
 }
 
 /**
- * **Is this host still holding back an authorisation this side of the call needs?**
- *
- * Shared by two things that must agree and did not: the settings-pane button
- * the dry-run card draws under a silent row, and the sentence above it. The
- * predicate lived only in `EssaiAudio.tsx`, so the *button* was conditional and
- * the *prose* was not — the card correctly withheld a control it could not
- * justify, then sent the rep to the pane in words anyway. CLAUDE.md's rule is
- * that a fact shared by two sides of a boundary belongs here; this is that
- * fact, and it is now read once.
- *
- * Two of the four states answer `false` for different reasons that come to the
- * same advice: `ready` — nothing was refused, including on every Windows
- * machine, where there is nothing to refuse (HR-2's primary platform) — and
- * `blocked`, where a profile forbids it and neither asking nor the pane
- * changes that. `canOpenSettings` is in the predicate rather than beside it
- * because naming a pane this host does not have is the same dead end.
- *
- * `null` — consent not read yet — answers `false`, which is the safe direction:
- * the authorisation clause is the half of a remedy that can send somebody
- * hunting for a grant that is not missing.
- */
-export const permissionOutstandingFor = (
-  consent: CapturePermission | null,
-  channel: Channel,
-): boolean => {
-  if (!consent || !consent.canOpenSettings) return false
-  if (consent.state !== 'to-grant' && consent.state !== 'denied') return false
-  return consent.channel === 'both' || consent.channel === PERMISSION_CHANNEL[channel]
-}
-
-/**
  * **Which remedy a row may offer — ask, or open the pane.**
  *
  * The product has known the answer since `capturePermission.ts` was written:
@@ -172,6 +141,39 @@ export const captureRemedyFor = (
   if (consent.state === 'to-grant' && !asked) return 'ask'
   return consent.canOpenSettings ? 'open' : 'none'
 }
+
+
+/**
+ * **The same question, asked about one side of the call.**
+ *
+ * The dry-run card draws a row per channel — the rep's microphone above, the
+ * machine's output below — so a row must never offer the remedy for the *other*
+ * side. This is `captureRemedyFor` with that filter in front of it, and it
+ * replaced a second predicate of mine that answered a cruder question.
+ *
+ * That one, `permissionOutstandingFor`, asked « is a grant outstanding » and
+ * treated `to-grant` and `denied` as one case — true of the `paneFixes` it was
+ * lifted from, and defensible for exactly as long as the pane was the product's
+ * only route. The ask landed the same day. A sentence reading « réautorisez
+ * Sillage dans les réglages de confidentialité du système » on a permission
+ * **nobody has answered** sends a rep on first launch to a list their app is
+ * not in — which is the defect `captureRemedyFor` exists to end, re-committed
+ * one surface over. So there is one predicate about this, not two, which is the
+ * rule `locateSegments` and `meetingAnchor` already follow.
+ *
+ * A consent naming the other channel answers `'none'` rather than deferring:
+ * `captureRemedyFor` reads the whole consent and cannot know which row is
+ * asking.
+ */
+export const channelRemedyFor = (
+  consent: CapturePermission | null,
+  channel: Channel,
+  asked: boolean,
+): CaptureRemedy =>
+  consent !== null &&
+  (consent.channel === 'both' || consent.channel === PERMISSION_CHANNEL[channel])
+    ? captureRemedyFor(consent, asked)
+    : 'none'
 
 /**
  * The three verbs `app/` is allowed to have about consent.
