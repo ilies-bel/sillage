@@ -179,7 +179,7 @@ modules/crm/vsa/          the only place VSA exists
 
 **Ports and prose**
 - A declared port that nothing calls is not a feature. `npm run check:ports` and `check:surfaces` are that grep, run for you; `UNWIRED`/`UNREACHED` entries carry the reason and the cost.
-- A comment is not a check. Prose in this repo has been wrong about the code thirty-five times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and nine of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
+- A comment is not a check. Prose in this repo has been wrong about the code thirty-seven times — seven of them numbers that were computed and written down as numbers that were observed, one of those seven repeated at four sites and then quoted back by a reviewer as the basis for a recommendation, another giving one variant's width, a second variant's count and a half-height belonging to neither — while a second file, arguing the same point, stated a third width again, so the tree contradicted itself about one measurement for two rounds — and ten of them docblocks that argued correctly for one of the several cases their subject covers — including two that named a colour distinction no painted pixel had, and one that concluded a hook was right for the very reason it was wrong; measure before trusting a sentence. Round 22 added five: a paragraph saying a fix « is not
 in this commit » about code that had shipped it, which then generated a false brief for a
 whole lane; a palette note still arguing for the hex it had been replaced by; a docblock
 claiming its check discovered rungs by prefix while the code read a hand-written array of
@@ -233,6 +233,20 @@ so the ledger was still making a case the code had already thrown out, about a
 row that was no longer there. Both are now pinned by a test rather than a
 sentence: `onnxMemory.test.ts` writes down every catalogue row's requirement,
 so moving a `sizeMb` goes red in the diff that moves it.
+Round 29 added two, both in files the same commit was fixing, and both about
+**a table**. `config.ts`'s READERS docblock said Anthropic « stays in the table
+and `configuredLlmProviders` never reports it » over a table that has never had
+an `anthropic` key — an argument for the mechanism beside the one actually used,
+and the absence was load-bearing twice, since the filter is `READERS[p.id]` and
+the missing reader is the whole reason that row needs a supplied sentence.
+`providerRows.ts`'s `refusal` was the tenth docblock right about one of its
+cases: « aucune clé enregistrée » « sends them to the field they have to
+fill, which is where the fix is » — true of a cloud row with an empty vault, and the
+exact opposite on `azure-openai`, where a key is stored, two required fields are
+empty, and the sentence sent the rep back to the one thing they had already
+done. **The second was found by driving the first's fix**: a relational test
+over the real registry reddened on a row the finding had not named, which is
+what a guard is for and what the docblock could not do.
 - **An instrument can be green and narrow.** Round 22 found five checks that appeared to ask
   what a rep sees and asked something narrower: `--contrast` tested `background-image`
   before `background-color` and skipped 290 text runs; `--contrast` again computed the
