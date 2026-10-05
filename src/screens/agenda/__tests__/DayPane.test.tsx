@@ -116,6 +116,67 @@ describe('DayPane — the day it is describing', () => {
     expect(screen.getByText('Aucune réunion ce jour-là.')).toBeTruthy()
   })
 
+  /**
+   * **« Ces jours » was said about one day, in the one view a rep opens by
+   * default.**
+   *
+   * `Agenda` passes `showDay={view !== 'jour'}`, and `unsynced` is true in
+   * *Jour* whenever the single selected day falls outside the eight days
+   * `modules/calendar/delta.ts` syncs — a Monday three weeks out, which is two
+   * presses of *Mois suivant* and a click away. Measured on the shipped
+   * renderer at 1280×800 and 960×600, with the `h1` reading « Lundi 26 octobre »:
+   * the panel said « **Ces jours** sont hors de la période synchronisée », a
+   * plural demonstrative over one named day, on the surface whose whole job is
+   * being trusted about what is on the calendar.
+   *
+   * Both branches, because the plural is right in *Semaine*, *Mois* and *Liste*
+   * — the stage `agenda-hors-fenetre` photographs it there — and a fix that
+   * simply made the sentence singular would be wrong about thirty-four days
+   * instead of one.
+   */
+  test('one day the calendar was never asked about is one day, not « ces jours »', () => {
+    render(
+      <DayPane
+        entries={[]}
+        reason={null}
+        when="future"
+        showDay={false}
+        unsynced
+        emphasis={null}
+        onOpen={() => {}} onArm={() => {}}
+      />,
+    )
+
+    expect(
+      screen.getByText(
+        'Ce jour est hors de la période synchronisée — le calendrier n’a pas été ' +
+          'interrogé dessus. Vous pouvez quand même y créer une réunion.',
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByText(/Ces jours/)).toBeNull()
+  })
+
+  test('and a range of them keeps the plural it was written for', () => {
+    render(
+      <DayPane
+        entries={[]}
+        reason={null}
+        when="future"
+        showDay
+        unsynced
+        emphasis={null}
+        onOpen={() => {}} onArm={() => {}}
+      />,
+    )
+
+    expect(
+      screen.getByText(
+        'Ces jours sont hors de la période synchronisée — le calendrier n’a pas été ' +
+          'interrogé dessus. Vous pouvez quand même y créer une réunion.',
+      ),
+    ).toBeTruthy()
+  })
+
   test('today keeps its own sentence, which was written for a day with a past list', () => {
     render(
       <DayPane

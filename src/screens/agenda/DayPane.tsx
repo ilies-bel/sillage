@@ -291,8 +291,25 @@ export function DayPane({
             Monday, and « enregistrée » answers whether anything was *recorded*
             when the rep asked whether anything was *in the calendar*.
           */}
+          {/*
+            **And the demonstrative agrees with the range, which it did not.**
+
+            This read « Ces jours » in every view, including the one a rep opens
+            by default: `Agenda` passes `showDay={view !== 'jour'}`, and
+            `unsynced` is true in *Jour* whenever the single selected day falls
+            outside the eight days `modules/calendar/delta.ts` syncs. Measured on
+            the shipped renderer at 1280×800 and 960×600, two presses of *Mois
+            suivant* and a click away, with the `h1` reading « Lundi 26 octobre »:
+            a plural demonstrative over one named day.
+
+            `showDay` is the fact being read, not a convenience — its own
+            docblock is « shown on a row when the range spans more than one
+            day », which is precisely the question the demonstrative asks.
+          */}
           {unsynced
-            ? 'Ces jours sont hors de la période synchronisée — le calendrier n’a pas été interrogé dessus. Vous pouvez quand même y créer une réunion.'
+            ? showDay
+              ? 'Ces jours sont hors de la période synchronisée — le calendrier n’a pas été interrogé dessus. Vous pouvez quand même y créer une réunion.'
+              : 'Ce jour est hors de la période synchronisée — le calendrier n’a pas été interrogé dessus. Vous pouvez quand même y créer une réunion.'
             : when === 'today'
               ? 'Plus aucune réunion aujourd’hui.'
               : showDay
