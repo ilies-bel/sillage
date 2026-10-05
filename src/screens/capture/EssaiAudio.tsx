@@ -6,29 +6,13 @@ import {
   essaiSummary,
   type EssaiResult,
 } from '../../../electron/core/contracts/essai.ts'
-import type { CapturePermission } from '../../../electron/core/contracts/permissions.ts'
+import {
+  permissionOutstandingFor,
+  type CapturePermission,
+} from '../../../electron/core/contracts/permissions.ts'
 import { invoke, useInvoke } from '../../app/bridge.ts'
 import { Button, StateDot, unavailable } from '../../ui/index.ts'
 import { LevelMeter } from '../session/LevelMeter.tsx'
-
-/**
- * Whether the row for this channel has a consent to fix — and whether this host
- * has anywhere to fix it.
- *
- * `EssaiLine.channel` is the two sides of the call; `CapturePermission.channel`
- * is the two OS permissions behind them. They line up one to one, and `both` is
- * both — the mapping is written out rather than inferred so that a row can never
- * offer the remedy for the *other* side of the call.
- */
-const PERMISSION_CHANNEL = { rep: 'microphone', far: 'screen' } as const
-
-const paneFixes = (consent: CapturePermission | null, channel: 'rep' | 'far'): boolean => {
-  if (!consent || !consent.canOpenSettings) return false
-  // `ready` is nothing to grant and `blocked` is a managed device: neither is
-  // repaired by a pane, and `permissions.ts` says so in as many words.
-  if (consent.state !== 'to-grant' && consent.state !== 'denied') return false
-  return consent.channel === 'both' || consent.channel === PERMISSION_CHANNEL[channel]
-}
 
 /**
  * **Twenty seconds of real capture, and the two screens that offer it.**
@@ -186,7 +170,16 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
             subsystem's state should not report it in two different orders.
           */}
           <ul className="mt-snug space-y-row">
-            {essaiLines(result).map((line) => (
+            {/*
+              **The consent, into the sentences as well as the buttons.**
+
+              It used to reach only the controls below, so a row could withhold
+              the settings-pane button and still print « vérifiez que l’audio
+              système est autorisé dans Réglages » above the gap — a pane that
+              holds no such setting, naming a grant that on this host was
+              measured as present. One predicate now decides both.
+            */}
+            {essaiLines(result, consent).map((line) => (
               <li key={line.channel}>
                 <div className="flex items-baseline gap-inline">
                   <h4 className="text-strong min-w-0 flex-1 text-ui font-semibold">{line.title}</h4>
@@ -212,9 +205,9 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                 */}
                 {/* An empty strip is not « no control »: it is a gap under the
                     sentence that reads as something failing to load. */}
-                {!line.heard && (paneFixes(consent, line.channel) || onReglages) ? (
+                {!line.heard && (permissionOutstandingFor(consent, line.channel) || onReglages) ? (
                   <div className="mt-tight flex items-baseline gap-inline">
-                    {paneFixes(consent, line.channel) ? (
+                    {permissionOutstandingFor(consent, line.channel) ? (
                       <Button
                         onClick={() => void grant()}
                         {...unavailable(granting, 'Ouverture…')}
@@ -232,7 +225,7 @@ export function EssaiAudio({ onReglages }: { onReglages?: () => void }) {
                     ) : null}
                   </div>
                 ) : null}
-                {!line.heard && paneRefused && paneFixes(consent, line.channel) ? (
+                {!line.heard && paneRefused && permissionOutstandingFor(consent, line.channel) ? (
                   <p className="text-muted measure mt-hair text-ui leading-relaxed">
                     Les réglages de confidentialité ne se sont pas ouverts. Ouvrez-les vous-même :
                     l’autorisation de Sillage s’y trouve avec celles des autres applications.

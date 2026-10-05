@@ -300,11 +300,49 @@ describe('the dry run', () => {
     // The failure a rep cannot discover on their own: their own voice is in the
     // transcript, so the recording looks like it worked.
     expect(await screen.findByText(/le client non/)).toBeTruthy()
-    // « l’audio système », not « l’enregistrement de l’écran »: Windows has no
-    // screen-recording permission to grant, and it is the primary platform.
-    expect(screen.getByText(/l’audio système est autorisé dans Réglages/)).toBeTruthy()
+    // Nothing is staged on `capture:permission` here, so nothing is
+    // outstanding — and then the remedy is the half that is true on any host.
+    expect(screen.getByText(/vérifiez la sortie audio utilisée/)).toBeTruthy()
+    // It does not claim a grant is missing, which it has no way to know and
+    // which on this host it has measured as present.
+    expect(screen.queryByText(/autorisé/)).toBeNull()
     // And the other channel is reported separately, not merged into a verdict.
     expect(screen.getByText(/Ce que vous dites sera transcrit/)).toBeTruthy()
+  })
+
+  /*
+   * **The screen-level half of the same guard, on the surface that draws the
+   * button.**
+   *
+   * The contract test (`essai.test.ts`) reads the sentence against the consent;
+   * this one checks that the card hands its consent *to* the composer, because
+   * for one round it handed it only to the controls below. The two assertions
+   * that matter are a pair: the clause appears, and it names the pane that
+   * holds the setting rather than Sillage's own — « Réglages » has none
+   * (`autoris` appears nowhere in `Reglages.tsx`), and this screen is the one
+   * DEC-45 lets outrank the boot probe.
+   */
+  test('a refused grant is named, and sends the rep to the pane that holds it', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'denied', channel: 'screen' }))
+    bridge.when('capture:essai', () => ({
+      rep: { heard: true, peak: 0.42 },
+      far: { heard: false, peak: 0.003 },
+      floor: 0.008,
+      seconds: 20,
+    }))
+    open()
+    await toEssai()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Essai de/ }))
+    })
+
+    await screen.findByText(/le client non/)
+    // « l’audio système », not « l’enregistrement de l’écran »: Windows has no
+    // screen-recording permission to grant, and it is the primary platform.
+    expect(screen.getByText(/l’audio système n’est pas autorisé/)).toBeTruthy()
+    expect(screen.getByText(/réglages de confidentialité du système/)).toBeTruthy()
+    expect(screen.queryByText(/autorisé dans Réglages/)).toBeNull()
   })
 
   /*

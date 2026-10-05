@@ -40,6 +40,7 @@
  * (DEC-12) — what survives is two peaks and two verdicts.
  */
 import { z } from 'zod'
+import { permissionOutstandingFor, type CapturePermission } from './permissions.ts'
 
 /**
  * The meeting id the trial's `audio:level` frames carry.
@@ -123,14 +124,39 @@ export interface EssaiLine {
   heard: boolean
 }
 
-export const essaiLines = (result: EssaiResult): readonly EssaiLine[] => [
+/**
+ * **A remedy may only name an authorisation when one is actually outstanding.**
+ *
+ * Both silent sentences used to name a grant unconditionally, and that is a
+ * claim about the machine made on the one screen DEC-45 lets outrank the boot
+ * probe. By the time these sentences are composed the product has *measured*
+ * where consent stands: `state: 'ready'` is every Windows machine — the
+ * primary platform, which has no capture authorisation at all — and a mac
+ * where both prompts were accepted. A rep whose output was simply routed to a
+ * headset was sent hunting for a grant that is not missing, which is the dead
+ * end this card exists to remove.
+ *
+ * The card beside the sentence already knew: it gates the settings-pane button
+ * on the very predicate the prose ignored, so the control was right and the
+ * words were not. They now read the same `permissionOutstandingFor`.
+ *
+ * `consent` defaults to « nothing outstanding », which is the safe direction —
+ * a caller that has not read consent gets the half of each remedy that is true
+ * on any host, and never the half that can send somebody nowhere.
+ */
+export const essaiLines = (
+  result: EssaiResult,
+  consent: CapturePermission | null = null,
+): readonly EssaiLine[] => [
   {
     channel: 'rep',
     title: 'Votre voix',
     heard: result.rep.heard,
     sentence: result.rep.heard
       ? 'Entendue. Ce que vous dites sera transcrit.'
-      : 'Rien n’a été entendu. Si vous avez parlé, vérifiez que le micro n’est pas coupé — sinon vous ne serez pas dans le compte-rendu.',
+      : permissionOutstandingFor(consent, 'rep')
+        ? 'Rien n’a été entendu. Le micro n’est pas autorisé : réautorisez Sillage dans les réglages de confidentialité du système, sinon vous ne serez pas dans le compte-rendu.'
+        : 'Rien n’a été entendu. Si vous avez parlé, vérifiez que le micro n’est pas coupé — sinon vous ne serez pas dans le compte-rendu.',
   },
   {
     channel: 'far',
@@ -138,30 +164,36 @@ export const essaiLines = (result: EssaiResult): readonly EssaiLine[] => [
     heard: result.far.heard,
     sentence: result.far.heard
       ? 'Entendu. Ce que dit le client sera transcrit.'
-      : /*
-           **« l’audio système », and not « l’enregistrement de l’écran ».**
+      : permissionOutstandingFor(consent, 'far')
+        ? /*
+             **« l’audio système », and not « l’enregistrement de l’écran ».**
 
-           This named a macOS permission on HR-2's primary platform. Windows has
-           no screen-recording authorisation to grant — CLAUDE.md's platform
-           table says so in one row, « Capture permission: macOS TCC prompt ·
-           Windows none » — so half the remedy sent a Windows rep looking for a
-           setting that does not exist, on the screen DEC-45 makes the authority
-           over the boot probe.
+             This named a macOS permission on HR-2's primary platform. Windows
+             has no screen-recording authorisation to grant — CLAUDE.md's
+             platform table says so in one row, « Capture permission: macOS TCC
+             prompt · Windows none ». That is now also why this branch exists
+             rather than being the only sentence: on Windows the predicate
+             above is `false`, so the clause is not reached at all.
 
-           `capturePermission.ts` had already decided the platform-neutral word
-           for this channel and its header argues it: `SCREEN = 'l’audio
-           système'`, because « Windows has no screen-recording permission to
-           grant … nothing in the renderer needs to know that ». This file did
-           not follow. `EssaiAudio.tsx` is careful enough not to draw the
-           settings-pane button here, so the control beside the sentence was
-           right and the sentence was not.
+             `capturePermission.ts` had already decided the platform-neutral
+             word for this channel and its header argues it: `SCREEN =
+             'l’audio système'`, because « Windows has no screen-recording
+             permission to grant … nothing in the renderer needs to know
+             that ». The pane is named in that file's own vocabulary — « les
+             réglages de confidentialité du système » — and not « Réglages »,
+             which is Sillage's own pane and holds no such setting: `autoris`
+             appears nowhere in `Reglages.tsx`.
 
-           `check-platform.mjs` cannot see this: it scans for platform *signals
-           in code*, and a mac-only concept inside a French string is invisible
-           to it. The guard is a test over the strings themselves
-           (`essai.test.ts`), which is where a claim about wording belongs.
-        */
-        'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez que l’audio système est autorisé dans Réglages, et la sortie audio utilisée.',
+             `check-platform.mjs` cannot see either defect: it scans for
+             platform *signals in code*, and a mac-only concept inside a French
+             string is invisible to it. The guard is a test over the strings
+             themselves (`essai.test.ts`), which is where a claim about wording
+             belongs — and the one that catches *this* round's defect reads the
+             sentence against the consent that produced it, because both were
+             true sentences about the wrong thing.
+          */
+          'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : l’audio système n’est pas autorisé — réautorisez Sillage dans les réglages de confidentialité du système, puis vérifiez la sortie audio utilisée.'
+        : 'Rien n’a été entendu. Si vous avez joué un son, c’est le côté client qui manquera : vérifiez la sortie audio utilisée.',
   },
 ]
 

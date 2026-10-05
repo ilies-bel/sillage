@@ -28,6 +28,7 @@
  * on `health:retry` for a permission nobody has answered yet.
  */
 import { z } from 'zod'
+import type { Channel } from './transcript.ts'
 
 /**
  * Where consent stands, in four words that mean the same thing on every host.
@@ -73,6 +74,46 @@ export const CapturePermissionSchema = z.object({
   canOpenSettings: z.boolean(),
 })
 export type CapturePermission = z.infer<typeof CapturePermissionSchema>
+
+/**
+ * Which grant each side of the call depends on — the one mapping between the
+ * transcript's two channels and the host's two permissions.
+ */
+const PERMISSION_CHANNEL: Record<Channel, CaptureChannel> = {
+  rep: 'microphone',
+  far: 'screen',
+}
+
+/**
+ * **Is this host still holding back an authorisation this side of the call needs?**
+ *
+ * Shared by two things that must agree and did not: the settings-pane button
+ * the dry-run card draws under a silent row, and the sentence above it. The
+ * predicate lived only in `EssaiAudio.tsx`, so the *button* was conditional and
+ * the *prose* was not — the card correctly withheld a control it could not
+ * justify, then sent the rep to the pane in words anyway. CLAUDE.md's rule is
+ * that a fact shared by two sides of a boundary belongs here; this is that
+ * fact, and it is now read once.
+ *
+ * Two of the four states answer `false` for different reasons that come to the
+ * same advice: `ready` — nothing was refused, including on every Windows
+ * machine, where there is nothing to refuse (HR-2's primary platform) — and
+ * `blocked`, where a profile forbids it and neither asking nor the pane
+ * changes that. `canOpenSettings` is in the predicate rather than beside it
+ * because naming a pane this host does not have is the same dead end.
+ *
+ * `null` — consent not read yet — answers `false`, which is the safe direction:
+ * the authorisation clause is the half of a remedy that can send somebody
+ * hunting for a grant that is not missing.
+ */
+export const permissionOutstandingFor = (
+  consent: CapturePermission | null,
+  channel: Channel,
+): boolean => {
+  if (!consent || !consent.canOpenSettings) return false
+  if (consent.state !== 'to-grant' && consent.state !== 'denied') return false
+  return consent.channel === 'both' || consent.channel === PERMISSION_CHANNEL[channel]
+}
 
 /**
  * The two verbs `app/` is allowed to have about consent.

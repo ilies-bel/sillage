@@ -25,6 +25,7 @@ import {
   EssaiResultSchema,
   type EssaiResult,
 } from '../contracts/essai.ts'
+import type { CapturePermission } from '../contracts/permissions.ts'
 
 const result = (rep: boolean, far: boolean): EssaiResult => ({
   rep: { heard: rep, peak: rep ? 0.4 : 0.001 },
@@ -77,7 +78,85 @@ test('each channel gets its own sentence, in the rep’s vocabulary', () => {
   assert.equal(lines[0]?.heard, true)
   assert.match(lines[0]?.sentence ?? '', /Entendue/)
   // And the failing one says what to check, not that something is wrong.
-  assert.match(lines[1]?.sentence ?? '', /l’audio système est autorisé dans Réglages/)
+  // No consent passed, so no authorisation is claimed — see the relational
+  // guard below. What stays is the half the rep can act on.
+  assert.match(lines[1]?.sentence ?? '', /la sortie audio utilisée/)
+})
+
+/**
+ * **The remedy may only name an authorisation when there is one outstanding.**
+ *
+ * The far-channel sentence said « vérifiez que l’audio système est autorisé
+ * dans Réglages » unconditionally, and two things were wrong with it at once.
+ *
+ * It is printed when the product has already *measured* that consent is not
+ * the cause. `state: 'ready'` is every Windows machine — the primary platform
+ * (HR-2), which has no capture authorisation at all — and the card's own
+ * `paneFixes` already computes this to decide whether to draw the
+ * settings-pane button, so the control beside the sentence was right and the
+ * sentence was not. A rep whose output was simply routed to a headset is sent
+ * hunting for a grant that is not missing.
+ *
+ * And « dans Réglages » is Sillage's own pane, which has no such setting:
+ * `autoris` appears nowhere in `Reglages.tsx`. The place is the OS privacy
+ * pane, which is what `openCapturePane` opens and what
+ * `capturePermission.ts`'s own remedies already name.
+ *
+ * `MAC_ONLY` below could not catch it — a two-item denylist over words, and
+ * these were the wrong *claim* in platform-neutral vocabulary. This guard is
+ * relational instead: it reads the sentence against the consent that produced
+ * it, which is the only thing that can tell « true remedy » from « true
+ * sentence about the wrong thing ».
+ */
+test('la phrase de l’essai ne réclame une autorisation que s’il en manque une', () => {
+  const silent = { rep: { heard: false, peak: 0 }, far: { heard: false, peak: 0 }, floor: 0.01, seconds: 20 }
+  const far = (consent: CapturePermission | null) => essaiLines(silent, consent)[1]?.sentence ?? ''
+
+  // Nothing outstanding — and this is the ordinary case, on every Windows
+  // machine and on a mac where both prompts were accepted.
+  const ready: CapturePermission = { state: 'ready', channel: null, reason: null, canOpenSettings: false }
+  assert.doesNotMatch(far(ready), /autoris/i)
+  // Still says the thing the rep can act on.
+  assert.match(far(ready), /sortie audio/)
+
+  // Unknown consent is treated as nothing outstanding, for the same reason:
+  // the clause is the half that can send somebody nowhere.
+  assert.doesNotMatch(far(null), /autoris/i)
+
+  // Outstanding on the far channel — now it may ask, and it names the pane
+  // that holds it rather than Sillage's own.
+  const denied: CapturePermission = {
+    state: 'denied',
+    channel: 'screen',
+    reason: 'peu importe',
+    canOpenSettings: true,
+  }
+  assert.match(far(denied), /autoris/i)
+  assert.doesNotMatch(far(denied), /dans Réglages/)
+  assert.match(far(denied), /réglages de confidentialité du système/)
+
+  // Outstanding on the *other* side of the call is not this row's remedy —
+  // and it is that row's, which had the same unconditional claim.
+  const micOnly: CapturePermission = {
+    state: 'to-grant',
+    channel: 'microphone',
+    reason: 'peu importe',
+    canOpenSettings: true,
+  }
+  assert.doesNotMatch(far(micOnly), /autoris/i)
+  const rep = (consent: CapturePermission | null) => essaiLines(silent, consent)[0]?.sentence ?? ''
+  assert.match(rep(micOnly), /le micro n’est pas autorisé/i)
+  assert.doesNotMatch(rep(ready), /autoris/i)
+  // A managed device: forbidden, and neither asking nor the pane lifts it, so
+  // the sentence does not send the rep to one.
+  const blocked: CapturePermission = {
+    state: 'blocked',
+    channel: 'both',
+    reason: 'peu importe',
+    canOpenSettings: true,
+  }
+  assert.doesNotMatch(rep(blocked), /autoris/i)
+  assert.doesNotMatch(far(blocked), /autoris/i)
 })
 
 /**
