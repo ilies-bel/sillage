@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { HealthSnapshot } from '../../../electron/core/contracts/health.ts'
 import type { CapturePermission } from '../../../electron/core/contracts/permissions.ts'
@@ -744,6 +744,78 @@ const consent = (over: Partial<CapturePermission> = {}): CapturePermission => ({
 const captureRow = () =>
   screen.getByText(/il écoute ce que votre machine joue/).closest('li') as HTMLElement
 
+/**
+ * **A green row over a capture subsystem that is down.**
+ *
+ * The row has two sentence blocks and they were mutually exclusive on the wrong
+ * condition: consent drew on `permissionRow.state !== 'ready'`, health drew on
+ * `!permissionRow`. So `ready` consent plus a capture fault skipped **both** —
+ * and `ready` consent is not an exotic pairing, it is the ordinary state of
+ * every machine whose permissions are fine, including every healthy Windows
+ * machine, where there is no screen-recording permission to withhold at all
+ * (HR-2's primary platform).
+ *
+ * What a rep saw was `CONSENT_TONE.ready` — a green dot reading « prêt » —
+ * beside « Le micro et l'audio système », with no sentence and neither of the
+ * two controls the health branch exists to offer, on the one screen they meet
+ * before their first client. Consent is not a measurement of capture: the
+ * native module can fail to load, a device can refuse to open, an output route
+ * can move, and all three leave consent `ready`.
+ *
+ * The row still says one thing and offers one control — its own docblock
+ * insists on that and it is right. Consent speaks first when it has something
+ * to say, because a permission is a thing the rep can act on directly; health
+ * speaks when consent is settled.
+ */
+describe('the capture row reports capture, not only consent', () => {
+  const broken = (): HealthSnapshot => ({
+    ...FIRST_RUN,
+    capture: {
+      state: 'down',
+      reason: 'module audio natif indisponible — réinstallez Sillage.',
+      since: 1,
+      retryable: false,
+    },
+  })
+
+  test('granted consent over a failed capture still says what is wrong', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'ready', channel: null }))
+    open(broken(), 'besoins')
+    await screen.findByText(/il écoute ce que votre machine joue/)
+
+    // The sentence the health branch has always had, and could not reach.
+    expect(captureRow().textContent).toMatch(/module audio natif indisponible/)
+    // Not « prêt »: the dot is measured, and what it measures is capture.
+    expect(captureRow().textContent).not.toMatch(/prêt/)
+    // `retryable: false` is a decision, not a retry — so the screen where the
+    // decision is made, which is the health branch's own rule.
+    expect(within(captureRow()).getByRole('button', { name: 'Réglages ›' })).toBeTruthy()
+  })
+
+  test('and consent speaks first when it has something to say', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'denied', channel: 'screen' }))
+    open(broken(), 'besoins')
+    await screen.findByText(/il écoute ce que votre machine joue/)
+
+    const said = captureRow().textContent ?? ''
+    // One sentence and one control: the consent one, because a permission is
+    // the thing a rep can act on directly.
+    expect(said).toMatch(/Vous l’avez refusé/)
+    expect(said).not.toMatch(/module audio natif indisponible/)
+    expect(within(captureRow()).getByRole('button', { name: 'Ouvrir les réglages' })).toBeTruthy()
+    expect(within(captureRow()).queryByRole('button', { name: 'Réglages ›' })).toBeNull()
+  })
+
+  test('a healthy machine with granted consent is still green', async () => {
+    bridge.when('capture:permission', () => consent({ state: 'ready', channel: null }))
+    open({ ...FIRST_RUN, capture: { state: 'ok' } }, 'besoins')
+    await screen.findByText(/il écoute ce que votre machine joue/)
+
+    expect(captureRow().textContent).toMatch(/prêt/)
+    expect(within(captureRow()).queryByRole('button')).toBeNull()
+  })
+})
+
 describe('the capture row draws consent, and never a platform', () => {
   /**
    * **First launch, and the remedy it is owed.**
@@ -776,8 +848,21 @@ describe('the capture row draws consent, and never a platform', () => {
 
     expect(bridge.calls.some((call) => call.channel === 'capture:permission:request')).toBe(true)
     expect(bridge.calls.some((call) => call.channel === 'capture:permission:open')).toBe(false)
+    /*
+     * And capture is re-probed, because the row reports capture once consent is
+     * settled. Without this the rep would be left reading the reason capture
+     * published *before* they granted — which on first run is a sentence about
+     * the very permission they have just given.
+     */
+    const probe = bridge.calls.find((call) => call.channel === 'health:retry')
+    expect(probe?.payload).toEqual({ connector: 'capture' })
+
     // The answer is the re-measured consent, so a grant lands on the row that
-    // asked for it rather than on the next launch.
+    // asked for it rather than on the next launch — and the dot is green once
+    // the probe answers, which is what a real `health:retry` broadcasts.
+    await act(async () => {
+      bridge.emit('health:changed', { connector: 'capture', health: { state: 'ok' }, at: 2 })
+    })
     await waitFor(() => expect(screen.getByText('prêt')).toBeTruthy())
   })
 

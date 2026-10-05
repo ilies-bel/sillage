@@ -581,6 +581,22 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
       setAsked(true)
       setGranting(false)
     }
+    /*
+     * **And capture is re-probed, because the row now reports it.**
+     *
+     * Until the health branch became reachable on `ready` consent, a grant that
+     * landed turned the dot green on consent alone and capture's own state was
+     * invisible behind it. Now it is the dot once consent is settled — so a
+     * grant that is not followed by a re-measure leaves the rep looking at the
+     * reason capture published *before* they granted, which on first run is a
+     * sentence about the very permission they have just given.
+     *
+     * `health:retry` and not a snapshot re-read: the snapshot answers what was
+     * last measured, and what changed is the thing only a re-probe can see.
+     * This is the one press for which that verb is not the dead control a
+     * previous round removed — the permission really did move.
+     */
+    await retry('capture')
   }
 
   const openSettings = async () => {
@@ -680,18 +696,22 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                 <span className="shrink-0">
                   <StateDot
                     tone={
-                      permissionRow
+                      permissionRow && permissionRow.state !== 'ready'
                         ? CONSENT_TONE[permissionRow.state]
                         : row
                           ? TONE[state]
-                          : 'pending'
+                          : permissionRow
+                            ? CONSENT_TONE[permissionRow.state]
+                            : 'pending'
                     }
                     label={
-                      permissionRow
+                      permissionRow && permissionRow.state !== 'ready'
                         ? consentWord(permissionRow)
                         : row
                           ? STATE_WORD[state]
-                          : 'vérification…'
+                          : permissionRow
+                            ? consentWord(permissionRow)
+                            : 'vérification…'
                     }
                   />
                 </span>
@@ -761,7 +781,27 @@ function Besoins({ onReglages }: { onReglages: (section: SectionId) => void }) {
                 </p>
               ) : null}
 
-              {!permissionRow && row && row.state !== 'ok' ? (
+              {/*
+                **And capture's own health, which consent does not measure.**
+
+                These two blocks were mutually exclusive on the wrong condition:
+                consent drew on `state !== 'ready'` and this drew on
+                `!permissionRow`, so `ready` consent plus a capture fault
+                skipped both. That is not an exotic pairing — `ready` is the
+                ordinary state of every machine whose permissions are fine,
+                including every healthy Windows machine, where there is no
+                screen-recording permission to withhold at all (HR-2). The row
+                painted `CONSENT_TONE.ready`, a green dot reading « prêt », with
+                no sentence and neither of the two controls below, on the screen
+                a rep meets before their first client — while the native module
+                had failed to load, or a device had refused to open, or the
+                output route had moved. Consent is not a measurement of capture.
+
+                Still one sentence and one control. Consent speaks first when it
+                has something to say, because a permission is the thing a rep
+                can act on directly; this speaks once consent is settled.
+              */}
+              {(!permissionRow || permissionRow.state === 'ready') && row && row.state !== 'ok' ? (
                 <div className="mt-snug flex items-baseline gap-inline">
                   <p className="text-warn min-w-0 flex-1 text-ui">{row.reason}</p>
                   {/*
