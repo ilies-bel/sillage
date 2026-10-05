@@ -327,7 +327,11 @@ French strings, so a copy change breaks one silently.
 
 `scripts/e2e.mjs` launches the built main process (not the packaged renderer — that comes
 from Vite) and walks a rep's first ten minutes, twice, seeding the gate through the
-product's own `Store` with the app closed. `scripts/harness/README.md` has the screen list;
+product's own `Store` with the app closed. **It is in no gate** — CI runs `check`,
+`check:models` and `npm test`, not this — and two of its 38 steps spent 22 commits red on
+a string the product had deliberately stopped saying, because nobody typed the command.
+It costs 37 s wall including both builds, so cost is not the reason; the reason is in its
+header. Run it by hand after changing a user-facing string. `scripts/harness/README.md` has the screen list;
 measure its claims before trusting them.
 
 ## Platforms — Windows is the primary one (HR-2)

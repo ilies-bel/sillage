@@ -18,6 +18,38 @@
  * open, and the keyboard works. Every one of those is a round trip through the
  * real bridge.
  *
+ * ## This walk is in no gate, and two of its steps rotted for six days
+ *
+ * CI runs `npm run check`, `npm run check:models` and `npm test`
+ * (`.github/workflows/check.yml`). It does not run this, and nothing else does
+ * either, so a red step here is seen only by whoever thinks to type the
+ * command.
+ *
+ * `04a18b9` fixed « 1 déjà marqués » — a constant plural that announced the
+ * first and commonest mark wrongly to every screen reader — and updated the
+ * five sites in `Widget.test.tsx`. It did not update the two here. Both are
+ * `waitFor`s on the pre-fix string, so from 2026-09-29 this walk reported
+ * « 2 étape(s) sur 38 ont échoué » through **22 commits**, paying 35 s of
+ * timeout per run to assert nothing about the mark counter at all. Nobody ran
+ * it. That is CLAUDE.md's own category — « an instrument that is red … and is
+ * in no gate is a comment » — and it is also the harness's lesson arriving
+ * here: these steps are held together by the product's own French strings, so
+ * a copy change breaks one silently.
+ *
+ * **Measured, because that file also says to measure before trusting an
+ * exclusion:** the whole command — `npm run build`, `npm run build:electron`
+ * and all 38 steps — is **37 s wall** on a loaded shared machine (load ~7).
+ * The old « four minutes » figure below is the pre-timeout-fix walk and is
+ * about silence, not about cost. Cost is not the reason this is ungated.
+ *
+ * The reason is the next paragraph: an unpackaged main process loads the
+ * renderer over HTTP, so a runner needs a backgrounded `npm run dev`, a
+ * readiness wait, and — on `ubuntu-latest`, which is what `check.yml` uses —
+ * `xvfb` for a real Electron window. Three moving parts, none of which can be
+ * verified from a mac, which is why this paragraph states the gap instead of a
+ * workflow claiming to close it. **Until it is closed: run this by hand after
+ * changing any user-facing string.**
+ *
  * ## What it deliberately does not do
  *
  * **It never runs the audio trial.** Twenty seconds of listening on a machine
@@ -354,7 +386,7 @@ try {
     // face is for. Three files described this button before it existed.
     await widget.getByRole('button', { name: 'Marquer ce moment' }).click()
     await widget
-      .getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ })
+      .getByRole('button', { name: /Marquer ce moment \(1 déjà marqué\)/ })
       .waitFor({ timeout: 15_000 })
   })
 
@@ -442,7 +474,7 @@ try {
       .getByText('à vérifier avec les achats')
       .waitFor({ state: 'detached', timeout: 15_000 })
     // And the one made from the pill is still there — removing is not a purge.
-    await widget.getByRole('button', { name: /Marquer ce moment \(1 déjà marqués\)/ }).waitFor()
+    await widget.getByRole('button', { name: /Marquer ce moment \(1 déjà marqué\)/ }).waitFor()
   })
 
   await step('the rep’s notepad takes what they type (DEC-5)', async () => {
